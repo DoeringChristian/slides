@@ -349,13 +349,10 @@ export const SlideCanvas: React.FC = () => {
 
   const isHoveredVisibleOnSlide = hoveredObjectId ? !!(slide?.elements[hoveredObjectId]?.visible) : false;
 
-  // Find visible empty image elements (no resource assigned)
-  const resources = usePresentationStore((s) => s.presentation.resources);
-  const emptyImageElements = useMemo(() => {
-    return elements.filter(
-      (el) => el.type === 'image' && el.visible && (!el.resourceId || !resources[el.resourceId])
-    ) as ImageElement[];
-  }, [elements, resources]);
+  // Find all visible image elements for hover overlay
+  const visibleImageElements = useMemo(() => {
+    return elements.filter((el) => el.type === 'image' && el.visible) as ImageElement[];
+  }, [elements]);
 
   const stageWidth = (SLIDE_WIDTH + 2 * CANVAS_PADDING) * zoom;
   const stageHeight = (SLIDE_HEIGHT + 2 * CANVAS_PADDING) * zoom;
@@ -430,12 +427,12 @@ export const SlideCanvas: React.FC = () => {
       </Stage>
 
       <TextEditOverlay stageRef={containerRef} zoom={zoom} />
-      {emptyImageElements.map((el) => (
+      {visibleImageElements.map((el) => (
         <ImagePlaceholderOverlay
           key={el.id}
           element={el}
           zoom={zoom}
-          containerRef={containerRef}
+          isSelected={selectedElementIds.includes(el.id)}
         />
       ))}
     </div>

@@ -9,10 +9,10 @@ import type { ImageElement } from '../../types/presentation';
 interface Props {
   element: ImageElement;
   zoom: number;
-  containerRef: React.RefObject<HTMLDivElement>;
+  isSelected: boolean;
 }
 
-export const ImagePlaceholderOverlay: React.FC<Props> = ({ element, zoom, containerRef }) => {
+export const ImagePlaceholderOverlay: React.FC<Props> = ({ element, zoom, isSelected }) => {
   const updateElement = usePresentationStore((s) => s.updateElement);
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const resources = usePresentationStore((s) => s.presentation.resources);
@@ -21,15 +21,14 @@ export const ImagePlaceholderOverlay: React.FC<Props> = ({ element, zoom, contai
   const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
-  // Check if element has a resource
-  const hasResource = element.resourceId && resources[element.resourceId];
-  if (hasResource) return null;
-
   // Calculate position based on element position and zoom
   const left = (element.x + CANVAS_PADDING) * zoom;
   const top = (element.y + CANVAS_PADDING) * zoom;
   const width = element.width * zoom;
   const height = element.height * zoom;
+
+  // Only show when selected
+  if (!isSelected) return null;
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -56,7 +55,7 @@ export const ImagePlaceholderOverlay: React.FC<Props> = ({ element, zoom, contai
   return (
     <>
       <div
-        className="absolute flex items-center justify-center pointer-events-none"
+        className="absolute"
         style={{
           left,
           top,
@@ -64,17 +63,33 @@ export const ImagePlaceholderOverlay: React.FC<Props> = ({ element, zoom, contai
           height,
           transform: `rotate(${element.rotation}deg)`,
           transformOrigin: 'top left',
+          pointerEvents: 'none',
         }}
       >
-        <button
-          ref={buttonRef}
-          data-resource-trigger
-          onClick={handleClick}
-          className="pointer-events-auto flex items-center gap-1.5 px-3 py-1.5 bg-white border border-gray-300 rounded-md shadow-sm text-sm text-gray-600 hover:bg-gray-50 hover:border-gray-400 transition-colors"
+        {/* Floating button bar - positioned below element on the left */}
+        <div
+          className="absolute left-0 flex items-center"
+          style={{
+            pointerEvents: 'none',
+            top: '100%',
+            marginTop: 8,
+          }}
         >
-          <ImagePlus size={16} />
-          <span>Add Image</span>
-        </button>
+          <div
+            className="flex items-center gap-1 bg-white/90 backdrop-blur-sm border border-gray-200 rounded-full shadow-md px-1.5 py-1"
+            style={{ pointerEvents: 'auto' }}
+          >
+            <button
+              ref={buttonRef}
+              data-resource-trigger
+              onClick={handleClick}
+              className="p-1.5 rounded-full hover:bg-blue-100 text-gray-400 hover:text-blue-600 transition-colors"
+              title="Change image"
+            >
+              <ImagePlus size={18} />
+            </button>
+          </div>
+        </div>
       </div>
       <ResourcePicker
         open={pickerOpen}
