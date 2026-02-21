@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { usePresentationStore } from './presentationStore';
 import { useEditorStore } from './editorStore';
 import type { Slide, SlideElement, ObjectMeta } from '../types/presentation';
@@ -40,4 +41,29 @@ export function usePreviousSlideElement(elementId: string): SlideElement | undef
 export function useAllObjects(): ObjectMeta[] {
   const objects = usePresentationStore((s) => s.presentation.objects);
   return Object.values(objects);
+}
+
+export function useObjectElements(): Record<string, SlideElement | undefined> {
+  const activeSlideId = useEditorStore((s) => s.activeSlideId);
+  const slides = usePresentationStore((s) => s.presentation.slides);
+  const slideOrder = usePresentationStore((s) => s.presentation.slideOrder);
+  const objects = usePresentationStore((s) => s.presentation.objects);
+  return useMemo(() => {
+    const result: Record<string, SlideElement | undefined> = {};
+    const activeSlide = slides[activeSlideId];
+    for (const objId of Object.keys(objects)) {
+      if (activeSlide?.elements[objId]) {
+        result[objId] = activeSlide.elements[objId];
+        continue;
+      }
+      for (const sid of slideOrder) {
+        const el = slides[sid]?.elements[objId];
+        if (el) {
+          result[objId] = el;
+          break;
+        }
+      }
+    }
+    return result;
+  }, [activeSlideId, slides, slideOrder, objects]);
 }

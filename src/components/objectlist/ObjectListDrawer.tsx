@@ -1,8 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { ChevronDown, ChevronUp, Layers } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
-import { useAllObjects, useActiveSlide } from '../../store/selectors';
+import { useAllObjects, useActiveSlide, useObjectElements } from '../../store/selectors';
 import { ObjectListItem } from './ObjectListItem';
 
 export const ObjectListDrawer: React.FC = () => {
@@ -10,10 +10,14 @@ export const ObjectListDrawer: React.FC = () => {
   const setObjectDrawerOpen = useEditorStore((s) => s.setObjectDrawerOpen);
   const selectedElementIds = useEditorStore((s) => s.selectedElementIds);
   const setSelectedElements = useEditorStore((s) => s.setSelectedElements);
+  const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const renameObject = usePresentationStore((s) => s.renameObject);
+  const hideElement = usePresentationStore((s) => s.hideElement);
+  const unhideElement = usePresentationStore((s) => s.unhideElement);
 
   const objects = useAllObjects();
   const slide = useActiveSlide();
+  const objectElements = useObjectElements();
 
   const sortedObjects = useMemo(() => {
     if (!slide) return objects;
@@ -24,6 +28,17 @@ export const ObjectListDrawer: React.FC = () => {
       return aVisible ? -1 : 1;
     });
   }, [objects, slide]);
+
+  const handleToggleVisibility = useCallback(
+    (objectId: string, isCurrentlyVisible: boolean) => {
+      if (isCurrentlyVisible) {
+        hideElement(activeSlideId, objectId);
+      } else {
+        unhideElement(activeSlideId, objectId);
+      }
+    },
+    [activeSlideId, hideElement, unhideElement],
+  );
 
   return (
     <div className="border-t border-gray-200 bg-white shrink-0">
@@ -41,28 +56,32 @@ export const ObjectListDrawer: React.FC = () => {
 
       {/* Collapsible content */}
       {objectDrawerOpen && (
-        <div className="max-h-[150px] overflow-y-auto border-t border-gray-100">
+        <div className="max-h-[220px] overflow-y-auto border-t border-gray-100">
           {objects.length === 0 ? (
             <div className="px-3 py-2 text-xs text-gray-400">No objects yet</div>
           ) : (
-            sortedObjects.map((obj) => {
-              const isVisibleOnSlide = !!(slide?.elements[obj.id]?.visible);
-              const isSelected = selectedElementIds.includes(obj.id);
-              return (
-                <ObjectListItem
-                  key={obj.id}
-                  object={obj}
-                  isVisibleOnSlide={isVisibleOnSlide}
-                  isSelected={isSelected}
-                  onSelect={() => {
-                    if (isVisibleOnSlide) {
-                      setSelectedElements([obj.id]);
-                    }
-                  }}
-                  onRename={(name) => renameObject(obj.id, name)}
-                />
-              );
-            })
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(90px,1fr))] gap-2 p-2">
+              {sortedObjects.map((obj) => {
+                const isVisibleOnSlide = !!(slide?.elements[obj.id]?.visible);
+                const isSelected = selectedElementIds.includes(obj.id);
+                return (
+                  <ObjectListItem
+                    key={obj.id}
+                    object={obj}
+                    element={objectElements[obj.id]}
+                    isVisibleOnSlide={isVisibleOnSlide}
+                    isSelected={isSelected}
+                    onSelect={() => {
+                      if (isVisibleOnSlide) {
+                        setSelectedElements([obj.id]);
+                      }
+                    }}
+                    onRename={(name) => renameObject(obj.id, name)}
+                    onToggleVisibility={() => handleToggleVisibility(obj.id, isVisibleOnSlide)}
+                  />
+                );
+              })}
+            </div>
           )}
         </div>
       )}
