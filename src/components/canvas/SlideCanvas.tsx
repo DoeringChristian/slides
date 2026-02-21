@@ -55,11 +55,11 @@ export const SlideCanvas: React.FC = () => {
     return slide.elementOrder.map((id) => slide.elements[id]).filter(Boolean);
   }, [slide]);
 
-  // Determine if sole selected element is a line/arrow
+  // Determine if sole selected element is a visible line/arrow
   const soleSelectedLineElement = useMemo(() => {
     if (selectedElementIds.length !== 1 || !slide) return null;
     const el = slide.elements[selectedElementIds[0]];
-    if (el && el.type === 'shape' && (el.shapeType === 'line' || el.shapeType === 'arrow')) {
+    if (el && el.visible && el.type === 'shape' && (el.shapeType === 'line' || el.shapeType === 'arrow')) {
       return el as ShapeElement;
     }
     return null;
@@ -244,11 +244,13 @@ export const SlideCanvas: React.FC = () => {
     return () => el.removeEventListener('wheel', handleWheel);
   }, [setZoom]);
 
-  // Resolve hovered element: prefer current slide, fall back to objectElements
+  // Resolve hovered element: prefer current slide, fall back to objectElements for rendering data
   const hoveredElement = useMemo(() => {
     if (!hoveredObjectId) return null;
     return slide?.elements[hoveredObjectId] ?? objectElements[hoveredObjectId] ?? null;
   }, [hoveredObjectId, slide, objectElements]);
+
+  const isHoveredVisibleOnSlide = hoveredObjectId ? !!(slide?.elements[hoveredObjectId]?.visible) : false;
 
   const stageWidth = SLIDE_WIDTH * zoom;
   const stageHeight = SLIDE_HEIGHT * zoom;
@@ -307,7 +309,7 @@ export const SlideCanvas: React.FC = () => {
           {connectorHighlightId && slide && slide.elements[connectorHighlightId] && (
             <ConnectorHighlight element={slide.elements[connectorHighlightId]} />
           )}
-          {hoveredElement && <HoverOverlay element={hoveredElement} />}
+          {hoveredElement && <HoverOverlay element={hoveredElement} isVisibleOnSlide={isHoveredVisibleOnSlide} />}
           <DrawingPreview drawState={drawState} tool={tool} />
         </Layer>
       </Stage>

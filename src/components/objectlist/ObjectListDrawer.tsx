@@ -34,11 +34,15 @@ export const ObjectListDrawer: React.FC = () => {
     (objectId: string, isCurrentlyVisible: boolean) => {
       if (isCurrentlyVisible) {
         hideElement(activeSlideId, objectId);
+        // Deselect the element when hiding it
+        if (selectedElementIds.includes(objectId)) {
+          setSelectedElements(selectedElementIds.filter((id) => id !== objectId));
+        }
       } else {
         unhideElement(activeSlideId, objectId);
       }
     },
-    [activeSlideId, hideElement, unhideElement],
+    [activeSlideId, hideElement, unhideElement, selectedElementIds, setSelectedElements],
   );
 
   return (

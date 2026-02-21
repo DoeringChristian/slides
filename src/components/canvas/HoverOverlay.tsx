@@ -5,6 +5,7 @@ import type { SlideElement, TextElement, ShapeElement, ImageElement } from '../.
 
 interface Props {
   element: SlideElement;
+  isVisibleOnSlide: boolean;
 }
 
 const HIGHLIGHT_COLOR = '#f59e0b';
@@ -87,21 +88,23 @@ const GhostElement: React.FC<{ element: SlideElement }> = ({ element }) => {
 };
 
 const HighlightRect: React.FC<{ element: SlideElement }> = ({ element }) => (
-  <Rect
-    x={element.x - 3}
-    y={element.y - 3}
-    width={element.width + 6}
-    height={element.height + 6}
-    stroke={HIGHLIGHT_COLOR}
-    strokeWidth={2}
-    cornerRadius={3}
-    dash={[6, 3]}
-    listening={false}
-  />
+  <Group x={element.x} y={element.y} rotation={element.rotation} listening={false}>
+    <Rect
+      x={-3}
+      y={-3}
+      width={element.width + 6}
+      height={element.height + 6}
+      stroke={HIGHLIGHT_COLOR}
+      strokeWidth={2}
+      cornerRadius={3}
+      dash={[6, 3]}
+      listening={false}
+    />
+  </Group>
 );
 
-export const HoverOverlay: React.FC<Props> = ({ element }) => {
-  if (element.visible) {
+export const HoverOverlay: React.FC<Props> = ({ element, isVisibleOnSlide }) => {
+  if (isVisibleOnSlide) {
     return <HighlightRect element={element} />;
   }
 
