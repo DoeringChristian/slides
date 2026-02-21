@@ -16,6 +16,7 @@ import { GridOverlay } from './GridOverlay';
 import { computeGuides } from '../../hooks/useAlignmentGuides';
 import { getBindingTarget, getAnchorPoint } from '../../utils/connectorUtils';
 import { snapToGrid as snapToGridFn } from '../../utils/geometry';
+import { isCtrlHeld } from '../../utils/keyboard';
 import { SLIDE_WIDTH, SLIDE_HEIGHT, CANVAS_PADDING } from '../../utils/constants';
 import { loadImageFile, loadPdfFile } from '../../utils/slideFactory';
 import type { ShapeElement } from '../../types/presentation';
@@ -121,10 +122,25 @@ export const SlideCanvas: React.FC = () => {
     const el = slide.elements[id];
     if (!el) return;
 
+    // Ctrl-constrain: lock to horizontal or vertical axis
+    let constrainedX = x;
+    let constrainedY = y;
+    if (isCtrlHeld()) {
+      const dx = Math.abs(x - el.x);
+      const dy = Math.abs(y - el.y);
+      if (dx >= dy) {
+        constrainedY = el.y; // horizontal lock
+      } else {
+        constrainedX = el.x; // vertical lock
+      }
+      node.x(constrainedX);
+      node.y(constrainedY);
+    }
+
     const { snapToGrid: snappingEnabled, showGrid: isGridVisible, gridSize: grid } = useEditorStore.getState();
 
-    // Compute alignment guides from raw position
-    const dragged = { x, y, width: el.width, height: el.height };
+    // Compute alignment guides from (possibly constrained) position
+    const dragged = { x: constrainedX, y: constrainedY, width: el.width, height: el.height };
     const others = elements
       .filter((e) => e.id !== id && e.visible)
       .map((e) => ({ x: e.x, y: e.y, width: e.width, height: e.height }));
@@ -132,13 +148,13 @@ export const SlideCanvas: React.FC = () => {
     setGuides(snappingEnabled ? result.guides : []);
 
     if (snappingEnabled) {
-      let snappedX = x;
-      let snappedY = y;
+      let snappedX = constrainedX;
+      let snappedY = constrainedY;
 
       // Grid snap (only when grid is visible)
       if (isGridVisible) {
-        snappedX = snapToGridFn(x, grid);
-        snappedY = snapToGridFn(y, grid);
+        snappedX = snapToGridFn(constrainedX, grid);
+        snappedY = snapToGridFn(constrainedY, grid);
       }
 
       // Alignment guides override grid snap
@@ -157,19 +173,32 @@ export const SlideCanvas: React.FC = () => {
     const { snapToGrid: snappingEnabled, showGrid: isGridVisible, gridSize: grid } = useEditorStore.getState();
     const el = slide?.elements[id];
 
-    let snappedX = x;
-    let snappedY = y;
+    // Ctrl-constrain: lock to horizontal or vertical axis
+    let constrainedX = x;
+    let constrainedY = y;
+    if (isCtrlHeld() && el) {
+      const dx = Math.abs(x - el.x);
+      const dy = Math.abs(y - el.y);
+      if (dx >= dy) {
+        constrainedY = el.y;
+      } else {
+        constrainedX = el.x;
+      }
+    }
+
+    let snappedX = constrainedX;
+    let snappedY = constrainedY;
 
     if (snappingEnabled && el) {
-      const dragged = { x, y, width: el.width, height: el.height };
+      const dragged = { x: constrainedX, y: constrainedY, width: el.width, height: el.height };
       const others = elements
         .filter((e) => e.id !== id && e.visible)
         .map((e) => ({ x: e.x, y: e.y, width: e.width, height: e.height }));
       const result = computeGuides(dragged, others);
 
       if (isGridVisible) {
-        snappedX = snapToGridFn(x, grid);
-        snappedY = snapToGridFn(y, grid);
+        snappedX = snapToGridFn(constrainedX, grid);
+        snappedY = snapToGridFn(constrainedY, grid);
       }
 
       if (result.snapX !== null) snappedX = result.snapX;

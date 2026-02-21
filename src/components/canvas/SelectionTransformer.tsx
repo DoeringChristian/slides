@@ -3,7 +3,10 @@ import { Transformer } from 'react-konva';
 import { computeResizeSnap } from '../../hooks/useAlignmentGuides';
 import type { Guide } from '../../hooks/useAlignmentGuides';
 import { CANVAS_PADDING } from '../../utils/constants';
+import { isCtrlHeld } from '../../utils/keyboard';
 import type Konva from 'konva';
+
+const ROTATION_SNAPS = Array.from({ length: 24 }, (_, i) => i * 15); // [0, 15, 30, ..., 345]
 
 interface ElementBounds {
   x: number;
@@ -73,10 +76,29 @@ export const SelectionTransformer: React.FC<Props> = ({ selectedIds, stageRef, l
   const trRef = useRef<Konva.Transformer>(null);
   const [iconReady, setIconReady] = useState(false);
   const lastGuidesRef = useRef<Guide[]>([]);
+  const [ctrlHeld, setCtrlHeld] = useState(false);
 
   useEffect(() => {
     getRotateIcon(COLOR_DEFAULT);
     setIconReady(true);
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Control' || e.key === 'Meta') setCtrlHeld(true);
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Control' || e.key === 'Meta') setCtrlHeld(false);
+    };
+    const onBlur = () => setCtrlHeld(false);
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+    };
   }, []);
 
   useEffect(() => {
@@ -199,6 +221,8 @@ export const SelectionTransformer: React.FC<Props> = ({ selectedIds, stageRef, l
           anchor.fill('');
         }
       }}
+      rotationSnaps={ctrlHeld ? ROTATION_SNAPS : []}
+      rotationSnapTolerance={ctrlHeld ? 10 : 5}
       enabledAnchors={[
         'top-left', 'top-center', 'top-right',
         'middle-left', 'middle-right',

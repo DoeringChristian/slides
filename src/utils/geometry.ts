@@ -30,3 +30,23 @@ export function snapToGrid(value: number, gridSize: number): number {
 export function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
+
+/** Snap angle to nearest increment (in degrees). */
+export function snapAngle(degrees: number, increment: number = 15): number {
+  return Math.round(degrees / increment) * increment;
+}
+
+/** Constrain a point so the angle from `base` to `point` is a multiple of `increment` degrees. */
+export function constrainToAngle(
+  point: { x: number; y: number },
+  base: { x: number; y: number },
+  increment: number = 15
+): { x: number; y: number } {
+  const dx = point.x - base.x;
+  const dy = point.y - base.y;
+  const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+  const snapped = Math.round(angle / increment) * increment;
+  const rad = snapped * Math.PI / 180;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  return { x: base.x + dist * Math.cos(rad), y: base.y + dist * Math.sin(rad) };
+}

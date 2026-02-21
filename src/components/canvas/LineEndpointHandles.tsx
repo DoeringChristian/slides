@@ -1,6 +1,8 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback } from 'react';
 import { Circle } from 'react-konva';
 import type { ShapeElement } from '../../types/presentation';
+import { isCtrlHeld } from '../../utils/keyboard';
+import { constrainToAngle } from '../../utils/geometry';
 import type Konva from 'konva';
 
 interface Props {
@@ -33,15 +35,28 @@ export const LineEndpointHandles: React.FC<Props> = ({
 
   const handleStartDragMove = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
     const node = e.target;
-    const absX = node.x();
-    const absY = node.y();
+    let absX = node.x();
+    let absY = node.y();
+    if (isCtrlHeld()) {
+      const constrained = constrainToAngle({ x: absX, y: absY }, { x: endX, y: endY });
+      absX = constrained.x;
+      absY = constrained.y;
+      node.x(absX);
+      node.y(absY);
+    }
     onBindingDrag?.({ x: absX, y: absY }, 'start');
-  }, [onBindingDrag]);
+  }, [endX, endY, onBindingDrag]);
 
   const handleStartDragEnd = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
     const node = e.target;
-    const newStartX = node.x();
-    const newStartY = node.y();
+    let newStartX = node.x();
+    let newStartY = node.y();
+
+    if (isCtrlHeld()) {
+      const constrained = constrainToAngle({ x: newStartX, y: newStartY }, { x: endX, y: endY });
+      newStartX = constrained.x;
+      newStartY = constrained.y;
+    }
 
     // Check for binding snap
     onBindingDragEnd?.({ x: newStartX, y: newStartY }, 'start');
@@ -63,15 +78,28 @@ export const LineEndpointHandles: React.FC<Props> = ({
 
   const handleEndDragMove = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
     const node = e.target;
-    const absX = node.x();
-    const absY = node.y();
+    let absX = node.x();
+    let absY = node.y();
+    if (isCtrlHeld()) {
+      const constrained = constrainToAngle({ x: absX, y: absY }, { x: startX, y: startY });
+      absX = constrained.x;
+      absY = constrained.y;
+      node.x(absX);
+      node.y(absY);
+    }
     onBindingDrag?.({ x: absX, y: absY }, 'end');
-  }, [onBindingDrag]);
+  }, [startX, startY, onBindingDrag]);
 
   const handleEndDragEnd = useCallback((e: Konva.KonvaEventObject<DragEvent>) => {
     const node = e.target;
-    const newEndX = node.x();
-    const newEndY = node.y();
+    let newEndX = node.x();
+    let newEndY = node.y();
+
+    if (isCtrlHeld()) {
+      const constrained = constrainToAngle({ x: newEndX, y: newEndY }, { x: startX, y: startY });
+      newEndX = constrained.x;
+      newEndY = constrained.y;
+    }
 
     // Check for binding snap
     onBindingDragEnd?.({ x: newEndX, y: newEndY }, 'end');
