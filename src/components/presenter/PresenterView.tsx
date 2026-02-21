@@ -1,10 +1,27 @@
 import React, { useEffect, useCallback, useRef, useState } from 'react';
-import { Stage, Layer, Rect, Text, Ellipse, Line, Arrow, Star, RegularPolygon } from 'react-konva';
+import { Stage, Layer, Rect, Text, Ellipse, Image as KonvaImage, Line, Arrow, Star, RegularPolygon } from 'react-konva';
+import useImage from 'use-image';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 import { interpolateWithVisibility, lerpColor } from '../../utils/interpolation';
-import type { SlideElement, TextElement, ShapeElement, Slide } from '../../types/presentation';
+import type { SlideElement, TextElement, ShapeElement, ImageElement, Slide } from '../../types/presentation';
+
+const PresentationImageElement: React.FC<{ element: ImageElement }> = ({ element }) => {
+  const [image] = useImage(element.src);
+  return (
+    <KonvaImage
+      image={image}
+      x={element.x}
+      y={element.y}
+      width={element.width}
+      height={element.height}
+      rotation={element.rotation}
+      opacity={element.opacity}
+      listening={false}
+    />
+  );
+};
 
 const PresentationSlideElement: React.FC<{ element: SlideElement }> = ({ element }) => {
   if (!element.visible) return null;
@@ -37,6 +54,10 @@ const PresentationSlideElement: React.FC<{ element: SlideElement }> = ({ element
       case 'arrow': return <Arrow {...common} points={el.points ?? [0, 0, el.width, 0]} stroke={el.stroke || el.fill} strokeWidth={el.strokeWidth || 3} fill={el.stroke || el.fill} pointerLength={10} pointerWidth={10} />;
       default: return null;
     }
+  }
+
+  if (element.type === 'image') {
+    return <PresentationImageElement element={element as ImageElement} />;
   }
 
   return null;

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Stage, Layer, Rect, Text, Ellipse, Image as KonvaImage, Line, Arrow, Star, RegularPolygon } from 'react-konva';
+import useImage from 'use-image';
 import type { Slide, SlideElement, TextElement, ShapeElement, ImageElement } from '../../types/presentation';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 
@@ -28,6 +29,22 @@ const HighlightRect: React.FC<{ element: SlideElement }> = ({ element }) => {
       dash={[6 / THUMB_SCALE, 3 / THUMB_SCALE]}
       fill="rgba(59,130,246,0.08)"
       rotation={element.rotation}
+      listening={false}
+    />
+  );
+};
+
+const ThumbnailImageElement: React.FC<{ element: ImageElement }> = ({ element }) => {
+  const [image] = useImage(element.src);
+  return (
+    <KonvaImage
+      image={image}
+      x={element.x}
+      y={element.y}
+      width={element.width}
+      height={element.height}
+      rotation={element.rotation}
+      opacity={element.opacity}
       listening={false}
     />
   );
@@ -62,6 +79,10 @@ const ThumbnailElement: React.FC<{ element: SlideElement; isSelected?: boolean }
         case 'arrow': return <Arrow {...common} points={el.points ?? [0, 0, el.width, 0]} stroke={el.stroke || el.fill} strokeWidth={el.strokeWidth || 3} fill={el.stroke || el.fill} pointerLength={10} pointerWidth={10} />;
         default: return null;
       }
+    }
+
+    if (element.type === 'image') {
+      return <ThumbnailImageElement element={element as ImageElement} />;
     }
 
     return null;
