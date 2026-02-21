@@ -83,3 +83,72 @@ export function computeGuides(
 
   return { guides: uniqueGuides, snapX, snapY };
 }
+
+export function computeResizeSnap(
+  bounds: ElementBounds,
+  others: ElementBounds[],
+  threshold: number = 5
+): {
+  guides: Guide[];
+  leftSnap: number | null;
+  rightSnap: number | null;
+  topSnap: number | null;
+  bottomSnap: number | null;
+} {
+  const guides: Guide[] = [];
+
+  const left = bounds.x;
+  const right = bounds.x + bounds.width;
+  const top = bounds.y;
+  const bottom = bounds.y + bounds.height;
+
+  let bestLeftDist = threshold + 1;
+  let bestRightDist = threshold + 1;
+  let bestTopDist = threshold + 1;
+  let bestBottomDist = threshold + 1;
+  let leftSnap: number | null = null;
+  let rightSnap: number | null = null;
+  let topSnap: number | null = null;
+  let bottomSnap: number | null = null;
+
+  for (const other of others) {
+    const otherVerticals = [other.x, other.x + other.width / 2, other.x + other.width];
+    const otherHorizontals = [other.y, other.y + other.height / 2, other.y + other.height];
+
+    for (const ov of otherVerticals) {
+      const dLeft = Math.abs(left - ov);
+      if (dLeft <= threshold) {
+        if (dLeft < bestLeftDist) { bestLeftDist = dLeft; leftSnap = ov; }
+        guides.push({ type: 'vertical', position: ov });
+      }
+      const dRight = Math.abs(right - ov);
+      if (dRight <= threshold) {
+        if (dRight < bestRightDist) { bestRightDist = dRight; rightSnap = ov; }
+        guides.push({ type: 'vertical', position: ov });
+      }
+    }
+
+    for (const oh of otherHorizontals) {
+      const dTop = Math.abs(top - oh);
+      if (dTop <= threshold) {
+        if (dTop < bestTopDist) { bestTopDist = dTop; topSnap = oh; }
+        guides.push({ type: 'horizontal', position: oh });
+      }
+      const dBottom = Math.abs(bottom - oh);
+      if (dBottom <= threshold) {
+        if (dBottom < bestBottomDist) { bestBottomDist = dBottom; bottomSnap = oh; }
+        guides.push({ type: 'horizontal', position: oh });
+      }
+    }
+  }
+
+  const seen = new Set<string>();
+  const uniqueGuides = guides.filter((g) => {
+    const key = `${g.type}-${g.position}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  return { guides: uniqueGuides, leftSnap, rightSnap, topSnap, bottomSnap };
+}

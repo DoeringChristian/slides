@@ -1,11 +1,25 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Transformer } from 'react-konva';
+import { computeResizeSnap } from '../../hooks/useAlignmentGuides';
+import type { Guide } from '../../hooks/useAlignmentGuides';
+import { CANVAS_PADDING } from '../../utils/constants';
 import type Konva from 'konva';
+
+interface ElementBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
 interface Props {
   selectedIds: string[];
   stageRef: React.RefObject<Konva.Stage | null>;
   locked?: boolean;
+  otherElementBounds?: ElementBounds[];
+  snappingEnabled?: boolean;
+  zoom?: number;
+  onGuides?: (guides: Guide[]) => void;
 }
 
 const COLOR_DEFAULT = '#4285f4';
@@ -55,9 +69,10 @@ function getRotateIcon(color: string): HTMLCanvasElement {
   return rotateIconCache[color];
 }
 
-export const SelectionTransformer: React.FC<Props> = ({ selectedIds, stageRef, locked = false }) => {
+export const SelectionTransformer: React.FC<Props> = ({ selectedIds, stageRef, locked = false, otherElementBounds, snappingEnabled, zoom, onGuides }) => {
   const trRef = useRef<Konva.Transformer>(null);
   const [iconReady, setIconReady] = useState(false);
+  const lastGuidesRef = useRef<Guide[]>([]);
 
   useEffect(() => {
     getRotateIcon(COLOR_DEFAULT);
@@ -101,7 +116,68 @@ export const SelectionTransformer: React.FC<Props> = ({ selectedIds, stageRef, l
         if (Math.abs(newBox.width) < 5 || Math.abs(newBox.height) < 5) {
           return oldBox;
         }
-        return newBox;
+        if (!snappingEnabled || !otherElementBounds?.length || Math.abs(newBox.rotation) > 0.1) {
+          lastGuidesRef.current = [];
+          return newBox;
+        }
+
+        const z = zoom || 1;
+        const pad = CANVAS_PADDING;
+
+        const toElem = (box: typeof newBox) => ({
+          x: box.x / z - pad,
+          y: box.y / z - pad,
+          width: box.width / z,
+          height: box.height / z,
+        });
+
+        const elemNew = toElem(newBox);
+        const elemOld = toElem(oldBox);
+
+        const snaps = computeResizeSnap(elemNew, otherElementBounds, 5);
+        lastGuidesRef.current = snaps.guides;
+
+        const eps = 0.5;
+        const leftMoving = Math.abs(elemNew.x - elemOld.x) > eps;
+        const rightMoving = Math.abs((elemNew.x + elemNew.width) - (elemOld.x + elemOld.width)) > eps;
+        const topMoving = Math.abs(elemNew.y - elemOld.y) > eps;
+        const bottomMoving = Math.abs((elemNew.y + elemNew.height) - (elemOld.y + elemOld.height)) > eps;
+
+        let { x, y, width, height } = elemNew;
+
+        if (leftMoving && snaps.leftSnap !== null) {
+          const right = x + width;
+          x = snaps.leftSnap;
+          width = right - x;
+        }
+        if (rightMoving && snaps.rightSnap !== null) {
+          width = snaps.rightSnap - x;
+        }
+        if (topMoving && snaps.topSnap !== null) {
+          const bottom = y + height;
+          y = snaps.topSnap;
+          height = bottom - y;
+        }
+        if (bottomMoving && snaps.bottomSnap !== null) {
+          height = snaps.bottomSnap - y;
+        }
+
+        if (width < 5 || height < 5) return oldBox;
+
+        return {
+          ...newBox,
+          x: (x + pad) * z,
+          y: (y + pad) * z,
+          width: width * z,
+          height: height * z,
+        };
+      }}
+      onTransform={() => {
+        onGuides?.(lastGuidesRef.current);
+      }}
+      onTransformEnd={() => {
+        lastGuidesRef.current = [];
+        onGuides?.([]);
       }}
       anchorSize={ANCHOR_SIZE}
       anchorCornerRadius={3}

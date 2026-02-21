@@ -41,6 +41,7 @@ export const SlideCanvas: React.FC = () => {
   const showGrid = useEditorStore((s) => s.showGrid);
   const gridSize = useEditorStore((s) => s.gridSize);
   const hoveredObjectId = useEditorStore((s) => s.hoveredObjectId);
+  const snapToGrid = useEditorStore((s) => s.snapToGrid);
   const updateElement = usePresentationStore((s) => s.updateElement);
   const unhideElement = usePresentationStore((s) => s.unhideElement);
   const addEmptySlide = usePresentationStore((s) => s.addEmptySlide);
@@ -57,6 +58,14 @@ export const SlideCanvas: React.FC = () => {
     if (!slide) return [];
     return slide.elementOrder.map((id) => slide.elements[id]).filter(Boolean);
   }, [slide]);
+
+  // Bounds of non-selected visible elements for resize snapping
+  const otherElementBounds = useMemo(() => {
+    const selectedSet = new Set(selectedElementIds);
+    return elements
+      .filter((e) => !selectedSet.has(e.id) && e.visible)
+      .map((e) => ({ x: e.x, y: e.y, width: e.width, height: e.height }));
+  }, [elements, selectedElementIds]);
 
   // Determine if sole selected element is a visible line/arrow
   const soleSelectedLineElement = useMemo(() => {
@@ -351,7 +360,14 @@ export const SlideCanvas: React.FC = () => {
         <Layer>
           <GridOverlay gridSize={gridSize} visible={showGrid} />
           <AlignmentGuides guides={guides} />
-          <SelectionTransformer selectedIds={editingTextId ? [] : unlockedTransformerIds} stageRef={stageRef} />
+          <SelectionTransformer
+            selectedIds={editingTextId ? [] : unlockedTransformerIds}
+            stageRef={stageRef}
+            otherElementBounds={otherElementBounds}
+            snappingEnabled={snapToGrid}
+            zoom={zoom}
+            onGuides={setGuides}
+          />
           <SelectionTransformer selectedIds={editingTextId ? [] : lockedTransformerIds} stageRef={stageRef} locked />
           {soleSelectedLineElement && !editingTextId && (
             <LineEndpointHandles
