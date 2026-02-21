@@ -20,40 +20,40 @@ const SlideInsertRow: React.FC<SlideInsertRowProps> = ({ afterIndex, hasPrevious
   return (
     <div className="group relative h-0 z-10 flex items-center justify-center">
       <div className="absolute inset-x-0 flex items-center justify-center -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-        <div className="flex items-center gap-0.5 bg-white/90 backdrop-blur-sm border border-gray-200 rounded-full shadow-sm px-1 py-0.5 pointer-events-auto">
+        <div className="flex items-center gap-1 bg-white/90 backdrop-blur-sm border border-gray-200 rounded-full shadow-md px-1.5 py-1 pointer-events-auto">
           {hasPrevious && (
             <button
               onClick={() => onInsert(afterIndex, 'previous')}
-              className="p-1 rounded-full hover:bg-blue-100 text-gray-400 hover:text-blue-600 transition-colors"
+              className="p-1.5 rounded-full hover:bg-blue-100 text-gray-400 hover:text-blue-600 transition-colors"
               title="Copy from above"
             >
-              <ArrowDown size={14} />
+              <ArrowDown size={18} />
             </button>
           )}
           {hasPrevious && hasNext && (
             <button
               onClick={() => onInsert(afterIndex, 'interpolate')}
-              className="p-1 rounded-full hover:bg-purple-100 text-gray-400 hover:text-purple-600 transition-colors"
+              className="p-1.5 rounded-full hover:bg-purple-100 text-gray-400 hover:text-purple-600 transition-colors"
               title="Interpolate"
             >
-              <Blend size={14} />
+              <Blend size={18} />
             </button>
           )}
           {hasNext && (
             <button
               onClick={() => onInsert(afterIndex, 'next')}
-              className="p-1 rounded-full hover:bg-blue-100 text-gray-400 hover:text-blue-600 transition-colors"
+              className="p-1.5 rounded-full hover:bg-blue-100 text-gray-400 hover:text-blue-600 transition-colors"
               title="Copy from below"
             >
-              <ArrowUp size={14} />
+              <ArrowUp size={18} />
             </button>
           )}
           <button
             onClick={() => onInsertEmpty(afterIndex)}
-            className="p-1 rounded-full hover:bg-green-100 text-gray-400 hover:text-green-600 transition-colors"
+            className="p-1.5 rounded-full hover:bg-green-100 text-gray-400 hover:text-green-600 transition-colors"
             title="New empty slide"
           >
-            <FilePlus2 size={14} />
+            <FilePlus2 size={18} />
           </button>
         </div>
       </div>

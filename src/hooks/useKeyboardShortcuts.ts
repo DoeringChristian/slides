@@ -38,14 +38,26 @@ export function useKeyboardShortcuts() {
       const activeSlideId = editor.getState().activeSlideId;
       const selectedIds = editor.getState().selectedElementIds;
 
-      // Delete — hide elements instead of removing
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.length > 0 && !isInput) {
-        e.preventDefault();
-        for (const id of selectedIds) {
-          store.getState().hideElement(activeSlideId, id);
+      // Delete — hide elements, or delete slide if nothing selected
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !isInput) {
+        if (selectedIds.length > 0) {
+          e.preventDefault();
+          for (const id of selectedIds) {
+            store.getState().hideElement(activeSlideId, id);
+          }
+          editor.getState().setSelectedElements([]);
+          return;
         }
-        editor.getState().setSelectedElements([]);
-        return;
+        // No elements selected — delete the active slide
+        const slideOrder = store.getState().presentation.slideOrder;
+        if (slideOrder.length > 1) {
+          e.preventDefault();
+          const idx = slideOrder.indexOf(activeSlideId);
+          store.getState().deleteSlide(activeSlideId);
+          const remaining = slideOrder.filter((id) => id !== activeSlideId);
+          editor.getState().setActiveSlide(remaining[Math.min(idx, remaining.length - 1)]);
+          return;
+        }
       }
 
       // Escape
