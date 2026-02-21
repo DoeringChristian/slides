@@ -1,11 +1,55 @@
 import React from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
-import { ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Lock, Unlock } from 'lucide-react';
+import { usePrevKeyframeElement, useNextKeyframeElement } from '../../store/selectors';
+import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, ChevronsUp, ChevronsDown, Lock, Unlock } from 'lucide-react';
 import type { SlideElement } from '../../types/presentation';
 
 interface Props {
   element: SlideElement;
+}
+
+function KeyframeButtons({ element, prev, next, fields, update }: {
+  element: SlideElement;
+  prev: SlideElement | undefined;
+  next: SlideElement | undefined;
+  fields: (keyof SlideElement)[];
+  update: (changes: Partial<SlideElement>) => void;
+}) {
+  const pick = (el: SlideElement) => {
+    const changes: Partial<SlideElement> = {};
+    for (const f of fields) (changes as any)[f] = el[f];
+    return changes;
+  };
+  const differs = (kf: SlideElement | undefined) => {
+    if (!kf) return false;
+    return fields.some((f) => Math.round(kf[f] as number) !== Math.round(element[f] as number));
+  };
+  const prevDiffers = differs(prev);
+  const nextDiffers = differs(next);
+
+  return (
+    <div className="flex items-center gap-0.5 ml-auto">
+      {prevDiffers && (
+        <button
+          onClick={() => update(pick(prev))}
+          className="p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+          title="Reset to previous keyframe"
+        >
+          <ArrowLeft size={12} />
+        </button>
+      )}
+      {nextDiffers && (
+        <button
+          onClick={() => update(pick(next))}
+          className="p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+          title="Reset to next keyframe"
+        >
+          <ArrowRight size={12} />
+        </button>
+      )}
+    </div>
+  );
 }
 
 export const ArrangePanel: React.FC<Props> = ({ element }) => {
@@ -15,6 +59,8 @@ export const ArrangePanel: React.FC<Props> = ({ element }) => {
   const moveBackward = usePresentationStore((s) => s.moveElementBackward);
   const moveToFront = usePresentationStore((s) => s.moveElementToFront);
   const moveToBack = usePresentationStore((s) => s.moveElementToBack);
+  const prev = usePrevKeyframeElement(element.id);
+  const next = useNextKeyframeElement(element.id);
 
   const update = (changes: Partial<SlideElement>) => {
     updateElement(activeSlideId, element.id, changes);
@@ -24,31 +70,49 @@ export const ArrangePanel: React.FC<Props> = ({ element }) => {
     <div className="space-y-3 border-t border-gray-200 pt-3">
       <span className="text-xs font-medium text-gray-500 uppercase">Arrange</span>
 
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className="text-xs text-gray-500 block mb-1">X</label>
-          <input type="number" value={Math.round(element.x)} onChange={(e) => update({ x: Number(e.target.value) })}
-            className="w-full h-7 text-xs border border-gray-300 rounded px-2" />
+      <div>
+        <div className="flex items-center mb-1">
+          <span className="text-xs text-gray-500">Position</span>
+          <KeyframeButtons element={element} prev={prev} next={next} fields={['x', 'y']} update={update} />
         </div>
-        <div>
-          <label className="text-xs text-gray-500 block mb-1">Y</label>
-          <input type="number" value={Math.round(element.y)} onChange={(e) => update({ y: Number(e.target.value) })}
-            className="w-full h-7 text-xs border border-gray-300 rounded px-2" />
-        </div>
-        <div>
-          <label className="text-xs text-gray-500 block mb-1">W</label>
-          <input type="number" value={Math.round(element.width)} onChange={(e) => update({ width: Number(e.target.value) })}
-            className="w-full h-7 text-xs border border-gray-300 rounded px-2" />
-        </div>
-        <div>
-          <label className="text-xs text-gray-500 block mb-1">H</label>
-          <input type="number" value={Math.round(element.height)} onChange={(e) => update({ height: Number(e.target.value) })}
-            className="w-full h-7 text-xs border border-gray-300 rounded px-2" />
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">X</label>
+            <input type="number" value={Math.round(element.x)} onChange={(e) => update({ x: Number(e.target.value) })}
+              className="w-full h-7 text-xs border border-gray-300 rounded px-2" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Y</label>
+            <input type="number" value={Math.round(element.y)} onChange={(e) => update({ y: Number(e.target.value) })}
+              className="w-full h-7 text-xs border border-gray-300 rounded px-2" />
+          </div>
         </div>
       </div>
 
       <div>
-        <label className="text-xs text-gray-500 block mb-1">Rotation</label>
+        <div className="flex items-center mb-1">
+          <span className="text-xs text-gray-500">Size</span>
+          <KeyframeButtons element={element} prev={prev} next={next} fields={['width', 'height']} update={update} />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">W</label>
+            <input type="number" value={Math.round(element.width)} onChange={(e) => update({ width: Number(e.target.value) })}
+              className="w-full h-7 text-xs border border-gray-300 rounded px-2" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">H</label>
+            <input type="number" value={Math.round(element.height)} onChange={(e) => update({ height: Number(e.target.value) })}
+              className="w-full h-7 text-xs border border-gray-300 rounded px-2" />
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div className="flex items-center mb-1">
+          <span className="text-xs text-gray-500">Rotation</span>
+          <KeyframeButtons element={element} prev={prev} next={next} fields={['rotation']} update={update} />
+        </div>
         <input type="number" value={Math.round(element.rotation)} onChange={(e) => update({ rotation: Number(e.target.value) })}
           min={0} max={360} className="w-full h-7 text-xs border border-gray-300 rounded px-2" />
       </div>

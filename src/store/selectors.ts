@@ -38,6 +38,38 @@ export function usePreviousSlideElement(elementId: string): SlideElement | undef
   return prevSlide?.elements[elementId];
 }
 
+/** Find the element on the nearest previous slide where it's visible. */
+export function usePrevKeyframeElement(elementId: string): SlideElement | undefined {
+  const activeSlideId = useEditorStore((s) => s.activeSlideId);
+  const slideOrder = usePresentationStore((s) => s.presentation.slideOrder);
+  const slides = usePresentationStore((s) => s.presentation.slides);
+  return useMemo(() => {
+    if (!elementId) return undefined;
+    const idx = slideOrder.indexOf(activeSlideId);
+    for (let i = idx - 1; i >= 0; i--) {
+      const el = slides[slideOrder[i]]?.elements[elementId];
+      if (el?.visible) return el;
+    }
+    return undefined;
+  }, [elementId, activeSlideId, slideOrder, slides]);
+}
+
+/** Find the element on the nearest next slide where it's visible. */
+export function useNextKeyframeElement(elementId: string): SlideElement | undefined {
+  const activeSlideId = useEditorStore((s) => s.activeSlideId);
+  const slideOrder = usePresentationStore((s) => s.presentation.slideOrder);
+  const slides = usePresentationStore((s) => s.presentation.slides);
+  return useMemo(() => {
+    if (!elementId) return undefined;
+    const idx = slideOrder.indexOf(activeSlideId);
+    for (let i = idx + 1; i < slideOrder.length; i++) {
+      const el = slides[slideOrder[i]]?.elements[elementId];
+      if (el?.visible) return el;
+    }
+    return undefined;
+  }, [elementId, activeSlideId, slideOrder, slides]);
+}
+
 export function useAllObjects(): ObjectMeta[] {
   const objects = usePresentationStore((s) => s.presentation.objects);
   return Object.values(objects);
