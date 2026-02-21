@@ -1,0 +1,131 @@
+export interface Presentation {
+  id: string;
+  title: string;
+  slides: Record<string, Slide>;
+  slideOrder: string[];
+  theme: Theme;
+  width: number;
+  height: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface Slide {
+  id: string;
+  elements: Record<string, SlideElement>;
+  elementOrder: string[];
+  background: SlideBackground;
+  transition: SlideTransition;
+  notes: string;
+}
+
+export type SlideBackground = {
+  type: 'solid';
+  color: string;
+} | {
+  type: 'gradient';
+  from: string;
+  to: string;
+  direction: number;
+} | {
+  type: 'image';
+  src: string;
+};
+
+export interface SlideTransition {
+  type: 'none' | 'fade' | 'slide-left' | 'slide-right' | 'slide-up' | 'zoom';
+  duration: number;
+}
+
+export type SlideElement = TextElement | ShapeElement | ImageElement | GroupElement;
+
+export interface BaseElement {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  opacity: number;
+  locked: boolean;
+  visible: boolean;
+}
+
+export interface TextStyle {
+  fontFamily: string;
+  fontSize: number;
+  fontWeight: 'normal' | 'bold';
+  fontStyle: 'normal' | 'italic';
+  textDecoration: 'none' | 'underline' | 'line-through';
+  color: string;
+  align: 'left' | 'center' | 'right';
+  verticalAlign: 'top' | 'middle' | 'bottom';
+  lineHeight: number;
+}
+
+export interface TextElement extends BaseElement {
+  type: 'text';
+  text: string;
+  style: TextStyle;
+}
+
+export type ShapeType = 'rect' | 'ellipse' | 'triangle' | 'star' | 'line' | 'arrow';
+
+export interface ShapeElement extends BaseElement {
+  type: 'shape';
+  shapeType: ShapeType;
+  fill: string;
+  stroke: string;
+  strokeWidth: number;
+  cornerRadius: number;
+  points?: number[];
+}
+
+export interface ImageElement extends BaseElement {
+  type: 'image';
+  src: string;
+  originalWidth: number;
+  originalHeight: number;
+  cropX: number;
+  cropY: number;
+  cropWidth: number;
+  cropHeight: number;
+}
+
+export interface GroupElement extends BaseElement {
+  type: 'group';
+  childIds: string[];
+}
+
+export interface Theme {
+  name: string;
+  colors: {
+    primary: string;
+    secondary: string;
+    accent: string;
+    background: string;
+    text: string;
+    heading: string;
+  };
+  fonts: {
+    heading: string;
+    body: string;
+  };
+}
+
+export type Tool = 'select' | 'text' | 'rect' | 'ellipse' | 'triangle' | 'star' | 'line' | 'arrow' | 'image';
+
+export interface EditorState {
+  activeSlideId: string;
+  selectedElementIds: string[];
+  zoom: number;
+  tool: Tool;
+  isPresenting: boolean;
+  presentingSlideIndex: number;
+  showGrid: boolean;
+  snapToGrid: boolean;
+  gridSize: number;
+  clipboard: SlideElement[];
+  editingTextId: string | null;
+  isPanning: boolean;
+}

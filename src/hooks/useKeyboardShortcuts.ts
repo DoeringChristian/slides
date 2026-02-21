@@ -1,0 +1,168 @@
+import { useEffect } from 'react';
+import { useEditorStore } from '../store/editorStore';
+import { usePresentationStore } from '../store/presentationStore';
+import { duplicateElement } from '../utils/slideFactory';
+
+export function useKeyboardShortcuts() {
+  const store = usePresentationStore;
+  const editor = useEditorStore;
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+
+      // Don't intercept keyboard shortcuts when typing in inputs
+      if (isInput && !e.ctrlKey && !e.metaKey) return;
+
+      // Don't intercept during presentation
+      if (editor.getState().isPresenting) return;
+
+      const ctrl = e.ctrlKey || e.metaKey;
+
+      // Undo/Redo
+      if (ctrl && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        (store as any).temporal?.getState()?.undo();
+        return;
+      }
+      if (ctrl && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+        e.preventDefault();
+        (store as any).temporal?.getState()?.redo();
+        return;
+      }
+
+      // Skip other shortcuts when in text edit mode
+      if (editor.getState().editingTextId && !ctrl) return;
+
+      const activeSlideId = editor.getState().activeSlideId;
+      const selectedIds = editor.getState().selectedElementIds;
+
+      // Delete
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.length > 0 && !isInput) {
+        e.preventDefault();
+        store.getState().deleteElements(activeSlideId, selectedIds);
+        editor.getState().setSelectedElements([]);
+        return;
+      }
+
+      // Escape
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        if (editor.getState().editingTextId) {
+          editor.getState().setEditingTextId(null);
+        } else {
+          editor.getState().clearSelection();
+          editor.getState().setTool('select');
+        }
+        return;
+      }
+
+      // Copy
+      if (ctrl && e.key === 'c' && selectedIds.length > 0) {
+        e.preventDefault();
+        const slide = store.getState().presentation.slides[activeSlideId];
+        if (slide) {
+          const elements = selectedIds.map((id) => slide.elements[id]).filter(Boolean);
+          editor.getState().setClipboard(elements.map((e) => JSON.parse(JSON.stringify(e))));
+        }
+        return;
+      }
+
+      // Cut
+      if (ctrl && e.key === 'x' && selectedIds.length > 0) {
+        e.preventDefault();
+        const slide = store.getState().presentation.slides[activeSlideId];
+        if (slide) {
+          const elements = selectedIds.map((id) => slide.elements[id]).filter(Boolean);
+          editor.getState().setClipboard(elements.map((e) => JSON.parse(JSON.stringify(e))));
+          store.getState().deleteElements(activeSlideId, selectedIds);
+          editor.getState().setSelectedElements([]);
+        }
+        return;
+      }
+
+      // Paste
+      if (ctrl && e.key === 'v') {
+        const clipboard = editor.getState().clipboard;
+        if (clipboard.length > 0) {
+          e.preventDefault();
+          const newIds: string[] = [];
+          clipboard.forEach((el) => {
+            const dup = duplicateElement(el);
+            store.getState().addElement(activeSlideId, dup);
+            newIds.push(dup.id);
+          });
+          editor.getState().setSelectedElements(newIds);
+        }
+        return;
+      }
+
+      // Select All
+      if (ctrl && e.key === 'a' && !isInput) {
+        e.preventDefault();
+        const slide = store.getState().presentation.slides[activeSlideId];
+        if (slide) {
+          editor.getState().setSelectedElements(slide.elementOrder);
+        }
+        return;
+      }
+
+      // Tool hotkeys
+      if (!ctrl && !isInput) {
+        switch (e.key.toLowerCase()) {
+          case 'v': editor.getState().setTool('select'); break;
+          case 't': editor.getState().setTool('text'); break;
+          case 'r': editor.getState().setTool('rect'); break;
+          case 'e': editor.getState().setTool('ellipse'); break;
+          case 'l': editor.getState().setTool('line'); break;
+          case 'a': editor.getState().setTool('arrow'); break;
+        }
+      }
+
+      // Zoom
+      if (ctrl && (e.key === '=' || e.key === '+')) {
+        e.preventDefault();
+        editor.getState().setZoom(editor.getState().zoom + 0.1);
+      }
+      if (ctrl && e.key === '-') {
+        e.preventDefault();
+        editor.getState().setZoom(editor.getState().zoom - 0.1);
+      }
+      if (ctrl && e.key === '0') {
+        e.preventDefault();
+        editor.getState().setZoom(1);
+      }
+
+      // Bold/Italic/Underline for text
+      if (ctrl && selectedIds.length === 1) {
+        const slide = store.getState().presentation.slides[activeSlideId];
+        const el = slide?.elements[selectedIds[0]];
+        if (el && el.type === 'text') {
+          const textEl = el as import('../types/presentation').TextElement;
+          if (e.key === 'b') {
+            e.preventDefault();
+            store.getState().updateElement(activeSlideId, textEl.id, {
+              style: { ...textEl.style, fontWeight: textEl.style.fontWeight === 'bold' ? 'normal' : 'bold' },
+            } as any);
+          }
+          if (e.key === 'i') {
+            e.preventDefault();
+            store.getState().updateElement(activeSlideId, textEl.id, {
+              style: { ...textEl.style, fontStyle: textEl.style.fontStyle === 'italic' ? 'normal' : 'italic' },
+            } as any);
+          }
+          if (e.key === 'u') {
+            e.preventDefault();
+            store.getState().updateElement(activeSlideId, textEl.id, {
+              style: { ...textEl.style, textDecoration: textEl.style.textDecoration === 'underline' ? 'none' : 'underline' },
+            } as any);
+          }
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+}

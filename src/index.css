@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+:root {
+  --canvas-bg: #f0f0f0;
+  --sidebar-width: 240px;
+  --properties-width: 280px;
+  --header-height: 48px;
+  --toolbar-height: 40px;
+  --statusbar-height: 32px;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #a1a1a1;
+}
+
+/* Text edit overlay */
+.text-edit-overlay textarea {
+  outline: none;
+  border: 2px solid #4285f4;
+  background: white;
+  overflow: hidden;
+  resize: none;
+}
