@@ -11,6 +11,7 @@ import { AlignmentGuides } from './AlignmentGuides';
 import { ConnectorHighlight } from './ConnectorHighlight';
 import { HoverOverlay } from './HoverOverlay';
 import { TextEditOverlay } from './TextEditOverlay';
+import { CropOverlay } from './CropOverlay';
 import { SelectionActionBar } from './SelectionActionBar';
 import { DrawingPreview, useDrawing } from './DrawingLayer';
 import { GridOverlay } from './GridOverlay';
@@ -427,6 +428,7 @@ export const SlideCanvas: React.FC = () => {
       </Stage>
 
       <TextEditOverlay stageRef={containerRef} zoom={zoom} />
+      <CropOverlay stageRef={containerRef} zoom={zoom} />
       {visibleElements.map((el) => (
         <SelectionActionBar
           key={el.id}

@@ -5,6 +5,7 @@ import { usePresentationStore } from './presentationStore';
 interface EditorStore extends EditorState {
   objectDrawerOpen: boolean;
   hoveredObjectId: string | null;
+  croppingElementId: string | null;
   setObjectDrawerOpen: (open: boolean) => void;
   setHoveredObjectId: (id: string | null) => void;
   setActiveSlide: (slideId: string) => void;
@@ -22,6 +23,7 @@ interface EditorStore extends EditorState {
   setClipboard: (elements: SlideElement[]) => void;
   setEditingTextId: (id: string | null) => void;
   setIsPanning: (panning: boolean) => void;
+  setCroppingElementId: (id: string | null) => void;
 }
 
 export const useEditorStore = create<EditorStore>()((set) => ({
@@ -39,6 +41,7 @@ export const useEditorStore = create<EditorStore>()((set) => ({
   isPanning: false,
   objectDrawerOpen: true,
   hoveredObjectId: null,
+  croppingElementId: null,
 
   setObjectDrawerOpen: (open) => set({ objectDrawerOpen: open }),
   setHoveredObjectId: (id) => set({ hoveredObjectId: id }),
@@ -67,4 +70,5 @@ export const useEditorStore = create<EditorStore>()((set) => ({
   setClipboard: (elements) => set({ clipboard: elements }),
   setEditingTextId: (id) => set({ editingTextId: id }),
   setIsPanning: (panning) => set({ isPanning: panning }),
+  setCroppingElementId: (id) => set({ croppingElementId: id }),
 }));

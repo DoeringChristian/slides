@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { ImagePlus, Lock, Unlock } from 'lucide-react';
+import { ImagePlus, Lock, Unlock, Crop } from 'lucide-react';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useEditorStore } from '../../store/editorStore';
 import { ResourcePicker } from '../properties/ResourcePicker';
@@ -15,6 +15,7 @@ interface Props {
 export const SelectionActionBar: React.FC<Props> = ({ element, zoom, isSelected }) => {
   const updateElement = usePresentationStore((s) => s.updateElement);
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
+  const setCroppingElementId = useEditorStore((s) => s.setCroppingElementId);
   const resources = usePresentationStore((s) => s.presentation.resources);
 
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -43,6 +44,11 @@ export const SelectionActionBar: React.FC<Props> = ({ element, zoom, isSelected 
   const handleLockToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
     updateElement(activeSlideId, element.id, { locked: !element.locked });
+  };
+
+  const handleCropClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setCroppingElementId(element.id);
   };
 
   const handleSelectResource = (resourceId: string | null) => {
@@ -98,6 +104,17 @@ export const SelectionActionBar: React.FC<Props> = ({ element, zoom, isSelected 
             >
               {element.locked ? <Lock size={18} /> : <Unlock size={18} />}
             </button>
+
+            {/* Crop button - only for images */}
+            {isImage && (
+              <button
+                onClick={handleCropClick}
+                className="p-1.5 rounded-full hover:bg-green-100 text-gray-400 hover:text-green-600 transition-colors"
+                title="Crop"
+              >
+                <Crop size={18} />
+              </button>
+            )}
 
             {/* Resource picker button - only for images */}
             {isImage && (

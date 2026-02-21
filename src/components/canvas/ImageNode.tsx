@@ -72,11 +72,20 @@ export const ImageNode: React.FC<Props> = ({ element, isSelected, onSelect, onDr
     );
   }
 
+  // Apply crop from element properties
+  const crop = {
+    x: element.cropX,
+    y: element.cropY,
+    width: element.cropWidth,
+    height: element.cropHeight,
+  };
+
   return (
     <Image
       ref={imgRef}
       {...commonProps}
       image={image}
+      crop={crop}
       onTransformEnd={handleTransformEnd}
       perfectDrawEnabled={false}
     />
