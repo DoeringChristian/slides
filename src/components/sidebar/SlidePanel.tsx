@@ -119,6 +119,14 @@ export const SlidePanel: React.FC = () => {
     setActiveSlide(id);
   }, [addEmptySlide, setActiveSlide]);
 
+  const handleDeleteSlide = useCallback((slideId: string) => {
+    if (slideOrder.length <= 1) return;
+    const idx = slideOrder.indexOf(slideId);
+    const nextActive = slideOrder[idx === slideOrder.length - 1 ? idx - 1 : idx + 1];
+    deleteSlide(slideId);
+    if (slideId === activeSlideId) setActiveSlide(nextActive);
+  }, [slideOrder, deleteSlide, activeSlideId, setActiveSlide]);
+
   const handleOpenTemplatePicker = useCallback((insertIndex: number, anchorRect: DOMRect) => {
     setPickerState((prev) => {
       // Toggle off if already open at the same position
@@ -217,8 +225,10 @@ export const SlidePanel: React.FC = () => {
                     slide={slide}
                     index={index}
                     isActive={slide.id === activeSlideId}
+                    canDelete={slides.length > 1}
                     selectedElementIds={selectedElementIds}
                     onClick={() => setActiveSlide(slide.id)}
+                    onDelete={() => handleDeleteSlide(slide.id)}
                   />
                 </div>
 

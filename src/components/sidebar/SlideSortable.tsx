@@ -8,11 +8,13 @@ interface Props {
   slide: Slide;
   index: number;
   isActive: boolean;
+  canDelete: boolean;
   selectedElementIds: string[];
   onClick: () => void;
+  onDelete: () => void;
 }
 
-export const SlideSortable: React.FC<Props> = ({ slide, index, isActive, selectedElementIds, onClick }) => {
+export const SlideSortable: React.FC<Props> = ({ slide, index, isActive, canDelete, selectedElementIds, onClick, onDelete }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: slide.id });
 
   const style: React.CSSProperties = {
@@ -25,7 +27,7 @@ export const SlideSortable: React.FC<Props> = ({ slide, index, isActive, selecte
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <SlideThumbnail slide={slide} index={index} isActive={isActive} selectedElementIds={selectedElementIds} onClick={onClick} />
+      <SlideThumbnail slide={slide} index={index} isActive={isActive} canDelete={canDelete} selectedElementIds={selectedElementIds} onClick={onClick} onDelete={onDelete} />
     </div>
   );
 };

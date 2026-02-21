@@ -1,4 +1,5 @@
 import React from 'react';
+import { X } from 'lucide-react';
 import { Stage, Layer, Rect, Text, Ellipse, Image as KonvaImage, Line, Arrow, Star, RegularPolygon } from 'react-konva';
 import useImage from 'use-image';
 import type { Slide, SlideElement, TextElement, ShapeElement, ImageElement } from '../../types/presentation';
@@ -12,8 +13,10 @@ interface Props {
   slide: Slide;
   index: number;
   isActive: boolean;
+  canDelete: boolean;
   selectedElementIds?: string[];
   onClick: () => void;
+  onDelete: () => void;
 }
 
 const HighlightRect: React.FC<{ element: SlideElement }> = ({ element }) => {
@@ -98,7 +101,7 @@ export const ThumbnailElement: React.FC<{ element: SlideElement; isSelected?: bo
   ) : rendered;
 };
 
-export const SlideThumbnail: React.FC<Props> = ({ slide, index, isActive, selectedElementIds, onClick }) => {
+export const SlideThumbnail: React.FC<Props> = ({ slide, index, isActive, canDelete, selectedElementIds, onClick, onDelete }) => {
   const bgColor = slide.background.type === 'solid' ? slide.background.color : '#ffffff';
   const elements = slide.elementOrder.map((id) => slide.elements[id]).filter(Boolean);
   const selectedSet = selectedElementIds && selectedElementIds.length > 0 ? new Set(selectedElementIds) : null;
@@ -109,7 +112,7 @@ export const SlideThumbnail: React.FC<Props> = ({ slide, index, isActive, select
       className={`flex items-center gap-2 px-2 py-1.5 cursor-pointer group ${isActive ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
     >
       <span className="text-xs text-gray-400 w-5 text-right shrink-0">{index + 1}</span>
-      <div className={`rounded border-2 overflow-hidden ${isActive ? 'border-blue-500' : 'border-gray-200 group-hover:border-gray-300'}`}>
+      <div className={`relative rounded border-2 overflow-hidden ${isActive ? 'border-blue-500' : 'border-gray-200 group-hover:border-gray-300'}`}>
         <Stage width={THUMB_WIDTH} height={THUMB_HEIGHT} scaleX={THUMB_SCALE} scaleY={THUMB_SCALE} listening={false}>
           <Layer listening={false}>
             <Rect x={0} y={0} width={SLIDE_WIDTH} height={SLIDE_HEIGHT} fill={bgColor} listening={false} />
@@ -118,6 +121,15 @@ export const SlideThumbnail: React.FC<Props> = ({ slide, index, isActive, select
             ))}
           </Layer>
         </Stage>
+        {canDelete && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            className="absolute top-1 right-1 p-0.5 rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 hover:bg-red-500 transition-all"
+            title="Delete slide"
+          >
+            <X size={12} />
+          </button>
+        )}
       </div>
     </div>
   );
