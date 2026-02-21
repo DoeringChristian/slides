@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useEditorStore } from '../store/editorStore';
 import { usePresentationStore } from '../store/presentationStore';
-import { duplicateElement, loadImageFile } from '../utils/slideFactory';
+import { duplicateElement, loadImageFile, loadPdfFile } from '../utils/slideFactory';
 
 export function useKeyboardShortcuts() {
   const store = usePresentationStore;
@@ -189,6 +189,24 @@ export function useKeyboardShortcuts() {
 
       const activeSlideId = editor.getState().activeSlideId;
       for (const item of Array.from(items)) {
+        if (item.type === 'application/pdf') {
+          const file = item.getAsFile();
+          if (!file) continue;
+          e.preventDefault();
+          loadPdfFile(file).then((pages) => {
+            const { slideOrder } = store.getState().presentation;
+            let insertIdx = slideOrder.indexOf(activeSlideId) + 1;
+            let lastSlideId = '';
+            for (const pageEl of pages) {
+              const newSlideId = store.getState().addEmptySlide(insertIdx);
+              store.getState().addElement(newSlideId, pageEl);
+              lastSlideId = newSlideId;
+              insertIdx++;
+            }
+            if (lastSlideId) editor.getState().setActiveSlide(lastSlideId);
+          });
+          return;
+        }
         if (item.type.startsWith('image/')) {
           const file = item.getAsFile();
           if (!file) continue;

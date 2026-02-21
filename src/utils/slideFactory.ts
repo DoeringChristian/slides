@@ -99,19 +99,80 @@ export function createImageElement(src: string, originalWidth: number, originalH
   };
 }
 
+function parseSvgDimensions(svgText: string): { width: number; height: number } | null {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(svgText, 'image/svg+xml');
+  const svg = doc.documentElement;
+  const w = parseFloat(svg.getAttribute('width') || '');
+  const h = parseFloat(svg.getAttribute('height') || '');
+  if (w > 0 && h > 0) return { width: w, height: h };
+  const vb = svg.getAttribute('viewBox');
+  if (vb) {
+    const parts = vb.trim().split(/[\s,]+/);
+    if (parts.length === 4) {
+      const vw = parseFloat(parts[2]);
+      const vh = parseFloat(parts[3]);
+      if (vw > 0 && vh > 0) return { width: vw, height: vh };
+    }
+  }
+  return null;
+}
+
 export function loadImageFile(file: Blob, overrides?: Partial<ImageElement>): Promise<ImageElement> {
+  const isSvg = file.type === 'image/svg+xml' || (file instanceof File && file.name.endsWith('.svg'));
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (ev) => {
       const src = ev.target?.result as string;
-      const img = new window.Image();
-      img.onload = () => resolve(createImageElement(src, img.width, img.height, overrides));
-      img.onerror = () => reject(new Error('Failed to load image'));
-      img.src = src;
+      if (isSvg) {
+        // Decode SVG text to get reliable dimensions
+        const svgText = atob(src.split(',')[1] || '');
+        const dims = parseSvgDimensions(svgText);
+        const img = new window.Image();
+        img.onload = () => {
+          const w = dims?.width || img.width || SLIDE_WIDTH * 0.6;
+          const h = dims?.height || img.height || SLIDE_HEIGHT * 0.6;
+          resolve(createImageElement(src, w, h, overrides));
+        };
+        img.onerror = () => reject(new Error('Failed to load SVG'));
+        img.src = src;
+      } else {
+        const img = new window.Image();
+        img.onload = () => resolve(createImageElement(src, img.width, img.height, overrides));
+        img.onerror = () => reject(new Error('Failed to load image'));
+        img.src = src;
+      }
     };
     reader.onerror = () => reject(new Error('Failed to read file'));
     reader.readAsDataURL(file);
   });
+}
+
+export async function loadPdfFile(file: Blob): Promise<ImageElement[]> {
+  const pdfjs = await import('pdfjs-dist');
+  pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+    'pdfjs-dist/build/pdf.worker.min.mjs',
+    import.meta.url,
+  ).href;
+
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+  const elements: ImageElement[] = [];
+
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const scale = 2; // render at 2x for quality
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext('2d')!;
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    const src = canvas.toDataURL('image/png');
+    elements.push(createImageElement(src, viewport.width / scale, viewport.height / scale));
+  }
+
+  return elements;
 }
 
 export function createPresentation(): Presentation {

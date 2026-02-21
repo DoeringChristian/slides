@@ -17,7 +17,7 @@ import { computeGuides } from '../../hooks/useAlignmentGuides';
 import { getBindingTarget, getAnchorPoint } from '../../utils/connectorUtils';
 import { snapToGrid as snapToGridFn } from '../../utils/geometry';
 import { SLIDE_WIDTH, SLIDE_HEIGHT, CANVAS_PADDING } from '../../utils/constants';
-import { loadImageFile } from '../../utils/slideFactory';
+import { loadImageFile, loadPdfFile } from '../../utils/slideFactory';
 import type { ShapeElement } from '../../types/presentation';
 import type Konva from 'konva';
 
@@ -43,6 +43,8 @@ export const SlideCanvas: React.FC = () => {
   const hoveredObjectId = useEditorStore((s) => s.hoveredObjectId);
   const updateElement = usePresentationStore((s) => s.updateElement);
   const unhideElement = usePresentationStore((s) => s.unhideElement);
+  const addEmptySlide = usePresentationStore((s) => s.addEmptySlide);
+  const setActiveSlide = useEditorStore((s) => s.setActiveSlide);
 
   const slide = useActiveSlide();
   const objectElements = useObjectElements();
@@ -251,14 +253,28 @@ export const SlideCanvas: React.FC = () => {
     const dropX = (e.clientX - rect.left) / zoom - CANVAS_PADDING;
     const dropY = (e.clientY - rect.top) / zoom - CANVAS_PADDING;
 
-    Array.from(files).forEach((file) => {
-      if (!file.type.startsWith('image/')) return;
-      loadImageFile(file, { x: dropX, y: dropY }).then((el) => {
+    const { slideOrder } = usePresentationStore.getState().presentation;
+    const currentIdx = slideOrder.indexOf(activeSlideId);
+
+    Array.from(files).forEach(async (file) => {
+      if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+        const pages = await loadPdfFile(file);
+        let insertIdx = currentIdx + 1;
+        let lastSlideId = '';
+        for (const pageEl of pages) {
+          const newSlideId = addEmptySlide(insertIdx);
+          addElement(newSlideId, pageEl);
+          lastSlideId = newSlideId;
+          insertIdx++;
+        }
+        if (lastSlideId) setActiveSlide(lastSlideId);
+      } else if (file.type.startsWith('image/') || file.name.endsWith('.svg')) {
+        const el = await loadImageFile(file, { x: dropX, y: dropY });
         addElement(activeSlideId, el);
         setSelectedElements([el.id]);
-      });
+      }
     });
-  }, [activeSlideId, zoom, unhideElement, setSelectedElements, addElement]);
+  }, [activeSlideId, zoom, unhideElement, setSelectedElements, addElement, addEmptySlide, setActiveSlide]);
 
   // Ctrl+wheel and trackpad pinch-to-zoom
   useEffect(() => {

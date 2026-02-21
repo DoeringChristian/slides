@@ -4,7 +4,7 @@ import { usePresentationStore } from '../../store/presentationStore';
 import { useSelectedElements } from '../../store/selectors';
 import { TextFormatBar } from './TextFormatBar';
 import { ShapeMenu } from './ShapeMenu';
-import { createImageElement, duplicateElement } from '../../utils/slideFactory';
+import { duplicateElement, loadImageFile, loadPdfFile } from '../../utils/slideFactory';
 import {
   MousePointer2, Type, Square, Circle, Triangle, Star, Minus, MoveRight,
   Image, Trash2, Copy, Clipboard, Scissors,
@@ -35,26 +35,34 @@ export const Toolbar: React.FC = () => {
   const setSelectedElements = useEditorStore((s) => s.setSelectedElements);
   const addElement = usePresentationStore((s) => s.addElement);
 
+  const addEmptySlide = usePresentationStore((s) => s.addEmptySlide);
+  const setActiveSlide = useEditorStore((s) => s.setActiveSlide);
+
   const handleImageTool = () => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = 'image/*';
-    input.onchange = (e) => {
+    input.accept = 'image/*,.svg,.pdf';
+    input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        const src = ev.target?.result as string;
-        const img = new window.Image();
-        img.onload = () => {
-          const el = createImageElement(src, img.width, img.height);
-          addElement(activeSlideId, el);
-          setSelectedElements([el.id]);
-          setTool('select');
-        };
-        img.src = src;
-      };
-      reader.readAsDataURL(file);
+      if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+        const pages = await loadPdfFile(file);
+        const { slideOrder } = usePresentationStore.getState().presentation;
+        let insertIdx = slideOrder.indexOf(activeSlideId) + 1;
+        let lastSlideId = '';
+        for (const pageEl of pages) {
+          const newSlideId = addEmptySlide(insertIdx);
+          addElement(newSlideId, pageEl);
+          lastSlideId = newSlideId;
+          insertIdx++;
+        }
+        if (lastSlideId) setActiveSlide(lastSlideId);
+      } else {
+        const el = await loadImageFile(file);
+        addElement(activeSlideId, el);
+        setSelectedElements([el.id]);
+      }
+      setTool('select');
     };
     input.click();
   };
