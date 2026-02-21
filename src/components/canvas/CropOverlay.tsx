@@ -266,11 +266,19 @@ export const CropOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
   const cropDisplayHeight = cropState.height * scale;
 
   return (
-    <div
-      ref={overlayRef}
-      className="absolute"
-      style={{
-        left,
+    <>
+      {/* Full-screen backdrop to catch clicks outside the image */}
+      <div
+        className="fixed inset-0"
+        onClick={handleApply}
+        style={{ zIndex: 999 }}
+      />
+      <div
+        ref={overlayRef}
+        className="absolute"
+        onClick={handleApply}
+        style={{
+          left,
         top,
         width: fullWidth,
         height: fullHeight,
@@ -288,11 +296,11 @@ export const CropOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
       />
 
       {/* Dimmed overlays for cropped-out regions (4 rectangles around crop area) */}
-      {/* Only render the parts that are within the image bounds */}
       {/* Top */}
       {cropDisplayY > 0 && (
         <div
           className="absolute bg-black/50"
+          onClick={handleApply}
           style={{
             left: 0,
             top: 0,
@@ -305,6 +313,7 @@ export const CropOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
       {cropDisplayY + cropDisplayHeight < fullHeight && (
         <div
           className="absolute bg-black/50"
+          onClick={handleApply}
           style={{
             left: 0,
             top: Math.max(0, cropDisplayY + cropDisplayHeight),
@@ -317,6 +326,7 @@ export const CropOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
       {cropDisplayX > 0 && (
         <div
           className="absolute bg-black/50"
+          onClick={handleApply}
           style={{
             left: 0,
             top: Math.max(0, cropDisplayY),
@@ -329,6 +339,7 @@ export const CropOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
       {cropDisplayX + cropDisplayWidth < fullWidth && (
         <div
           className="absolute bg-black/50"
+          onClick={handleApply}
           style={{
             left: Math.max(0, cropDisplayX + cropDisplayWidth),
             top: Math.max(0, cropDisplayY),
@@ -358,6 +369,7 @@ export const CropOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
           width: cropDisplayWidth,
           height: cropDisplayHeight,
         }}
+        onClick={(e) => e.stopPropagation()}
         onMouseDown={(e) => handleMouseDown(e, 'move')}
       >
         {/* Corner handles */}
@@ -395,7 +407,7 @@ export const CropOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
           <Check size={16} />
         </button>
         <button
-          onClick={handleCancel}
+          onClick={(e) => { e.stopPropagation(); handleCancel(); }}
           className="p-1.5 rounded-full bg-gray-500 text-white hover:bg-gray-600 transition-colors shadow-md"
           title="Cancel (Escape)"
         >
@@ -403,5 +415,6 @@ export const CropOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
         </button>
       </div>
     </div>
+    </>
   );
 };
