@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { temporal } from 'zundo';
-import type { Presentation, Slide, SlideElement, ShapeElement, ObjectMeta } from '../types/presentation';
+import type { Presentation, Slide, SlideElement, ShapeElement, ObjectMeta, SlideTemplate } from '../types/presentation';
+import { generateId } from '../utils/idGenerator';
 import { createPresentation, createSlide, duplicateElement, copySlideAsKeyframe, generateObjectName } from '../utils/slideFactory';
 import { resolveBindingPoint } from '../utils/connectorUtils';
 
@@ -71,6 +72,11 @@ interface PresentationStore {
   unhideElement: (slideId: string, elementId: string, position?: { x: number; y: number }) => void;
   resetElementToKeyframe: (slideId: string, elementId: string) => void;
   renameObject: (objectId: string, name: string) => void;
+
+  // Template actions
+  saveAsTemplate: (slideId: string, name: string) => string;
+  addSlideFromTemplate: (templateId: string, index?: number) => string;
+  deleteTemplate: (templateId: string) => void;
 
   // Presentation actions
   updateTitle: (title: string) => void;
@@ -654,6 +660,97 @@ export const usePresentationStore = create<PresentationStore>()(
                 ...state.presentation.objects,
                 [objectId]: { ...state.presentation.objects[objectId], name },
               },
+              updatedAt: Date.now(),
+            },
+          };
+        });
+      },
+
+      saveAsTemplate: (slideId: string, name: string) => {
+        let templateId = '';
+        set((state) => {
+          const slide = state.presentation.slides[slideId];
+          if (!slide) return state;
+
+          templateId = generateId();
+          const template: SlideTemplate = {
+            id: templateId,
+            name,
+            elements: JSON.parse(JSON.stringify(slide.elements)),
+            elementOrder: [...slide.elementOrder],
+            background: JSON.parse(JSON.stringify(slide.background)),
+          };
+
+          return {
+            presentation: {
+              ...state.presentation,
+              templates: { ...state.presentation.templates, [templateId]: template },
+              updatedAt: Date.now(),
+            },
+          };
+        });
+        return templateId;
+      },
+
+      addSlideFromTemplate: (templateId: string, index?: number) => {
+        let newSlideId = '';
+        set((state) => {
+          const template = state.presentation.templates[templateId];
+          if (!template) return state;
+
+          const newSlide = createSlide();
+          newSlideId = newSlide.id;
+
+          // Deep-copy elements from template, preserving original IDs, setting locked: true
+          const elements: Record<string, SlideElement> = {};
+          for (const elId of template.elementOrder) {
+            const el = template.elements[elId];
+            if (el) {
+              elements[elId] = { ...JSON.parse(JSON.stringify(el)), locked: true };
+            }
+          }
+          newSlide.elements = elements;
+          newSlide.elementOrder = [...template.elementOrder];
+          newSlide.background = JSON.parse(JSON.stringify(template.background));
+
+          // Register objects if not already present
+          const objects = { ...state.presentation.objects };
+          for (const elId of template.elementOrder) {
+            const el = elements[elId];
+            if (el && !objects[elId]) {
+              objects[elId] = {
+                id: elId,
+                name: generateObjectName(getObjectSubtype(el), objects),
+                type: getObjectType(el),
+              };
+            }
+          }
+
+          const { slideOrder, slides } = state.presentation;
+          const insertIndex = index !== undefined ? index : slideOrder.length;
+          const newOrder = [...slideOrder];
+          newOrder.splice(insertIndex, 0, newSlide.id);
+
+          return {
+            presentation: {
+              ...state.presentation,
+              slides: { ...slides, [newSlide.id]: newSlide },
+              slideOrder: newOrder,
+              objects,
+              updatedAt: Date.now(),
+            },
+          };
+        });
+        return newSlideId;
+      },
+
+      deleteTemplate: (templateId: string) => {
+        set((state) => {
+          const { [templateId]: _removed, ...remaining } = state.presentation.templates;
+          return {
+            presentation: {
+              ...state.presentation,
+              templates: remaining,
               updatedAt: Date.now(),
             },
           };

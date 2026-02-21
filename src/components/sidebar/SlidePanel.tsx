@@ -1,11 +1,12 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { SlideSortable } from './SlideSortable';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useEditorStore } from '../../store/editorStore';
 import { useOrderedSlides } from '../../store/selectors';
-import { Plus, ArrowDown, ArrowUp, Blend, FilePlus2 } from 'lucide-react';
+import { Plus, ArrowDown, ArrowUp, Blend, FilePlus2, LayoutTemplate } from 'lucide-react';
+import { TemplatePicker } from './TemplatePicker';
 import type { DragEndEvent } from '@dnd-kit/core';
 
 interface SlideInsertRowProps {
@@ -74,6 +75,9 @@ export const SlidePanel: React.FC = () => {
   const selectedElementIds = useEditorStore((s) => s.selectedElementIds);
   const setActiveSlide = useEditorStore((s) => s.setActiveSlide);
 
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+  const templateBtnRef = useRef<HTMLButtonElement>(null);
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   );
@@ -136,13 +140,28 @@ export const SlidePanel: React.FC = () => {
     <div className="w-60 bg-white border-r border-gray-200 flex flex-col shrink-0">
       <div className="p-2 border-b border-gray-200 flex items-center justify-between">
         <span className="text-xs font-medium text-gray-500 uppercase">Slides</span>
-        <button
-          onClick={handleAddSlide}
-          className="p-1 rounded hover:bg-gray-100 text-gray-600"
-          title="Add Slide"
-        >
-          <Plus size={16} />
-        </button>
+        <div className="relative flex items-center gap-0.5">
+          <button
+            ref={templateBtnRef}
+            onClick={() => setTemplatePickerOpen((v) => !v)}
+            className="p-1 rounded hover:bg-gray-100 text-gray-600"
+            title="Templates"
+          >
+            <LayoutTemplate size={16} />
+          </button>
+          <TemplatePicker
+            open={templatePickerOpen}
+            onClose={() => setTemplatePickerOpen(false)}
+            anchorRef={templateBtnRef}
+          />
+          <button
+            onClick={handleAddSlide}
+            className="p-1 rounded hover:bg-gray-100 text-gray-600"
+            title="Add Slide"
+          >
+            <Plus size={16} />
+          </button>
+        </div>
       </div>
       <div className="flex-1 overflow-y-auto">
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>

@@ -4,12 +4,21 @@ export interface ObjectMeta {
   type: 'text' | 'shape' | 'image';
 }
 
+export interface SlideTemplate {
+  id: string;
+  name: string;
+  elements: Record<string, SlideElement>;
+  elementOrder: string[];
+  background: SlideBackground;
+}
+
 export interface Presentation {
   id: string;
   title: string;
   slides: Record<string, Slide>;
   slideOrder: string[];
   objects: Record<string, ObjectMeta>;
+  templates: Record<string, SlideTemplate>;
   theme: Theme;
   width: number;
   height: number;

@@ -1,6 +1,6 @@
 import { generateId } from './idGenerator';
 import { DEFAULT_TEXT_STYLE, DEFAULT_SHAPE_PROPS, SLIDE_WIDTH, SLIDE_HEIGHT } from './constants';
-import type { Slide, TextElement, ShapeElement, ImageElement, ShapeType, SlideElement, Presentation, Theme, ObjectMeta } from '../types/presentation';
+import type { Slide, TextElement, ShapeElement, ImageElement, ShapeType, SlideElement, Presentation, Theme, ObjectMeta, SlideTemplate, SlideBackground } from '../types/presentation';
 
 export function createDefaultTheme(): Theme {
   return {
@@ -107,6 +107,7 @@ export function createPresentation(): Presentation {
     slides: { [firstSlide.id]: firstSlide },
     slideOrder: [firstSlide.id],
     objects: {},
+    templates: {},
     theme: createDefaultTheme(),
     width: SLIDE_WIDTH,
     height: SLIDE_HEIGHT,
