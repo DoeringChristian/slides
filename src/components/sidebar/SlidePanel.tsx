@@ -19,7 +19,7 @@ interface SlideInsertRowProps {
 const SlideInsertRow: React.FC<SlideInsertRowProps> = ({ afterIndex, hasPrevious, hasNext, onInsert, onInsertEmpty }) => {
   return (
     <div className="group relative h-0 z-10 flex items-center justify-center">
-      <div className="absolute inset-x-0 flex items-center justify-center -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+      <div className="absolute inset-x-0 top-0 flex items-center justify-center -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
         <div className="flex items-center gap-1 bg-white/90 backdrop-blur-sm border border-gray-200 rounded-full shadow-md px-1.5 py-1 pointer-events-auto">
           {hasPrevious && (
             <button
