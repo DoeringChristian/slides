@@ -2,6 +2,8 @@ import React, { useRef, useEffect, useState } from 'react';
 import { Transformer } from 'react-konva';
 import { computeResizeSnap } from '../../hooks/useAlignmentGuides';
 import type { Guide } from '../../hooks/useAlignmentGuides';
+import { useEditorStore } from '../../store/editorStore';
+import { getMarginLayout, getMarginBounds } from '../../utils/marginLayouts';
 import { CANVAS_PADDING } from '../../utils/constants';
 import { isCtrlHeld } from '../../utils/keyboard';
 import type Konva from 'konva';
@@ -138,7 +140,14 @@ export const SelectionTransformer: React.FC<Props> = ({ selectedIds, stageRef, l
         if (Math.abs(newBox.width) < 5 || Math.abs(newBox.height) < 5) {
           return oldBox;
         }
-        if (!snappingEnabled || !otherElementBounds?.length || Math.abs(newBox.rotation) > 0.1) {
+
+        const marginLayoutId = useEditorStore.getState().marginLayoutId;
+        const marginLayout = getMarginLayout(marginLayoutId);
+        const marginBounds = marginLayout ? getMarginBounds(marginLayout) : null;
+
+        // Skip snapping if disabled, rotated, or no snap targets
+        const hasSnapTargets = (otherElementBounds?.length || 0) > 0 || marginBounds !== null;
+        if (!snappingEnabled || !hasSnapTargets || Math.abs(newBox.rotation) > 0.1) {
           lastGuidesRef.current = [];
           return newBox;
         }
@@ -156,7 +165,7 @@ export const SelectionTransformer: React.FC<Props> = ({ selectedIds, stageRef, l
         const elemNew = toElem(newBox);
         const elemOld = toElem(oldBox);
 
-        const snaps = computeResizeSnap(elemNew, otherElementBounds, 5);
+        const snaps = computeResizeSnap(elemNew, otherElementBounds || [], 5, marginBounds);
         lastGuidesRef.current = snaps.guides;
 
         const eps = 0.5;

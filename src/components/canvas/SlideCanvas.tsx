@@ -15,7 +15,9 @@ import { CropOverlay } from './CropOverlay';
 import { SelectionActionBar } from './SelectionActionBar';
 import { DrawingPreview, useDrawing } from './DrawingLayer';
 import { GridOverlay } from './GridOverlay';
+import { MarginGuidesOverlay } from './MarginGuidesOverlay';
 import { computeGuides } from '../../hooks/useAlignmentGuides';
+import { getMarginLayout, getMarginBounds } from '../../utils/marginLayouts';
 import { getBindingTarget, getAnchorPoint } from '../../utils/connectorUtils';
 import { snapToGrid as snapToGridFn } from '../../utils/geometry';
 import { isCtrlHeld } from '../../utils/keyboard';
@@ -45,6 +47,7 @@ export const SlideCanvas: React.FC = () => {
   const gridSize = useEditorStore((s) => s.gridSize);
   const hoveredObjectId = useEditorStore((s) => s.hoveredObjectId);
   const snapToGrid = useEditorStore((s) => s.snapToGrid);
+  const marginLayoutId = useEditorStore((s) => s.marginLayoutId);
   const updateElement = usePresentationStore((s) => s.updateElement);
   const unhideElement = usePresentationStore((s) => s.unhideElement);
   const addEmptySlide = usePresentationStore((s) => s.addEmptySlide);
@@ -139,14 +142,16 @@ export const SlideCanvas: React.FC = () => {
       node.y(constrainedY);
     }
 
-    const { snapToGrid: snappingEnabled, showGrid: isGridVisible, gridSize: grid } = useEditorStore.getState();
+    const { snapToGrid: snappingEnabled, showGrid: isGridVisible, gridSize: grid, marginLayoutId: currentMarginLayoutId } = useEditorStore.getState();
+    const marginLayout = getMarginLayout(currentMarginLayoutId);
+    const marginBounds = marginLayout ? getMarginBounds(marginLayout) : null;
 
     // Compute alignment guides from (possibly constrained) position
     const dragged = { x: constrainedX, y: constrainedY, width: el.width, height: el.height };
     const others = elements
       .filter((e) => e.id !== id && e.visible)
       .map((e) => ({ x: e.x, y: e.y, width: e.width, height: e.height }));
-    const result = computeGuides(dragged, others);
+    const result = computeGuides(dragged, others, 5, marginBounds);
     setGuides(snappingEnabled ? result.guides : []);
 
     if (snappingEnabled) {
@@ -172,7 +177,9 @@ export const SlideCanvas: React.FC = () => {
     setGuides([]);
     if (!activeSlideId) return;
 
-    const { snapToGrid: snappingEnabled, showGrid: isGridVisible, gridSize: grid } = useEditorStore.getState();
+    const { snapToGrid: snappingEnabled, showGrid: isGridVisible, gridSize: grid, marginLayoutId: currentMarginLayoutId } = useEditorStore.getState();
+    const marginLayout = getMarginLayout(currentMarginLayoutId);
+    const marginBounds = marginLayout ? getMarginBounds(marginLayout) : null;
     const el = slide?.elements[id];
 
     // Ctrl-constrain: lock to horizontal or vertical axis
@@ -196,7 +203,7 @@ export const SlideCanvas: React.FC = () => {
       const others = elements
         .filter((e) => e.id !== id && e.visible)
         .map((e) => ({ x: e.x, y: e.y, width: e.width, height: e.height }));
-      const result = computeGuides(dragged, others);
+      const result = computeGuides(dragged, others, 5, marginBounds);
 
       if (isGridVisible) {
         snappedX = snapToGridFn(constrainedX, grid);
@@ -399,6 +406,7 @@ export const SlideCanvas: React.FC = () => {
         {/* Layer 3: UI */}
         <Layer>
           <GridOverlay gridSize={gridSize} visible={showGrid} />
+          <MarginGuidesOverlay />
           <AlignmentGuides guides={guides} />
           <SelectionTransformer
             selectedIds={editingTextId ? [] : unlockedTransformerIds}

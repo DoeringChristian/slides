@@ -2,10 +2,21 @@ import { create } from 'zustand';
 import type { Tool, SlideElement, EditorState } from '../types/presentation';
 import { usePresentationStore } from './presentationStore';
 
+export interface MarginLayout {
+  id: string;
+  name: string;
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
 interface EditorStore extends EditorState {
   objectDrawerOpen: boolean;
   hoveredObjectId: string | null;
   croppingElementId: string | null;
+  marginLayoutId: string | null;
+  showMarginGuides: boolean;
   setObjectDrawerOpen: (open: boolean) => void;
   setHoveredObjectId: (id: string | null) => void;
   setActiveSlide: (slideId: string) => void;
@@ -24,6 +35,8 @@ interface EditorStore extends EditorState {
   setEditingTextId: (id: string | null) => void;
   setIsPanning: (panning: boolean) => void;
   setCroppingElementId: (id: string | null) => void;
+  setMarginLayoutId: (id: string | null) => void;
+  setShowMarginGuides: (show: boolean) => void;
 }
 
 export const useEditorStore = create<EditorStore>()((set) => ({
@@ -42,6 +55,8 @@ export const useEditorStore = create<EditorStore>()((set) => ({
   objectDrawerOpen: true,
   hoveredObjectId: null,
   croppingElementId: null,
+  marginLayoutId: null,
+  showMarginGuides: true,
 
   setObjectDrawerOpen: (open) => set({ objectDrawerOpen: open }),
   setHoveredObjectId: (id) => set({ hoveredObjectId: id }),
@@ -71,4 +86,6 @@ export const useEditorStore = create<EditorStore>()((set) => ({
   setEditingTextId: (id) => set({ editingTextId: id }),
   setIsPanning: (panning) => set({ isPanning: panning }),
   setCroppingElementId: (id) => set({ croppingElementId: id }),
+  setMarginLayoutId: (id) => set({ marginLayoutId: id }),
+  setShowMarginGuides: (show) => set({ showMarginGuides: show }),
 }));
