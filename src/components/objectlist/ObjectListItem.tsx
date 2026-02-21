@@ -11,6 +11,8 @@ interface Props {
   onSelect: () => void;
   onRename: (name: string) => void;
   onToggleVisibility: () => void;
+  onHover: () => void;
+  onHoverEnd: () => void;
 }
 
 export const ObjectListItem: React.FC<Props> = ({
@@ -21,6 +23,8 @@ export const ObjectListItem: React.FC<Props> = ({
   onSelect,
   onRename,
   onToggleVisibility,
+  onHover,
+  onHoverEnd,
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(object.name);
@@ -59,6 +63,8 @@ export const ObjectListItem: React.FC<Props> = ({
           : 'border-gray-200 hover:border-gray-300 bg-white'
       } ${!isVisibleOnSlide ? 'opacity-50' : ''}`}
       onClick={onSelect}
+      onMouseEnter={onHover}
+      onMouseLeave={onHoverEnd}
       draggable
       onDragStart={handleDragStart}
     >

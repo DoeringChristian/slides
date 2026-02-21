@@ -2,13 +2,14 @@ import React, { useRef, useCallback, useMemo, useState, useEffect, type DragEven
 import { Stage, Layer } from 'react-konva';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
-import { useActiveSlide } from '../../store/selectors';
+import { useActiveSlide, useObjectElements } from '../../store/selectors';
 import { CanvasBackground } from './CanvasBackground';
 import { ElementRenderer } from './ElementRenderer';
 import { SelectionTransformer } from './SelectionTransformer';
 import { LineEndpointHandles } from './LineEndpointHandles';
 import { AlignmentGuides } from './AlignmentGuides';
 import { ConnectorHighlight } from './ConnectorHighlight';
+import { HoverOverlay } from './HoverOverlay';
 import { TextEditOverlay } from './TextEditOverlay';
 import { DrawingPreview, useDrawing } from './DrawingLayer';
 import { GridOverlay } from './GridOverlay';
@@ -38,10 +39,12 @@ export const SlideCanvas: React.FC = () => {
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const showGrid = useEditorStore((s) => s.showGrid);
   const gridSize = useEditorStore((s) => s.gridSize);
+  const hoveredObjectId = useEditorStore((s) => s.hoveredObjectId);
   const updateElement = usePresentationStore((s) => s.updateElement);
   const unhideElement = usePresentationStore((s) => s.unhideElement);
 
   const slide = useActiveSlide();
+  const objectElements = useObjectElements();
   const { drawState, handleMouseDown, handleMouseMove, handleMouseUp } = useDrawing();
 
   const [guides, setGuides] = useState<Guide[]>([]);
@@ -241,6 +244,12 @@ export const SlideCanvas: React.FC = () => {
     return () => el.removeEventListener('wheel', handleWheel);
   }, [setZoom]);
 
+  // Resolve hovered element: prefer current slide, fall back to objectElements
+  const hoveredElement = useMemo(() => {
+    if (!hoveredObjectId) return null;
+    return slide?.elements[hoveredObjectId] ?? objectElements[hoveredObjectId] ?? null;
+  }, [hoveredObjectId, slide, objectElements]);
+
   const stageWidth = SLIDE_WIDTH * zoom;
   const stageHeight = SLIDE_HEIGHT * zoom;
   const cursor = tool === 'select' ? 'default' : 'crosshair';
@@ -298,6 +307,7 @@ export const SlideCanvas: React.FC = () => {
           {connectorHighlightId && slide && slide.elements[connectorHighlightId] && (
             <ConnectorHighlight element={slide.elements[connectorHighlightId]} />
           )}
+          {hoveredElement && <HoverOverlay element={hoveredElement} />}
           <DrawingPreview drawState={drawState} tool={tool} />
         </Layer>
       </Stage>

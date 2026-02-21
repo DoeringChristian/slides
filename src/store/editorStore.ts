@@ -4,7 +4,9 @@ import { usePresentationStore } from './presentationStore';
 
 interface EditorStore extends EditorState {
   objectDrawerOpen: boolean;
+  hoveredObjectId: string | null;
   setObjectDrawerOpen: (open: boolean) => void;
+  setHoveredObjectId: (id: string | null) => void;
   setActiveSlide: (slideId: string) => void;
   setSelectedElements: (ids: string[]) => void;
   addToSelection: (id: string) => void;
@@ -36,8 +38,10 @@ export const useEditorStore = create<EditorStore>()((set) => ({
   editingTextId: null,
   isPanning: false,
   objectDrawerOpen: false,
+  hoveredObjectId: null,
 
   setObjectDrawerOpen: (open) => set({ objectDrawerOpen: open }),
+  setHoveredObjectId: (id) => set({ hoveredObjectId: id }),
   setActiveSlide: (slideId) => set((s) => {
     const slide = usePresentationStore.getState().presentation.slides[slideId];
     const kept = slide

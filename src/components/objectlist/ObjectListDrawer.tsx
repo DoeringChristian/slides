@@ -11,6 +11,7 @@ export const ObjectListDrawer: React.FC = () => {
   const selectedElementIds = useEditorStore((s) => s.selectedElementIds);
   const setSelectedElements = useEditorStore((s) => s.setSelectedElements);
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
+  const setHoveredObjectId = useEditorStore((s) => s.setHoveredObjectId);
   const renameObject = usePresentationStore((s) => s.renameObject);
   const hideElement = usePresentationStore((s) => s.hideElement);
   const unhideElement = usePresentationStore((s) => s.unhideElement);
@@ -78,6 +79,8 @@ export const ObjectListDrawer: React.FC = () => {
                     }}
                     onRename={(name) => renameObject(obj.id, name)}
                     onToggleVisibility={() => handleToggleVisibility(obj.id, isVisibleOnSlide)}
+                    onHover={() => setHoveredObjectId(obj.id)}
+                    onHoverEnd={() => setHoveredObjectId(null)}
                   />
                 );
               })}
