@@ -112,19 +112,21 @@ export const SlideThumbnail: React.FC<Props> = ({ slide, index, isActive, canDel
       className={`flex items-center gap-2 px-2 py-1.5 cursor-pointer group ${isActive ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
     >
       <span className="text-xs text-gray-400 w-5 text-right shrink-0">{index + 1}</span>
-      <div className={`relative rounded border-2 overflow-hidden ${isActive ? 'border-blue-500' : 'border-gray-200 group-hover:border-gray-300'}`}>
-        <Stage width={THUMB_WIDTH} height={THUMB_HEIGHT} scaleX={THUMB_SCALE} scaleY={THUMB_SCALE} listening={false}>
-          <Layer listening={false}>
-            <Rect x={0} y={0} width={SLIDE_WIDTH} height={SLIDE_HEIGHT} fill={bgColor} listening={false} />
-            {elements.map((el) => (
-              <ThumbnailElement key={el.id} element={el} isSelected={selectedSet?.has(el.id)} />
-            ))}
-          </Layer>
-        </Stage>
+      <div className="relative">
+        <div className={`rounded border-2 overflow-hidden ${isActive ? 'border-blue-500' : 'border-gray-200 group-hover:border-gray-300'}`}>
+          <Stage width={THUMB_WIDTH} height={THUMB_HEIGHT} scaleX={THUMB_SCALE} scaleY={THUMB_SCALE} listening={false}>
+            <Layer listening={false}>
+              <Rect x={0} y={0} width={SLIDE_WIDTH} height={SLIDE_HEIGHT} fill={bgColor} listening={false} />
+              {elements.map((el) => (
+                <ThumbnailElement key={el.id} element={el} isSelected={selectedSet?.has(el.id)} />
+              ))}
+            </Layer>
+          </Stage>
+        </div>
         {canDelete && (
           <button
             onClick={(e) => { e.stopPropagation(); onDelete(); }}
-            className="absolute top-1 right-1 p-0.5 rounded-full bg-black/50 text-white opacity-0 group-hover:opacity-100 hover:bg-red-500 transition-all"
+            className="absolute -top-1.5 -right-1.5 p-0.5 rounded-full bg-white border border-gray-200 shadow-sm text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"
             title="Delete slide"
           >
             <X size={12} />
