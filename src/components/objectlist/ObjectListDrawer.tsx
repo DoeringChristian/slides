@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { ChevronDown, ChevronUp, Layers } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
@@ -14,6 +14,16 @@ export const ObjectListDrawer: React.FC = () => {
 
   const objects = useAllObjects();
   const slide = useActiveSlide();
+
+  const sortedObjects = useMemo(() => {
+    if (!slide) return objects;
+    return [...objects].sort((a, b) => {
+      const aVisible = !!(slide.elements[a.id]?.visible);
+      const bVisible = !!(slide.elements[b.id]?.visible);
+      if (aVisible === bVisible) return 0;
+      return aVisible ? -1 : 1;
+    });
+  }, [objects, slide]);
 
   return (
     <div className="border-t border-gray-200 bg-white shrink-0">
@@ -35,7 +45,7 @@ export const ObjectListDrawer: React.FC = () => {
           {objects.length === 0 ? (
             <div className="px-3 py-2 text-xs text-gray-400">No objects yet</div>
           ) : (
-            objects.map((obj) => {
+            sortedObjects.map((obj) => {
               const isVisibleOnSlide = !!(slide?.elements[obj.id]?.visible);
               const isSelected = selectedElementIds.includes(obj.id);
               return (

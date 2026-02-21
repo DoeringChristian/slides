@@ -54,6 +54,7 @@ interface PresentationStore {
   updateSlideTransition: (slideId: string, transition: Slide['transition']) => void;
   updateSlideNotes: (slideId: string, notes: string) => void;
   addSlideWithMode: (afterIndex: number, mode: 'previous' | 'next' | 'interpolate') => string;
+  addEmptySlide: (index?: number) => string;
 
   // Element actions
   addElement: (slideId: string, element: SlideElement) => void;
@@ -257,6 +258,27 @@ export const usePresentationStore = create<PresentationStore>()(
           const newOrder = [...slideOrder];
           newOrder.splice(afterIndex + 1, 0, newSlide.id);
 
+          return {
+            presentation: {
+              ...state.presentation,
+              slides: { ...slides, [newSlide.id]: newSlide },
+              slideOrder: newOrder,
+              updatedAt: Date.now(),
+            },
+          };
+        });
+        return newSlideId;
+      },
+
+      addEmptySlide: (index?: number) => {
+        let newSlideId = '';
+        set((state) => {
+          const { slideOrder, slides } = state.presentation;
+          const insertIndex = index !== undefined ? index : slideOrder.length;
+          const newSlide = createSlide();
+          newSlideId = newSlide.id;
+          const newOrder = [...slideOrder];
+          newOrder.splice(insertIndex, 0, newSlide.id);
           return {
             presentation: {
               ...state.presentation,

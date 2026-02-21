@@ -1,13 +1,65 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback } from 'react';
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { SlideSortable } from './SlideSortable';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useEditorStore } from '../../store/editorStore';
 import { useOrderedSlides } from '../../store/selectors';
-import { InsertSlideDialog } from '../dialogs/InsertSlideDialog';
-import { Plus } from 'lucide-react';
+import { Plus, ArrowDown, ArrowUp, Blend, FilePlus2 } from 'lucide-react';
 import type { DragEndEvent } from '@dnd-kit/core';
+
+interface SlideInsertRowProps {
+  afterIndex: number;
+  hasPrevious: boolean;
+  hasNext: boolean;
+  onInsert: (afterIndex: number, mode: 'previous' | 'next' | 'interpolate') => void;
+  onInsertEmpty: (afterIndex: number) => void;
+}
+
+const SlideInsertRow: React.FC<SlideInsertRowProps> = ({ afterIndex, hasPrevious, hasNext, onInsert, onInsertEmpty }) => {
+  return (
+    <div className="group relative h-0 z-10 flex items-center justify-center">
+      <div className="absolute inset-x-0 flex items-center justify-center -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+        <div className="flex items-center gap-0.5 bg-white/90 backdrop-blur-sm border border-gray-200 rounded-full shadow-sm px-1 py-0.5 pointer-events-auto">
+          {hasPrevious && (
+            <button
+              onClick={() => onInsert(afterIndex, 'previous')}
+              className="p-1 rounded-full hover:bg-blue-100 text-gray-400 hover:text-blue-600 transition-colors"
+              title="Copy from above"
+            >
+              <ArrowDown size={14} />
+            </button>
+          )}
+          {hasPrevious && hasNext && (
+            <button
+              onClick={() => onInsert(afterIndex, 'interpolate')}
+              className="p-1 rounded-full hover:bg-purple-100 text-gray-400 hover:text-purple-600 transition-colors"
+              title="Interpolate"
+            >
+              <Blend size={14} />
+            </button>
+          )}
+          {hasNext && (
+            <button
+              onClick={() => onInsert(afterIndex, 'next')}
+              className="p-1 rounded-full hover:bg-blue-100 text-gray-400 hover:text-blue-600 transition-colors"
+              title="Copy from below"
+            >
+              <ArrowUp size={14} />
+            </button>
+          )}
+          <button
+            onClick={() => onInsertEmpty(afterIndex)}
+            className="p-1 rounded-full hover:bg-green-100 text-gray-400 hover:text-green-600 transition-colors"
+            title="New empty slide"
+          >
+            <FilePlus2 size={14} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export const SlidePanel: React.FC = () => {
   const slides = useOrderedSlides();
@@ -17,10 +69,9 @@ export const SlidePanel: React.FC = () => {
   const deleteSlide = usePresentationStore((s) => s.deleteSlide);
   const duplicateSlide = usePresentationStore((s) => s.duplicateSlide);
   const addSlideWithMode = usePresentationStore((s) => s.addSlideWithMode);
+  const addEmptySlide = usePresentationStore((s) => s.addEmptySlide);
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const setActiveSlide = useEditorStore((s) => s.setActiveSlide);
-
-  const [insertDialog, setInsertDialog] = useState<{ open: boolean; afterIndex: number }>({ open: false, afterIndex: 0 });
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -37,23 +88,20 @@ export const SlidePanel: React.FC = () => {
     reorderSlides(newOrder);
   }, [slideOrder, reorderSlides]);
 
-  const handleInsertSlide = useCallback((afterIndex: number) => {
-    const hasNext = afterIndex + 1 < slideOrder.length;
-    const hasPrev = afterIndex >= 0;
+  const handleInsert = useCallback((afterIndex: number, mode: 'previous' | 'next' | 'interpolate') => {
+    const id = addSlideWithMode(afterIndex, mode);
+    setActiveSlide(id);
+  }, [addSlideWithMode, setActiveSlide]);
 
-    if (hasPrev && hasNext) {
-      // Between two slides — show dialog
-      setInsertDialog({ open: true, afterIndex });
-    } else {
-      // At end or beginning — just copy from neighbor
-      const id = addSlide(afterIndex + 1);
-      setActiveSlide(id);
-    }
-  }, [slideOrder, addSlide, setActiveSlide]);
+  const handleInsertEmpty = useCallback((afterIndex: number) => {
+    const id = addEmptySlide(afterIndex + 1);
+    setActiveSlide(id);
+  }, [addEmptySlide, setActiveSlide]);
 
   const handleAddSlide = () => {
     const currentIdx = slideOrder.indexOf(activeSlideId);
-    handleInsertSlide(currentIdx);
+    const id = addSlide(currentIdx + 1);
+    setActiveSlide(id);
   };
 
   const handleContextMenu = useCallback((e: React.MouseEvent, slideId: string) => {
@@ -67,7 +115,7 @@ export const SlidePanel: React.FC = () => {
     const items = [
       { label: 'Duplicate', action: () => { const id = duplicateSlide(slideId); if (id) setActiveSlide(id); } },
       { label: 'Delete', action: () => { if (slideOrder.length > 1) { deleteSlide(slideId); const remaining = slideOrder.filter(id => id !== slideId); setActiveSlide(remaining[0]); } } },
-      { label: 'Insert slide after', action: () => { handleInsertSlide(idx); } },
+      { label: 'Insert slide after', action: () => { const id = addSlide(idx + 1); setActiveSlide(id); } },
     ];
 
     items.forEach(({ label, action }) => {
@@ -81,26 +129,36 @@ export const SlidePanel: React.FC = () => {
     document.body.appendChild(menu);
     const remove = () => { menu.remove(); document.removeEventListener('click', remove); };
     setTimeout(() => document.addEventListener('click', remove), 0);
-  }, [slideOrder, addSlide, deleteSlide, duplicateSlide, setActiveSlide, handleInsertSlide]);
+  }, [slideOrder, addSlide, deleteSlide, duplicateSlide, setActiveSlide]);
 
   return (
-    <>
-      <div className="w-60 bg-white border-r border-gray-200 flex flex-col shrink-0">
-        <div className="p-2 border-b border-gray-200 flex items-center justify-between">
-          <span className="text-xs font-medium text-gray-500 uppercase">Slides</span>
-          <button
-            onClick={handleAddSlide}
-            className="p-1 rounded hover:bg-gray-100 text-gray-600"
-            title="Add Slide"
-          >
-            <Plus size={16} />
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-auto">
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-            <SortableContext items={slideOrder} strategy={verticalListSortingStrategy}>
-              {slides.map((slide, index) => (
-                <div key={slide.id} onContextMenu={(e) => handleContextMenu(e, slide.id)}>
+    <div className="w-60 bg-white border-r border-gray-200 flex flex-col shrink-0">
+      <div className="p-2 border-b border-gray-200 flex items-center justify-between">
+        <span className="text-xs font-medium text-gray-500 uppercase">Slides</span>
+        <button
+          onClick={handleAddSlide}
+          className="p-1 rounded hover:bg-gray-100 text-gray-600"
+          title="Add Slide"
+        >
+          <Plus size={16} />
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={slideOrder} strategy={verticalListSortingStrategy}>
+            {slides.map((slide, index) => (
+              <React.Fragment key={slide.id}>
+                {index === 0 && (
+                  <SlideInsertRow
+                    afterIndex={-1}
+                    hasPrevious={false}
+                    hasNext={true}
+                    onInsert={handleInsert}
+                    onInsertEmpty={handleInsertEmpty}
+                  />
+                )}
+
+                <div onContextMenu={(e) => handleContextMenu(e, slide.id)}>
                   <SlideSortable
                     slide={slide}
                     index={index}
@@ -108,21 +166,19 @@ export const SlidePanel: React.FC = () => {
                     onClick={() => setActiveSlide(slide.id)}
                   />
                 </div>
-              ))}
-            </SortableContext>
-          </DndContext>
-        </div>
-      </div>
 
-      <InsertSlideDialog
-        isOpen={insertDialog.open}
-        onConfirm={(mode) => {
-          const id = addSlideWithMode(insertDialog.afterIndex, mode);
-          setActiveSlide(id);
-          setInsertDialog({ open: false, afterIndex: 0 });
-        }}
-        onCancel={() => setInsertDialog({ open: false, afterIndex: 0 })}
-      />
-    </>
+                <SlideInsertRow
+                  afterIndex={index}
+                  hasPrevious={true}
+                  hasNext={index < slides.length - 1}
+                  onInsert={handleInsert}
+                  onInsertEmpty={handleInsertEmpty}
+                />
+              </React.Fragment>
+            ))}
+          </SortableContext>
+        </DndContext>
+      </div>
+    </div>
   );
 };
