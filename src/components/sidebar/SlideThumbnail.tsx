@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React from 'react';
 import { Stage, Layer, Rect, Text, Ellipse, Image as KonvaImage, Line, Arrow, Star, RegularPolygon } from 'react-konva';
 import type { Slide, SlideElement, TextElement, ShapeElement, ImageElement } from '../../types/presentation';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
@@ -11,45 +11,76 @@ interface Props {
   slide: Slide;
   index: number;
   isActive: boolean;
+  selectedElementIds?: string[];
   onClick: () => void;
 }
 
-const ThumbnailElement: React.FC<{ element: SlideElement }> = ({ element }) => {
-  if (!element.visible) return null;
-
-  if (element.type === 'text') {
-    const el = element as TextElement;
-    return (
-      <Text
-        x={el.x} y={el.y} width={el.width} height={el.height}
-        text={el.text} fontSize={el.style.fontSize} fontFamily={el.style.fontFamily}
-        fill={el.style.color} align={el.style.align} rotation={el.rotation}
-        opacity={el.opacity} listening={false}
-        fontStyle={`${el.style.fontWeight === 'bold' ? 'bold' : ''} ${el.style.fontStyle === 'italic' ? 'italic' : ''}`.trim() || 'normal'}
-      />
-    );
-  }
-
-  if (element.type === 'shape') {
-    const el = element as ShapeElement;
-    const common = { x: el.x, y: el.y, rotation: el.rotation, opacity: el.opacity, fill: el.fill, stroke: el.stroke, strokeWidth: el.strokeWidth, listening: false };
-    switch (el.shapeType) {
-      case 'rect': return <Rect {...common} width={el.width} height={el.height} cornerRadius={el.cornerRadius} />;
-      case 'ellipse': return <Ellipse {...common} x={el.x + el.width/2} y={el.y + el.height/2} radiusX={el.width/2} radiusY={el.height/2} />;
-      case 'triangle': return <RegularPolygon {...common} x={el.x + el.width/2} y={el.y + el.height/2} sides={3} radius={Math.min(el.width, el.height)/2} />;
-      case 'star': return <Star {...common} x={el.x + el.width/2} y={el.y + el.height/2} numPoints={5} innerRadius={Math.min(el.width, el.height)/4} outerRadius={Math.min(el.width, el.height)/2} />;
-      case 'line': return <Line {...common} points={el.points ?? [0, 0, el.width, 0]} stroke={el.stroke || el.fill} strokeWidth={el.strokeWidth || 3} fill="" />;
-      case 'arrow': return <Arrow {...common} points={el.points ?? [0, 0, el.width, 0]} stroke={el.stroke || el.fill} strokeWidth={el.strokeWidth || 3} fill={el.stroke || el.fill} pointerLength={10} pointerWidth={10} />;
-      default: return null;
-    }
-  }
-
-  return null;
+const HighlightRect: React.FC<{ element: SlideElement }> = ({ element }) => {
+  const pad = 4 / THUMB_SCALE;
+  return (
+    <Rect
+      x={element.x - pad}
+      y={element.y - pad}
+      width={element.width + pad * 2}
+      height={element.height + pad * 2}
+      stroke="#3b82f6"
+      strokeWidth={3 / THUMB_SCALE}
+      dash={[6 / THUMB_SCALE, 3 / THUMB_SCALE]}
+      fill="rgba(59,130,246,0.08)"
+      rotation={element.rotation}
+      listening={false}
+    />
+  );
 };
 
-export const SlideThumbnail: React.FC<Props> = ({ slide, index, isActive, onClick }) => {
+const ThumbnailElement: React.FC<{ element: SlideElement; isSelected?: boolean }> = ({ element, isSelected }) => {
+  if (!element.visible) return null;
+
+  const rendered = (() => {
+    if (element.type === 'text') {
+      const el = element as TextElement;
+      return (
+        <Text
+          x={el.x} y={el.y} width={el.width} height={el.height}
+          text={el.text} fontSize={el.style.fontSize} fontFamily={el.style.fontFamily}
+          fill={el.style.color} align={el.style.align} rotation={el.rotation}
+          opacity={el.opacity} listening={false}
+          fontStyle={`${el.style.fontWeight === 'bold' ? 'bold' : ''} ${el.style.fontStyle === 'italic' ? 'italic' : ''}`.trim() || 'normal'}
+        />
+      );
+    }
+
+    if (element.type === 'shape') {
+      const el = element as ShapeElement;
+      const common = { x: el.x, y: el.y, rotation: el.rotation, opacity: el.opacity, fill: el.fill, stroke: el.stroke, strokeWidth: el.strokeWidth, listening: false };
+      switch (el.shapeType) {
+        case 'rect': return <Rect {...common} width={el.width} height={el.height} cornerRadius={el.cornerRadius} />;
+        case 'ellipse': return <Ellipse {...common} x={el.x + el.width/2} y={el.y + el.height/2} radiusX={el.width/2} radiusY={el.height/2} />;
+        case 'triangle': return <RegularPolygon {...common} x={el.x + el.width/2} y={el.y + el.height/2} sides={3} radius={Math.min(el.width, el.height)/2} />;
+        case 'star': return <Star {...common} x={el.x + el.width/2} y={el.y + el.height/2} numPoints={5} innerRadius={Math.min(el.width, el.height)/4} outerRadius={Math.min(el.width, el.height)/2} />;
+        case 'line': return <Line {...common} points={el.points ?? [0, 0, el.width, 0]} stroke={el.stroke || el.fill} strokeWidth={el.strokeWidth || 3} fill="" />;
+        case 'arrow': return <Arrow {...common} points={el.points ?? [0, 0, el.width, 0]} stroke={el.stroke || el.fill} strokeWidth={el.strokeWidth || 3} fill={el.stroke || el.fill} pointerLength={10} pointerWidth={10} />;
+        default: return null;
+      }
+    }
+
+    return null;
+  })();
+
+  if (!rendered) return null;
+
+  return isSelected ? (
+    <>
+      {rendered}
+      <HighlightRect element={element} />
+    </>
+  ) : rendered;
+};
+
+export const SlideThumbnail: React.FC<Props> = ({ slide, index, isActive, selectedElementIds, onClick }) => {
   const bgColor = slide.background.type === 'solid' ? slide.background.color : '#ffffff';
   const elements = slide.elementOrder.map((id) => slide.elements[id]).filter(Boolean);
+  const selectedSet = selectedElementIds && selectedElementIds.length > 0 ? new Set(selectedElementIds) : null;
 
   return (
     <div
@@ -62,7 +93,7 @@ export const SlideThumbnail: React.FC<Props> = ({ slide, index, isActive, onClic
           <Layer listening={false}>
             <Rect x={0} y={0} width={SLIDE_WIDTH} height={SLIDE_HEIGHT} fill={bgColor} listening={false} />
             {elements.map((el) => (
-              <ThumbnailElement key={el.id} element={el} />
+              <ThumbnailElement key={el.id} element={el} isSelected={selectedSet?.has(el.id)} />
             ))}
           </Layer>
         </Stage>

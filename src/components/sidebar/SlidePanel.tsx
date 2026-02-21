@@ -71,6 +71,7 @@ export const SlidePanel: React.FC = () => {
   const addSlideWithMode = usePresentationStore((s) => s.addSlideWithMode);
   const addEmptySlide = usePresentationStore((s) => s.addEmptySlide);
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
+  const selectedElementIds = useEditorStore((s) => s.selectedElementIds);
   const setActiveSlide = useEditorStore((s) => s.setActiveSlide);
 
   const sensors = useSensors(
@@ -163,6 +164,7 @@ export const SlidePanel: React.FC = () => {
                     slide={slide}
                     index={index}
                     isActive={slide.id === activeSlideId}
+                    selectedElementIds={selectedElementIds}
                     onClick={() => setActiveSlide(slide.id)}
                   />
                 </div>
