@@ -9,10 +9,11 @@ interface Props {
   isSelected: boolean;
   onSelect: (id: string, e: Konva.KonvaEventObject<MouseEvent>) => void;
   onDragEnd: (id: string, x: number, y: number) => void;
+  onDragMove?: (id: string, x: number, y: number) => void;
   onTransformEnd: (id: string, attrs: Record<string, number>) => void;
 }
 
-export const ImageNode: React.FC<Props> = ({ element, isSelected, onSelect, onDragEnd, onTransformEnd }) => {
+export const ImageNode: React.FC<Props> = ({ element, isSelected, onSelect, onDragEnd, onDragMove, onTransformEnd }) => {
   const imgRef = useRef<Konva.Image>(null);
   const [image] = useImage(element.src);
 
@@ -30,6 +31,9 @@ export const ImageNode: React.FC<Props> = ({ element, isSelected, onSelect, onDr
       draggable={!element.locked}
       onClick={(e) => onSelect(element.id, e)}
       onTap={(e) => onSelect(element.id, e as any)}
+      onDragMove={(e) => {
+        onDragMove?.(element.id, e.target.x(), e.target.y());
+      }}
       onDragEnd={(e) => {
         onDragEnd(element.id, e.target.x(), e.target.y());
       }}

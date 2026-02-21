@@ -8,10 +8,11 @@ interface Props {
   isSelected: boolean;
   onSelect: (id: string, e: Konva.KonvaEventObject<MouseEvent>) => void;
   onDragEnd: (id: string, x: number, y: number) => void;
+  onDragMove?: (id: string, x: number, y: number) => void;
   onTransformEnd: (id: string, attrs: Record<string, number>) => void;
 }
 
-export const ShapeNode: React.FC<Props> = ({ element, isSelected, onSelect, onDragEnd, onTransformEnd }) => {
+export const ShapeNode: React.FC<Props> = ({ element, isSelected, onSelect, onDragEnd, onDragMove, onTransformEnd }) => {
   const shapeRef = useRef<any>(null);
 
   const commonProps = {
@@ -26,6 +27,9 @@ export const ShapeNode: React.FC<Props> = ({ element, isSelected, onSelect, onDr
     draggable: !element.locked,
     onClick: (e: Konva.KonvaEventObject<MouseEvent>) => onSelect(element.id, e),
     onTap: (e: any) => onSelect(element.id, e),
+    onDragMove: (e: Konva.KonvaEventObject<DragEvent>) => {
+      onDragMove?.(element.id, e.target.x(), e.target.y());
+    },
     onDragEnd: (e: Konva.KonvaEventObject<DragEvent>) => {
       onDragEnd(element.id, e.target.x(), e.target.y());
     },
@@ -97,9 +101,11 @@ export const ShapeNode: React.FC<Props> = ({ element, isSelected, onSelect, onDr
         <Line
           ref={shapeRef}
           {...commonProps}
+          onTransformEnd={undefined}
           points={element.points ?? [0, 0, element.width, 0]}
           stroke={element.stroke || element.fill}
           strokeWidth={element.strokeWidth || 3}
+          hitStrokeWidth={20}
           fill=""
         />
       );
@@ -108,9 +114,11 @@ export const ShapeNode: React.FC<Props> = ({ element, isSelected, onSelect, onDr
         <Arrow
           ref={shapeRef}
           {...commonProps}
+          onTransformEnd={undefined}
           points={element.points ?? [0, 0, element.width, 0]}
           stroke={element.stroke || element.fill}
           strokeWidth={element.strokeWidth || 3}
+          hitStrokeWidth={20}
           fill={element.stroke || element.fill}
           pointerLength={10}
           pointerWidth={10}

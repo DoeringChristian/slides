@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useMemo } from 'react';
+import React, { useRef, useCallback, useMemo, useState } from 'react';
 import { Stage, Layer } from 'react-konva';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
@@ -6,11 +6,22 @@ import { useActiveSlide } from '../../store/selectors';
 import { CanvasBackground } from './CanvasBackground';
 import { ElementRenderer } from './ElementRenderer';
 import { SelectionTransformer } from './SelectionTransformer';
+import { LineEndpointHandles } from './LineEndpointHandles';
+import { AlignmentGuides } from './AlignmentGuides';
+import { ConnectorHighlight } from './ConnectorHighlight';
 import { TextEditOverlay } from './TextEditOverlay';
 import { DrawingPreview, useDrawing } from './DrawingLayer';
 import { GridOverlay } from './GridOverlay';
+import { computeGuides } from '../../hooks/useAlignmentGuides';
+import { getBindingTarget, getAnchorPoint } from '../../utils/connectorUtils';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
+import type { ShapeElement } from '../../types/presentation';
 import type Konva from 'konva';
+
+interface Guide {
+  type: 'horizontal' | 'vertical';
+  position: number;
+}
 
 export const SlideCanvas: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -30,10 +41,29 @@ export const SlideCanvas: React.FC = () => {
   const slide = useActiveSlide();
   const { drawState, handleMouseDown, handleMouseMove, handleMouseUp } = useDrawing();
 
+  const [guides, setGuides] = useState<Guide[]>([]);
+  const [connectorHighlightId, setConnectorHighlightId] = useState<string | null>(null);
+
   const elements = useMemo(() => {
     if (!slide) return [];
     return slide.elementOrder.map((id) => slide.elements[id]).filter(Boolean);
   }, [slide]);
+
+  // Determine if sole selected element is a line/arrow
+  const soleSelectedLineElement = useMemo(() => {
+    if (selectedElementIds.length !== 1 || !slide) return null;
+    const el = slide.elements[selectedElementIds[0]];
+    if (el && el.type === 'shape' && (el.shapeType === 'line' || el.shapeType === 'arrow')) {
+      return el as ShapeElement;
+    }
+    return null;
+  }, [selectedElementIds, slide]);
+
+  // IDs to pass to the SelectionTransformer (excluding line/arrow if sole selection)
+  const transformerIds = useMemo(() => {
+    if (soleSelectedLineElement) return [];
+    return selectedElementIds;
+  }, [selectedElementIds, soleSelectedLineElement]);
 
   const handleStageClick = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
     if (e.target === e.target.getStage()) {
@@ -55,17 +85,75 @@ export const SlideCanvas: React.FC = () => {
     }
   }, [selectedElementIds, setSelectedElements, editingTextId]);
 
-  const handleDragEnd = useCallback((id: string, x: number, y: number) => {
-    if (activeSlideId) {
-      updateElement(activeSlideId, id, { x, y });
-    }
-  }, [activeSlideId, updateElement]);
-
   const handleTransformEnd = useCallback((id: string, attrs: Record<string, number>) => {
     if (activeSlideId) {
       updateElement(activeSlideId, id, attrs);
     }
   }, [activeSlideId, updateElement]);
+
+  const handleDragMove = useCallback((id: string, x: number, y: number) => {
+    if (!slide) return;
+    const el = slide.elements[id];
+    if (!el) return;
+    const dragged = { x, y, width: el.width, height: el.height };
+    const others = elements
+      .filter((e) => e.id !== id)
+      .map((e) => ({ x: e.x, y: e.y, width: e.width, height: e.height }));
+    const result = computeGuides(dragged, others);
+    setGuides(result.guides);
+  }, [slide, elements]);
+
+  const handleDragEndWithGuides = useCallback((id: string, x: number, y: number) => {
+    setGuides([]);
+    if (activeSlideId) {
+      updateElement(activeSlideId, id, { x, y });
+    }
+  }, [activeSlideId, updateElement]);
+
+  const handleLineEndpointUpdate = useCallback((attrs: Partial<ShapeElement>) => {
+    if (!activeSlideId || !soleSelectedLineElement) return;
+    updateElement(activeSlideId, soleSelectedLineElement.id, attrs);
+  }, [activeSlideId, soleSelectedLineElement, updateElement]);
+
+  const handleBindingDrag = useCallback((point: { x: number; y: number }, endpoint: 'start' | 'end') => {
+    if (!slide || !soleSelectedLineElement) return;
+    const target = getBindingTarget(point, Object.values(slide.elements), soleSelectedLineElement.id, 30);
+    setConnectorHighlightId(target ? target.elementId : null);
+  }, [slide, soleSelectedLineElement]);
+
+  const handleBindingDragEnd = useCallback((point: { x: number; y: number }, endpoint: 'start' | 'end') => {
+    if (!slide || !soleSelectedLineElement || !activeSlideId) return;
+    const target = getBindingTarget(point, Object.values(slide.elements), soleSelectedLineElement.id, 30);
+    if (target) {
+      const bindingKey = endpoint === 'start' ? 'startBinding' : 'endBinding';
+      updateElement(activeSlideId, soleSelectedLineElement.id, { [bindingKey]: target } as any);
+      // Snap endpoint to the anchor point
+      const anchorPt = getAnchorPoint(slide.elements[target.elementId], target.anchor);
+      if (anchorPt) {
+        const pts = soleSelectedLineElement.points ?? [0, 0, soleSelectedLineElement.width, 0];
+        if (endpoint === 'start') {
+          const endAbsX = soleSelectedLineElement.x + pts[2];
+          const endAbsY = soleSelectedLineElement.y + pts[3];
+          updateElement(activeSlideId, soleSelectedLineElement.id, {
+            x: anchorPt.x,
+            y: anchorPt.y,
+            points: [0, 0, endAbsX - anchorPt.x, endAbsY - anchorPt.y],
+          });
+        } else {
+          updateElement(activeSlideId, soleSelectedLineElement.id, {
+            points: [0, 0, anchorPt.x - soleSelectedLineElement.x, anchorPt.y - soleSelectedLineElement.y],
+          });
+        }
+      }
+    } else {
+      const bindingKey = endpoint === 'start' ? 'startBinding' : 'endBinding';
+      updateElement(activeSlideId, soleSelectedLineElement.id, { [bindingKey]: null } as any);
+    }
+  }, [slide, soleSelectedLineElement, activeSlideId, updateElement]);
+
+  const handleBindingDragStop = useCallback(() => {
+    setConnectorHighlightId(null);
+  }, []);
 
   const handleDoubleClick = useCallback((id: string) => {
     if (!slide) return;
@@ -105,7 +193,8 @@ export const SlideCanvas: React.FC = () => {
               element={el}
               isSelected={selectedElementIds.includes(el.id)}
               onSelect={handleSelect}
-              onDragEnd={handleDragEnd}
+              onDragEnd={handleDragEndWithGuides}
+              onDragMove={handleDragMove}
               onTransformEnd={handleTransformEnd}
               onDoubleClick={handleDoubleClick}
             />
@@ -115,7 +204,21 @@ export const SlideCanvas: React.FC = () => {
         {/* Layer 3: UI */}
         <Layer>
           <GridOverlay gridSize={gridSize} visible={showGrid} />
-          <SelectionTransformer selectedIds={editingTextId ? [] : selectedElementIds} stageRef={stageRef} />
+          <AlignmentGuides guides={guides} />
+          <SelectionTransformer selectedIds={editingTextId ? [] : transformerIds} stageRef={stageRef} />
+          {soleSelectedLineElement && !editingTextId && (
+            <LineEndpointHandles
+              element={soleSelectedLineElement}
+              zoom={zoom}
+              onUpdate={handleLineEndpointUpdate}
+              onBindingDrag={handleBindingDrag}
+              onBindingDragEnd={handleBindingDragEnd}
+              onBindingDragStop={handleBindingDragStop}
+            />
+          )}
+          {connectorHighlightId && slide && slide.elements[connectorHighlightId] && (
+            <ConnectorHighlight element={slide.elements[connectorHighlightId]} />
+          )}
           <DrawingPreview drawState={drawState} tool={tool} />
         </Layer>
       </Stage>

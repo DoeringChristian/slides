@@ -71,6 +71,11 @@ export interface TextElement extends BaseElement {
 
 export type ShapeType = 'rect' | 'ellipse' | 'triangle' | 'star' | 'line' | 'arrow';
 
+export interface ConnectorBinding {
+  elementId: string;
+  anchor: 'center' | 'top' | 'bottom' | 'left' | 'right';
+}
+
 export interface ShapeElement extends BaseElement {
   type: 'shape';
   shapeType: ShapeType;
@@ -79,6 +84,8 @@ export interface ShapeElement extends BaseElement {
   strokeWidth: number;
   cornerRadius: number;
   points?: number[];
+  startBinding?: ConnectorBinding | null;
+  endBinding?: ConnectorBinding | null;
 }
 
 export interface ImageElement extends BaseElement {

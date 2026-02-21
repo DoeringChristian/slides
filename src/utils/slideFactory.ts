@@ -51,6 +51,7 @@ export function createTextElement(overrides?: Partial<TextElement>): TextElement
 }
 
 export function createShapeElement(shapeType: ShapeType = 'rect', overrides?: Partial<ShapeElement>): ShapeElement {
+  const isLineType = shapeType === 'line' || shapeType === 'arrow';
   return {
     id: generateId(),
     type: 'shape',
@@ -64,6 +65,7 @@ export function createShapeElement(shapeType: ShapeType = 'rect', overrides?: Pa
     locked: false,
     visible: true,
     ...DEFAULT_SHAPE_PROPS,
+    ...(isLineType ? { strokeWidth: 3, fill: '' } : {}),
     ...overrides,
   };
 }

@@ -33,15 +33,22 @@ function renderSlideToDataURL(slide: Slide, width: number, height: number): Prom
         }));
       } else if (el.type === 'shape') {
         const s = el as ShapeElement;
+        const common = { rotation: s.rotation, opacity: s.opacity };
         switch (s.shapeType) {
           case 'rect':
-            layer.add(new Konva.Rect({ x: s.x, y: s.y, width: s.width, height: s.height, fill: s.fill, stroke: s.stroke, strokeWidth: s.strokeWidth, cornerRadius: s.cornerRadius, rotation: s.rotation, opacity: s.opacity }));
+            layer.add(new Konva.Rect({ x: s.x, y: s.y, width: s.width, height: s.height, fill: s.fill, stroke: s.stroke, strokeWidth: s.strokeWidth, cornerRadius: s.cornerRadius, ...common }));
             break;
           case 'ellipse':
-            layer.add(new Konva.Ellipse({ x: s.x + s.width/2, y: s.y + s.height/2, radiusX: s.width/2, radiusY: s.height/2, fill: s.fill, stroke: s.stroke, strokeWidth: s.strokeWidth, rotation: s.rotation, opacity: s.opacity }));
+            layer.add(new Konva.Ellipse({ x: s.x + s.width/2, y: s.y + s.height/2, radiusX: s.width/2, radiusY: s.height/2, fill: s.fill, stroke: s.stroke, strokeWidth: s.strokeWidth, ...common }));
+            break;
+          case 'line':
+            layer.add(new Konva.Line({ x: s.x, y: s.y, points: s.points ?? [0, 0, s.width, 0], stroke: s.stroke || s.fill, strokeWidth: s.strokeWidth || 3, ...common }));
+            break;
+          case 'arrow':
+            layer.add(new Konva.Arrow({ x: s.x, y: s.y, points: s.points ?? [0, 0, s.width, 0], stroke: s.stroke || s.fill, strokeWidth: s.strokeWidth || 3, fill: s.stroke || s.fill, pointerLength: 10, pointerWidth: 10, ...common }));
             break;
           default:
-            layer.add(new Konva.Rect({ x: s.x, y: s.y, width: s.width, height: s.height, fill: s.fill, stroke: s.stroke, strokeWidth: s.strokeWidth, rotation: s.rotation, opacity: s.opacity }));
+            layer.add(new Konva.Rect({ x: s.x, y: s.y, width: s.width, height: s.height, fill: s.fill, stroke: s.stroke, strokeWidth: s.strokeWidth, ...common }));
         }
       }
     }

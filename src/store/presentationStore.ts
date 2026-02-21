@@ -1,7 +1,8 @@
 import { create } from 'zustand';
 import { temporal } from 'zundo';
-import type { Presentation, Slide, SlideElement } from '../types/presentation';
+import type { Presentation, Slide, SlideElement, ShapeElement } from '../types/presentation';
 import { createPresentation, createSlide, duplicateElement } from '../utils/slideFactory';
+import { resolveBindingPoint } from '../utils/connectorUtils';
 
 interface PresentationStore {
   presentation: Presentation;
@@ -199,6 +200,61 @@ export const usePresentationStore = create<PresentationStore>()(
         set((state) => {
           const slide = state.presentation.slides[slideId];
           if (!slide || !slide.elements[elementId]) return state;
+
+          const updatedElements = {
+            ...slide.elements,
+            [elementId]: { ...slide.elements[elementId], ...changes } as SlideElement,
+          };
+
+          // If a non-connector element moved, update any connectors bound to it
+          const movedEl = updatedElements[elementId];
+          if (changes.x !== undefined || changes.y !== undefined || changes.width !== undefined || changes.height !== undefined) {
+            for (const elId of slide.elementOrder) {
+              if (elId === elementId) continue;
+              const el = updatedElements[elId];
+              if (el.type !== 'shape') continue;
+              const shape = el as ShapeElement;
+              if (shape.shapeType !== 'line' && shape.shapeType !== 'arrow') continue;
+
+              let needsUpdate = false;
+              const pts = shape.points ?? [0, 0, shape.width, 0];
+              let newX = shape.x;
+              let newY = shape.y;
+              let newPts = [...pts];
+
+              if (shape.startBinding?.elementId === elementId) {
+                const pt = resolveBindingPoint(shape.startBinding, updatedElements);
+                if (pt) {
+                  const endAbsX = shape.x + pts[2];
+                  const endAbsY = shape.y + pts[3];
+                  newX = pt.x;
+                  newY = pt.y;
+                  newPts = [0, 0, endAbsX - pt.x, endAbsY - pt.y];
+                  needsUpdate = true;
+                }
+              }
+
+              if (shape.endBinding?.elementId === elementId) {
+                const pt = resolveBindingPoint(shape.endBinding, updatedElements);
+                if (pt) {
+                  newPts = [newPts[0], newPts[1], pt.x - newX, pt.y - newY];
+                  needsUpdate = true;
+                }
+              }
+
+              if (needsUpdate) {
+                updatedElements[elId] = {
+                  ...shape,
+                  x: newX,
+                  y: newY,
+                  points: newPts,
+                  width: Math.abs(newPts[2] - newPts[0]),
+                  height: Math.abs(newPts[3] - newPts[1]),
+                } as SlideElement;
+              }
+            }
+          }
+
           return {
             presentation: {
               ...state.presentation,
@@ -206,10 +262,7 @@ export const usePresentationStore = create<PresentationStore>()(
                 ...state.presentation.slides,
                 [slideId]: {
                   ...slide,
-                  elements: {
-                    ...slide.elements,
-                    [elementId]: { ...slide.elements[elementId], ...changes } as SlideElement,
-                  },
+                  elements: updatedElements,
                 },
               },
               updatedAt: Date.now(),
@@ -223,6 +276,31 @@ export const usePresentationStore = create<PresentationStore>()(
           const slide = state.presentation.slides[slideId];
           if (!slide) return state;
           const elements = { ...slide.elements };
+
+          // Clear bindings that reference deleted elements
+          const deletedSet = new Set(elementIds);
+          for (const elId of slide.elementOrder) {
+            if (deletedSet.has(elId)) continue;
+            const el = elements[elId];
+            if (el.type !== 'shape') continue;
+            const shape = el as ShapeElement;
+            if (shape.shapeType !== 'line' && shape.shapeType !== 'arrow') continue;
+            let changed = false;
+            let newStart = shape.startBinding;
+            let newEnd = shape.endBinding;
+            if (newStart && deletedSet.has(newStart.elementId)) {
+              newStart = null;
+              changed = true;
+            }
+            if (newEnd && deletedSet.has(newEnd.elementId)) {
+              newEnd = null;
+              changed = true;
+            }
+            if (changed) {
+              elements[elId] = { ...shape, startBinding: newStart, endBinding: newEnd } as SlideElement;
+            }
+          }
+
           for (const id of elementIds) delete elements[id];
           return {
             presentation: {
