@@ -1,6 +1,6 @@
 import { generateId } from './idGenerator';
 import { DEFAULT_TEXT_STYLE, DEFAULT_SHAPE_PROPS, SLIDE_WIDTH, SLIDE_HEIGHT } from './constants';
-import type { Slide, TextElement, ShapeElement, ImageElement, ShapeType, SlideElement, Presentation, Theme, ObjectMeta, SlideTemplate, SlideBackground } from '../types/presentation';
+import type { Slide, TextElement, ShapeElement, ImageElement, ShapeType, SlideElement, Presentation, Theme, ObjectMeta, SlideTemplate, SlideBackground, Resource } from '../types/presentation';
 
 export function createDefaultTheme(): Theme {
   return {
@@ -70,7 +70,17 @@ export function createShapeElement(shapeType: ShapeType = 'rect', overrides?: Pa
   };
 }
 
-export function createImageElement(src: string, originalWidth: number, originalHeight: number, overrides?: Partial<ImageElement>): ImageElement {
+export function createResource(name: string, src: string, originalWidth: number, originalHeight: number): Resource {
+  return {
+    id: generateId(),
+    name,
+    src,
+    originalWidth,
+    originalHeight,
+  };
+}
+
+export function createImageElement(resourceId: string | null, originalWidth: number, originalHeight: number, overrides?: Partial<ImageElement>): ImageElement {
   const maxW = SLIDE_WIDTH * 0.6;
   const maxH = SLIDE_HEIGHT * 0.6;
   const scale = Math.min(maxW / originalWidth, maxH / originalHeight, 1);
@@ -88,9 +98,7 @@ export function createImageElement(src: string, originalWidth: number, originalH
     opacity: 1,
     locked: false,
     visible: true,
-    src,
-    originalWidth,
-    originalHeight,
+    resourceId,
     cropX: 0,
     cropY: 0,
     cropWidth: originalWidth,
@@ -118,8 +126,9 @@ function parseSvgDimensions(svgText: string): { width: number; height: number } 
   return null;
 }
 
-export function loadImageFile(file: Blob, overrides?: Partial<ImageElement>): Promise<ImageElement> {
+export function loadImageFile(file: Blob, overrides?: Partial<ImageElement>): Promise<{ resource: Resource; element: ImageElement }> {
   const isSvg = file.type === 'image/svg+xml' || (file instanceof File && file.name.endsWith('.svg'));
+  const fileName = file instanceof File ? file.name : 'Image';
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (ev) => {
@@ -132,13 +141,19 @@ export function loadImageFile(file: Blob, overrides?: Partial<ImageElement>): Pr
         img.onload = () => {
           const w = dims?.width || img.width || SLIDE_WIDTH * 0.6;
           const h = dims?.height || img.height || SLIDE_HEIGHT * 0.6;
-          resolve(createImageElement(src, w, h, overrides));
+          const resource = createResource(fileName, src, w, h);
+          const element = createImageElement(resource.id, w, h, overrides);
+          resolve({ resource, element });
         };
         img.onerror = () => reject(new Error('Failed to load SVG'));
         img.src = src;
       } else {
         const img = new window.Image();
-        img.onload = () => resolve(createImageElement(src, img.width, img.height, overrides));
+        img.onload = () => {
+          const resource = createResource(fileName, src, img.width, img.height);
+          const element = createImageElement(resource.id, img.width, img.height, overrides);
+          resolve({ resource, element });
+        };
         img.onerror = () => reject(new Error('Failed to load image'));
         img.src = src;
       }
@@ -148,15 +163,17 @@ export function loadImageFile(file: Blob, overrides?: Partial<ImageElement>): Pr
   });
 }
 
-export async function loadPdfFile(file: Blob): Promise<ImageElement[]> {
+export async function loadPdfFile(file: Blob): Promise<{ resources: Resource[]; elements: ImageElement[] }> {
   const pdfjs = await import('pdfjs-dist');
   pdfjs.GlobalWorkerOptions.workerSrc = new URL(
     'pdfjs-dist/build/pdf.worker.min.mjs',
     import.meta.url,
   ).href;
 
+  const fileName = file instanceof File ? file.name : 'PDF';
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+  const resources: Resource[] = [];
   const elements: ImageElement[] = [];
 
   for (let i = 1; i <= pdf.numPages; i++) {
@@ -169,10 +186,14 @@ export async function loadPdfFile(file: Blob): Promise<ImageElement[]> {
     const ctx = canvas.getContext('2d')!;
     await page.render({ canvasContext: ctx, viewport }).promise;
     const src = canvas.toDataURL('image/png');
-    elements.push(createImageElement(src, viewport.width / scale, viewport.height / scale));
+    const w = viewport.width / scale;
+    const h = viewport.height / scale;
+    const resource = createResource(`${fileName} - Page ${i}`, src, w, h);
+    resources.push(resource);
+    elements.push(createImageElement(resource.id, w, h));
   }
 
-  return elements;
+  return { resources, elements };
 }
 
 export function createPresentation(): Presentation {
@@ -183,6 +204,7 @@ export function createPresentation(): Presentation {
     slides: { [firstSlide.id]: firstSlide },
     slideOrder: [firstSlide.id],
     objects: {},
+    resources: {},
     templates: {},
     theme: createDefaultTheme(),
     width: SLIDE_WIDTH,

@@ -5,10 +5,15 @@ import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 import { interpolateWithVisibility, lerpColor } from '../../utils/interpolation';
-import type { SlideElement, TextElement, ShapeElement, ImageElement, Slide } from '../../types/presentation';
+import type { SlideElement, TextElement, ShapeElement, ImageElement, Slide, Resource } from '../../types/presentation';
 
-const PresentationImageElement: React.FC<{ element: ImageElement }> = ({ element }) => {
-  const [image] = useImage(element.src);
+const PresentationImageElement: React.FC<{ element: ImageElement; resources: Record<string, Resource> }> = ({ element, resources }) => {
+  const resource = element.resourceId ? resources[element.resourceId] : undefined;
+  const [image] = useImage(resource?.src || '');
+
+  // Return null if no resource (invisible in presentation)
+  if (!resource) return null;
+
   return (
     <KonvaImage
       image={image}
@@ -23,7 +28,7 @@ const PresentationImageElement: React.FC<{ element: ImageElement }> = ({ element
   );
 };
 
-const PresentationSlideElement: React.FC<{ element: SlideElement }> = ({ element }) => {
+const PresentationSlideElement: React.FC<{ element: SlideElement; resources: Record<string, Resource> }> = ({ element, resources }) => {
   if (!element.visible) return null;
 
   if (element.type === 'text') {
@@ -57,7 +62,7 @@ const PresentationSlideElement: React.FC<{ element: SlideElement }> = ({ element
   }
 
   if (element.type === 'image') {
-    return <PresentationImageElement element={element as ImageElement} />;
+    return <PresentationImageElement element={element as ImageElement} resources={resources} />;
   }
 
   return null;
@@ -81,6 +86,7 @@ export const PresenterView: React.FC = () => {
   const setPresenting = useEditorStore((s) => s.setPresenting);
   const slideOrder = usePresentationStore((s) => s.presentation.slideOrder);
   const slides = usePresentationStore((s) => s.presentation.slides);
+  const resources = usePresentationStore((s) => s.presentation.resources);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -271,7 +277,7 @@ export const PresenterView: React.FC = () => {
       <Stage width={stageW} height={stageH} scaleX={scale} scaleY={scale} listening={false}>
         <Layer listening={false}>
           <Rect x={0} y={0} width={SLIDE_WIDTH} height={SLIDE_HEIGHT} fill={bgColor} listening={false} />
-          {renderedElements.map((el) => <PresentationSlideElement key={el.id} element={el} />)}
+          {renderedElements.map((el) => <PresentationSlideElement key={el.id} element={el} resources={resources} />)}
         </Layer>
       </Stage>
 

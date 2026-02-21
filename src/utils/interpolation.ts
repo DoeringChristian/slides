@@ -105,9 +105,7 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number):
     return {
       ...base,
       type: 'image',
-      src: t < 0.5 ? ia.src : ib.src,
-      originalWidth: t < 0.5 ? ia.originalWidth : ib.originalWidth,
-      originalHeight: t < 0.5 ? ia.originalHeight : ib.originalHeight,
+      resourceId: t < 0.5 ? ia.resourceId : ib.resourceId,
       cropX: lerp(ia.cropX, ib.cropX, t),
       cropY: lerp(ia.cropY, ib.cropY, t),
       cropWidth: lerp(ia.cropWidth, ib.cropWidth, t),

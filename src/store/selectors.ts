@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { usePresentationStore } from './presentationStore';
 import { useEditorStore } from './editorStore';
-import type { Slide, SlideElement, ObjectMeta } from '../types/presentation';
+import type { Slide, SlideElement, ObjectMeta, Resource } from '../types/presentation';
 
 export function useActiveSlide(): Slide | undefined {
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
@@ -98,4 +98,14 @@ export function useObjectElements(): Record<string, SlideElement | undefined> {
     }
     return result;
   }, [activeSlideId, slides, slideOrder, objects]);
+}
+
+export function useResource(resourceId: string | null | undefined): Resource | undefined {
+  const resources = usePresentationStore((s) => s.presentation.resources);
+  return resourceId ? resources[resourceId] : undefined;
+}
+
+export function useAllResources(): Resource[] {
+  const resources = usePresentationStore((s) => s.presentation.resources);
+  return useMemo(() => Object.values(resources), [resources]);
 }

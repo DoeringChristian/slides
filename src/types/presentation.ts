@@ -4,6 +4,14 @@ export interface ObjectMeta {
   type: 'text' | 'shape' | 'image';
 }
 
+export interface Resource {
+  id: string;
+  name: string;
+  src: string;
+  originalWidth: number;
+  originalHeight: number;
+}
+
 export interface SlideTemplate {
   id: string;
   name: string;
@@ -18,6 +26,7 @@ export interface Presentation {
   slides: Record<string, Slide>;
   slideOrder: string[];
   objects: Record<string, ObjectMeta>;
+  resources: Record<string, Resource>;
   templates: Record<string, SlideTemplate>;
   theme: Theme;
   width: number;
@@ -106,9 +115,7 @@ export interface ShapeElement extends BaseElement {
 
 export interface ImageElement extends BaseElement {
   type: 'image';
-  src: string;
-  originalWidth: number;
-  originalHeight: number;
+  resourceId?: string | null;  // null = empty placeholder
   cropX: number;
   cropY: number;
   cropWidth: number;

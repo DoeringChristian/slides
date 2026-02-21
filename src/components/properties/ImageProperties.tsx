@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState, useRef } from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
+import { ResourcePicker } from './ResourcePicker';
 import type { ImageElement } from '../../types/presentation';
 
 interface Props {
@@ -10,6 +11,38 @@ interface Props {
 export const ImageProperties: React.FC<Props> = ({ element }) => {
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const updateElement = usePresentationStore((s) => s.updateElement);
+  const resource = usePresentationStore((s) =>
+    element.resourceId ? s.presentation.resources[element.resourceId] : undefined
+  );
+
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  const handleOpenPicker = () => {
+    if (buttonRef.current) {
+      setAnchorRect(buttonRef.current.getBoundingClientRect());
+    }
+    setPickerOpen(true);
+  };
+
+  const handleSelectResource = (resourceId: string | null) => {
+    // Get the new resource for resetting crop
+    const resources = usePresentationStore.getState().presentation.resources;
+    const newResource = resourceId ? resources[resourceId] : undefined;
+
+    const updates: Partial<ImageElement> = { resourceId };
+
+    // Reset crop to full resource dimensions when changing resource
+    if (newResource) {
+      updates.cropX = 0;
+      updates.cropY = 0;
+      updates.cropWidth = newResource.originalWidth;
+      updates.cropHeight = newResource.originalHeight;
+    }
+
+    updateElement(activeSlideId, element.id, updates);
+  };
 
   return (
     <div className="space-y-3">
@@ -23,29 +56,26 @@ export const ImageProperties: React.FC<Props> = ({ element }) => {
           className="w-full accent-blue-500"
         />
       </div>
-      <div className="text-xs text-gray-400">
-        Original: {element.originalWidth} x {element.originalHeight}
-      </div>
+      {resource && (
+        <div className="text-xs text-gray-400">
+          Original: {resource.originalWidth} x {resource.originalHeight}
+        </div>
+      )}
       <button
-        onClick={() => {
-          const input = document.createElement('input');
-          input.type = 'file';
-          input.accept = 'image/*';
-          input.onchange = (e) => {
-            const file = (e.target as HTMLInputElement).files?.[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-              updateElement(activeSlideId, element.id, { src: ev.target?.result as string });
-            };
-            reader.readAsDataURL(file);
-          };
-          input.click();
-        }}
+        ref={buttonRef}
+        data-resource-trigger
+        onClick={handleOpenPicker}
         className="w-full h-8 text-sm border border-gray-300 rounded hover:bg-gray-50"
       >
-        Replace Image
+        {resource ? 'Change Resource' : 'Pick Resource'}
       </button>
+      <ResourcePicker
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        currentResourceId={element.resourceId}
+        onSelect={handleSelectResource}
+        anchorRect={anchorRect}
+      />
     </div>
   );
 };

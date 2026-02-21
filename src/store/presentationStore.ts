@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { temporal } from 'zundo';
-import type { Presentation, Slide, SlideElement, ShapeElement, ObjectMeta, SlideTemplate } from '../types/presentation';
+import type { Presentation, Slide, SlideElement, ShapeElement, ObjectMeta, SlideTemplate, Resource } from '../types/presentation';
 import { generateId } from '../utils/idGenerator';
 import { createPresentation, createSlide, duplicateElement, copySlideAsKeyframe, generateObjectName } from '../utils/slideFactory';
 import { resolveBindingPoint } from '../utils/connectorUtils';
@@ -67,6 +67,10 @@ interface PresentationStore {
   moveElementBackward: (slideId: string, elementId: string) => void;
   moveElementToFront: (slideId: string, elementId: string) => void;
   moveElementToBack: (slideId: string, elementId: string) => void;
+
+  // Resource actions
+  addResource: (resource: Resource) => void;
+  removeResource: (resourceId: string) => void;
 
   // Keyframe actions
   hideElement: (slideId: string, elementId: string) => void;
@@ -537,6 +541,29 @@ export const usePresentationStore = create<PresentationStore>()(
             presentation: {
               ...state.presentation,
               slides: { ...state.presentation.slides, [slideId]: { ...slide, elementOrder: order } },
+              updatedAt: Date.now(),
+            },
+          };
+        });
+      },
+
+      addResource: (resource: Resource) => {
+        set((state) => ({
+          presentation: {
+            ...state.presentation,
+            resources: { ...state.presentation.resources, [resource.id]: resource },
+            updatedAt: Date.now(),
+          },
+        }));
+      },
+
+      removeResource: (resourceId: string) => {
+        set((state) => {
+          const { [resourceId]: _removed, ...remaining } = state.presentation.resources;
+          return {
+            presentation: {
+              ...state.presentation,
+              resources: remaining,
               updatedAt: Date.now(),
             },
           };

@@ -2,6 +2,7 @@ import React from 'react';
 import { X, EyeOff, Eye } from 'lucide-react';
 import { Stage, Layer, Rect, Text, Ellipse, Image as KonvaImage, Line, Arrow, Star, RegularPolygon } from 'react-konva';
 import useImage from 'use-image';
+import { usePresentationStore } from '../../store/presentationStore';
 import type { Slide, SlideElement, TextElement, ShapeElement, ImageElement } from '../../types/presentation';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 
@@ -39,7 +40,14 @@ const HighlightRect: React.FC<{ element: SlideElement }> = ({ element }) => {
 };
 
 const ThumbnailImageElement: React.FC<{ element: ImageElement }> = ({ element }) => {
-  const [image] = useImage(element.src);
+  const resource = usePresentationStore((s) =>
+    element.resourceId ? s.presentation.resources[element.resourceId] : undefined
+  );
+  const [image] = useImage(resource?.src || '');
+
+  // Return null if no resource
+  if (!resource) return null;
+
   return (
     <KonvaImage
       image={image}

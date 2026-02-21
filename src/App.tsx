@@ -5,7 +5,8 @@ import { useEditorStore } from './store/editorStore';
 import { usePresentationStore } from './store/presentationStore';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { generateObjectName } from './utils/slideFactory';
-import type { Presentation, ObjectMeta } from './types/presentation';
+import { generateId } from './utils/idGenerator';
+import type { Presentation, ObjectMeta, Resource } from './types/presentation';
 
 function migratePresentation(data: any): Presentation {
   if (!data.objects) {
@@ -26,6 +27,75 @@ function migratePresentation(data: any): Presentation {
     }
     data.objects = objects;
   }
+
+  // Migrate image elements: extract src into resources
+  if (!data.resources) {
+    const resources: Record<string, Resource> = {};
+    const srcToResourceId: Record<string, string> = {}; // Dedup by src
+
+    // Collect all image elements from slides
+    for (const slideId of data.slideOrder) {
+      const slide = data.slides[slideId];
+      if (!slide) continue;
+      for (const elId of slide.elementOrder) {
+        const el = slide.elements[elId];
+        if (!el || el.type !== 'image') continue;
+        if (el.src) {
+          // Check if we already have a resource for this src
+          let resourceId = srcToResourceId[el.src];
+          if (!resourceId) {
+            resourceId = generateId();
+            srcToResourceId[el.src] = resourceId;
+            resources[resourceId] = {
+              id: resourceId,
+              name: `Image ${Object.keys(resources).length + 1}`,
+              src: el.src,
+              originalWidth: el.originalWidth || 100,
+              originalHeight: el.originalHeight || 100,
+            };
+          }
+          // Update element: replace src with resourceId, remove originalWidth/originalHeight
+          el.resourceId = resourceId;
+          delete el.src;
+          delete el.originalWidth;
+          delete el.originalHeight;
+        }
+      }
+    }
+
+    // Also migrate templates
+    if (data.templates) {
+      for (const templateId of Object.keys(data.templates)) {
+        const template = data.templates[templateId];
+        if (!template) continue;
+        for (const elId of template.elementOrder) {
+          const el = template.elements[elId];
+          if (!el || el.type !== 'image') continue;
+          if (el.src) {
+            let resourceId = srcToResourceId[el.src];
+            if (!resourceId) {
+              resourceId = generateId();
+              srcToResourceId[el.src] = resourceId;
+              resources[resourceId] = {
+                id: resourceId,
+                name: `Image ${Object.keys(resources).length + 1}`,
+                src: el.src,
+                originalWidth: el.originalWidth || 100,
+                originalHeight: el.originalHeight || 100,
+              };
+            }
+            el.resourceId = resourceId;
+            delete el.src;
+            delete el.originalWidth;
+            delete el.originalHeight;
+          }
+        }
+      }
+    }
+
+    data.resources = resources;
+  }
+
   // Normalize transition format: remove legacy type field
   for (const slideId of data.slideOrder) {
     const slide = data.slides[slideId];

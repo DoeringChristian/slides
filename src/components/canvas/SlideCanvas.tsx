@@ -270,6 +270,8 @@ export const SlideCanvas: React.FC = () => {
     }
   }, []);
 
+  const addResource = usePresentationStore((s) => s.addResource);
+
   const handleDrop = useCallback((e: DragEvent<HTMLDivElement>) => {
     // Internal object drop (unhide)
     const objectId = e.dataTransfer.getData('application/x-object-id');
@@ -296,16 +298,17 @@ export const SlideCanvas: React.FC = () => {
 
     Array.from(files).forEach(async (file) => {
       if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
-        const pages = await loadPdfFile(file);
-        if (pages.length === 1) {
-          pages[0].x = dropX;
-          pages[0].y = dropY;
-          addElement(activeSlideId, pages[0]);
-          setSelectedElements([pages[0].id]);
+        const { resources, elements } = await loadPdfFile(file);
+        resources.forEach((r) => addResource(r));
+        if (elements.length === 1) {
+          elements[0].x = dropX;
+          elements[0].y = dropY;
+          addElement(activeSlideId, elements[0]);
+          setSelectedElements([elements[0].id]);
         } else {
           let insertIdx = currentIdx + 1;
           let lastSlideId = '';
-          for (const pageEl of pages) {
+          for (const pageEl of elements) {
             const newSlideId = addEmptySlide(insertIdx);
             addElement(newSlideId, pageEl);
             lastSlideId = newSlideId;
@@ -314,12 +317,13 @@ export const SlideCanvas: React.FC = () => {
           if (lastSlideId) setActiveSlide(lastSlideId);
         }
       } else if (file.type.startsWith('image/') || file.name.endsWith('.svg')) {
-        const el = await loadImageFile(file, { x: dropX, y: dropY });
-        addElement(activeSlideId, el);
-        setSelectedElements([el.id]);
+        const { resource, element } = await loadImageFile(file, { x: dropX, y: dropY });
+        addResource(resource);
+        addElement(activeSlideId, element);
+        setSelectedElements([element.id]);
       }
     });
-  }, [activeSlideId, zoom, unhideElement, setSelectedElements, addElement, addEmptySlide, setActiveSlide]);
+  }, [activeSlideId, zoom, unhideElement, setSelectedElements, addElement, addEmptySlide, setActiveSlide, addResource]);
 
   // Ctrl+wheel and trackpad pinch-to-zoom
   useEffect(() => {

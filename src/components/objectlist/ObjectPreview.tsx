@@ -1,5 +1,6 @@
 import React from 'react';
 import { Type, Square, Image } from 'lucide-react';
+import { usePresentationStore } from '../../store/presentationStore';
 import type { SlideElement, ObjectMeta } from '../../types/presentation';
 
 interface Props {
@@ -19,6 +20,8 @@ const SHAPE_CLIP_PATHS: Record<string, string> = {
 };
 
 export const ObjectPreview: React.FC<Props> = ({ element, objectType }) => {
+  const resources = usePresentationStore((s) => s.presentation.resources);
+
   if (!element) {
     const Icon = FALLBACK_ICONS[objectType] || Square;
     return (
@@ -85,10 +88,21 @@ export const ObjectPreview: React.FC<Props> = ({ element, objectType }) => {
   }
 
   if (element.type === 'image') {
+    const resource = element.resourceId ? resources[element.resourceId] : undefined;
+
+    // Show fallback icon if no resource
+    if (!resource) {
+      return (
+        <div className="w-full h-full flex items-center justify-center bg-gray-50">
+          <Image size={24} className="text-gray-300" />
+        </div>
+      );
+    }
+
     return (
       <div className="w-full h-full bg-gray-50">
         <img
-          src={element.src}
+          src={resource.src}
           className="w-full h-full object-cover"
           draggable={false}
         />

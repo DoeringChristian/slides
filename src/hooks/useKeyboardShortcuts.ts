@@ -193,15 +193,16 @@ export function useKeyboardShortcuts() {
           const file = item.getAsFile();
           if (!file) continue;
           e.preventDefault();
-          loadPdfFile(file).then((pages) => {
-            if (pages.length === 1) {
-              store.getState().addElement(activeSlideId, pages[0]);
-              editor.getState().setSelectedElements([pages[0].id]);
+          loadPdfFile(file).then(({ resources, elements }) => {
+            resources.forEach((r) => store.getState().addResource(r));
+            if (elements.length === 1) {
+              store.getState().addElement(activeSlideId, elements[0]);
+              editor.getState().setSelectedElements([elements[0].id]);
             } else {
               const { slideOrder } = store.getState().presentation;
               let insertIdx = slideOrder.indexOf(activeSlideId) + 1;
               let lastSlideId = '';
-              for (const pageEl of pages) {
+              for (const pageEl of elements) {
                 const newSlideId = store.getState().addEmptySlide(insertIdx);
                 store.getState().addElement(newSlideId, pageEl);
                 lastSlideId = newSlideId;
@@ -216,9 +217,10 @@ export function useKeyboardShortcuts() {
           const file = item.getAsFile();
           if (!file) continue;
           e.preventDefault();
-          loadImageFile(file).then((el) => {
-            store.getState().addElement(activeSlideId, el);
-            editor.getState().setSelectedElements([el.id]);
+          loadImageFile(file).then(({ resource, element }) => {
+            store.getState().addResource(resource);
+            store.getState().addElement(activeSlideId, element);
+            editor.getState().setSelectedElements([element.id]);
           });
           return;
         }

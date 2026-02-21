@@ -38,6 +38,8 @@ export const Toolbar: React.FC = () => {
   const addEmptySlide = usePresentationStore((s) => s.addEmptySlide);
   const setActiveSlide = useEditorStore((s) => s.setActiveSlide);
 
+  const addResource = usePresentationStore((s) => s.addResource);
+
   const handleImageTool = () => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -46,15 +48,16 @@ export const Toolbar: React.FC = () => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
       if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
-        const pages = await loadPdfFile(file);
-        if (pages.length === 1) {
-          addElement(activeSlideId, pages[0]);
-          setSelectedElements([pages[0].id]);
+        const { resources, elements } = await loadPdfFile(file);
+        resources.forEach((r) => addResource(r));
+        if (elements.length === 1) {
+          addElement(activeSlideId, elements[0]);
+          setSelectedElements([elements[0].id]);
         } else {
           const { slideOrder } = usePresentationStore.getState().presentation;
           let insertIdx = slideOrder.indexOf(activeSlideId) + 1;
           let lastSlideId = '';
-          for (const pageEl of pages) {
+          for (const pageEl of elements) {
             const newSlideId = addEmptySlide(insertIdx);
             addElement(newSlideId, pageEl);
             lastSlideId = newSlideId;
@@ -63,9 +66,10 @@ export const Toolbar: React.FC = () => {
           if (lastSlideId) setActiveSlide(lastSlideId);
         }
       } else {
-        const el = await loadImageFile(file);
-        addElement(activeSlideId, el);
-        setSelectedElements([el.id]);
+        const { resource, element } = await loadImageFile(file);
+        addResource(resource);
+        addElement(activeSlideId, element);
+        setSelectedElements([element.id]);
       }
       setTool('select');
     };
