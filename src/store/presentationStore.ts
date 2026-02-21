@@ -524,7 +524,7 @@ export const usePresentationStore = create<PresentationStore>()(
           const slide = state.presentation.slides[slideId];
           if (!slide || !slide.elements[elementId]) return state;
 
-          let slides = {
+          const slides = {
             ...state.presentation.slides,
             [slideId]: {
               ...slide,
@@ -534,7 +534,6 @@ export const usePresentationStore = create<PresentationStore>()(
               },
             },
           };
-          slides = propagateToSubsequentSlides(slides, state.presentation.slideOrder, slideId, elementId, { visible: false });
 
           return {
             presentation: { ...state.presentation, slides, updatedAt: Date.now() },
