@@ -16,7 +16,7 @@ export const AppLayout: React.FC = () => {
       <div className="flex flex-1 overflow-hidden">
         <SlidePanel />
         <div className="flex flex-col flex-1 overflow-hidden">
-          <div className="flex-1 overflow-hidden relative bg-gray-200 flex items-center justify-center">
+          <div className="flex-1 overflow-auto relative bg-gray-200 flex items-center justify-center">
             <SlideCanvas />
           </div>
           <ObjectListDrawer />

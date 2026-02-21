@@ -29,7 +29,7 @@ export function useDrawing() {
     if (tool === 'select') return;
     const stage = e.target.getStage();
     if (!stage) return;
-    const pos = stage.getPointerPosition();
+    const pos = stage.getRelativePointerPosition();
     if (!pos) return;
     setDrawState({ startX: pos.x, startY: pos.y, currentX: pos.x, currentY: pos.y, isDrawing: true });
   }, [tool]);
@@ -38,7 +38,7 @@ export function useDrawing() {
     if (!drawState.isDrawing) return;
     const stage = e.target.getStage();
     if (!stage) return;
-    const pos = stage.getPointerPosition();
+    const pos = stage.getRelativePointerPosition();
     if (!pos) return;
     setDrawState((s) => ({ ...s, currentX: pos.x, currentY: pos.y }));
   }, [drawState.isDrawing]);

@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useCallback } from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import type { TextElement } from '../../types/presentation';
+import { CANVAS_PADDING } from '../../utils/constants';
 
 interface Props {
   stageRef: React.RefObject<HTMLDivElement | null>;
@@ -41,8 +42,8 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
   if (!stageElement) return null;
   const stageRect = stageElement.getBoundingClientRect();
 
-  const left = stageRect.left - containerRect.left + element.x * zoom;
-  const top = stageRect.top - containerRect.top + element.y * zoom;
+  const left = stageRect.left - containerRect.left + (element.x + CANVAS_PADDING) * zoom;
+  const top = stageRect.top - containerRect.top + (element.y + CANVAS_PADDING) * zoom;
 
   return (
     <div className="text-edit-overlay absolute" style={{ left: 0, top: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>

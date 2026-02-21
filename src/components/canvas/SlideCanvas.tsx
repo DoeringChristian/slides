@@ -16,7 +16,7 @@ import { GridOverlay } from './GridOverlay';
 import { computeGuides } from '../../hooks/useAlignmentGuides';
 import { getBindingTarget, getAnchorPoint } from '../../utils/connectorUtils';
 import { snapToGrid as snapToGridFn } from '../../utils/geometry';
-import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
+import { SLIDE_WIDTH, SLIDE_HEIGHT, CANVAS_PADDING } from '../../utils/constants';
 import type { ShapeElement } from '../../types/presentation';
 import type Konva from 'konva';
 
@@ -225,8 +225,8 @@ export const SlideCanvas: React.FC = () => {
     if (!objectId || !activeSlideId || !containerRef.current) return;
     e.preventDefault();
     const rect = containerRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / zoom;
-    const y = (e.clientY - rect.top) / zoom;
+    const x = (e.clientX - rect.left) / zoom - CANVAS_PADDING;
+    const y = (e.clientY - rect.top) / zoom - CANVAS_PADDING;
     unhideElement(activeSlideId, objectId, { x, y });
     setSelectedElements([objectId]);
   }, [activeSlideId, zoom, unhideElement, setSelectedElements]);
@@ -254,8 +254,8 @@ export const SlideCanvas: React.FC = () => {
 
   const isHoveredVisibleOnSlide = hoveredObjectId ? !!(slide?.elements[hoveredObjectId]?.visible) : false;
 
-  const stageWidth = SLIDE_WIDTH * zoom;
-  const stageHeight = SLIDE_HEIGHT * zoom;
+  const stageWidth = (SLIDE_WIDTH + 2 * CANVAS_PADDING) * zoom;
+  const stageHeight = (SLIDE_HEIGHT + 2 * CANVAS_PADDING) * zoom;
   const cursor = tool === 'select' ? 'default' : 'crosshair';
 
   return (
@@ -265,6 +265,8 @@ export const SlideCanvas: React.FC = () => {
         ref={stageRef}
         width={stageWidth}
         height={stageHeight}
+        x={CANVAS_PADDING * zoom}
+        y={CANVAS_PADDING * zoom}
         scaleX={zoom}
         scaleY={zoom}
         onClick={handleStageClick}
