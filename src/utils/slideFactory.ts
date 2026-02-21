@@ -99,6 +99,21 @@ export function createImageElement(src: string, originalWidth: number, originalH
   };
 }
 
+export function loadImageFile(file: Blob, overrides?: Partial<ImageElement>): Promise<ImageElement> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const src = ev.target?.result as string;
+      const img = new window.Image();
+      img.onload = () => resolve(createImageElement(src, img.width, img.height, overrides));
+      img.onerror = () => reject(new Error('Failed to load image'));
+      img.src = src;
+    };
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsDataURL(file);
+  });
+}
+
 export function createPresentation(): Presentation {
   const firstSlide = createSlide();
   return {

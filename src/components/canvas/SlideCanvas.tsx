@@ -17,6 +17,7 @@ import { computeGuides } from '../../hooks/useAlignmentGuides';
 import { getBindingTarget, getAnchorPoint } from '../../utils/connectorUtils';
 import { snapToGrid as snapToGridFn } from '../../utils/geometry';
 import { SLIDE_WIDTH, SLIDE_HEIGHT, CANVAS_PADDING } from '../../utils/constants';
+import { loadImageFile } from '../../utils/slideFactory';
 import type { ShapeElement } from '../../types/presentation';
 import type Konva from 'konva';
 
@@ -220,23 +221,44 @@ export const SlideCanvas: React.FC = () => {
     }
   }, [slide, setEditingTextId]);
 
+  const addElement = usePresentationStore((s) => s.addElement);
+
   const handleDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
-    if (e.dataTransfer.types.includes('application/x-object-id')) {
+    if (e.dataTransfer.types.includes('application/x-object-id') || e.dataTransfer.types.includes('Files')) {
       e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
+      e.dataTransfer.dropEffect = e.dataTransfer.types.includes('application/x-object-id') ? 'move' : 'copy';
     }
   }, []);
 
   const handleDrop = useCallback((e: DragEvent<HTMLDivElement>) => {
+    // Internal object drop (unhide)
     const objectId = e.dataTransfer.getData('application/x-object-id');
-    if (!objectId || !activeSlideId || !containerRef.current) return;
+    if (objectId && activeSlideId && containerRef.current) {
+      e.preventDefault();
+      const rect = containerRef.current.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / zoom - CANVAS_PADDING;
+      const y = (e.clientY - rect.top) / zoom - CANVAS_PADDING;
+      unhideElement(activeSlideId, objectId, { x, y });
+      setSelectedElements([objectId]);
+      return;
+    }
+
+    // External file drop
+    const files = e.dataTransfer.files;
+    if (!files.length || !activeSlideId || !containerRef.current) return;
     e.preventDefault();
     const rect = containerRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / zoom - CANVAS_PADDING;
-    const y = (e.clientY - rect.top) / zoom - CANVAS_PADDING;
-    unhideElement(activeSlideId, objectId, { x, y });
-    setSelectedElements([objectId]);
-  }, [activeSlideId, zoom, unhideElement, setSelectedElements]);
+    const dropX = (e.clientX - rect.left) / zoom - CANVAS_PADDING;
+    const dropY = (e.clientY - rect.top) / zoom - CANVAS_PADDING;
+
+    Array.from(files).forEach((file) => {
+      if (!file.type.startsWith('image/')) return;
+      loadImageFile(file, { x: dropX, y: dropY }).then((el) => {
+        addElement(activeSlideId, el);
+        setSelectedElements([el.id]);
+      });
+    });
+  }, [activeSlideId, zoom, unhideElement, setSelectedElements, addElement]);
 
   // Ctrl+wheel and trackpad pinch-to-zoom
   useEffect(() => {

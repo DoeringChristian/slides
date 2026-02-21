@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useEditorStore } from '../store/editorStore';
 import { usePresentationStore } from '../store/presentationStore';
-import { duplicateElement } from '../utils/slideFactory';
+import { duplicateElement, loadImageFile } from '../utils/slideFactory';
 
 export function useKeyboardShortcuts() {
   const store = usePresentationStore;
@@ -98,7 +98,7 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      // Paste
+      // Paste (internal elements only — image paste is handled via 'paste' event)
       if (ctrl && e.key === 'v') {
         const clipboard = editor.getState().clipboard;
         if (clipboard.length > 0) {
@@ -178,7 +178,35 @@ export function useKeyboardShortcuts() {
       }
     };
 
+    const handlePaste = (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement;
+      const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+      if (isInput) return;
+      if (editor.getState().isPresenting) return;
+
+      const items = e.clipboardData?.items;
+      if (!items) return;
+
+      const activeSlideId = editor.getState().activeSlideId;
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (!file) continue;
+          e.preventDefault();
+          loadImageFile(file).then((el) => {
+            store.getState().addElement(activeSlideId, el);
+            editor.getState().setSelectedElements([el.id]);
+          });
+          return;
+        }
+      }
+    };
+
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    window.addEventListener('paste', handlePaste);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('paste', handlePaste);
+    };
   }, []);
 }
