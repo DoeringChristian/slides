@@ -11,7 +11,7 @@ import { AlignmentGuides } from './AlignmentGuides';
 import { ConnectorHighlight } from './ConnectorHighlight';
 import { HoverOverlay } from './HoverOverlay';
 import { TextEditOverlay } from './TextEditOverlay';
-import { ImagePlaceholderOverlay } from './ImagePlaceholderOverlay';
+import { SelectionActionBar } from './SelectionActionBar';
 import { DrawingPreview, useDrawing } from './DrawingLayer';
 import { GridOverlay } from './GridOverlay';
 import { computeGuides } from '../../hooks/useAlignmentGuides';
@@ -20,7 +20,7 @@ import { snapToGrid as snapToGridFn } from '../../utils/geometry';
 import { isCtrlHeld } from '../../utils/keyboard';
 import { SLIDE_WIDTH, SLIDE_HEIGHT, CANVAS_PADDING } from '../../utils/constants';
 import { loadImageFile, loadPdfFile } from '../../utils/slideFactory';
-import type { ShapeElement, ImageElement } from '../../types/presentation';
+import type { ShapeElement } from '../../types/presentation';
 import type Konva from 'konva';
 
 interface Guide {
@@ -349,9 +349,9 @@ export const SlideCanvas: React.FC = () => {
 
   const isHoveredVisibleOnSlide = hoveredObjectId ? !!(slide?.elements[hoveredObjectId]?.visible) : false;
 
-  // Find all visible image elements for hover overlay
-  const visibleImageElements = useMemo(() => {
-    return elements.filter((el) => el.type === 'image' && el.visible) as ImageElement[];
+  // Find all visible elements for selection action bar
+  const visibleElements = useMemo(() => {
+    return elements.filter((el) => el.visible);
   }, [elements]);
 
   const stageWidth = (SLIDE_WIDTH + 2 * CANVAS_PADDING) * zoom;
@@ -427,8 +427,8 @@ export const SlideCanvas: React.FC = () => {
       </Stage>
 
       <TextEditOverlay stageRef={containerRef} zoom={zoom} />
-      {visibleImageElements.map((el) => (
-        <ImagePlaceholderOverlay
+      {visibleElements.map((el) => (
+        <SelectionActionBar
           key={el.id}
           element={el}
           zoom={zoom}

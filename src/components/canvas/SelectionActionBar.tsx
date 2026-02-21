@@ -1,18 +1,18 @@
 import React, { useState, useRef } from 'react';
-import { ImagePlus } from 'lucide-react';
+import { ImagePlus, Lock, Unlock } from 'lucide-react';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useEditorStore } from '../../store/editorStore';
 import { ResourcePicker } from '../properties/ResourcePicker';
 import { CANVAS_PADDING } from '../../utils/constants';
-import type { ImageElement } from '../../types/presentation';
+import type { SlideElement, ImageElement } from '../../types/presentation';
 
 interface Props {
-  element: ImageElement;
+  element: SlideElement;
   zoom: number;
   isSelected: boolean;
 }
 
-export const ImagePlaceholderOverlay: React.FC<Props> = ({ element, zoom, isSelected }) => {
+export const SelectionActionBar: React.FC<Props> = ({ element, zoom, isSelected }) => {
   const updateElement = usePresentationStore((s) => s.updateElement);
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const resources = usePresentationStore((s) => s.presentation.resources);
@@ -30,12 +30,19 @@ export const ImagePlaceholderOverlay: React.FC<Props> = ({ element, zoom, isSele
   // Only show when selected
   if (!isSelected) return null;
 
-  const handleClick = (e: React.MouseEvent) => {
+  const isImage = element.type === 'image';
+
+  const handleResourceClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (buttonRef.current) {
       setAnchorRect(buttonRef.current.getBoundingClientRect());
     }
     setPickerOpen(true);
+  };
+
+  const handleLockToggle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    updateElement(activeSlideId, element.id, { locked: !element.locked });
   };
 
   const handleSelectResource = (resourceId: string | null) => {
@@ -79,25 +86,43 @@ export const ImagePlaceholderOverlay: React.FC<Props> = ({ element, zoom, isSele
             className="flex items-center gap-1 bg-white/90 backdrop-blur-sm border border-gray-200 rounded-full shadow-md px-1.5 py-1"
             style={{ pointerEvents: 'auto' }}
           >
+            {/* Lock/Unlock button - shown for all elements */}
             <button
-              ref={buttonRef}
-              data-resource-trigger
-              onClick={handleClick}
-              className="p-1.5 rounded-full hover:bg-blue-100 text-gray-400 hover:text-blue-600 transition-colors"
-              title="Change image"
+              onClick={handleLockToggle}
+              className={`p-1.5 rounded-full transition-colors ${
+                element.locked
+                  ? 'bg-amber-100 text-amber-600 hover:bg-amber-200'
+                  : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'
+              }`}
+              title={element.locked ? 'Unlock' : 'Lock'}
             >
-              <ImagePlus size={18} />
+              {element.locked ? <Lock size={18} /> : <Unlock size={18} />}
             </button>
+
+            {/* Resource picker button - only for images */}
+            {isImage && (
+              <button
+                ref={buttonRef}
+                data-resource-trigger
+                onClick={handleResourceClick}
+                className="p-1.5 rounded-full hover:bg-blue-100 text-gray-400 hover:text-blue-600 transition-colors"
+                title="Change image"
+              >
+                <ImagePlus size={18} />
+              </button>
+            )}
           </div>
         </div>
       </div>
-      <ResourcePicker
-        open={pickerOpen}
-        onClose={() => setPickerOpen(false)}
-        currentResourceId={element.resourceId}
-        onSelect={handleSelectResource}
-        anchorRect={anchorRect}
-      />
+      {isImage && (
+        <ResourcePicker
+          open={pickerOpen}
+          onClose={() => setPickerOpen(false)}
+          currentResourceId={(element as ImageElement).resourceId}
+          onSelect={handleSelectResource}
+          anchorRect={anchorRect}
+        />
+      )}
     </>
   );
 };
