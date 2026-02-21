@@ -222,7 +222,7 @@ export const SelectionTransformer: React.FC<Props> = ({ selectedIds, stageRef, l
         }
       }}
       rotationSnaps={ctrlHeld ? ROTATION_SNAPS : []}
-      rotationSnapTolerance={ctrlHeld ? 10 : 5}
+      rotationSnapTolerance={ctrlHeld ? 10 : 0}
       enabledAnchors={[
         'top-left', 'top-center', 'top-right',
         'middle-left', 'middle-right',
