@@ -14,6 +14,7 @@ import { DrawingPreview, useDrawing } from './DrawingLayer';
 import { GridOverlay } from './GridOverlay';
 import { computeGuides } from '../../hooks/useAlignmentGuides';
 import { getBindingTarget, getAnchorPoint } from '../../utils/connectorUtils';
+import { snapToGrid as snapToGridFn } from '../../utils/geometry';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 import type { ShapeElement } from '../../types/presentation';
 import type Konva from 'konva';
@@ -93,24 +94,66 @@ export const SlideCanvas: React.FC = () => {
     }
   }, [activeSlideId, updateElement]);
 
-  const handleDragMove = useCallback((id: string, x: number, y: number) => {
+  const handleDragMove = useCallback((id: string, x: number, y: number, node: Konva.Node) => {
     if (!slide) return;
     const el = slide.elements[id];
     if (!el) return;
+
+    const { snapToGrid: isSnapToGrid, gridSize: grid } = useEditorStore.getState();
+
+    // Compute alignment guides from raw position
     const dragged = { x, y, width: el.width, height: el.height };
     const others = elements
       .filter((e) => e.id !== id)
       .map((e) => ({ x: e.x, y: e.y, width: e.width, height: e.height }));
     const result = computeGuides(dragged, others);
     setGuides(result.guides);
+
+    // Apply snapping
+    let snappedX = x;
+    let snappedY = y;
+
+    if (isSnapToGrid) {
+      snappedX = snapToGridFn(x, grid);
+      snappedY = snapToGridFn(y, grid);
+    }
+
+    // Alignment guides override grid snap
+    if (result.snapX !== null) snappedX = result.snapX;
+    if (result.snapY !== null) snappedY = result.snapY;
+
+    node.x(snappedX);
+    node.y(snappedY);
   }, [slide, elements]);
 
   const handleDragEndWithGuides = useCallback((id: string, x: number, y: number) => {
     setGuides([]);
-    if (activeSlideId) {
-      updateElement(activeSlideId, id, { x, y });
+    if (!activeSlideId) return;
+
+    const { snapToGrid: isSnapToGrid, gridSize: grid } = useEditorStore.getState();
+    const el = slide?.elements[id];
+
+    let snappedX = x;
+    let snappedY = y;
+
+    if (el) {
+      const dragged = { x, y, width: el.width, height: el.height };
+      const others = elements
+        .filter((e) => e.id !== id)
+        .map((e) => ({ x: e.x, y: e.y, width: e.width, height: e.height }));
+      const result = computeGuides(dragged, others);
+
+      if (isSnapToGrid) {
+        snappedX = snapToGridFn(x, grid);
+        snappedY = snapToGridFn(y, grid);
+      }
+
+      if (result.snapX !== null) snappedX = result.snapX;
+      if (result.snapY !== null) snappedY = result.snapY;
     }
-  }, [activeSlideId, updateElement]);
+
+    updateElement(activeSlideId, id, { x: snappedX, y: snappedY });
+  }, [activeSlideId, updateElement, slide, elements]);
 
   const handleLineEndpointUpdate = useCallback((attrs: Partial<ShapeElement>) => {
     if (!activeSlideId || !soleSelectedLineElement) return;

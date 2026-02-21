@@ -10,7 +10,7 @@ interface Props {
   isSelected: boolean;
   onSelect: (id: string, e: Konva.KonvaEventObject<MouseEvent>) => void;
   onDragEnd: (id: string, x: number, y: number) => void;
-  onDragMove?: (id: string, x: number, y: number) => void;
+  onDragMove?: (id: string, x: number, y: number, node: Konva.Node) => void;
   onTransformEnd: (id: string, attrs: Record<string, number>) => void;
   onDoubleClick: (id: string) => void;
 }

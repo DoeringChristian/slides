@@ -30,7 +30,7 @@ export const useEditorStore = create<EditorStore>()((set) => ({
   isPresenting: false,
   presentingSlideIndex: 0,
   showGrid: false,
-  snapToGrid: false,
+  snapToGrid: true,
   gridSize: 20,
   clipboard: [],
   editingTextId: null,

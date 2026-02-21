@@ -8,7 +8,7 @@ interface Props {
   isSelected: boolean;
   onSelect: (id: string, e: Konva.KonvaEventObject<MouseEvent>) => void;
   onDragEnd: (id: string, x: number, y: number) => void;
-  onDragMove?: (id: string, x: number, y: number) => void;
+  onDragMove?: (id: string, x: number, y: number, node: Konva.Node) => void;
   onTransformEnd: (id: string, attrs: Record<string, number>) => void;
 }
 
@@ -28,7 +28,7 @@ export const ShapeNode: React.FC<Props> = ({ element, isSelected, onSelect, onDr
     onClick: (e: Konva.KonvaEventObject<MouseEvent>) => onSelect(element.id, e),
     onTap: (e: any) => onSelect(element.id, e),
     onDragMove: (e: Konva.KonvaEventObject<DragEvent>) => {
-      onDragMove?.(element.id, e.target.x(), e.target.y());
+      onDragMove?.(element.id, e.target.x(), e.target.y(), e.target);
     },
     onDragEnd: (e: Konva.KonvaEventObject<DragEvent>) => {
       onDragEnd(element.id, e.target.x(), e.target.y());

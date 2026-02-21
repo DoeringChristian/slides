@@ -8,7 +8,7 @@ interface Props {
   isSelected: boolean;
   onSelect: (id: string, e: Konva.KonvaEventObject<MouseEvent>) => void;
   onDragEnd: (id: string, x: number, y: number) => void;
-  onDragMove?: (id: string, x: number, y: number) => void;
+  onDragMove?: (id: string, x: number, y: number, node: Konva.Node) => void;
   onTransformEnd: (id: string, attrs: Record<string, number>) => void;
   onDoubleClick: (id: string) => void;
 }
@@ -47,7 +47,7 @@ export const TextNode: React.FC<Props> = ({ element, isSelected, onSelect, onDra
       onDblClick={() => onDoubleClick(element.id)}
       onDblTap={() => onDoubleClick(element.id)}
       onDragMove={(e) => {
-        onDragMove?.(element.id, e.target.x(), e.target.y());
+        onDragMove?.(element.id, e.target.x(), e.target.y(), e.target);
       }}
       onDragEnd={(e) => {
         onDragEnd(element.id, e.target.x(), e.target.y());
