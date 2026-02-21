@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { SlideSortable } from './SlideSortable';
@@ -15,9 +15,10 @@ interface SlideInsertRowProps {
   hasNext: boolean;
   onInsert: (afterIndex: number, mode: 'previous' | 'next' | 'interpolate') => void;
   onInsertEmpty: (afterIndex: number) => void;
+  onOpenTemplatePicker: (insertIndex: number, anchorRect: DOMRect) => void;
 }
 
-const SlideInsertRow: React.FC<SlideInsertRowProps> = ({ afterIndex, hasPrevious, hasNext, onInsert, onInsertEmpty }) => {
+const SlideInsertRow: React.FC<SlideInsertRowProps> = ({ afterIndex, hasPrevious, hasNext, onInsert, onInsertEmpty, onOpenTemplatePicker }) => {
   return (
     <div className="group relative h-0 z-10 flex items-center justify-center">
       <div className="absolute inset-x-0 top-0 flex items-center justify-center -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
@@ -56,11 +57,27 @@ const SlideInsertRow: React.FC<SlideInsertRowProps> = ({ afterIndex, hasPrevious
           >
             <FilePlus2 size={18} />
           </button>
+          <button
+            data-template-trigger
+            onClick={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect();
+              onOpenTemplatePicker(afterIndex + 1, rect);
+            }}
+            className="p-1.5 rounded-full hover:bg-orange-100 text-gray-400 hover:text-orange-600 transition-colors"
+            title="Insert from template"
+          >
+            <LayoutTemplate size={18} />
+          </button>
         </div>
       </div>
     </div>
   );
 };
+
+interface PickerState {
+  insertIndex: number;
+  anchorRect: DOMRect;
+}
 
 export const SlidePanel: React.FC = () => {
   const slides = useOrderedSlides();
@@ -75,8 +92,7 @@ export const SlidePanel: React.FC = () => {
   const selectedElementIds = useEditorStore((s) => s.selectedElementIds);
   const setActiveSlide = useEditorStore((s) => s.setActiveSlide);
 
-  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
-  const templateBtnRef = useRef<HTMLButtonElement>(null);
+  const [pickerState, setPickerState] = useState<PickerState | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -103,10 +119,32 @@ export const SlidePanel: React.FC = () => {
     setActiveSlide(id);
   }, [addEmptySlide, setActiveSlide]);
 
+  const handleOpenTemplatePicker = useCallback((insertIndex: number, anchorRect: DOMRect) => {
+    setPickerState((prev) => {
+      // Toggle off if already open at the same position
+      if (prev && prev.insertIndex === insertIndex) return null;
+      return { insertIndex, anchorRect };
+    });
+  }, []);
+
+  const handleCloseTemplatePicker = useCallback(() => {
+    setPickerState(null);
+  }, []);
+
   const handleAddSlide = () => {
     const currentIdx = slideOrder.indexOf(activeSlideId);
     const id = addSlide(currentIdx + 1);
     setActiveSlide(id);
+  };
+
+  const handleHeaderTemplateClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    if (pickerState) {
+      setPickerState(null);
+    } else {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const currentIdx = slideOrder.indexOf(activeSlideId);
+      setPickerState({ insertIndex: currentIdx + 1, anchorRect: rect });
+    }
   };
 
   const handleContextMenu = useCallback((e: React.MouseEvent, slideId: string) => {
@@ -140,20 +178,15 @@ export const SlidePanel: React.FC = () => {
     <div className="w-60 bg-white border-r border-gray-200 flex flex-col shrink-0">
       <div className="p-2 border-b border-gray-200 flex items-center justify-between">
         <span className="text-xs font-medium text-gray-500 uppercase">Slides</span>
-        <div className="relative flex items-center gap-0.5">
+        <div className="flex items-center gap-0.5">
           <button
-            ref={templateBtnRef}
-            onClick={() => setTemplatePickerOpen((v) => !v)}
+            data-template-trigger
+            onClick={handleHeaderTemplateClick}
             className="p-1 rounded hover:bg-gray-100 text-gray-600"
             title="Templates"
           >
             <LayoutTemplate size={16} />
           </button>
-          <TemplatePicker
-            open={templatePickerOpen}
-            onClose={() => setTemplatePickerOpen(false)}
-            anchorRef={templateBtnRef}
-          />
           <button
             onClick={handleAddSlide}
             className="p-1 rounded hover:bg-gray-100 text-gray-600"
@@ -175,6 +208,7 @@ export const SlidePanel: React.FC = () => {
                     hasNext={true}
                     onInsert={handleInsert}
                     onInsertEmpty={handleInsertEmpty}
+                    onOpenTemplatePicker={handleOpenTemplatePicker}
                   />
                 )}
 
@@ -194,12 +228,20 @@ export const SlidePanel: React.FC = () => {
                   hasNext={index < slides.length - 1}
                   onInsert={handleInsert}
                   onInsertEmpty={handleInsertEmpty}
+                  onOpenTemplatePicker={handleOpenTemplatePicker}
                 />
               </React.Fragment>
             ))}
           </SortableContext>
         </DndContext>
       </div>
+
+      <TemplatePicker
+        open={pickerState !== null}
+        onClose={handleCloseTemplatePicker}
+        insertIndex={pickerState?.insertIndex ?? 0}
+        anchorRect={pickerState?.anchorRect ?? null}
+      />
     </div>
   );
 };

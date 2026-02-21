@@ -50,7 +50,7 @@ const ThumbnailImageElement: React.FC<{ element: ImageElement }> = ({ element })
   );
 };
 
-const ThumbnailElement: React.FC<{ element: SlideElement; isSelected?: boolean }> = ({ element, isSelected }) => {
+export const ThumbnailElement: React.FC<{ element: SlideElement; isSelected?: boolean }> = ({ element, isSelected }) => {
   if (!element.visible) return null;
 
   const rendered = (() => {
