@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { Tool, SlideElement, EditorState } from '../types/presentation';
+import { usePresentationStore } from './presentationStore';
 
 interface EditorStore extends EditorState {
   objectDrawerOpen: boolean;
@@ -37,7 +38,13 @@ export const useEditorStore = create<EditorStore>()((set) => ({
   objectDrawerOpen: false,
 
   setObjectDrawerOpen: (open) => set({ objectDrawerOpen: open }),
-  setActiveSlide: (slideId) => set({ activeSlideId: slideId, selectedElementIds: [], editingTextId: null }),
+  setActiveSlide: (slideId) => set((s) => {
+    const slide = usePresentationStore.getState().presentation.slides[slideId];
+    const kept = slide
+      ? s.selectedElementIds.filter((id) => id in slide.elements)
+      : [];
+    return { activeSlideId: slideId, selectedElementIds: kept, editingTextId: null };
+  }),
   setSelectedElements: (ids) => set({ selectedElementIds: ids }),
   addToSelection: (id) => set((s) => ({
     selectedElementIds: s.selectedElementIds.includes(id) ? s.selectedElementIds : [...s.selectedElementIds, id]

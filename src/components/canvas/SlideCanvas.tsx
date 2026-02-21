@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useMemo, useState, type DragEvent } from 'react';
+import React, { useRef, useCallback, useMemo, useState, useEffect, type DragEvent } from 'react';
 import { Stage, Layer } from 'react-konva';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
@@ -28,6 +28,7 @@ export const SlideCanvas: React.FC = () => {
   const stageRef = useRef<Konva.Stage>(null);
 
   const zoom = useEditorStore((s) => s.zoom);
+  const setZoom = useEditorStore((s) => s.setZoom);
   const tool = useEditorStore((s) => s.tool);
   const selectedElementIds = useEditorStore((s) => s.selectedElementIds);
   const setSelectedElements = useEditorStore((s) => s.setSelectedElements);
@@ -181,6 +182,21 @@ export const SlideCanvas: React.FC = () => {
     unhideElement(activeSlideId, objectId, { x, y });
     setSelectedElements([objectId]);
   }, [activeSlideId, zoom, unhideElement, setSelectedElements]);
+
+  // Ctrl+wheel and trackpad pinch-to-zoom
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const handleWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const zoomRef = useEditorStore.getState().zoom;
+      const delta = -e.deltaY * 0.01;
+      setZoom(zoomRef + delta);
+    };
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => el.removeEventListener('wheel', handleWheel);
+  }, [setZoom]);
 
   const stageWidth = SLIDE_WIDTH * zoom;
   const stageHeight = SLIDE_HEIGHT * zoom;
