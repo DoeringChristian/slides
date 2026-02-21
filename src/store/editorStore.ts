@@ -37,7 +37,7 @@ export const useEditorStore = create<EditorStore>()((set) => ({
   clipboard: [],
   editingTextId: null,
   isPanning: false,
-  objectDrawerOpen: false,
+  objectDrawerOpen: true,
   hoveredObjectId: null,
 
   setObjectDrawerOpen: (open) => set({ objectDrawerOpen: open }),

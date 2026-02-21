@@ -102,51 +102,53 @@ export const SlideCanvas: React.FC = () => {
     const el = slide.elements[id];
     if (!el) return;
 
-    const { snapToGrid: isSnapToGrid, gridSize: grid } = useEditorStore.getState();
+    const { snapToGrid: snappingEnabled, showGrid: isGridVisible, gridSize: grid } = useEditorStore.getState();
 
     // Compute alignment guides from raw position
     const dragged = { x, y, width: el.width, height: el.height };
     const others = elements
-      .filter((e) => e.id !== id)
+      .filter((e) => e.id !== id && e.visible)
       .map((e) => ({ x: e.x, y: e.y, width: e.width, height: e.height }));
     const result = computeGuides(dragged, others);
-    setGuides(result.guides);
+    setGuides(snappingEnabled ? result.guides : []);
 
-    // Apply snapping
-    let snappedX = x;
-    let snappedY = y;
+    if (snappingEnabled) {
+      let snappedX = x;
+      let snappedY = y;
 
-    if (isSnapToGrid) {
-      snappedX = snapToGridFn(x, grid);
-      snappedY = snapToGridFn(y, grid);
+      // Grid snap (only when grid is visible)
+      if (isGridVisible) {
+        snappedX = snapToGridFn(x, grid);
+        snappedY = snapToGridFn(y, grid);
+      }
+
+      // Alignment guides override grid snap
+      if (result.snapX !== null) snappedX = result.snapX;
+      if (result.snapY !== null) snappedY = result.snapY;
+
+      node.x(snappedX);
+      node.y(snappedY);
     }
-
-    // Alignment guides override grid snap
-    if (result.snapX !== null) snappedX = result.snapX;
-    if (result.snapY !== null) snappedY = result.snapY;
-
-    node.x(snappedX);
-    node.y(snappedY);
   }, [slide, elements]);
 
   const handleDragEndWithGuides = useCallback((id: string, x: number, y: number) => {
     setGuides([]);
     if (!activeSlideId) return;
 
-    const { snapToGrid: isSnapToGrid, gridSize: grid } = useEditorStore.getState();
+    const { snapToGrid: snappingEnabled, showGrid: isGridVisible, gridSize: grid } = useEditorStore.getState();
     const el = slide?.elements[id];
 
     let snappedX = x;
     let snappedY = y;
 
-    if (el) {
+    if (snappingEnabled && el) {
       const dragged = { x, y, width: el.width, height: el.height };
       const others = elements
-        .filter((e) => e.id !== id)
+        .filter((e) => e.id !== id && e.visible)
         .map((e) => ({ x: e.x, y: e.y, width: e.width, height: e.height }));
       const result = computeGuides(dragged, others);
 
-      if (isSnapToGrid) {
+      if (isGridVisible) {
         snappedX = snapToGridFn(x, grid);
         snappedY = snapToGridFn(y, grid);
       }
