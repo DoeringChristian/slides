@@ -33,6 +33,7 @@ export interface Slide {
   background: SlideBackground;
   transition: SlideTransition;
   notes: string;
+  hidden?: boolean;
 }
 
 export type SlideBackground = {

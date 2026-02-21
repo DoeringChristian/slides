@@ -56,6 +56,7 @@ interface PresentationStore {
   updateSlideNotes: (slideId: string, notes: string) => void;
   addSlideWithMode: (afterIndex: number, mode: 'previous' | 'next' | 'interpolate') => string;
   addEmptySlide: (index?: number) => string;
+  toggleSlideHidden: (slideId: string) => void;
 
   // Element actions
   addElement: (slideId: string, element: SlideElement) => void;
@@ -295,6 +296,23 @@ export const usePresentationStore = create<PresentationStore>()(
           };
         });
         return newSlideId;
+      },
+
+      toggleSlideHidden: (slideId: string) => {
+        set((state) => {
+          const slide = state.presentation.slides[slideId];
+          if (!slide) return state;
+          return {
+            presentation: {
+              ...state.presentation,
+              slides: {
+                ...state.presentation.slides,
+                [slideId]: { ...slide, hidden: !slide.hidden },
+              },
+              updatedAt: Date.now(),
+            },
+          };
+        });
       },
 
       addElement: (slideId, element) => {

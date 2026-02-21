@@ -92,6 +92,12 @@ export const PresenterView: React.FC = () => {
 
   const totalSlides = slideOrder.length;
 
+  // Indices of non-hidden slides for navigation
+  const visibleIndices = React.useMemo(
+    () => slideOrder.map((id, i) => ({ id, i })).filter(({ id }) => !slides[id]?.hidden).map(({ i }) => i),
+    [slideOrder, slides],
+  );
+
   // Sync external presentingSlideIndex -> internal
   useEffect(() => {
     setCurrentIndex(presentingSlideIndex);
@@ -134,20 +140,18 @@ export const PresenterView: React.FC = () => {
   }, []);
 
   const goNext = useCallback(() => {
-    const nextIdx = currentIndex + 1;
-    if (nextIdx < totalSlides) {
-      if (isAnimating) return;
-      startAnimation(nextIdx);
-    }
-  }, [currentIndex, totalSlides, isAnimating, startAnimation]);
+    if (isAnimating) return;
+    const pos = visibleIndices.indexOf(currentIndex);
+    const nextPos = pos === -1 ? visibleIndices.find((i) => i > currentIndex) : visibleIndices[pos + 1];
+    if (nextPos !== undefined) startAnimation(nextPos);
+  }, [currentIndex, visibleIndices, isAnimating, startAnimation]);
 
   const goPrev = useCallback(() => {
-    const prevIdx = currentIndex - 1;
-    if (prevIdx >= 0) {
-      if (isAnimating) return;
-      startAnimation(prevIdx);
-    }
-  }, [currentIndex, isAnimating, startAnimation]);
+    if (isAnimating) return;
+    const pos = visibleIndices.indexOf(currentIndex);
+    const prevPos = pos === -1 ? [...visibleIndices].reverse().find((i) => i < currentIndex) : visibleIndices[pos - 1];
+    if (prevPos !== undefined) startAnimation(prevPos);
+  }, [currentIndex, visibleIndices, isAnimating, startAnimation]);
 
   const exitPresentation = useCallback(() => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);

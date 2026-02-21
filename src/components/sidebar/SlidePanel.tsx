@@ -88,6 +88,7 @@ export const SlidePanel: React.FC = () => {
   const duplicateSlide = usePresentationStore((s) => s.duplicateSlide);
   const addSlideWithMode = usePresentationStore((s) => s.addSlideWithMode);
   const addEmptySlide = usePresentationStore((s) => s.addEmptySlide);
+  const toggleSlideHidden = usePresentationStore((s) => s.toggleSlideHidden);
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const selectedElementIds = useEditorStore((s) => s.selectedElementIds);
   const setActiveSlide = useEditorStore((s) => s.setActiveSlide);
@@ -229,6 +230,7 @@ export const SlidePanel: React.FC = () => {
                     selectedElementIds={selectedElementIds}
                     onClick={() => setActiveSlide(slide.id)}
                     onDelete={() => handleDeleteSlide(slide.id)}
+                    onToggleHidden={() => toggleSlideHidden(slide.id)}
                   />
                 </div>
 
