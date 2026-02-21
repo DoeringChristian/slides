@@ -194,16 +194,21 @@ export function useKeyboardShortcuts() {
           if (!file) continue;
           e.preventDefault();
           loadPdfFile(file).then((pages) => {
-            const { slideOrder } = store.getState().presentation;
-            let insertIdx = slideOrder.indexOf(activeSlideId) + 1;
-            let lastSlideId = '';
-            for (const pageEl of pages) {
-              const newSlideId = store.getState().addEmptySlide(insertIdx);
-              store.getState().addElement(newSlideId, pageEl);
-              lastSlideId = newSlideId;
-              insertIdx++;
+            if (pages.length === 1) {
+              store.getState().addElement(activeSlideId, pages[0]);
+              editor.getState().setSelectedElements([pages[0].id]);
+            } else {
+              const { slideOrder } = store.getState().presentation;
+              let insertIdx = slideOrder.indexOf(activeSlideId) + 1;
+              let lastSlideId = '';
+              for (const pageEl of pages) {
+                const newSlideId = store.getState().addEmptySlide(insertIdx);
+                store.getState().addElement(newSlideId, pageEl);
+                lastSlideId = newSlideId;
+                insertIdx++;
+              }
+              if (lastSlideId) editor.getState().setActiveSlide(lastSlideId);
             }
-            if (lastSlideId) editor.getState().setActiveSlide(lastSlideId);
           });
           return;
         }

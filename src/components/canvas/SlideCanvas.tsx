@@ -259,15 +259,22 @@ export const SlideCanvas: React.FC = () => {
     Array.from(files).forEach(async (file) => {
       if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
         const pages = await loadPdfFile(file);
-        let insertIdx = currentIdx + 1;
-        let lastSlideId = '';
-        for (const pageEl of pages) {
-          const newSlideId = addEmptySlide(insertIdx);
-          addElement(newSlideId, pageEl);
-          lastSlideId = newSlideId;
-          insertIdx++;
+        if (pages.length === 1) {
+          pages[0].x = dropX;
+          pages[0].y = dropY;
+          addElement(activeSlideId, pages[0]);
+          setSelectedElements([pages[0].id]);
+        } else {
+          let insertIdx = currentIdx + 1;
+          let lastSlideId = '';
+          for (const pageEl of pages) {
+            const newSlideId = addEmptySlide(insertIdx);
+            addElement(newSlideId, pageEl);
+            lastSlideId = newSlideId;
+            insertIdx++;
+          }
+          if (lastSlideId) setActiveSlide(lastSlideId);
         }
-        if (lastSlideId) setActiveSlide(lastSlideId);
       } else if (file.type.startsWith('image/') || file.name.endsWith('.svg')) {
         const el = await loadImageFile(file, { x: dropX, y: dropY });
         addElement(activeSlideId, el);

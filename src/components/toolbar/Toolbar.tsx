@@ -47,16 +47,21 @@ export const Toolbar: React.FC = () => {
       if (!file) return;
       if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
         const pages = await loadPdfFile(file);
-        const { slideOrder } = usePresentationStore.getState().presentation;
-        let insertIdx = slideOrder.indexOf(activeSlideId) + 1;
-        let lastSlideId = '';
-        for (const pageEl of pages) {
-          const newSlideId = addEmptySlide(insertIdx);
-          addElement(newSlideId, pageEl);
-          lastSlideId = newSlideId;
-          insertIdx++;
+        if (pages.length === 1) {
+          addElement(activeSlideId, pages[0]);
+          setSelectedElements([pages[0].id]);
+        } else {
+          const { slideOrder } = usePresentationStore.getState().presentation;
+          let insertIdx = slideOrder.indexOf(activeSlideId) + 1;
+          let lastSlideId = '';
+          for (const pageEl of pages) {
+            const newSlideId = addEmptySlide(insertIdx);
+            addElement(newSlideId, pageEl);
+            lastSlideId = newSlideId;
+            insertIdx++;
+          }
+          if (lastSlideId) setActiveSlide(lastSlideId);
         }
-        if (lastSlideId) setActiveSlide(lastSlideId);
       } else {
         const el = await loadImageFile(file);
         addElement(activeSlideId, el);
