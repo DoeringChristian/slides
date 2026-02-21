@@ -701,12 +701,12 @@ export const usePresentationStore = create<PresentationStore>()(
           const newSlide = createSlide();
           newSlideId = newSlide.id;
 
-          // Deep-copy elements from template, preserving original IDs, setting locked: true
+          // Deep-copy elements from template, preserving original IDs and lock state
           const elements: Record<string, SlideElement> = {};
           for (const elId of template.elementOrder) {
             const el = template.elements[elId];
             if (el) {
-              elements[elId] = { ...JSON.parse(JSON.stringify(el)), locked: true };
+              elements[elId] = JSON.parse(JSON.stringify(el));
             }
           }
           newSlide.elements = elements;
