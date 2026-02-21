@@ -72,13 +72,14 @@ export const ImageNode: React.FC<Props> = ({ element, isSelected, onSelect, onDr
     );
   }
 
-  // Apply crop from element properties
-  const crop = {
+  // Apply crop from element properties (only if valid crop values exist)
+  const hasCrop = element.cropWidth > 0 && element.cropHeight > 0;
+  const crop = hasCrop ? {
     x: element.cropX,
     y: element.cropY,
     width: element.cropWidth,
     height: element.cropHeight,
-  };
+  } : undefined;
 
   return (
     <Image

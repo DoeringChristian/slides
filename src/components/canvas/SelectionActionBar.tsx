@@ -3,6 +3,7 @@ import { ImagePlus, Lock, Unlock, Crop } from 'lucide-react';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useEditorStore } from '../../store/editorStore';
 import { ResourcePicker } from '../properties/ResourcePicker';
+import { computeResourceUpdate } from '../../utils/imageUtils';
 import { CANVAS_PADDING } from '../../utils/constants';
 import type { SlideElement, ImageElement } from '../../types/presentation';
 
@@ -52,31 +53,10 @@ export const SelectionActionBar: React.FC<Props> = ({ element, zoom, isSelected 
   };
 
   const handleSelectResource = (resourceId: string | null) => {
-    const newResource = resourceId ? resources[resourceId] : undefined;
-    const updates: Partial<ImageElement> = { resourceId };
-
-    if (newResource) {
-      // Reset crop to full image
-      updates.cropX = 0;
-      updates.cropY = 0;
-      updates.cropWidth = newResource.originalWidth;
-      updates.cropHeight = newResource.originalHeight;
-
-      // Fit new image within current element bounds while keeping aspect ratio
-      const imageAspect = newResource.originalWidth / newResource.originalHeight;
-      const elementAspect = element.width / element.height;
-
-      if (imageAspect > elementAspect) {
-        // Image is wider - fit to width, adjust height
-        updates.width = element.width;
-        updates.height = element.width / imageAspect;
-      } else {
-        // Image is taller - fit to height, adjust width
-        updates.height = element.height;
-        updates.width = element.height * imageAspect;
-      }
-    }
-
+    // Get resources directly from store to avoid stale closure after addResource
+    const currentResources = usePresentationStore.getState().presentation.resources;
+    const newResource = resourceId ? currentResources[resourceId] : undefined;
+    const updates = computeResourceUpdate(resourceId, newResource, element as ImageElement);
     updateElement(activeSlideId, element.id, updates);
   };
 

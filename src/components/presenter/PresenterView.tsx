@@ -14,6 +14,13 @@ const PresentationImageElement: React.FC<{ element: ImageElement; resources: Rec
   // Return null if no resource (invisible in presentation)
   if (!resource) return null;
 
+  const crop = {
+    x: element.cropX,
+    y: element.cropY,
+    width: element.cropWidth,
+    height: element.cropHeight,
+  };
+
   return (
     <KonvaImage
       image={image}
@@ -23,6 +30,7 @@ const PresentationImageElement: React.FC<{ element: ImageElement; resources: Rec
       height={element.height}
       rotation={element.rotation}
       opacity={element.opacity}
+      crop={crop}
       listening={false}
     />
   );

@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { ResourcePicker } from './ResourcePicker';
+import { computeResourceUpdate } from '../../utils/imageUtils';
 import type { ImageElement } from '../../types/presentation';
 
 interface Props {
@@ -11,9 +12,8 @@ interface Props {
 export const ImageProperties: React.FC<Props> = ({ element }) => {
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const updateElement = usePresentationStore((s) => s.updateElement);
-  const resource = usePresentationStore((s) =>
-    element.resourceId ? s.presentation.resources[element.resourceId] : undefined
-  );
+  const resources = usePresentationStore((s) => s.presentation.resources);
+  const resource = element.resourceId ? resources[element.resourceId] : undefined;
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
@@ -27,20 +27,10 @@ export const ImageProperties: React.FC<Props> = ({ element }) => {
   };
 
   const handleSelectResource = (resourceId: string | null) => {
-    // Get the new resource for resetting crop
-    const resources = usePresentationStore.getState().presentation.resources;
-    const newResource = resourceId ? resources[resourceId] : undefined;
-
-    const updates: Partial<ImageElement> = { resourceId };
-
-    // Reset crop to full resource dimensions when changing resource
-    if (newResource) {
-      updates.cropX = 0;
-      updates.cropY = 0;
-      updates.cropWidth = newResource.originalWidth;
-      updates.cropHeight = newResource.originalHeight;
-    }
-
+    // Get resources directly from store to avoid stale closure after addResource
+    const currentResources = usePresentationStore.getState().presentation.resources;
+    const newResource = resourceId ? currentResources[resourceId] : undefined;
+    const updates = computeResourceUpdate(resourceId, newResource, element);
     updateElement(activeSlideId, element.id, updates);
   };
 

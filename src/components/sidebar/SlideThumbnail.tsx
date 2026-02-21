@@ -48,6 +48,13 @@ const ThumbnailImageElement: React.FC<{ element: ImageElement }> = ({ element })
   // Return null if no resource
   if (!resource) return null;
 
+  const crop = {
+    x: element.cropX,
+    y: element.cropY,
+    width: element.cropWidth,
+    height: element.cropHeight,
+  };
+
   return (
     <KonvaImage
       image={image}
@@ -57,6 +64,7 @@ const ThumbnailImageElement: React.FC<{ element: ImageElement }> = ({ element })
       height={element.height}
       rotation={element.rotation}
       opacity={element.opacity}
+      crop={crop}
       listening={false}
     />
   );
