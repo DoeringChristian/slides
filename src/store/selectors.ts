@@ -1,6 +1,6 @@
 import { usePresentationStore } from './presentationStore';
 import { useEditorStore } from './editorStore';
-import type { Slide, SlideElement } from '../types/presentation';
+import type { Slide, SlideElement, ObjectMeta } from '../types/presentation';
 
 export function useActiveSlide(): Slide | undefined {
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
@@ -25,4 +25,19 @@ export function useSlideElements(slideId: string): SlideElement[] {
   const slide = usePresentationStore((s) => s.presentation.slides[slideId]);
   if (!slide) return [];
   return slide.elementOrder.map((id) => slide.elements[id]).filter(Boolean);
+}
+
+export function usePreviousSlideElement(elementId: string): SlideElement | undefined {
+  const activeSlideId = useEditorStore((s) => s.activeSlideId);
+  const slideOrder = usePresentationStore((s) => s.presentation.slideOrder);
+  const slides = usePresentationStore((s) => s.presentation.slides);
+  const idx = slideOrder.indexOf(activeSlideId);
+  if (idx <= 0) return undefined;
+  const prevSlide = slides[slideOrder[idx - 1]];
+  return prevSlide?.elements[elementId];
+}
+
+export function useAllObjects(): ObjectMeta[] {
+  const objects = usePresentationStore((s) => s.presentation.objects);
+  return Object.values(objects);
 }

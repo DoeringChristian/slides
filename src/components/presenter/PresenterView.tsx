@@ -1,9 +1,9 @@
-import React, { useEffect, useCallback, useRef } from 'react';
-import { Stage, Layer, Rect, Text, Ellipse, Line, Arrow, Star, RegularPolygon, Image as KonvaImage } from 'react-konva';
-import { AnimatePresence, motion } from 'framer-motion';
+import React, { useEffect, useCallback, useRef, useState } from 'react';
+import { Stage, Layer, Rect, Text, Ellipse, Line, Arrow, Star, RegularPolygon } from 'react-konva';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
+import { interpolateWithVisibility, lerpColor } from '../../utils/interpolation';
 import type { SlideElement, TextElement, ShapeElement, Slide } from '../../types/presentation';
 
 const PresentationSlideElement: React.FC<{ element: SlideElement }> = ({ element }) => {
@@ -42,14 +42,16 @@ const PresentationSlideElement: React.FC<{ element: SlideElement }> = ({ element
   return null;
 };
 
-const transitionVariants: Record<string, any> = {
-  none: { initial: {}, animate: {}, exit: {} },
-  fade: { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 } },
-  'slide-left': { initial: { x: '100%' }, animate: { x: 0 }, exit: { x: '-100%' } },
-  'slide-right': { initial: { x: '-100%' }, animate: { x: 0 }, exit: { x: '100%' } },
-  'slide-up': { initial: { y: '100%' }, animate: { y: 0 }, exit: { y: '-100%' } },
-  zoom: { initial: { scale: 0, opacity: 0 }, animate: { scale: 1, opacity: 1 }, exit: { scale: 2, opacity: 0 } },
-};
+function getSlideBackground(slide: Slide): string {
+  return slide.background.type === 'solid' ? slide.background.color : '#ffffff';
+}
+
+function collectElementIds(slideA: Slide | null, slideB: Slide | null): string[] {
+  const ids = new Set<string>();
+  if (slideA) slideA.elementOrder.forEach((id) => ids.add(id));
+  if (slideB) slideB.elementOrder.forEach((id) => ids.add(id));
+  return Array.from(ids);
+}
 
 export const PresenterView: React.FC = () => {
   const isPresenting = useEditorStore((s) => s.isPresenting);
@@ -60,24 +62,75 @@ export const PresenterView: React.FC = () => {
   const slides = usePresentationStore((s) => s.presentation.slides);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const currentSlideId = slideOrder[presentingSlideIndex];
-  const currentSlide = currentSlideId ? slides[currentSlideId] : null;
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [animProgress, setAnimProgress] = useState(0);
+  const targetIndexRef = useRef(0);
+  const rafRef = useRef<number>(0);
+  const startTimeRef = useRef(0);
 
   const totalSlides = slideOrder.length;
 
+  // Sync external presentingSlideIndex -> internal
+  useEffect(() => {
+    setCurrentIndex(presentingSlideIndex);
+  }, [presentingSlideIndex]);
+
+  const startAnimation = useCallback((targetIdx: number) => {
+    if (isAnimating) return;
+    const targetSlide = slides[slideOrder[targetIdx]];
+    const duration = targetSlide?.transition.duration || 300;
+
+    targetIndexRef.current = targetIdx;
+    setIsAnimating(true);
+    setAnimProgress(0);
+    startTimeRef.current = performance.now();
+
+    const animate = (now: number) => {
+      const elapsed = now - startTimeRef.current;
+      const t = Math.min(elapsed / duration, 1);
+      setAnimProgress(t);
+
+      if (t < 1) {
+        rafRef.current = requestAnimationFrame(animate);
+      } else {
+        // Animation complete
+        setCurrentIndex(targetIndexRef.current);
+        setPresentingSlideIndex(targetIndexRef.current);
+        setIsAnimating(false);
+        setAnimProgress(0);
+      }
+    };
+
+    rafRef.current = requestAnimationFrame(animate);
+  }, [isAnimating, slides, slideOrder, setPresentingSlideIndex]);
+
+  // Cleanup RAF on unmount
+  useEffect(() => {
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
+
   const goNext = useCallback(() => {
-    if (presentingSlideIndex < totalSlides - 1) {
-      setPresentingSlideIndex(presentingSlideIndex + 1);
+    const nextIdx = currentIndex + 1;
+    if (nextIdx < totalSlides) {
+      if (isAnimating) return;
+      startAnimation(nextIdx);
     }
-  }, [presentingSlideIndex, totalSlides, setPresentingSlideIndex]);
+  }, [currentIndex, totalSlides, isAnimating, startAnimation]);
 
   const goPrev = useCallback(() => {
-    if (presentingSlideIndex > 0) {
-      setPresentingSlideIndex(presentingSlideIndex - 1);
+    const prevIdx = currentIndex - 1;
+    if (prevIdx >= 0) {
+      if (isAnimating) return;
+      startAnimation(prevIdx);
     }
-  }, [presentingSlideIndex, setPresentingSlideIndex]);
+  }, [currentIndex, isAnimating, startAnimation]);
 
   const exitPresentation = useCallback(() => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    setIsAnimating(false);
     setPresenting(false);
     if (document.fullscreenElement) {
       document.exitFullscreen().catch(() => {});
@@ -111,10 +164,16 @@ export const PresenterView: React.FC = () => {
           exitPresentation();
           break;
         case 'Home':
-          setPresentingSlideIndex(0);
+          if (!isAnimating) {
+            setCurrentIndex(0);
+            setPresentingSlideIndex(0);
+          }
           break;
         case 'End':
-          setPresentingSlideIndex(totalSlides - 1);
+          if (!isAnimating) {
+            setCurrentIndex(totalSlides - 1);
+            setPresentingSlideIndex(totalSlides - 1);
+          }
           break;
       }
     };
@@ -131,9 +190,12 @@ export const PresenterView: React.FC = () => {
       window.removeEventListener('keydown', handleKey);
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
-  }, [isPresenting, goNext, goPrev, exitPresentation, setPresentingSlideIndex, totalSlides, setPresenting]);
+  }, [isPresenting, goNext, goPrev, exitPresentation, setPresentingSlideIndex, totalSlides, setPresenting, isAnimating]);
 
-  if (!isPresenting || !currentSlide) return null;
+  if (!isPresenting) return null;
+
+  const currentSlide = slides[slideOrder[currentIndex]] || null;
+  if (!currentSlide) return null;
 
   const viewportW = window.innerWidth;
   const viewportH = window.innerHeight;
@@ -141,11 +203,37 @@ export const PresenterView: React.FC = () => {
   const stageW = SLIDE_WIDTH * scale;
   const stageH = SLIDE_HEIGHT * scale;
 
-  const bgColor = currentSlide.background.type === 'solid' ? currentSlide.background.color : '#ffffff';
-  const elements = currentSlide.elementOrder.map((id) => currentSlide.elements[id]).filter(Boolean);
-  const transition = currentSlide.transition.type || 'none';
-  const duration = (currentSlide.transition.duration || 300) / 1000;
-  const variants = transitionVariants[transition] || transitionVariants.none;
+  // Compute elements to render
+  let renderedElements: SlideElement[];
+  let bgColor: string;
+
+  if (isAnimating) {
+    const targetIndex = targetIndexRef.current;
+    const slideA = currentSlide;
+    const slideB = slides[slideOrder[targetIndex]] || null;
+
+    // Interpolate background
+    const bgA = getSlideBackground(slideA);
+    const bgB = slideB ? getSlideBackground(slideB) : bgA;
+    bgColor = lerpColor(bgA, bgB, animProgress);
+
+    // Interpolate each element
+    const allIds = collectElementIds(slideA, slideB);
+    renderedElements = [];
+    for (const id of allIds) {
+      const elA = slideA.elements[id];
+      const elB = slideB?.elements[id];
+      const interpolated = interpolateWithVisibility(elA, elB, animProgress);
+      if (interpolated) {
+        renderedElements.push(interpolated);
+      }
+    }
+  } else {
+    bgColor = getSlideBackground(currentSlide);
+    renderedElements = currentSlide.elementOrder
+      .map((id) => currentSlide.elements[id])
+      .filter(Boolean);
+  }
 
   return (
     <div ref={containerRef} className="fixed inset-0 bg-black z-[9999] flex items-center justify-center cursor-none"
@@ -155,26 +243,16 @@ export const PresenterView: React.FC = () => {
         else goPrev();
       }}
     >
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={currentSlideId}
-          initial={variants.initial}
-          animate={variants.animate}
-          exit={variants.exit}
-          transition={{ duration }}
-        >
-          <Stage width={stageW} height={stageH} scaleX={scale} scaleY={scale} listening={false}>
-            <Layer listening={false}>
-              <Rect x={0} y={0} width={SLIDE_WIDTH} height={SLIDE_HEIGHT} fill={bgColor} listening={false} />
-              {elements.map((el) => <PresentationSlideElement key={el.id} element={el} />)}
-            </Layer>
-          </Stage>
-        </motion.div>
-      </AnimatePresence>
+      <Stage width={stageW} height={stageH} scaleX={scale} scaleY={scale} listening={false}>
+        <Layer listening={false}>
+          <Rect x={0} y={0} width={SLIDE_WIDTH} height={SLIDE_HEIGHT} fill={bgColor} listening={false} />
+          {renderedElements.map((el) => <PresentationSlideElement key={el.id} element={el} />)}
+        </Layer>
+      </Stage>
 
       {/* Slide counter */}
       <div className="absolute bottom-4 right-4 text-white text-sm opacity-50">
-        {presentingSlideIndex + 1} / {totalSlides}
+        {(isAnimating ? targetIndexRef.current : currentIndex) + 1} / {totalSlides}
       </div>
     </div>
   );

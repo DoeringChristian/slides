@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useMemo, useState } from 'react';
+import React, { useRef, useCallback, useMemo, useState, type DragEvent } from 'react';
 import { Stage, Layer } from 'react-konva';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
@@ -37,6 +37,7 @@ export const SlideCanvas: React.FC = () => {
   const showGrid = useEditorStore((s) => s.showGrid);
   const gridSize = useEditorStore((s) => s.gridSize);
   const updateElement = usePresentationStore((s) => s.updateElement);
+  const unhideElement = usePresentationStore((s) => s.unhideElement);
 
   const slide = useActiveSlide();
   const { drawState, handleMouseDown, handleMouseMove, handleMouseUp } = useDrawing();
@@ -163,12 +164,31 @@ export const SlideCanvas: React.FC = () => {
     }
   }, [slide, setEditingTextId]);
 
+  const handleDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
+    if (e.dataTransfer.types.includes('application/x-object-id')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+    }
+  }, []);
+
+  const handleDrop = useCallback((e: DragEvent<HTMLDivElement>) => {
+    const objectId = e.dataTransfer.getData('application/x-object-id');
+    if (!objectId || !activeSlideId || !containerRef.current) return;
+    e.preventDefault();
+    const rect = containerRef.current.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / zoom;
+    const y = (e.clientY - rect.top) / zoom;
+    unhideElement(activeSlideId, objectId, { x, y });
+    setSelectedElements([objectId]);
+  }, [activeSlideId, zoom, unhideElement, setSelectedElements]);
+
   const stageWidth = SLIDE_WIDTH * zoom;
   const stageHeight = SLIDE_HEIGHT * zoom;
   const cursor = tool === 'select' ? 'default' : 'crosshair';
 
   return (
-    <div ref={containerRef} className="relative" style={{ width: stageWidth, height: stageHeight, cursor }}>
+    <div ref={containerRef} className="relative" style={{ width: stageWidth, height: stageHeight, cursor }}
+      onDragOver={handleDragOver} onDrop={handleDrop}>
       <Stage
         ref={stageRef}
         width={stageWidth}

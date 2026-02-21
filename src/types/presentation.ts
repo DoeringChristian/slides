@@ -1,8 +1,15 @@
+export interface ObjectMeta {
+  id: string;
+  name: string;
+  type: 'text' | 'shape' | 'image';
+}
+
 export interface Presentation {
   id: string;
   title: string;
   slides: Record<string, Slide>;
   slideOrder: string[];
+  objects: Record<string, ObjectMeta>;
   theme: Theme;
   width: number;
   height: number;
@@ -33,7 +40,6 @@ export type SlideBackground = {
 };
 
 export interface SlideTransition {
-  type: 'none' | 'fade' | 'slide-left' | 'slide-right' | 'slide-up' | 'zoom';
   duration: number;
 }
 

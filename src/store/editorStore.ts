@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import type { Tool, SlideElement, EditorState } from '../types/presentation';
 
 interface EditorStore extends EditorState {
+  objectDrawerOpen: boolean;
+  setObjectDrawerOpen: (open: boolean) => void;
   setActiveSlide: (slideId: string) => void;
   setSelectedElements: (ids: string[]) => void;
   addToSelection: (id: string) => void;
@@ -32,7 +34,9 @@ export const useEditorStore = create<EditorStore>()((set) => ({
   clipboard: [],
   editingTextId: null,
   isPanning: false,
+  objectDrawerOpen: false,
 
+  setObjectDrawerOpen: (open) => set({ objectDrawerOpen: open }),
   setActiveSlide: (slideId) => set({ activeSlideId: slideId, selectedElementIds: [], editingTextId: null }),
   setSelectedElements: (ids) => set({ selectedElementIds: ids }),
   addToSelection: (id) => set((s) => ({

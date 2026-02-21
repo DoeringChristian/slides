@@ -38,10 +38,12 @@ export function useKeyboardShortcuts() {
       const activeSlideId = editor.getState().activeSlideId;
       const selectedIds = editor.getState().selectedElementIds;
 
-      // Delete
+      // Delete — hide elements instead of removing
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.length > 0 && !isInput) {
         e.preventDefault();
-        store.getState().deleteElements(activeSlideId, selectedIds);
+        for (const id of selectedIds) {
+          store.getState().hideElement(activeSlideId, id);
+        }
         editor.getState().setSelectedElements([]);
         return;
       }
@@ -69,14 +71,16 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      // Cut
+      // Cut — hide elements instead of removing
       if (ctrl && e.key === 'x' && selectedIds.length > 0) {
         e.preventDefault();
         const slide = store.getState().presentation.slides[activeSlideId];
         if (slide) {
           const elements = selectedIds.map((id) => slide.elements[id]).filter(Boolean);
           editor.getState().setClipboard(elements.map((e) => JSON.parse(JSON.stringify(e))));
-          store.getState().deleteElements(activeSlideId, selectedIds);
+          for (const id of selectedIds) {
+            store.getState().hideElement(activeSlideId, id);
+          }
           editor.getState().setSelectedElements([]);
         }
         return;

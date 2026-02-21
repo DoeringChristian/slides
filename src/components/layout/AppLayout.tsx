@@ -6,6 +6,7 @@ import { SlideCanvas } from '../canvas/SlideCanvas';
 import { Toolbar } from '../toolbar/Toolbar';
 import { PropertiesPanel } from '../properties/PropertiesPanel';
 import { NotesEditor } from '../notes/NotesEditor';
+import { ObjectListDrawer } from '../objectlist/ObjectListDrawer';
 
 export const AppLayout: React.FC = () => {
   return (
@@ -18,6 +19,7 @@ export const AppLayout: React.FC = () => {
           <div className="flex-1 overflow-hidden relative bg-gray-200 flex items-center justify-center">
             <SlideCanvas />
           </div>
+          <ObjectListDrawer />
           <NotesEditor />
         </div>
         <PropertiesPanel />

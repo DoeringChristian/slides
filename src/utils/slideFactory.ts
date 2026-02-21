@@ -1,6 +1,6 @@
 import { generateId } from './idGenerator';
 import { DEFAULT_TEXT_STYLE, DEFAULT_SHAPE_PROPS, SLIDE_WIDTH, SLIDE_HEIGHT } from './constants';
-import type { Slide, TextElement, ShapeElement, ImageElement, ShapeType, SlideElement, Presentation, Theme } from '../types/presentation';
+import type { Slide, TextElement, ShapeElement, ImageElement, ShapeType, SlideElement, Presentation, Theme, ObjectMeta } from '../types/presentation';
 
 export function createDefaultTheme(): Theme {
   return {
@@ -26,7 +26,7 @@ export function createSlide(overrides?: Partial<Slide>): Slide {
     elements: {},
     elementOrder: [],
     background: { type: 'solid', color: '#ffffff' },
-    transition: { type: 'none', duration: 300 },
+    transition: { duration: 300 },
     notes: '',
     ...overrides,
   };
@@ -106,6 +106,7 @@ export function createPresentation(): Presentation {
     title: 'Untitled Presentation',
     slides: { [firstSlide.id]: firstSlide },
     slideOrder: [firstSlide.id],
+    objects: {},
     theme: createDefaultTheme(),
     width: SLIDE_WIDTH,
     height: SLIDE_HEIGHT,
@@ -122,4 +123,48 @@ export function duplicateElement(element: SlideElement): SlideElement {
     x: element.x + 20,
     y: element.y + 20,
   };
+}
+
+export function copySlideAsKeyframe(sourceSlide: Slide): Slide {
+  const newSlideId = generateId();
+  const elements: Record<string, SlideElement> = {};
+  for (const elId of sourceSlide.elementOrder) {
+    const el = sourceSlide.elements[elId];
+    if (el) {
+      elements[elId] = JSON.parse(JSON.stringify(el));
+    }
+  }
+  return {
+    id: newSlideId,
+    elements,
+    elementOrder: [...sourceSlide.elementOrder],
+    background: JSON.parse(JSON.stringify(sourceSlide.background)),
+    transition: { duration: sourceSlide.transition.duration },
+    notes: '',
+  };
+}
+
+const TYPE_LABELS: Record<string, string> = {
+  text: 'Text',
+  rect: 'Rectangle',
+  ellipse: 'Ellipse',
+  triangle: 'Triangle',
+  star: 'Star',
+  line: 'Line',
+  arrow: 'Arrow',
+  shape: 'Shape',
+  image: 'Image',
+};
+
+export function generateObjectName(type: string, existingObjects: Record<string, ObjectMeta>): string {
+  const label = TYPE_LABELS[type] || 'Object';
+  const existing = Object.values(existingObjects);
+  let maxNum = 0;
+  for (const obj of existing) {
+    const match = obj.name.match(new RegExp(`^${label}\\s+(\\d+)$`));
+    if (match) {
+      maxNum = Math.max(maxNum, parseInt(match[1], 10));
+    }
+  }
+  return `${label} ${maxNum + 1}`;
 }
