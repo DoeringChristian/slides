@@ -56,10 +56,25 @@ export const SelectionActionBar: React.FC<Props> = ({ element, zoom, isSelected 
     const updates: Partial<ImageElement> = { resourceId };
 
     if (newResource) {
+      // Reset crop to full image
       updates.cropX = 0;
       updates.cropY = 0;
       updates.cropWidth = newResource.originalWidth;
       updates.cropHeight = newResource.originalHeight;
+
+      // Fit new image within current element bounds while keeping aspect ratio
+      const imageAspect = newResource.originalWidth / newResource.originalHeight;
+      const elementAspect = element.width / element.height;
+
+      if (imageAspect > elementAspect) {
+        // Image is wider - fit to width, adjust height
+        updates.width = element.width;
+        updates.height = element.width / imageAspect;
+      } else {
+        // Image is taller - fit to height, adjust width
+        updates.height = element.height;
+        updates.width = element.height * imageAspect;
+      }
     }
 
     updateElement(activeSlideId, element.id, updates);
