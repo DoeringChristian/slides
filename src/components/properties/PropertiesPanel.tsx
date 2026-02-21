@@ -1,6 +1,6 @@
 import React from 'react';
-import { RotateCcw } from 'lucide-react';
-import { useSelectedElements, useActiveSlide, usePreviousSlideElement } from '../../store/selectors';
+import { ArrowLeft, ArrowRight } from 'lucide-react';
+import { useSelectedElements, useActiveSlide, usePreviousSlideElement, useNextSlideElement } from '../../store/selectors';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { TextProperties } from './TextProperties';
@@ -14,10 +14,13 @@ export const PropertiesPanel: React.FC = () => {
   const slide = useActiveSlide();
   const element = selected.length === 1 ? selected[0] : null;
   const prevElement = usePreviousSlideElement(element?.id || '');
+  const nextElement = useNextSlideElement(element?.id || '');
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const resetElementToKeyframe = usePresentationStore((s) => s.resetElementToKeyframe);
+  const resetElementToNextKeyframe = usePresentationStore((s) => s.resetElementToNextKeyframe);
 
-  const hasDiff = element && prevElement && JSON.stringify(element) !== JSON.stringify(prevElement);
+  const hasPrevDiff = element && prevElement && JSON.stringify(element) !== JSON.stringify(prevElement);
+  const hasNextDiff = element && nextElement && JSON.stringify(element) !== JSON.stringify(nextElement);
 
   return (
     <div className="w-64 bg-white border-l border-gray-200 flex flex-col shrink-0 overflow-y-auto">
@@ -25,15 +28,26 @@ export const PropertiesPanel: React.FC = () => {
         <span className="text-xs font-medium text-gray-500 uppercase">
           {element ? `${element.type} Properties` : 'Slide Properties'}
         </span>
-        {hasDiff && (
-          <button
-            onClick={() => resetElementToKeyframe(activeSlideId, element.id)}
-            className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
-            title="Reset to previous slide keyframe"
-          >
-            <RotateCcw size={14} />
-          </button>
-        )}
+        <div className="flex items-center gap-0.5">
+          {hasPrevDiff && (
+            <button
+              onClick={() => resetElementToKeyframe(activeSlideId, element.id)}
+              className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+              title="Reset to previous keyframe"
+            >
+              <ArrowLeft size={14} />
+            </button>
+          )}
+          {hasNextDiff && (
+            <button
+              onClick={() => resetElementToNextKeyframe(activeSlideId, element.id)}
+              className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+              title="Reset to next keyframe"
+            >
+              <ArrowRight size={14} />
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="p-3 space-y-4">

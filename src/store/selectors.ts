@@ -38,6 +38,16 @@ export function usePreviousSlideElement(elementId: string): SlideElement | undef
   return prevSlide?.elements[elementId];
 }
 
+export function useNextSlideElement(elementId: string): SlideElement | undefined {
+  const activeSlideId = useEditorStore((s) => s.activeSlideId);
+  const slideOrder = usePresentationStore((s) => s.presentation.slideOrder);
+  const slides = usePresentationStore((s) => s.presentation.slides);
+  const idx = slideOrder.indexOf(activeSlideId);
+  if (idx >= slideOrder.length - 1) return undefined;
+  const nextSlide = slides[slideOrder[idx + 1]];
+  return nextSlide?.elements[elementId];
+}
+
 /** Find the element on the nearest previous slide where it's visible. */
 export function usePrevKeyframeElement(elementId: string): SlideElement | undefined {
   const activeSlideId = useEditorStore((s) => s.activeSlideId);

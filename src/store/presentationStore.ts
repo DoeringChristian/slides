@@ -76,6 +76,7 @@ interface PresentationStore {
   hideElement: (slideId: string, elementId: string) => void;
   unhideElement: (slideId: string, elementId: string, position?: { x: number; y: number }) => void;
   resetElementToKeyframe: (slideId: string, elementId: string) => void;
+  resetElementToNextKeyframe: (slideId: string, elementId: string) => void;
   renameObject: (objectId: string, name: string) => void;
 
   // Template actions
@@ -686,6 +687,36 @@ export const usePresentationStore = create<PresentationStore>()(
                   elements: {
                     ...slide.elements,
                     [elementId]: JSON.parse(JSON.stringify(prevEl)),
+                  },
+                },
+              },
+              updatedAt: Date.now(),
+            },
+          };
+        });
+      },
+
+      resetElementToNextKeyframe: (slideId: string, elementId: string) => {
+        set((state) => {
+          const { slideOrder, slides } = state.presentation;
+          const slideIdx = slideOrder.indexOf(slideId);
+          if (slideIdx >= slideOrder.length - 1) return state;
+          const nextSlide = slides[slideOrder[slideIdx + 1]];
+          if (!nextSlide?.elements[elementId]) return state;
+          const slide = slides[slideId];
+          if (!slide?.elements[elementId]) return state;
+
+          const nextEl = nextSlide.elements[elementId];
+          return {
+            presentation: {
+              ...state.presentation,
+              slides: {
+                ...slides,
+                [slideId]: {
+                  ...slide,
+                  elements: {
+                    ...slide.elements,
+                    [elementId]: JSON.parse(JSON.stringify(nextEl)),
                   },
                 },
               },
