@@ -127,7 +127,7 @@ export const SlideThumbnail: React.FC<Props> = ({ slide, index, isActive, canDel
         </div>
         <button
           onClick={(e) => { e.stopPropagation(); onToggleHidden(); }}
-          className={`absolute -top-1.5 -left-1.5 p-0.5 rounded-full bg-white border border-gray-200 shadow-sm text-gray-400 hover:text-gray-600 transition-opacity ${hidden ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+          className={`absolute -bottom-1.5 -right-1.5 p-0.5 rounded-full bg-white border border-gray-200 shadow-sm text-gray-400 hover:text-gray-600 transition-opacity ${hidden ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
           title={hidden ? 'Show slide' : 'Hide slide'}
         >
           {hidden ? <Eye size={12} /> : <EyeOff size={12} />}
