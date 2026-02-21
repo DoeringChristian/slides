@@ -65,11 +65,18 @@ export const SlideCanvas: React.FC = () => {
     return null;
   }, [selectedElementIds, slide]);
 
-  // IDs to pass to the SelectionTransformer (excluding line/arrow if sole selection)
-  const transformerIds = useMemo(() => {
-    if (soleSelectedLineElement) return [];
-    return selectedElementIds;
-  }, [selectedElementIds, soleSelectedLineElement]);
+  // Split selected IDs into locked vs unlocked for separate transformer treatment
+  const { unlockedTransformerIds, lockedTransformerIds } = useMemo(() => {
+    if (soleSelectedLineElement) return { unlockedTransformerIds: [], lockedTransformerIds: [] };
+    if (!slide) return { unlockedTransformerIds: selectedElementIds, lockedTransformerIds: [] };
+    const unlocked: string[] = [];
+    const locked: string[] = [];
+    for (const id of selectedElementIds) {
+      if (slide.elements[id]?.locked) locked.push(id);
+      else unlocked.push(id);
+    }
+    return { unlockedTransformerIds: unlocked, lockedTransformerIds: locked };
+  }, [selectedElementIds, soleSelectedLineElement, slide]);
 
   const handleStageClick = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
     if (e.target === e.target.getStage()) {
@@ -299,7 +306,8 @@ export const SlideCanvas: React.FC = () => {
         <Layer>
           <GridOverlay gridSize={gridSize} visible={showGrid} />
           <AlignmentGuides guides={guides} />
-          <SelectionTransformer selectedIds={editingTextId ? [] : transformerIds} stageRef={stageRef} />
+          <SelectionTransformer selectedIds={editingTextId ? [] : unlockedTransformerIds} stageRef={stageRef} />
+          <SelectionTransformer selectedIds={editingTextId ? [] : lockedTransformerIds} stageRef={stageRef} locked />
           {soleSelectedLineElement && !editingTextId && (
             <LineEndpointHandles
               element={soleSelectedLineElement}

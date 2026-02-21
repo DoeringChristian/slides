@@ -5,10 +5,14 @@ import type Konva from 'konva';
 interface Props {
   selectedIds: string[];
   stageRef: React.RefObject<Konva.Stage | null>;
+  locked?: boolean;
 }
 
+const COLOR_DEFAULT = '#4285f4';
+const COLOR_LOCKED = '#dc2626';
+
 // Create a small rotation icon as an offscreen canvas image
-function createRotateIcon(size: number): HTMLCanvasElement {
+function createRotateIcon(size: number, color: string): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
   canvas.width = size;
   canvas.height = size;
@@ -17,7 +21,7 @@ function createRotateIcon(size: number): HTMLCanvasElement {
   const cy = size / 2;
   const r = size * 0.32;
 
-  ctx.strokeStyle = '#4285f4';
+  ctx.strokeStyle = color;
   ctx.lineWidth = size * 0.12;
   ctx.lineCap = 'round';
 
@@ -42,22 +46,21 @@ function createRotateIcon(size: number): HTMLCanvasElement {
 
 const ANCHOR_SIZE = 12;
 const ROTATE_ICON_SIZE = ANCHOR_SIZE * 2;
-let rotateIconCanvas: HTMLCanvasElement | null = null;
+const rotateIconCache: Record<string, HTMLCanvasElement> = {};
 
-function getRotateIcon(): HTMLCanvasElement {
-  if (!rotateIconCanvas) {
-    rotateIconCanvas = createRotateIcon(ROTATE_ICON_SIZE);
+function getRotateIcon(color: string): HTMLCanvasElement {
+  if (!rotateIconCache[color]) {
+    rotateIconCache[color] = createRotateIcon(ROTATE_ICON_SIZE, color);
   }
-  return rotateIconCanvas;
+  return rotateIconCache[color];
 }
 
-export const SelectionTransformer: React.FC<Props> = ({ selectedIds, stageRef }) => {
+export const SelectionTransformer: React.FC<Props> = ({ selectedIds, stageRef, locked = false }) => {
   const trRef = useRef<Konva.Transformer>(null);
   const [iconReady, setIconReady] = useState(false);
 
   useEffect(() => {
-    // Ensure the icon canvas is created
-    getRotateIcon();
+    getRotateIcon(COLOR_DEFAULT);
     setIconReady(true);
   }, []);
 
@@ -78,6 +81,19 @@ export const SelectionTransformer: React.FC<Props> = ({ selectedIds, stageRef })
 
   if (selectedIds.length === 0) return null;
 
+  if (locked) {
+    return (
+      <Transformer
+        ref={trRef}
+        borderStroke={COLOR_LOCKED}
+        borderStrokeWidth={2}
+        enabledAnchors={[]}
+        rotateEnabled={false}
+        resizeEnabled={false}
+      />
+    );
+  }
+
   return (
     <Transformer
       ref={trRef}
@@ -89,16 +105,16 @@ export const SelectionTransformer: React.FC<Props> = ({ selectedIds, stageRef })
       }}
       anchorSize={ANCHOR_SIZE}
       anchorCornerRadius={3}
-      borderStroke="#4285f4"
+      borderStroke={COLOR_DEFAULT}
       borderStrokeWidth={2}
-      anchorStroke="#4285f4"
+      anchorStroke={COLOR_DEFAULT}
       anchorStrokeWidth={2}
       anchorFill="#ffffff"
       rotateAnchorOffset={40}
       rotateAnchorCursor="grab"
       anchorStyleFunc={(anchor: Konva.Rect) => {
         if (anchor.hasName('rotater')) {
-          const icon = getRotateIcon();
+          const icon = getRotateIcon(COLOR_DEFAULT);
           anchor.cornerRadius(ANCHOR_SIZE);
           anchor.size({ width: ROTATE_ICON_SIZE, height: ROTATE_ICON_SIZE });
           anchor.offset({ x: ROTATE_ICON_SIZE / 2, y: ROTATE_ICON_SIZE / 2 });
