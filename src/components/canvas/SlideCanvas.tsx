@@ -11,6 +11,7 @@ import { AlignmentGuides } from './AlignmentGuides';
 import { ConnectorHighlight } from './ConnectorHighlight';
 import { HoverOverlay } from './HoverOverlay';
 import { TextEditOverlay } from './TextEditOverlay';
+import { ImagePlaceholderOverlay } from './ImagePlaceholderOverlay';
 import { DrawingPreview, useDrawing } from './DrawingLayer';
 import { GridOverlay } from './GridOverlay';
 import { computeGuides } from '../../hooks/useAlignmentGuides';
@@ -19,7 +20,7 @@ import { snapToGrid as snapToGridFn } from '../../utils/geometry';
 import { isCtrlHeld } from '../../utils/keyboard';
 import { SLIDE_WIDTH, SLIDE_HEIGHT, CANVAS_PADDING } from '../../utils/constants';
 import { loadImageFile, loadPdfFile } from '../../utils/slideFactory';
-import type { ShapeElement } from '../../types/presentation';
+import type { ShapeElement, ImageElement } from '../../types/presentation';
 import type Konva from 'konva';
 
 interface Guide {
@@ -348,6 +349,14 @@ export const SlideCanvas: React.FC = () => {
 
   const isHoveredVisibleOnSlide = hoveredObjectId ? !!(slide?.elements[hoveredObjectId]?.visible) : false;
 
+  // Find visible empty image elements (no resource assigned)
+  const resources = usePresentationStore((s) => s.presentation.resources);
+  const emptyImageElements = useMemo(() => {
+    return elements.filter(
+      (el) => el.type === 'image' && el.visible && (!el.resourceId || !resources[el.resourceId])
+    ) as ImageElement[];
+  }, [elements, resources]);
+
   const stageWidth = (SLIDE_WIDTH + 2 * CANVAS_PADDING) * zoom;
   const stageHeight = (SLIDE_HEIGHT + 2 * CANVAS_PADDING) * zoom;
   const cursor = tool === 'select' ? 'default' : 'crosshair';
@@ -421,6 +430,14 @@ export const SlideCanvas: React.FC = () => {
       </Stage>
 
       <TextEditOverlay stageRef={containerRef} zoom={zoom} />
+      {emptyImageElements.map((el) => (
+        <ImagePlaceholderOverlay
+          key={el.id}
+          element={el}
+          zoom={zoom}
+          containerRef={containerRef}
+        />
+      ))}
     </div>
   );
 };
