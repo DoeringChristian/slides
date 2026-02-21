@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Check, X } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
+import { computeGuides, computeResizeSnap } from '../../hooks/useAlignmentGuides';
+import { getMarginLayout, getMarginBounds } from '../../utils/marginLayouts';
 import { CANVAS_PADDING } from '../../utils/constants';
 import type { ImageElement } from '../../types/presentation';
 
@@ -29,6 +31,7 @@ export const CropOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
   const [isDragging, setIsDragging] = useState(false);
   const [dragType, setDragType] = useState<'move' | 'nw' | 'ne' | 'sw' | 'se' | null>(null);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [cropStartState, setCropStartState] = useState({ x: 0, y: 0, width: 0, height: 0 });
   const overlayRef = useRef<HTMLDivElement>(null);
 
   // Initialize crop state from element
@@ -79,7 +82,8 @@ export const CropOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     setIsDragging(true);
     setDragType(type);
     setDragStart({ x: e.clientX, y: e.clientY });
-  }, []);
+    setCropStartState({ ...cropState });
+  }, [cropState]);
 
   const handleMouseMove = useCallback((e: MouseEvent) => {
     if (!isDragging || !dragType || !resource || !element) return;
@@ -87,45 +91,122 @@ export const CropOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     const dx = e.clientX - dragStart.x;
     const dy = e.clientY - dragStart.y;
 
-    // Scale: screen pixels per original image pixel
-    const scale = (element.width / element.cropWidth) * zoom;
+    // Scale: screen pixels per original image pixel (in canvas coords, not screen)
+    const canvasScale = element.width / element.cropWidth;
+    const screenScale = canvasScale * zoom;
     // Convert screen delta to original image pixels
-    const scaledDx = dx / scale;
-    const scaledDy = dy / scale;
+    const scaledDx = dx / screenScale;
+    const scaledDy = dy / screenScale;
 
-    setCropState((prev) => {
-      let { x, y, width, height } = prev;
+    // Use cropStartState (captured at drag start) for absolute positioning
+    let { x, y, width, height } = cropStartState;
 
-      if (dragType === 'move') {
-        x = Math.max(0, Math.min(resource.originalWidth - width, prev.x + scaledDx));
-        y = Math.max(0, Math.min(resource.originalHeight - height, prev.y + scaledDy));
-      } else if (dragType === 'nw') {
-        const newX = Math.max(0, Math.min(prev.x + prev.width - 10, prev.x + scaledDx));
-        const newY = Math.max(0, Math.min(prev.y + prev.height - 10, prev.y + scaledDy));
-        width = prev.width + (prev.x - newX);
-        height = prev.height + (prev.y - newY);
-        x = newX;
-        y = newY;
-      } else if (dragType === 'ne') {
-        const newY = Math.max(0, Math.min(prev.y + prev.height - 10, prev.y + scaledDy));
-        width = Math.max(10, Math.min(resource.originalWidth - prev.x, prev.width + scaledDx));
-        height = prev.height + (prev.y - newY);
-        y = newY;
-      } else if (dragType === 'sw') {
-        const newX = Math.max(0, Math.min(prev.x + prev.width - 10, prev.x + scaledDx));
-        width = prev.width + (prev.x - newX);
-        height = Math.max(10, Math.min(resource.originalHeight - prev.y, prev.height + scaledDy));
-        x = newX;
-      } else if (dragType === 'se') {
-        width = Math.max(10, Math.min(resource.originalWidth - prev.x, prev.width + scaledDx));
-        height = Math.max(10, Math.min(resource.originalHeight - prev.y, prev.height + scaledDy));
-      }
+    // Apply delta based on drag type (no bounds constraints - allow cropping outside image)
+    if (dragType === 'move') {
+      x = cropStartState.x + scaledDx;
+      y = cropStartState.y + scaledDy;
+    } else if (dragType === 'nw') {
+      const newX = cropStartState.x + scaledDx;
+      const newY = cropStartState.y + scaledDy;
+      width = Math.max(10 / canvasScale, cropStartState.width + (cropStartState.x - newX));
+      height = Math.max(10 / canvasScale, cropStartState.height + (cropStartState.y - newY));
+      x = cropStartState.x + cropStartState.width - width;
+      y = cropStartState.y + cropStartState.height - height;
+    } else if (dragType === 'ne') {
+      const newY = cropStartState.y + scaledDy;
+      width = Math.max(10 / canvasScale, cropStartState.width + scaledDx);
+      height = Math.max(10 / canvasScale, cropStartState.height + (cropStartState.y - newY));
+      y = cropStartState.y + cropStartState.height - height;
+    } else if (dragType === 'sw') {
+      const newX = cropStartState.x + scaledDx;
+      width = Math.max(10 / canvasScale, cropStartState.width + (cropStartState.x - newX));
+      height = Math.max(10 / canvasScale, cropStartState.height + scaledDy);
+      x = cropStartState.x + cropStartState.width - width;
+    } else if (dragType === 'se') {
+      width = Math.max(10 / canvasScale, cropStartState.width + scaledDx);
+      height = Math.max(10 / canvasScale, cropStartState.height + scaledDy);
+    }
 
-      return { x, y, width, height };
+    // Compute where this crop will end up on the canvas
+    const canvasX = element.x + (x - element.cropX) * canvasScale;
+    const canvasY = element.y + (y - element.cropY) * canvasScale;
+    const canvasWidth = width * canvasScale;
+    const canvasHeight = height * canvasScale;
+
+    // Get snap targets: other elements, margin guides, and original image bounds
+    const slide = usePresentationStore.getState().presentation.slides[activeSlideId];
+    const elements = slide ? Object.values(slide.elements).filter(el => el.id !== element.id && el.visible) : [];
+    const otherBounds = elements.map(el => ({ x: el.x, y: el.y, width: el.width, height: el.height }));
+
+    // Add original image bounds as a snap target (where the full uncropped image would be)
+    const fullImageCanvasX = element.x - element.cropX * canvasScale;
+    const fullImageCanvasY = element.y - element.cropY * canvasScale;
+    const fullImageCanvasWidth = resource.originalWidth * canvasScale;
+    const fullImageCanvasHeight = resource.originalHeight * canvasScale;
+    otherBounds.push({
+      x: fullImageCanvasX,
+      y: fullImageCanvasY,
+      width: fullImageCanvasWidth,
+      height: fullImageCanvasHeight,
     });
 
-    setDragStart({ x: e.clientX, y: e.clientY });
-  }, [isDragging, dragType, dragStart, zoom, resource, element]);
+    // Get margin guides
+    const marginLayoutId = useEditorStore.getState().marginLayoutId;
+    const marginLayout = getMarginLayout(marginLayoutId);
+    const marginBounds = marginLayout ? getMarginBounds(marginLayout) : null;
+
+    // Compute snapping
+    const cropBounds = { x: canvasX, y: canvasY, width: canvasWidth, height: canvasHeight };
+
+    // Apply snaps by adjusting crop coordinates
+    let snappedX = x;
+    let snappedY = y;
+    let snappedWidth = width;
+    let snappedHeight = height;
+
+    if (dragType === 'move') {
+      // For move, use computeGuides which handles center alignment too
+      const moveGuides = computeGuides(cropBounds, otherBounds, 5, marginBounds);
+      if (moveGuides.snapX !== null) {
+        snappedX = element.cropX + (moveGuides.snapX - element.x) / canvasScale;
+      }
+      if (moveGuides.snapY !== null) {
+        snappedY = element.cropY + (moveGuides.snapY - element.y) / canvasScale;
+      }
+    } else {
+      // For resize, use computeResizeSnap for edge snapping
+      const snaps = computeResizeSnap(cropBounds, otherBounds, 5, marginBounds);
+      // For resize, snap individual edges
+      if (dragType === 'nw' || dragType === 'sw') {
+        if (snaps.leftSnap !== null) {
+          const newCanvasX = snaps.leftSnap;
+          snappedX = element.cropX + (newCanvasX - element.x) / canvasScale;
+          snappedWidth = width + (x - snappedX);
+        }
+      }
+      if (dragType === 'ne' || dragType === 'se') {
+        if (snaps.rightSnap !== null) {
+          const newCanvasRight = snaps.rightSnap;
+          snappedWidth = (newCanvasRight - canvasX) / canvasScale;
+        }
+      }
+      if (dragType === 'nw' || dragType === 'ne') {
+        if (snaps.topSnap !== null) {
+          const newCanvasY = snaps.topSnap;
+          snappedY = element.cropY + (newCanvasY - element.y) / canvasScale;
+          snappedHeight = height + (y - snappedY);
+        }
+      }
+      if (dragType === 'sw' || dragType === 'se') {
+        if (snaps.bottomSnap !== null) {
+          const newCanvasBottom = snaps.bottomSnap;
+          snappedHeight = (newCanvasBottom - canvasY) / canvasScale;
+        }
+      }
+    }
+
+    setCropState({ x: snappedX, y: snappedY, width: snappedWidth, height: snappedHeight });
+  }, [isDragging, dragType, dragStart, cropStartState, zoom, resource, element, activeSlideId]);
 
   const handleMouseUp = useCallback(() => {
     setIsDragging(false);
@@ -207,44 +288,64 @@ export const CropOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
       />
 
       {/* Dimmed overlays for cropped-out regions (4 rectangles around crop area) */}
+      {/* Only render the parts that are within the image bounds */}
       {/* Top */}
+      {cropDisplayY > 0 && (
+        <div
+          className="absolute bg-black/50"
+          style={{
+            left: 0,
+            top: 0,
+            width: fullWidth,
+            height: Math.min(cropDisplayY, fullHeight),
+          }}
+        />
+      )}
+      {/* Bottom */}
+      {cropDisplayY + cropDisplayHeight < fullHeight && (
+        <div
+          className="absolute bg-black/50"
+          style={{
+            left: 0,
+            top: Math.max(0, cropDisplayY + cropDisplayHeight),
+            width: fullWidth,
+            height: fullHeight - Math.max(0, cropDisplayY + cropDisplayHeight),
+          }}
+        />
+      )}
+      {/* Left */}
+      {cropDisplayX > 0 && (
+        <div
+          className="absolute bg-black/50"
+          style={{
+            left: 0,
+            top: Math.max(0, cropDisplayY),
+            width: Math.min(cropDisplayX, fullWidth),
+            height: Math.min(cropDisplayHeight, fullHeight - Math.max(0, cropDisplayY)),
+          }}
+        />
+      )}
+      {/* Right */}
+      {cropDisplayX + cropDisplayWidth < fullWidth && (
+        <div
+          className="absolute bg-black/50"
+          style={{
+            left: Math.max(0, cropDisplayX + cropDisplayWidth),
+            top: Math.max(0, cropDisplayY),
+            width: fullWidth - Math.max(0, cropDisplayX + cropDisplayWidth),
+            height: Math.min(cropDisplayHeight, fullHeight - Math.max(0, cropDisplayY)),
+          }}
+        />
+      )}
+
+      {/* Original image bounds indicator (shows when crop extends outside) */}
       <div
-        className="absolute bg-black/50"
+        className="absolute border border-dashed border-gray-400 pointer-events-none"
         style={{
           left: 0,
           top: 0,
           width: fullWidth,
-          height: cropDisplayY,
-        }}
-      />
-      {/* Bottom */}
-      <div
-        className="absolute bg-black/50"
-        style={{
-          left: 0,
-          top: cropDisplayY + cropDisplayHeight,
-          width: fullWidth,
-          height: fullHeight - cropDisplayY - cropDisplayHeight,
-        }}
-      />
-      {/* Left */}
-      <div
-        className="absolute bg-black/50"
-        style={{
-          left: 0,
-          top: cropDisplayY,
-          width: cropDisplayX,
-          height: cropDisplayHeight,
-        }}
-      />
-      {/* Right */}
-      <div
-        className="absolute bg-black/50"
-        style={{
-          left: cropDisplayX + cropDisplayWidth,
-          top: cropDisplayY,
-          width: fullWidth - cropDisplayX - cropDisplayWidth,
-          height: cropDisplayHeight,
+          height: fullHeight,
         }}
       />
 
