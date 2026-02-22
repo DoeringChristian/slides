@@ -1,6 +1,7 @@
 import type { TextElement } from '../types/presentation';
 import katex from 'katex';
 import { parseBlocks, getBlockFontMultiplier, parseInlineSegments, type ParsedBlock } from '../components/canvas/CustomMarkdownRenderer';
+import { TEXT_BOX_PADDING } from './constants';
 
 interface Point {
   x: number;
@@ -18,7 +19,7 @@ export function isPointOnTextContent(element: TextElement, point: Point): boolea
     return false;
   }
 
-  const padding = 4;
+  const padding = TEXT_BOX_PADDING;
   const { fontSize, fontFamily, fontWeight, lineHeight, align, verticalAlign } = style;
   const lineHeightMultiplier = lineHeight || 1.2;
 
@@ -100,7 +101,7 @@ export function calculateCursorFromClick(
 ): number {
   const { text, width, style } = element;
   const { fontSize, fontFamily, fontWeight, lineHeight, align, verticalAlign } = style;
-  const padding = 4;
+  const padding = TEXT_BOX_PADDING;
   const lineHeightMultiplier = lineHeight || 1.2;
 
   if (!text) return 0;
@@ -113,6 +114,50 @@ export function calculateCursorFromClick(
   const contentWidth = width - padding * 2;
   const contentHeight = element.height - padding * 2;
 
+  // Helper to measure actual rendered block height (including LaTeX)
+  const measureBlockHeight = (block: ParsedBlock, blockFontSize: number): number => {
+    const baseHeight = blockFontSize * lineHeightMultiplier;
+
+    // Check if block contains LaTeX
+    const hasLatex = /\$[\s\S]*?\$/.test(block.displayContent);
+    if (!hasLatex) {
+      return baseHeight;
+    }
+
+    // Measure actual height by rendering
+    const container = document.createElement('div');
+    container.style.visibility = 'hidden';
+    container.style.position = 'absolute';
+    container.style.fontSize = `${blockFontSize}px`;
+    container.style.fontFamily = fontFamily;
+    container.style.lineHeight = String(lineHeightMultiplier);
+    container.style.minHeight = `${baseHeight}px`;
+    document.body.appendChild(container);
+
+    try {
+      // Parse and render inline segments
+      const segments = parseInlineSegments(block.displayContent, 0);
+      for (const segment of segments) {
+        if (segment.type === 'latex') {
+          const span = document.createElement('span');
+          span.innerHTML = katex.renderToString(segment.displayContent, {
+            displayMode: segment.isBlock,
+            throwOnError: false,
+          });
+          container.appendChild(span);
+        } else {
+          container.appendChild(document.createTextNode(segment.displayContent));
+        }
+      }
+      const height = container.getBoundingClientRect().height;
+      return Math.max(baseHeight, height);
+    } catch {
+      return baseHeight;
+    } finally {
+      document.body.removeChild(container);
+    }
+  };
+
   // Calculate block heights
   const blockData: { block: ParsedBlock; height: number; fontSize: number; isBold: boolean }[] = [];
   let totalHeight = 0;
@@ -121,7 +166,7 @@ export function calculateCursorFromClick(
     const multiplier = getBlockFontMultiplier(block.type);
     const blockFontSize = fontSize * multiplier;
     const isHeader = block.type === 'h1' || block.type === 'h2' || block.type === 'h3';
-    const blockHeight = blockFontSize * lineHeightMultiplier;
+    const blockHeight = measureBlockHeight(block, blockFontSize);
 
     blockData.push({
       block,
