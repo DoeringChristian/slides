@@ -235,7 +235,7 @@ export const usePresentationStore = create<PresentationStore>()(
                 [slideId]: {
                   ...slide,
                   autoAdvance,
-                  autoAdvanceDelay: autoAdvanceDelay ?? slide.autoAdvanceDelay ?? 0.3,
+                  autoAdvanceDelay: autoAdvanceDelay ?? slide.autoAdvanceDelay ?? 0,
                 },
               },
               updatedAt: Date.now(),

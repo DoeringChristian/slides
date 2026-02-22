@@ -94,6 +94,7 @@ export const PresenterView: React.FC = () => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isAnimating, setIsAnimating] = useState(false);
   const [animProgress, setAnimProgress] = useState(0);
+  const [autoAdvanceEnabled, setAutoAdvanceEnabled] = useState(true);
   const targetIndexRef = useRef(0);
   const rafRef = useRef<number>(0);
   const startTimeRef = useRef(0);
@@ -157,13 +158,13 @@ export const PresenterView: React.FC = () => {
       autoAdvanceTimerRef.current = null;
     }
 
-    // Don't auto-advance if not presenting, animating, or in presenter mode
-    if (!isPresenting || isAnimating || isPresenterMode) return;
+    // Don't auto-advance if not presenting, animating, in presenter mode, or auto-advance disabled (went backwards)
+    if (!isPresenting || isAnimating || isPresenterMode || !autoAdvanceEnabled) return;
 
     const currentSlide = slides[slideOrder[currentIndex]];
     if (!currentSlide?.autoAdvance) return;
 
-    const delay = (currentSlide.autoAdvanceDelay ?? 0.3) * 1000;
+    const delay = (currentSlide.autoAdvanceDelay ?? 0) * 1000;
 
     // Check if there's a next slide
     const pos = visibleIndices.indexOf(currentIndex);
@@ -182,20 +183,27 @@ export const PresenterView: React.FC = () => {
         clearTimeout(autoAdvanceTimerRef.current);
       }
     };
-  }, [isPresenting, isPresenterMode, isAnimating, currentIndex, slides, slideOrder, visibleIndices, startAnimation]);
+  }, [isPresenting, isPresenterMode, isAnimating, currentIndex, slides, slideOrder, visibleIndices, startAnimation, autoAdvanceEnabled]);
 
   const goNext = useCallback(() => {
     if (isAnimating) return;
     const pos = visibleIndices.indexOf(currentIndex);
     const nextPos = pos === -1 ? visibleIndices.find((i) => i > currentIndex) : visibleIndices[pos + 1];
-    if (nextPos !== undefined) startAnimation(nextPos);
+    if (nextPos !== undefined) {
+      setAutoAdvanceEnabled(true); // Re-enable auto-advance when going forward
+      startAnimation(nextPos);
+    }
   }, [currentIndex, visibleIndices, isAnimating, startAnimation]);
 
   const goPrev = useCallback(() => {
     if (isAnimating) return;
     const pos = visibleIndices.indexOf(currentIndex);
     const prevPos = pos === -1 ? [...visibleIndices].reverse().find((i) => i < currentIndex) : visibleIndices[pos - 1];
-    if (prevPos !== undefined) startAnimation(prevPos);
+    if (prevPos !== undefined) {
+      // Disable auto-advance when going back
+      setAutoAdvanceEnabled(false);
+      startAnimation(prevPos);
+    }
   }, [currentIndex, visibleIndices, isAnimating, startAnimation]);
 
   const exitPresentation = useCallback(() => {

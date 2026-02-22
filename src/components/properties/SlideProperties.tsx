@@ -56,9 +56,9 @@ export const SlideProperties: React.FC<Props> = ({ slide }) => {
             <label className="text-xs text-gray-500 block mb-1">Delay (seconds)</label>
             <input
               type="number"
-              value={slide.autoAdvanceDelay ?? 0.3}
+              value={slide.autoAdvanceDelay ?? 0}
               onChange={(e) => updateSlideAutoAdvance(activeSlideId, true, Number(e.target.value))}
-              min={0.1} max={300} step={0.1}
+              min={0} max={300} step={0.1}
               className="w-full h-8 text-sm border border-gray-300 rounded px-2"
             />
           </div>
