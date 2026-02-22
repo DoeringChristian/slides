@@ -131,19 +131,21 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom, onGuides }) =
   const width = element.width * zoom;
   const height = element.height * zoom;
 
-  const borderWidth = 8;
+  // Drag handle dimensions - keep them narrow and inset to not block transformer resize handles
+  const dragHandleThickness = 6;
+  const cornerInset = 12; // Leave space for corner resize handles
 
   return (
     <div className="text-edit-overlay absolute" style={{ left: 0, top: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
-      {/* Border drag handles - positioned around the textarea */}
+      {/* Border drag handles - positioned around the textarea, inset from corners */}
       {/* Top border */}
       <div
         style={{
           position: 'absolute',
-          left: `${left}px`,
-          top: `${top - borderWidth}px`,
-          width: `${width}px`,
-          height: `${borderWidth}px`,
+          left: `${left + cornerInset}px`,
+          top: `${top - dragHandleThickness}px`,
+          width: `${Math.max(0, width - cornerInset * 2)}px`,
+          height: `${dragHandleThickness}px`,
           cursor: 'move',
           pointerEvents: 'auto',
           zIndex: 1001,
@@ -154,10 +156,10 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom, onGuides }) =
       <div
         style={{
           position: 'absolute',
-          left: `${left}px`,
+          left: `${left + cornerInset}px`,
           top: `${top + height}px`,
-          width: `${width}px`,
-          height: `${borderWidth}px`,
+          width: `${Math.max(0, width - cornerInset * 2)}px`,
+          height: `${dragHandleThickness}px`,
           cursor: 'move',
           pointerEvents: 'auto',
           zIndex: 1001,
@@ -168,10 +170,10 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom, onGuides }) =
       <div
         style={{
           position: 'absolute',
-          left: `${left - borderWidth}px`,
-          top: `${top}px`,
-          width: `${borderWidth}px`,
-          height: `${height}px`,
+          left: `${left - dragHandleThickness}px`,
+          top: `${top + cornerInset}px`,
+          width: `${dragHandleThickness}px`,
+          height: `${Math.max(0, height - cornerInset * 2)}px`,
           cursor: 'move',
           pointerEvents: 'auto',
           zIndex: 1001,
@@ -183,9 +185,9 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom, onGuides }) =
         style={{
           position: 'absolute',
           left: `${left + width}px`,
-          top: `${top}px`,
-          width: `${borderWidth}px`,
-          height: `${height}px`,
+          top: `${top + cornerInset}px`,
+          width: `${dragHandleThickness}px`,
+          height: `${Math.max(0, height - cornerInset * 2)}px`,
           cursor: 'move',
           pointerEvents: 'auto',
           zIndex: 1001,
