@@ -15,7 +15,7 @@ interface Props {
   onMouseLeave?: (id: string) => void;
 }
 
-export const ShapeNode: React.FC<Props> = ({ element, isSelected, disableInteraction, onSelect, onDragEnd, onDragMove, onTransformEnd, onMouseEnter, onMouseLeave }) => {
+export const ShapeNode: React.FC<Props> = ({ element, isSelected: _isSelected, disableInteraction, onSelect, onDragEnd, onDragMove, onTransformEnd, onMouseEnter, onMouseLeave }) => {
   const shapeRef = useRef<any>(null);
 
   // These shapes use center positioning, need to convert coordinates

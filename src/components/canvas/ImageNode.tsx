@@ -17,7 +17,7 @@ interface Props {
   onMouseLeave?: (id: string) => void;
 }
 
-export const ImageNode: React.FC<Props> = ({ element, isSelected, disableInteraction, onSelect, onDragEnd, onDragMove, onTransformEnd, onMouseEnter, onMouseLeave }) => {
+export const ImageNode: React.FC<Props> = ({ element, isSelected: _isSelected, disableInteraction, onSelect, onDragEnd, onDragMove, onTransformEnd, onMouseEnter, onMouseLeave }) => {
   const imgRef = useRef<Konva.Image>(null);
   const rectRef = useRef<Konva.Rect>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);

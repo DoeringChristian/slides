@@ -1,5 +1,5 @@
 import Konva from 'konva';
-import type { Presentation, Slide, TextElement, ShapeElement } from '../types/presentation';
+import type { Presentation, TextElement, ShapeElement } from '../types/presentation';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from './constants';
 
 export async function exportImage(presentation: Presentation): Promise<void> {

@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { usePresentationStore } from '../../store/presentationStore';
-import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 import { X } from 'lucide-react';
 
 interface Props {

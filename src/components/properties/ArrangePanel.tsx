@@ -17,7 +17,8 @@ function KeyframeButtons({ element, prev, next, fields, update }: {
   fields: (keyof SlideElement)[];
   update: (changes: Partial<SlideElement>) => void;
 }) {
-  const pick = (el: SlideElement) => {
+  const pick = (el: SlideElement | undefined) => {
+    if (!el) return {};
     const changes: Partial<SlideElement> = {};
     for (const f of fields) (changes as any)[f] = el[f];
     return changes;

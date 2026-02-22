@@ -1,6 +1,6 @@
 import jsPDF from 'jspdf';
 import Konva from 'konva';
-import type { Presentation, Slide, SlideElement, TextElement, ShapeElement } from '../types/presentation';
+import type { Presentation, Slide, TextElement, ShapeElement } from '../types/presentation';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from './constants';
 
 function renderSlideToDataURL(slide: Slide, width: number, height: number): Promise<string> {

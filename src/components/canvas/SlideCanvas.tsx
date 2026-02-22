@@ -50,7 +50,6 @@ export const SlideCanvas: React.FC = () => {
   const hoveredObjectId = useEditorStore((s) => s.hoveredObjectId);
   const setHoveredObjectId = useEditorStore((s) => s.setHoveredObjectId);
   const snapToGrid = useEditorStore((s) => s.snapToGrid);
-  const marginLayoutId = useEditorStore((s) => s.marginLayoutId);
   const updateElement = usePresentationStore((s) => s.updateElement);
   const unhideElement = usePresentationStore((s) => s.unhideElement);
   const addEmptySlide = usePresentationStore((s) => s.addEmptySlide);
@@ -321,7 +320,7 @@ export const SlideCanvas: React.FC = () => {
     setHoveredObjectId(null);
   }, [setHoveredObjectId]);
 
-  const handleBindingDrag = useCallback((point: { x: number; y: number }, endpoint: 'start' | 'end') => {
+  const handleBindingDrag = useCallback((point: { x: number; y: number }, _endpoint: 'start' | 'end') => {
     if (!slide || !soleSelectedLineElement) return;
     const target = getBindingTarget(point, Object.values(slide.elements), soleSelectedLineElement.id, 30);
     setConnectorHighlightId(target ? target.elementId : null);

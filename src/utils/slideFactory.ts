@@ -1,6 +1,6 @@
 import { generateId } from './idGenerator';
 import { DEFAULT_TEXT_STYLE, DEFAULT_SHAPE_PROPS, SLIDE_WIDTH, SLIDE_HEIGHT } from './constants';
-import type { Slide, TextElement, ShapeElement, ImageElement, ShapeType, SlideElement, Presentation, Theme, ObjectMeta, SlideTemplate, SlideBackground, Resource } from '../types/presentation';
+import type { Slide, TextElement, ShapeElement, ImageElement, ShapeType, SlideElement, Presentation, Theme, ObjectMeta, Resource } from '../types/presentation';
 
 export function createDefaultTheme(): Theme {
   return {

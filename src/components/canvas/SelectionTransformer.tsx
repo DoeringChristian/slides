@@ -5,7 +5,6 @@ import type { Guide } from '../../hooks/useAlignmentGuides';
 import { useEditorStore } from '../../store/editorStore';
 import { getMarginLayout, getMarginBounds } from '../../utils/marginLayouts';
 import { CANVAS_PADDING } from '../../utils/constants';
-import { isCtrlHeld } from '../../utils/keyboard';
 import type Konva from 'konva';
 
 const ROTATION_SNAPS = Array.from({ length: 24 }, (_, i) => i * 15); // [0, 15, 30, ..., 345]
@@ -78,13 +77,11 @@ function getRotateIcon(color: string): HTMLCanvasElement {
 
 export const SelectionTransformer: React.FC<Props> = ({ selectedIds, stageRef, locked = false, otherElementBounds, snappingEnabled, zoom, onGuides, keepRatio = false, elementCount }) => {
   const trRef = useRef<Konva.Transformer>(null);
-  const [iconReady, setIconReady] = useState(false);
   const lastGuidesRef = useRef<Guide[]>([]);
   const [ctrlHeld, setCtrlHeld] = useState(false);
 
   useEffect(() => {
     getRotateIcon(COLOR_DEFAULT);
-    setIconReady(true);
   }, []);
 
   useEffect(() => {

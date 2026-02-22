@@ -1,5 +1,4 @@
 import { usePresentationStore } from '../store/presentationStore';
-import type { StoreApi } from 'zustand';
 
 export function useHistory() {
   const temporal = (usePresentationStore as any).temporal;

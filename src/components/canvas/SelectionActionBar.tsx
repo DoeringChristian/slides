@@ -17,7 +17,6 @@ export const SelectionActionBar: React.FC<Props> = ({ element, zoom, isSelected 
   const updateElement = usePresentationStore((s) => s.updateElement);
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const setCroppingElementId = useEditorStore((s) => s.setCroppingElementId);
-  const resources = usePresentationStore((s) => s.presentation.resources);
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);

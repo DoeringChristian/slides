@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { temporal } from 'zundo';
 import type { Presentation, Slide, SlideElement, ShapeElement, ObjectMeta, SlideTemplate, Resource } from '../types/presentation';
 import { generateId } from '../utils/idGenerator';
-import { createPresentation, createSlide, duplicateElement, copySlideAsKeyframe, generateObjectName } from '../utils/slideFactory';
+import { createPresentation, createSlide, copySlideAsKeyframe, generateObjectName } from '../utils/slideFactory';
 import { resolveBindingPoint } from '../utils/connectorUtils';
 
 // Helper: propagate partial changes to an element across all slides after fromSlideId

@@ -14,7 +14,6 @@ export const StorageSettingsDialog: React.FC<Props> = ({ isOpen, onClose }) => {
   const storageMode = useVaultStore((s) => s.storageMode);
   const serverUrl = useVaultStore((s) => s.serverUrl);
   const vaultHandle = useVaultStore((s) => s.vaultHandle);
-  const isLoading = useVaultStore((s) => s.isLoading);
   const error = useVaultStore((s) => s.error);
 
   const setStorageMode = useVaultStore((s) => s.setStorageMode);

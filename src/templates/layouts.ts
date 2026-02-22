@@ -1,6 +1,5 @@
-import type { Slide, TextElement } from '../types/presentation';
+import type { Slide } from '../types/presentation';
 import { createSlide, createTextElement } from '../utils/slideFactory';
-import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../utils/constants';
 
 export interface SlideLayout {
   name: string;

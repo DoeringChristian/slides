@@ -16,7 +16,7 @@ interface Props {
   onMouseLeave?: (id: string) => void;
 }
 
-export const TextNode: React.FC<Props> = ({ element, isSelected, disableInteraction, onSelect, onDragEnd, onDragMove, onTransformEnd, onDoubleClick, onMouseEnter, onMouseLeave }) => {
+export const TextNode: React.FC<Props> = ({ element, isSelected: _isSelected, disableInteraction, onSelect, onDragEnd, onDragMove, onTransformEnd, onDoubleClick, onMouseEnter, onMouseLeave }) => {
   const textRef = useRef<Konva.Text>(null);
 
   useEffect(() => {

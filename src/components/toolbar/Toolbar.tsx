@@ -3,7 +3,7 @@ import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useSelectedElements } from '../../store/selectors';
 import { TextFormatBar } from './TextFormatBar';
-import { ShapeMenu } from './ShapeMenu';
+import { ShapeMenu as _ShapeMenu } from './ShapeMenu';
 import { duplicateElement, loadImageFile, loadPdfFile } from '../../utils/slideFactory';
 import {
   MousePointer2, Type, Square, Circle, Triangle, Star, Minus, MoveRight,
