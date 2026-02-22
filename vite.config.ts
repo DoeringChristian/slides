@@ -49,6 +49,9 @@ function backendServer() {
 }
 
 // https://vite.dev/config/
-export default defineConfig({
-  plugins: [react(), backendServer()],
-})
+export default defineConfig(({ command }) => ({
+  // Base path for GitHub Pages - use repo name as base
+  // Change 'slides' to your actual repository name if different
+  base: command === 'build' ? '/slides/' : '/',
+  plugins: command === 'serve' ? [react(), backendServer()] : [react()],
+}))
