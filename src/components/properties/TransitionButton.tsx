@@ -54,6 +54,16 @@ function getPropertyValues(element: SlideElement, group: keyof PropertyTransitio
 }
 
 function propertiesDiffer(a: SlideElement | undefined, b: SlideElement | undefined, group: keyof PropertyTransitions): boolean {
+  // For visibility: element appearing/disappearing counts as a difference
+  if (group === 'visibility') {
+    const aVisible = a?.visible ?? false;
+    const bVisible = b?.visible ?? false;
+    // Also treat element not existing as not visible
+    const aExists = !!a;
+    const bExists = !!b;
+    return (aExists && aVisible) !== (bExists && bVisible);
+  }
+
   if (!a || !b) return false;
   const valsA = getPropertyValues(a, group);
   const valsB = getPropertyValues(b, group);
@@ -103,14 +113,25 @@ export const TransitionButton: React.FC<Props> = ({
   const sourceElement = sourceSlide?.elements[elementId];
   const targetElement = targetSlide?.elements[elementId];
 
-  // Get current easing value from the target element (where transitions are stored)
-  const currentEasing: EasingType = targetElement?.transitions?.[group] || 'linear';
-
   // Only show if the property differs between source and target
   const differs = propertiesDiffer(sourceElement, targetElement, group);
 
-  // Can't edit if no target slide/element exists or property doesn't differ
-  const canEdit = !!targetElement && differs;
+  // For visibility transitions when element disappears (fade-out),
+  // we store the transition on the source element since target doesn't exist
+  const isFadeOut = group === 'visibility' && sourceElement?.visible && !targetElement;
+  const isFadeIn = group === 'visibility' && !sourceElement?.visible && targetElement?.visible;
+
+  // Determine which element holds the transition settings
+  // For fade-out: use source element (since target doesn't exist)
+  // For everything else: use target element
+  const transitionElement = isFadeOut ? sourceElement : targetElement;
+  const transitionSlideId = isFadeOut ? sourceSlideId : targetSlideId;
+
+  // Get current easing value from the appropriate element
+  const currentEasing: EasingType = transitionElement?.transitions?.[group] || 'linear';
+
+  // Can edit if we have an element to store transitions on and property differs
+  const canEdit = !!transitionElement && differs;
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -131,10 +152,10 @@ export const TransitionButton: React.FC<Props> = ({
 
   const handleSelect = (easing: EasingType) => {
     const newTransitions: PropertyTransitions = {
-      ...targetElement.transitions,
+      ...transitionElement!.transitions,
       [group]: easing,
     };
-    updateElement(targetSlideId, elementId, { transitions: newTransitions } as Partial<SlideElement>);
+    updateElement(transitionSlideId!, elementId, { transitions: newTransitions } as Partial<SlideElement>);
     setIsOpen(false);
   };
 
