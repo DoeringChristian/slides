@@ -25,6 +25,7 @@ interface Props {
   snappingEnabled?: boolean;
   zoom?: number;
   onGuides?: (guides: Guide[]) => void;
+  keepRatio?: boolean;
 }
 
 const COLOR_DEFAULT = '#4285f4';
@@ -74,7 +75,7 @@ function getRotateIcon(color: string): HTMLCanvasElement {
   return rotateIconCache[color];
 }
 
-export const SelectionTransformer: React.FC<Props> = ({ selectedIds, stageRef, locked = false, otherElementBounds, snappingEnabled, zoom, onGuides }) => {
+export const SelectionTransformer: React.FC<Props> = ({ selectedIds, stageRef, locked = false, otherElementBounds, snappingEnabled, zoom, onGuides, keepRatio = false }) => {
   const trRef = useRef<Konva.Transformer>(null);
   const [iconReady, setIconReady] = useState(false);
   const lastGuidesRef = useRef<Guide[]>([]);
@@ -230,7 +231,7 @@ export const SelectionTransformer: React.FC<Props> = ({ selectedIds, stageRef, l
           anchor.fill('');
         }
       }}
-      keepRatio={false}
+      keepRatio={keepRatio}
       rotationSnaps={ctrlHeld ? ROTATION_SNAPS : []}
       rotationSnapTolerance={ctrlHeld ? 10 : 0}
       enabledAnchors={[

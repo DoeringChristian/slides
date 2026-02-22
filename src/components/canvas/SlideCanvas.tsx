@@ -106,6 +106,15 @@ export const SlideCanvas: React.FC = () => {
     return { unlockedTransformerIds: unlocked, lockedTransformerIds: locked };
   }, [selectedElementIds, soleSelectedLineElement, slide]);
 
+  // Keep aspect ratio only when all selected elements are images
+  const shouldKeepRatio = useMemo(() => {
+    if (!slide || selectedElementIds.length === 0) return false;
+    return selectedElementIds.every((id) => {
+      const el = slide.elements[id];
+      return el && el.type === 'image';
+    });
+  }, [selectedElementIds, slide]);
+
   // Track if we just completed a selection drag to prevent click from clearing selection
   const justFinishedSelectionDrag = useRef(false);
 
@@ -526,6 +535,7 @@ export const SlideCanvas: React.FC = () => {
             snappingEnabled={snapToGrid}
             zoom={zoom}
             onGuides={setGuides}
+            keepRatio={shouldKeepRatio}
           />
           <SelectionTransformer selectedIds={editingTextId ? [] : lockedTransformerIds} stageRef={stageRef} locked />
           {soleSelectedLineElement && !editingTextId && (
