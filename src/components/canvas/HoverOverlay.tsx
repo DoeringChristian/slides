@@ -1,6 +1,7 @@
 import React from 'react';
 import { Group, Rect, Text, Ellipse, Line, Arrow, Star, RegularPolygon, Image as KonvaImage } from 'react-konva';
 import useImage from 'use-image';
+import { usePresentationStore } from '../../store/presentationStore';
 import type { SlideElement, TextElement, ShapeElement, ImageElement } from '../../types/presentation';
 
 interface Props {
@@ -12,7 +13,26 @@ const HIGHLIGHT_COLOR = '#f59e0b';
 const GHOST_OPACITY = 0.35;
 
 const GhostImage: React.FC<{ element: ImageElement }> = ({ element }) => {
-  const [image] = useImage(element.src);
+  const resource = usePresentationStore((s) =>
+    element.resourceId ? s.presentation.resources[element.resourceId] : undefined
+  );
+  const [image] = useImage(resource?.type === 'image' ? (resource?.src || '') : '');
+
+  if (!resource || resource.type === 'video') {
+    // For videos or no resource, show placeholder
+    return (
+      <Rect
+        x={element.x}
+        y={element.y}
+        width={element.width}
+        height={element.height}
+        rotation={element.rotation}
+        fill={resource?.type === 'video' ? '#1f2937' : '#f3f4f6'}
+        listening={false}
+      />
+    );
+  }
+
   return (
     <KonvaImage
       image={image}

@@ -1,5 +1,5 @@
-import React from 'react';
-import { Type, Square, Image, Video } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Type, Square, Image, Film } from 'lucide-react';
 import { usePresentationStore } from '../../store/presentationStore';
 import type { SlideElement, ObjectMeta } from '../../types/presentation';
 
@@ -12,7 +12,6 @@ const FALLBACK_ICONS: Record<string, React.FC<{ size: number; className?: string
   text: Type,
   shape: Square,
   image: Image,
-  video: Video,
 };
 
 const SHAPE_CLIP_PATHS: Record<string, string> = {
@@ -20,8 +19,59 @@ const SHAPE_CLIP_PATHS: Record<string, string> = {
   star: 'polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)',
 };
 
+// Cache for video first frames
+const videoFrameCache: Record<string, string> = {};
+
 export const ObjectPreview: React.FC<Props> = ({ element, objectType }) => {
   const resources = usePresentationStore((s) => s.presentation.resources);
+  const [videoThumb, setVideoThumb] = useState<string | null>(null);
+
+  // Handle video thumbnail extraction
+  const resource = element?.type === 'image' && element.resourceId
+    ? resources[element.resourceId]
+    : undefined;
+  const isVideo = resource?.type === 'video';
+
+  useEffect(() => {
+    if (!isVideo || !resource) {
+      setVideoThumb(null);
+      return;
+    }
+
+    // Check cache first
+    if (videoFrameCache[resource.id]) {
+      setVideoThumb(videoFrameCache[resource.id]);
+      return;
+    }
+
+    // Extract first frame
+    const video = document.createElement('video');
+    video.src = resource.src;
+    video.muted = true;
+    video.preload = 'metadata';
+
+    video.onloadeddata = () => {
+      video.currentTime = 0;
+    };
+
+    video.onseeked = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(video, 0, 0);
+        const dataUrl = canvas.toDataURL('image/png');
+        videoFrameCache[resource.id] = dataUrl;
+        setVideoThumb(dataUrl);
+      }
+      video.src = '';
+    };
+
+    return () => {
+      video.src = '';
+    };
+  }, [isVideo, resource?.id, resource?.src]);
 
   if (!element) {
     const Icon = FALLBACK_ICONS[objectType] || Square;
@@ -89,8 +139,6 @@ export const ObjectPreview: React.FC<Props> = ({ element, objectType }) => {
   }
 
   if (element.type === 'image') {
-    const resource = element.resourceId ? resources[element.resourceId] : undefined;
-
     // Show fallback icon if no resource
     if (!resource) {
       return (
@@ -100,6 +148,30 @@ export const ObjectPreview: React.FC<Props> = ({ element, objectType }) => {
       );
     }
 
+    // Handle video resource
+    if (isVideo) {
+      const thumbSrc = videoThumb;
+      return (
+        <div className="w-full h-full bg-gray-900 relative">
+          {thumbSrc ? (
+            <img
+              src={thumbSrc}
+              className="w-full h-full object-cover"
+              draggable={false}
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center">
+              <Film size={24} className="text-gray-500" />
+            </div>
+          )}
+          <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-[8px] text-center py-0.5">
+            VIDEO
+          </div>
+        </div>
+      );
+    }
+
+    // Handle image resource
     return (
       <div className="w-full h-full bg-gray-50">
         <img
@@ -107,33 +179,6 @@ export const ObjectPreview: React.FC<Props> = ({ element, objectType }) => {
           className="w-full h-full object-cover"
           draggable={false}
         />
-      </div>
-    );
-  }
-
-  if (element.type === 'video') {
-    const resource = element.resourceId ? resources[element.resourceId] : undefined;
-
-    // Show fallback icon if no resource
-    if (!resource) {
-      return (
-        <div className="w-full h-full flex items-center justify-center bg-gray-900">
-          <Video size={24} className="text-gray-500" />
-        </div>
-      );
-    }
-
-    return (
-      <div className="w-full h-full bg-gray-900 relative">
-        <video
-          src={resource.src}
-          className="w-full h-full object-cover"
-          muted
-          playsInline
-        />
-        <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-          <Video size={20} className="text-white/80" />
-        </div>
       </div>
     );
   }

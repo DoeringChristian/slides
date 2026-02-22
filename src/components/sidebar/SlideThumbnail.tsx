@@ -3,7 +3,7 @@ import { X, EyeOff, Eye } from 'lucide-react';
 import { Stage, Layer, Rect, Text, Ellipse, Image as KonvaImage, Line, Arrow, Star, RegularPolygon } from 'react-konva';
 import useImage from 'use-image';
 import { usePresentationStore } from '../../store/presentationStore';
-import type { Slide, SlideElement, TextElement, ShapeElement, ImageElement, VideoElement } from '../../types/presentation';
+import type { Slide, SlideElement, TextElement, ShapeElement, ImageElement } from '../../types/presentation';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 
 const THUMB_WIDTH = 192;
@@ -39,48 +39,21 @@ const HighlightRect: React.FC<{ element: SlideElement }> = ({ element }) => {
   );
 };
 
+// Cache for video first frames to avoid re-extracting
+const videoFrameCache: Record<string, HTMLCanvasElement> = {};
+
 const ThumbnailImageElement: React.FC<{ element: ImageElement }> = ({ element }) => {
   const resource = usePresentationStore((s) =>
     element.resourceId ? s.presentation.resources[element.resourceId] : undefined
   );
-  const [image] = useImage(resource?.src || '');
-
-  // Return null if no resource
-  if (!resource) return null;
-
-  const crop = {
-    x: element.cropX,
-    y: element.cropY,
-    width: element.cropWidth,
-    height: element.cropHeight,
-  };
-
-  return (
-    <KonvaImage
-      image={image}
-      x={element.x}
-      y={element.y}
-      width={element.width}
-      height={element.height}
-      rotation={element.rotation}
-      opacity={element.opacity}
-      crop={crop}
-      listening={false}
-    />
-  );
-};
-
-// Cache for video first frames to avoid re-extracting
-const videoFrameCache: Record<string, HTMLCanvasElement> = {};
-
-const ThumbnailVideoElement: React.FC<{ element: VideoElement }> = ({ element }) => {
-  const resource = usePresentationStore((s) =>
-    element.resourceId ? s.presentation.resources[element.resourceId] : undefined
-  );
+  const [image] = useImage(resource?.type === 'image' ? (resource?.src || '') : '');
   const [frameImage, setFrameImage] = useState<HTMLCanvasElement | null>(null);
 
+  const isVideo = resource?.type === 'video';
+
+  // Handle video frame extraction
   useEffect(() => {
-    if (!resource?.src) {
+    if (!isVideo || !resource?.src) {
       setFrameImage(null);
       return;
     }
@@ -122,33 +95,61 @@ const ThumbnailVideoElement: React.FC<{ element: VideoElement }> = ({ element })
     return () => {
       video.src = '';
     };
-  }, [resource?.src, resource?.id]);
+  }, [isVideo, resource?.src, resource?.id]);
 
-  if (!resource || !frameImage) {
-    // Show placeholder rectangle for video
+  // Return null if no resource
+  if (!resource) return null;
+
+  // Video resource
+  if (isVideo) {
+    if (!frameImage) {
+      // Show placeholder rectangle for video
+      return (
+        <Rect
+          x={element.x}
+          y={element.y}
+          width={element.width}
+          height={element.height}
+          rotation={element.rotation}
+          opacity={element.opacity}
+          fill="#1f2937"
+          listening={false}
+        />
+      );
+    }
+
     return (
-      <Rect
+      <KonvaImage
+        image={frameImage}
         x={element.x}
         y={element.y}
         width={element.width}
         height={element.height}
         rotation={element.rotation}
         opacity={element.opacity}
-        fill="#1f2937"
         listening={false}
       />
     );
   }
 
+  // Image resource
+  const crop = {
+    x: element.cropX,
+    y: element.cropY,
+    width: element.cropWidth,
+    height: element.cropHeight,
+  };
+
   return (
     <KonvaImage
-      image={frameImage}
+      image={image}
       x={element.x}
       y={element.y}
       width={element.width}
       height={element.height}
       rotation={element.rotation}
       opacity={element.opacity}
+      crop={crop}
       listening={false}
     />
   );
@@ -187,10 +188,6 @@ export const ThumbnailElement: React.FC<{ element: SlideElement; isSelected?: bo
 
     if (element.type === 'image') {
       return <ThumbnailImageElement element={element as ImageElement} />;
-    }
-
-    if (element.type === 'video') {
-      return <ThumbnailVideoElement element={element as VideoElement} />;
     }
 
     return null;

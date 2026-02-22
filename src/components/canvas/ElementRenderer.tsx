@@ -2,7 +2,6 @@ import React from 'react';
 import { TextNode } from './TextNode';
 import { ShapeNode } from './ShapeNode';
 import { ImageNode } from './ImageNode';
-import { VideoNode } from './VideoNode';
 import type { SlideElement } from '../../types/presentation';
 import type Konva from 'konva';
 
@@ -29,8 +28,6 @@ export const ElementRenderer: React.FC<Props> = (props) => {
       return <ShapeNode {...props} element={element} />;
     case 'image':
       return <ImageNode {...props} element={element} />;
-    case 'video':
-      return <VideoNode {...props} element={element} />;
     default:
       return null;
   }

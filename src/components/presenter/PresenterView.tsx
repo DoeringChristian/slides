@@ -6,14 +6,17 @@ import { usePresentationStore } from '../../store/presentationStore';
 import { MarkdownRenderer } from '../canvas/MarkdownRenderer';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 import { interpolateWithVisibility, lerpColor } from '../../utils/interpolation';
-import type { SlideElement, TextElement, ShapeElement, ImageElement, VideoElement, Slide, Resource } from '../../types/presentation';
+import type { SlideElement, TextElement, ShapeElement, ImageElement, Slide, Resource } from '../../types/presentation';
 
 const PresentationImageElement: React.FC<{ element: ImageElement; resources: Record<string, Resource> }> = ({ element, resources }) => {
   const resource = element.resourceId ? resources[element.resourceId] : undefined;
-  const [image] = useImage(resource?.src || '');
+  const [image] = useImage(resource?.type === 'image' ? (resource?.src || '') : '');
 
   // Return null if no resource (invisible in presentation)
   if (!resource) return null;
+
+  // Video resources are rendered as HTML overlay
+  if (resource.type === 'video') return null;
 
   const crop = {
     x: element.cropX,
@@ -42,11 +45,6 @@ const PresentationSlideElement: React.FC<{ element: SlideElement; resources: Rec
 
   if (element.type === 'text') {
     // Text is rendered as HTML overlay for markdown support
-    return null;
-  }
-
-  if (element.type === 'video') {
-    // Video is rendered as HTML overlay
     return null;
   }
 
@@ -274,10 +272,12 @@ export const PresenterView: React.FC = () => {
     (el): el is TextElement => el.type === 'text' && el.visible
   );
 
-  // Get video elements for HTML video rendering
-  const videoElements = renderedElements.filter(
-    (el): el is VideoElement => el.type === 'video' && el.visible
-  );
+  // Get image elements that have video resources for HTML video rendering
+  const videoElements = renderedElements.filter((el): el is ImageElement => {
+    if (el.type !== 'image' || !el.visible) return false;
+    const resource = (el as ImageElement).resourceId ? resources[(el as ImageElement).resourceId!] : undefined;
+    return resource?.type === 'video';
+  });
 
   return (
     <div ref={containerRef} className="fixed inset-0 bg-black z-[9999] flex items-center justify-center cursor-none"
@@ -304,9 +304,9 @@ export const PresenterView: React.FC = () => {
               <video
                 key={element.id}
                 src={resource.src}
-                autoPlay={element.playing}
-                loop={element.loop}
-                muted={element.muted}
+                autoPlay={element.playing ?? true}
+                loop={element.loop ?? false}
+                muted={element.muted ?? false}
                 playsInline
                 style={{
                   position: 'absolute',

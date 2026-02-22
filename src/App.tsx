@@ -49,6 +49,7 @@ function migratePresentation(data: any): Presentation {
             resources[resourceId] = {
               id: resourceId,
               name: `Image ${Object.keys(resources).length + 1}`,
+              type: 'image',
               src: el.src,
               originalWidth: el.originalWidth || 100,
               originalHeight: el.originalHeight || 100,
@@ -79,6 +80,7 @@ function migratePresentation(data: any): Presentation {
               resources[resourceId] = {
                 id: resourceId,
                 name: `Image ${Object.keys(resources).length + 1}`,
+                type: 'image',
                 src: el.src,
                 originalWidth: el.originalWidth || 100,
                 originalHeight: el.originalHeight || 100,

@@ -35,7 +35,6 @@ function propagateToSubsequentSlides(
 function getObjectType(el: SlideElement): ObjectMeta['type'] {
   if (el.type === 'text') return 'text';
   if (el.type === 'image') return 'image';
-  if (el.type === 'video') return 'video';
   return 'shape';
 }
 

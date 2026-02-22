@@ -1,6 +1,6 @@
 import { generateId } from './idGenerator';
 import { DEFAULT_TEXT_STYLE, DEFAULT_SHAPE_PROPS, SLIDE_WIDTH, SLIDE_HEIGHT } from './constants';
-import type { Slide, TextElement, ShapeElement, ImageElement, VideoElement, ShapeType, SlideElement, Presentation, Theme, ObjectMeta, SlideTemplate, SlideBackground, Resource } from '../types/presentation';
+import type { Slide, TextElement, ShapeElement, ImageElement, ShapeType, SlideElement, Presentation, Theme, ObjectMeta, SlideTemplate, SlideBackground, Resource } from '../types/presentation';
 
 export function createDefaultTheme(): Theme {
   return {
@@ -108,10 +108,16 @@ export function createImageElement(resourceId: string | null, originalWidth: num
     locked: false,
     visible: true,
     resourceId,
+    // Image crop properties
     cropX: 0,
     cropY: 0,
     cropWidth: originalWidth,
     cropHeight: originalHeight,
+    // Video playback properties (used when resource is a video)
+    playing: true,
+    loop: false,
+    muted: false,
+    startTime: 0,
     ...overrides,
   };
 }
@@ -205,42 +211,10 @@ export async function loadPdfFile(file: Blob): Promise<{ resources: Resource[]; 
   return { resources, elements };
 }
 
-export function createVideoElement(
-  resourceId: string | null,
-  originalWidth: number,
-  originalHeight: number,
-  overrides?: Partial<VideoElement>
-): VideoElement {
-  const maxW = SLIDE_WIDTH * 0.6;
-  const maxH = SLIDE_HEIGHT * 0.6;
-  const scale = Math.min(maxW / originalWidth, maxH / originalHeight, 1);
-  const width = originalWidth * scale;
-  const height = originalHeight * scale;
-
-  return {
-    id: generateId(),
-    type: 'video',
-    x: (SLIDE_WIDTH - width) / 2,
-    y: (SLIDE_HEIGHT - height) / 2,
-    width,
-    height,
-    rotation: 0,
-    opacity: 1,
-    locked: false,
-    visible: true,
-    resourceId,
-    playing: true,  // Videos start playing by default
-    loop: false,
-    muted: false,
-    startTime: 0,
-    ...overrides,
-  };
-}
-
 export function loadVideoFile(
   file: Blob,
-  overrides?: Partial<VideoElement>
-): Promise<{ resource: Resource; element: VideoElement }> {
+  overrides?: Partial<ImageElement>
+): Promise<{ resource: Resource; element: ImageElement }> {
   const fileName = file instanceof File ? file.name : 'Video';
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -257,7 +231,7 @@ export function loadVideoFile(
           'video',
           video.duration
         );
-        const element = createVideoElement(
+        const element = createImageElement(
           resource.id,
           video.videoWidth,
           video.videoHeight,
