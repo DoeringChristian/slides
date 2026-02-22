@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Minus, TrendingUp, Spline, Layers } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
-import type { EasingType, PropertyTransitions, SlideElement } from '../../types/presentation';
+import type { EasingType, PropertyTransitions, SlideElement, TextElement, ShapeElement, ImageElement } from '../../types/presentation';
 
 interface Props {
   elementId: string;
@@ -11,11 +11,13 @@ interface Props {
   availableTypes?: EasingType[];
 }
 
+const ICON_SIZE = 14;
+
 const EASING_ICONS: Record<EasingType, React.ReactNode> = {
-  const: <Minus size={10} />,
-  linear: <TrendingUp size={10} />,
-  ease: <Spline size={10} />,
-  crossfade: <Layers size={10} />,
+  const: <Minus size={ICON_SIZE} />,
+  linear: <TrendingUp size={ICON_SIZE} />,
+  ease: <Spline size={ICON_SIZE} />,
+  crossfade: <Layers size={ICON_SIZE} />,
 };
 
 const EASING_LABELS: Record<EasingType, string> = {
@@ -24,6 +26,49 @@ const EASING_LABELS: Record<EasingType, string> = {
   ease: 'Ease (smooth)',
   crossfade: 'Crossfade',
 };
+
+// Map property groups to the actual element fields to compare
+function getPropertyValues(element: SlideElement, group: keyof PropertyTransitions): (number | string | null | undefined)[] {
+  switch (group) {
+    case 'position': return [element.x, element.y];
+    case 'size': return [element.width, element.height];
+    case 'rotation': return [element.rotation];
+    case 'opacity': return [element.opacity];
+    case 'fill': return element.type === 'shape' ? [(element as ShapeElement).fill] : [];
+    case 'stroke': return element.type === 'shape' ? [(element as ShapeElement).stroke] : [];
+    case 'strokeWidth': return element.type === 'shape' ? [(element as ShapeElement).strokeWidth] : [];
+    case 'cornerRadius': return element.type === 'shape' ? [(element as ShapeElement).cornerRadius] : [];
+    case 'fontSize': return element.type === 'text' ? [(element as TextElement).style.fontSize] : [];
+    case 'color': return element.type === 'text' ? [(element as TextElement).style.color] : [];
+    case 'lineHeight': return element.type === 'text' ? [(element as TextElement).style.lineHeight] : [];
+    case 'crop': return element.type === 'image' ? [
+      (element as ImageElement).cropX,
+      (element as ImageElement).cropY,
+      (element as ImageElement).cropWidth,
+      (element as ImageElement).cropHeight,
+    ] : [];
+    case 'resource': return element.type === 'image' ? [(element as ImageElement).resourceId] : [];
+    default: return [];
+  }
+}
+
+function propertiesDiffer(a: SlideElement | undefined, b: SlideElement | undefined, group: keyof PropertyTransitions): boolean {
+  if (!a || !b) return false;
+  const valsA = getPropertyValues(a, group);
+  const valsB = getPropertyValues(b, group);
+  if (valsA.length !== valsB.length) return false;
+  for (let i = 0; i < valsA.length; i++) {
+    const valA = valsA[i];
+    const valB = valsB[i];
+    // For numbers, compare with rounding
+    if (typeof valA === 'number' && typeof valB === 'number') {
+      if (Math.round(valA) !== Math.round(valB)) return true;
+    } else if (valA !== valB) {
+      return true;
+    }
+  }
+  return false;
+}
 
 export const TransitionButton: React.FC<Props> = ({
   elementId,
@@ -43,18 +88,28 @@ export const TransitionButton: React.FC<Props> = ({
   // Find current slide index
   const currentSlideIndex = slideOrder.indexOf(activeSlideId);
 
-  // For 'in' direction: we edit the current slide's element transitions
-  // For 'out' direction: we edit the next slide's element transitions
+  // For 'in' direction: compare with previous slide, edit current slide's transitions
+  // For 'out' direction: compare with next slide, edit next slide's transitions
+  const sourceSlideIndex = direction === 'in' ? currentSlideIndex - 1 : currentSlideIndex;
   const targetSlideIndex = direction === 'in' ? currentSlideIndex : currentSlideIndex + 1;
+
+  const sourceSlideId = slideOrder[sourceSlideIndex];
   const targetSlideId = slideOrder[targetSlideIndex];
+
+  const sourceSlide = sourceSlideId ? slides[sourceSlideId] : undefined;
   const targetSlide = targetSlideId ? slides[targetSlideId] : undefined;
+
+  const sourceElement = sourceSlide?.elements[elementId];
   const targetElement = targetSlide?.elements[elementId];
 
-  // Get current easing value
+  // Get current easing value from the target element (where transitions are stored)
   const currentEasing: EasingType = targetElement?.transitions?.[group] || 'linear';
 
-  // Can't edit transitions if no target slide exists
-  const canEdit = !!targetElement;
+  // Only show if the property differs between source and target
+  const differs = propertiesDiffer(sourceElement, targetElement, group);
+
+  // Can't edit if no target slide/element exists or property doesn't differ
+  const canEdit = !!targetElement && differs;
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -87,24 +142,24 @@ export const TransitionButton: React.FC<Props> = ({
       <button
         ref={buttonRef}
         onClick={() => setIsOpen(!isOpen)}
-        className="p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 flex items-center"
+        className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 flex items-center gap-0.5"
         title={`${direction === 'in' ? 'Incoming' : 'Outgoing'} transition: ${EASING_LABELS[currentEasing]}`}
       >
-        {direction === 'in' ? <ChevronLeft size={10} /> : <ChevronRight size={10} />}
+        {direction === 'in' ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
         {EASING_ICONS[currentEasing]}
       </button>
 
       {isOpen && (
         <div
           ref={menuRef}
-          className="absolute z-50 top-full mt-1 bg-white border border-gray-200 rounded shadow-lg py-1 min-w-[120px]"
+          className="absolute z-[9999] top-full mt-1 bg-white border border-gray-200 rounded shadow-lg py-1 min-w-[140px]"
           style={{ [direction === 'in' ? 'right' : 'left']: 0 }}
         >
           {availableTypes.map((type) => (
             <button
               key={type}
               onClick={() => handleSelect(type)}
-              className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-gray-100 ${
+              className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100 ${
                 currentEasing === type ? 'bg-blue-50 text-blue-600' : 'text-gray-700'
               }`}
             >
