@@ -1,14 +1,18 @@
-import React, { useState, useEffect } from 'react';
-import { RefreshCw, Loader2, Settings } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { RefreshCw, Loader2, Settings, Upload } from 'lucide-react';
 import { useVaultStore } from '../../store/vaultStore';
+import { usePresentationStore } from '../../store/presentationStore';
+import { useEditorStore } from '../../store/editorStore';
 import { ProjectCard, NewProjectCard } from './ProjectCard';
 import { generateThumbnail } from '../../utils/thumbnailGenerator';
 import { StorageSettingsDialog } from './StorageSettingsDialog';
+import { getStorageClient } from '../../utils/storageClient';
 
 export const ProjectPickerDialog: React.FC = () => {
   const [newProjectTitle, setNewProjectTitle] = useState('');
   const [showNewInput, setShowNewInput] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const vaultHandle = useVaultStore((s) => s.vaultHandle);
   const projects = useVaultStore((s) => s.projects);
@@ -24,21 +28,33 @@ export const ProjectPickerDialog: React.FC = () => {
   const duplicateProject = useVaultStore((s) => s.duplicateProject);
   const updateThumbnail = useVaultStore((s) => s.updateThumbnail);
 
+  const loadPresentation = usePresentationStore((s) => s.loadPresentation);
+  const setActiveSlide = useEditorStore((s) => s.setActiveSlide);
+
   // Generate thumbnails for projects that don't have them
   useEffect(() => {
     const generateMissingThumbnails = async () => {
-      if (!vaultHandle) return;
-
       for (const project of projects) {
         if (!project.thumbnailDataUrl) {
           try {
-            // Load the project to get the first slide
-            const fileHandle = await vaultHandle.getFileHandle(project.filename);
-            const file = await fileHandle.getFile();
-            const text = await file.text();
-            const data = JSON.parse(text);
+            let data: any = null;
 
-            if (data.slideOrder && data.slideOrder.length > 0 && data.slides) {
+            if (storageMode === 'filesystem' && vaultHandle) {
+              // Load from filesystem
+              const fileHandle = await vaultHandle.getFileHandle(project.filename);
+              const file = await fileHandle.getFile();
+              const text = await file.text();
+              data = JSON.parse(text);
+            } else {
+              // Load from local/server storage
+              const client = getStorageClient();
+              const result = await client.getProject(project.id);
+              if (result) {
+                data = result.presentation;
+              }
+            }
+
+            if (data && data.slideOrder && data.slideOrder.length > 0 && data.slides) {
               const firstSlide = data.slides[data.slideOrder[0]];
               if (firstSlide) {
                 const thumbnail = await generateThumbnail(firstSlide, data.resources || {});
@@ -46,14 +62,14 @@ export const ProjectPickerDialog: React.FC = () => {
               }
             }
           } catch (err) {
-            console.warn(`Failed to generate thumbnail for ${project.filename}:`, err);
+            console.warn(`Failed to generate thumbnail for ${project.id}:`, err);
           }
         }
       }
     };
 
     generateMissingThumbnails();
-  }, [projects, vaultHandle, updateThumbnail]);
+  }, [projects, vaultHandle, storageMode, updateThumbnail]);
 
   const handleCreateProject = () => {
     if (newProjectTitle.trim()) {
@@ -69,6 +85,61 @@ export const ProjectPickerDialog: React.FC = () => {
     } else if (e.key === 'Escape') {
       setShowNewInput(false);
       setNewProjectTitle('');
+    }
+  };
+
+  const handleImport = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+
+      // Validate it's a presentation
+      if (!data.slideOrder || !data.slides) {
+        throw new Error('Invalid presentation file');
+      }
+
+      // Generate a new ID if needed to avoid conflicts
+      const presentation = {
+        ...data,
+        id: data.id || crypto.randomUUID(),
+        updatedAt: Date.now(),
+      };
+
+      // Load the presentation and open it
+      loadPresentation(presentation);
+
+      // Set the first slide as active
+      if (presentation.slideOrder.length > 0) {
+        setActiveSlide(presentation.slideOrder[0]);
+      }
+
+      // Save it to storage and open
+      const client = getStorageClient();
+      const firstSlide = presentation.slides[presentation.slideOrder[0]];
+      let thumbnail: string | undefined;
+      if (firstSlide) {
+        thumbnail = await generateThumbnail(firstSlide, presentation.resources || {});
+      }
+      await client.saveProject(presentation, thumbnail);
+
+      // Reload projects and open the imported one
+      await loadProjects();
+      await openProject(presentation.id);
+    } catch (err) {
+      console.error('Failed to import presentation:', err);
+      alert('Failed to import presentation. Please check the file format.');
+    }
+
+    // Reset the input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
     }
   };
 
@@ -91,6 +162,13 @@ export const ProjectPickerDialog: React.FC = () => {
           </div>
           <div className="flex items-center gap-2">
             <button
+              onClick={handleImport}
+              className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+            >
+              <Upload size={16} />
+              Import
+            </button>
+            <button
               onClick={loadProjects}
               disabled={isLoading}
               className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
@@ -106,6 +184,13 @@ export const ProjectPickerDialog: React.FC = () => {
               Storage
             </button>
           </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json"
+            onChange={handleFileChange}
+            className="hidden"
+          />
         </div>
       </div>
 
