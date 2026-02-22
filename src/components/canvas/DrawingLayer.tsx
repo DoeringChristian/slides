@@ -23,6 +23,7 @@ export function useDrawing() {
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const setTool = useEditorStore((s) => s.setTool);
   const setSelectedElements = useEditorStore((s) => s.setSelectedElements);
+  const setEditingTextId = useEditorStore((s) => s.setEditingTextId);
   const addElement = usePresentationStore((s) => s.addElement);
 
   const handleMouseDown = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
@@ -60,6 +61,8 @@ export function useDrawing() {
       const el = createTextElement({ x, y, width: Math.max(width, 100), height: Math.max(height, 40) });
       addElement(activeSlideId, el);
       setSelectedElements([el.id]);
+      // Automatically enter edit mode for new text elements (defer to ensure element is in store)
+      setTimeout(() => setEditingTextId(el.id), 0);
     } else if (tool === 'line' || tool === 'arrow') {
       const el = createShapeElement(tool, {
         x: drawState.startX,
@@ -78,7 +81,7 @@ export function useDrawing() {
 
     setTool('select');
     setDrawState({ startX: 0, startY: 0, currentX: 0, currentY: 0, isDrawing: false });
-  }, [drawState, tool, activeSlideId, addElement, setTool, setSelectedElements]);
+  }, [drawState, tool, activeSlideId, addElement, setTool, setSelectedElements, setEditingTextId]);
 
   return { drawState, handleMouseDown, handleMouseMove, handleMouseUp };
 }
