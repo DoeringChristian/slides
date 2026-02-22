@@ -100,6 +100,15 @@ const ThumbnailImageElement: React.FC<{ element: ImageElement }> = ({ element })
   // Return null if no resource
   if (!resource) return null;
 
+  // Compute crop (applies to both image and video)
+  const hasCrop = element.cropWidth > 0 && element.cropHeight > 0;
+  const crop = hasCrop ? {
+    x: element.cropX,
+    y: element.cropY,
+    width: element.cropWidth,
+    height: element.cropHeight,
+  } : undefined;
+
   // Video resource
   if (isVideo) {
     if (!frameImage) {
@@ -127,18 +136,11 @@ const ThumbnailImageElement: React.FC<{ element: ImageElement }> = ({ element })
         height={element.height}
         rotation={element.rotation}
         opacity={element.opacity}
+        crop={crop}
         listening={false}
       />
     );
   }
-
-  // Image resource
-  const crop = {
-    x: element.cropX,
-    y: element.cropY,
-    width: element.cropWidth,
-    height: element.cropHeight,
-  };
 
   return (
     <KonvaImage

@@ -168,6 +168,15 @@ export const ImageNode: React.FC<Props> = ({ element, isSelected, disableInterac
     );
   }
 
+  // Apply crop from element properties (only if valid crop values exist)
+  const hasCrop = element.cropWidth > 0 && element.cropHeight > 0;
+  const crop = hasCrop ? {
+    x: element.cropX,
+    y: element.cropY,
+    width: element.cropWidth,
+    height: element.cropHeight,
+  } : undefined;
+
   // Video resource
   if (isVideo) {
     if (!videoReady || !videoRef.current) {
@@ -189,20 +198,12 @@ export const ImageNode: React.FC<Props> = ({ element, isSelected, disableInterac
         ref={imgRef}
         {...commonProps}
         image={videoRef.current}
+        crop={crop}
         onTransformEnd={handleTransformEnd}
         perfectDrawEnabled={false}
       />
     );
   }
-
-  // Image resource - apply crop from element properties (only if valid crop values exist)
-  const hasCrop = element.cropWidth > 0 && element.cropHeight > 0;
-  const crop = hasCrop ? {
-    x: element.cropX,
-    y: element.cropY,
-    width: element.cropWidth,
-    height: element.cropHeight,
-  } : undefined;
 
   return (
     <Image

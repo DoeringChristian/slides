@@ -300,6 +300,47 @@ export const PresenterView: React.FC = () => {
           {videoElements.map((element) => {
             const resource = element.resourceId ? resources[element.resourceId] : undefined;
             if (!resource) return null;
+
+            // Check if crop is applied
+            const hasCrop = element.cropWidth > 0 && element.cropHeight > 0;
+
+            if (hasCrop) {
+              // Calculate scale factors: how much bigger is the full video vs the crop region
+              const scaleX = resource.originalWidth / element.cropWidth;
+              const scaleY = resource.originalHeight / element.cropHeight;
+
+              return (
+                <div
+                  key={element.id}
+                  style={{
+                    position: 'absolute',
+                    left: `${element.x * scale}px`,
+                    top: `${element.y * scale}px`,
+                    width: `${element.width * scale}px`,
+                    height: `${element.height * scale}px`,
+                    transform: `rotate(${element.rotation}deg)`,
+                    transformOrigin: 'top left',
+                    opacity: element.opacity,
+                    overflow: 'hidden',
+                  }}
+                >
+                  <video
+                    src={resource.src}
+                    autoPlay={element.playing ?? true}
+                    loop={element.loop ?? false}
+                    muted={element.muted ?? false}
+                    playsInline
+                    style={{
+                      width: `${element.width * scale * scaleX}px`,
+                      height: `${element.height * scale * scaleY}px`,
+                      marginLeft: `${-element.cropX * (element.width / element.cropWidth) * scale}px`,
+                      marginTop: `${-element.cropY * (element.height / element.cropHeight) * scale}px`,
+                    }}
+                  />
+                </div>
+              );
+            }
+
             return (
               <video
                 key={element.id}
