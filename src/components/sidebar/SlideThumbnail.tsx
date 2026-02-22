@@ -163,8 +163,9 @@ export const ThumbnailElement: React.FC<{ element: SlideElement; isSelected?: bo
 
   const rendered = (() => {
     // Text elements are rendered as HTML overlay for markdown support
+    // But we still render the highlight rect in Konva if selected
     if (element.type === 'text') {
-      return null;
+      return isSelected ? <HighlightRect element={element} /> : null;
     }
 
     if (element.type === 'shape') {
@@ -187,6 +188,11 @@ export const ThumbnailElement: React.FC<{ element: SlideElement; isSelected?: bo
 
     return null;
   })();
+
+  // For text elements, rendered is already the highlight or null
+  if (element.type === 'text') {
+    return rendered;
+  }
 
   if (!rendered) return null;
 
