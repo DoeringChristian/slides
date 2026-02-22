@@ -24,8 +24,9 @@ import { snapToGrid as snapToGridFn } from '../../utils/geometry';
 import { isCtrlHeld } from '../../utils/keyboard';
 import { SLIDE_WIDTH, SLIDE_HEIGHT, CANVAS_PADDING } from '../../utils/constants';
 import { loadImageFile, loadPdfFile, loadVideoFile } from '../../utils/slideFactory';
-import type { ShapeElement } from '../../types/presentation';
+import type { ShapeElement, TextElement } from '../../types/presentation';
 import type Konva from 'konva';
+import { isPointOnTextContent } from '../../utils/textHitTest';
 
 interface Guide {
   type: 'horizontal' | 'vertical';
@@ -120,6 +121,8 @@ export const SlideCanvas: React.FC = () => {
   // Track if we just completed a selection drag or drawing to prevent click from clearing selection
   const justFinishedSelectionDrag = useRef(false);
   const lastDrawingFinishedAt = useRef(0);
+  // Track element dragging to prevent entering edit mode after drag
+  const isElementDragging = useRef(false);
 
   const handleStageClick = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
     // Don't clear selection if we just finished a drag selection
@@ -152,6 +155,10 @@ export const SlideCanvas: React.FC = () => {
       setEditingTextId(null);
     }
 
+    // Skip entering edit mode if we just finished dragging
+    const wasDragging = isElementDragging.current;
+    isElementDragging.current = false;
+
     if (metaPressed) {
       const ids = selectedElementIds.includes(id)
         ? selectedElementIds.filter((sid) => sid !== id)
@@ -159,12 +166,27 @@ export const SlideCanvas: React.FC = () => {
       setSelectedElements(ids);
     } else {
       setSelectedElements([id]);
-      // Auto-enter edit mode for text elements on single click
-      if (isTextElement) {
-        setEditingTextId(id);
+      // Auto-enter edit mode for text elements only if clicking on actual text content
+      // and not after a drag operation
+      if (isTextElement && clickedElement && !wasDragging) {
+        // Get click position relative to the element
+        const stage = e.target.getStage();
+        if (stage) {
+          const pointerPos = stage.getPointerPosition();
+          if (pointerPos) {
+            // Convert to element-local coordinates
+            const localX = pointerPos.x / zoom - CANVAS_PADDING - clickedElement.x;
+            const localY = pointerPos.y / zoom - CANVAS_PADDING - clickedElement.y;
+
+            // Only enter edit mode if click is on actual text content
+            if (isPointOnTextContent(clickedElement as TextElement, { x: localX, y: localY })) {
+              setEditingTextId(id);
+            }
+          }
+        }
       }
     }
-  }, [selectedElementIds, setSelectedElements, editingTextId, setEditingTextId, slide]);
+  }, [selectedElementIds, setSelectedElements, editingTextId, setEditingTextId, slide, zoom]);
 
   const handleTransformEnd = useCallback((id: string, attrs: Record<string, number>) => {
     if (activeSlideId) {
@@ -176,6 +198,14 @@ export const SlideCanvas: React.FC = () => {
     if (!slide) return;
     const el = slide.elements[id];
     if (!el) return;
+
+    // Mark that we're dragging to prevent entering edit mode on click
+    isElementDragging.current = true;
+
+    // Select the element immediately when dragging starts
+    if (!selectedElementIds.includes(id)) {
+      setSelectedElements([id]);
+    }
 
     // Check if this is a center-based shape (ellipse, triangle, star use center positioning in Konva)
     const isCenterBased = el.type === 'shape' && ['ellipse', 'triangle', 'star'].includes((el as ShapeElement).shapeType);
@@ -230,7 +260,7 @@ export const SlideCanvas: React.FC = () => {
       node.x(nodeX);
       node.y(nodeY);
     }
-  }, [slide, elements]);
+  }, [slide, elements, selectedElementIds, setSelectedElements]);
 
   const handleDragEndWithGuides = useCallback((id: string, x: number, y: number) => {
     setDragGuides([]);
