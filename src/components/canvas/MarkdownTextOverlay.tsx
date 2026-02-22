@@ -1,7 +1,7 @@
 import React from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
-import { MarkdownRenderer } from './MarkdownRenderer';
+import { CustomMarkdownRenderer } from './CustomMarkdownRenderer';
 import { CANVAS_PADDING } from '../../utils/constants';
 import type { TextElement } from '../../types/presentation';
 
@@ -55,7 +55,7 @@ export const MarkdownTextOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
             }}
           >
             <div style={{ width: '100%' }}>
-              <MarkdownRenderer
+              <CustomMarkdownRenderer
                 text={element.text}
                 style={element.style}
                 zoom={zoom}

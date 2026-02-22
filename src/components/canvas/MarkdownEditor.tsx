@@ -1,9 +1,9 @@
 import React, { useRef, useEffect, useCallback } from 'react';
-import type { TextStyle } from '../../types/presentation';
+import type { TextElement } from '../../types/presentation';
+import { calculateCursorFromClick as calculateCursorFromClickUtil } from '../../utils/textHitTest';
 
 interface Props {
-  text: string;
-  style: TextStyle;
+  element: TextElement;
   zoom: number;
   onBlur: (text: string) => void;
   onEscape: () => void;
@@ -36,13 +36,13 @@ function parseLine(line: string): LineInfo {
 }
 
 export const MarkdownEditor: React.FC<Props> = ({
-  text,
-  style,
+  element,
   zoom,
   onBlur,
   onEscape,
   clickPosition,
 }) => {
+  const { text, style } = element;
   const editorRef = useRef<HTMLDivElement>(null);
   const isInitializedRef = useRef(false);
   const currentTextRef = useRef(text);
@@ -94,72 +94,6 @@ export const MarkdownEditor: React.FC<Props> = ({
 
     editorRef.current.innerHTML = html;
   }, [baseFontSize, style.lineHeight]);
-
-  // Calculate cursor position from click coordinates
-  const calculateCursorFromClick = useCallback((clickPos: { x: number; y: number }): number => {
-    if (!editorRef.current) return 0;
-
-    const lines = currentTextRef.current.split('\n');
-    const lineHeights: number[] = [];
-
-    // Calculate height of each line based on its markdown type
-    lines.forEach((line) => {
-      const lineInfo = parseLine(line);
-      const fontSize = baseFontSize * lineInfo.fontSizeMultiplier;
-      lineHeights.push(fontSize * (style.lineHeight || 1.2));
-    });
-
-    // Find which line was clicked
-    let accumulatedHeight = 0;
-    let lineIndex = 0;
-    const clickY = clickPos.y - padding;
-
-    for (let i = 0; i < lineHeights.length; i++) {
-      if (accumulatedHeight + lineHeights[i] > clickY) {
-        lineIndex = i;
-        break;
-      }
-      accumulatedHeight += lineHeights[i];
-      lineIndex = i;
-    }
-
-    lineIndex = Math.max(0, Math.min(lines.length - 1, lineIndex));
-    const line = lines[lineIndex];
-
-    // Calculate character position within line
-    const lineInfo = parseLine(line);
-    const fontSize = baseFontSize * lineInfo.fontSizeMultiplier;
-
-    // Measure text to find character position
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return 0;
-
-    const fontWeight = lineInfo.type.startsWith('h') ? 'bold ' : '';
-    ctx.font = `${fontWeight}${fontSize}px ${style.fontFamily}`;
-
-    const clickX = clickPos.x - padding;
-    let charIndex = 0;
-    let accumulatedWidth = 0;
-
-    for (let i = 0; i < line.length; i++) {
-      const charWidth = ctx.measureText(line[i]).width;
-      if (accumulatedWidth + charWidth / 2 > clickX) {
-        break;
-      }
-      accumulatedWidth += charWidth;
-      charIndex++;
-    }
-
-    // Convert to absolute position
-    let absolutePos = 0;
-    for (let i = 0; i < lineIndex; i++) {
-      absolutePos += lines[i].length + 1; // +1 for newline
-    }
-    absolutePos += charIndex;
-
-    return Math.min(absolutePos, currentTextRef.current.length);
-  }, [baseFontSize, style.lineHeight, style.fontFamily, padding]);
 
   // Set cursor to a specific character offset
   const setCursorPosition = useCallback((offset: number) => {
@@ -263,7 +197,8 @@ export const MarkdownEditor: React.FC<Props> = ({
       editorRef.current.focus();
 
       if (clickPosition && text) {
-        const cursorPos = calculateCursorFromClick(clickPosition);
+        // Use the external calculateCursorFromClick which handles rendered vs source mapping
+        const cursorPos = calculateCursorFromClickUtil(element, clickPosition);
         setCursorPosition(cursorPos);
       } else {
         // Select all for new/empty text
@@ -276,7 +211,7 @@ export const MarkdownEditor: React.FC<Props> = ({
 
       isInitializedRef.current = true;
     }
-  }, [text, renderText, clickPosition, calculateCursorFromClick, setCursorPosition]);
+  }, [text, element, renderText, clickPosition, setCursorPosition]);
 
   const handleInput = useCallback(() => {
     if (!editorRef.current) return;

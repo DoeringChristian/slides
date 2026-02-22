@@ -207,8 +207,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom, onGuides }) =
         }}
       >
         <MarkdownEditor
-          text={element.text}
-          style={element.style}
+          element={element}
           zoom={zoom}
           onBlur={handleTextChange}
           onEscape={handleEscape}
