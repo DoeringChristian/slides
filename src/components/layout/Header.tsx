@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useEditorStore } from '../../store/editorStore';
+import { useVaultStore } from '../../store/vaultStore';
 import { usePresenterMode } from '../../hooks/usePresenterMode';
 import { Play, Download, Upload, FilePlus, Undo2, Redo2, Monitor, ChevronDown } from 'lucide-react';
 
@@ -15,6 +16,9 @@ export const Header: React.FC = () => {
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
 
   const { startPresenterMode } = usePresenterMode();
+
+  const activeProjectId = useVaultStore((s) => s.activeProjectId);
+  const closeProject = useVaultStore((s) => s.closeProject);
 
   const [isEditing, setIsEditing] = useState(false);
   const [showPresentMenu, setShowPresentMenu] = useState(false);
@@ -91,9 +95,19 @@ export const Header: React.FC = () => {
   return (
     <div className="h-12 bg-white border-b border-gray-200 flex items-center px-4 gap-2 shrink-0">
       <div className="flex items-center gap-1 mr-4">
-        <div className="w-8 h-8 bg-blue-500 rounded flex items-center justify-center">
-          <span className="text-white font-bold text-sm">S</span>
-        </div>
+        {activeProjectId ? (
+          <button
+            onClick={closeProject}
+            className="w-8 h-8 bg-blue-500 hover:bg-blue-600 rounded flex items-center justify-center transition-colors cursor-pointer"
+            title="Back to Projects"
+          >
+            <span className="text-white font-bold text-sm">S</span>
+          </button>
+        ) : (
+          <div className="w-8 h-8 bg-blue-500 rounded flex items-center justify-center">
+            <span className="text-white font-bold text-sm">S</span>
+          </div>
+        )}
         {isEditing ? (
           <input
             ref={inputRef}
