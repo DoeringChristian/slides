@@ -51,11 +51,19 @@ export const ShapeNode: React.FC<Props> = ({ element, isSelected, disableInterac
       const scaleY = node.scaleY();
       node.scaleX(1);
       node.scaleY(1);
+
+      const newWidth = Math.max(5, (node.width?.() ?? element.width) * scaleX);
+      const newHeight = Math.max(5, (node.height?.() ?? element.height) * scaleY);
+
+      // For center-based shapes, convert center position to top-left
+      const x = isCenterBased ? node.x() - newWidth / 2 : node.x();
+      const y = isCenterBased ? node.y() - newHeight / 2 : node.y();
+
       onTransformEnd(element.id, {
-        x: node.x(),
-        y: node.y(),
-        width: Math.max(5, (node.width?.() ?? element.width) * scaleX),
-        height: Math.max(5, (node.height?.() ?? element.height) * scaleY),
+        x,
+        y,
+        width: newWidth,
+        height: newHeight,
         rotation: node.rotation(),
       });
     },
