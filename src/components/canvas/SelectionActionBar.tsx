@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { ImagePlus, Lock, Unlock, Crop } from 'lucide-react';
+import { ImagePlus, Lock, Unlock, Crop, Trash2 } from 'lucide-react';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useEditorStore } from '../../store/editorStore';
 import { ResourcePicker } from '../properties/ResourcePicker';
@@ -15,8 +15,10 @@ interface Props {
 
 export const SelectionActionBar: React.FC<Props> = ({ element, zoom, isSelected }) => {
   const updateElement = usePresentationStore((s) => s.updateElement);
+  const hideElement = usePresentationStore((s) => s.hideElement);
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const setCroppingElementId = useEditorStore((s) => s.setCroppingElementId);
+  const setSelectedElements = useEditorStore((s) => s.setSelectedElements);
 
   const [pickerOpen, setPickerOpen] = useState(false);
   const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
@@ -49,6 +51,12 @@ export const SelectionActionBar: React.FC<Props> = ({ element, zoom, isSelected 
   const handleCropClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     setCroppingElementId(element.id);
+  };
+
+  const handleHideClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    hideElement(activeSlideId, element.id);
+    setSelectedElements([]);
   };
 
   const handleSelectResource = (resourceId: string | null) => {
@@ -122,6 +130,15 @@ export const SelectionActionBar: React.FC<Props> = ({ element, zoom, isSelected 
                 <ImagePlus size={18} />
               </button>
             )}
+
+            {/* Hide/Delete button - shown for all elements */}
+            <button
+              onClick={handleHideClick}
+              className="p-1.5 rounded-full hover:bg-red-100 text-gray-400 hover:text-red-600 transition-colors"
+              title="Hide from slide (Del)"
+            >
+              <Trash2 size={18} />
+            </button>
           </div>
         </div>
       </div>
