@@ -102,14 +102,25 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number):
   if (a.type === 'image' && b.type === 'image') {
     const ia = a as ImageElement;
     const ib = b as ImageElement;
+
+    // If resourceId changes, snap crop values along with it to avoid visual movement
+    const resourceChanges = ia.resourceId !== ib.resourceId;
+    const useFirst = t < 0.5;
+
     return {
       ...base,
       type: 'image',
-      resourceId: t < 0.5 ? ia.resourceId : ib.resourceId,
-      cropX: lerp(ia.cropX, ib.cropX, t),
-      cropY: lerp(ia.cropY, ib.cropY, t),
-      cropWidth: lerp(ia.cropWidth, ib.cropWidth, t),
-      cropHeight: lerp(ia.cropHeight, ib.cropHeight, t),
+      resourceId: useFirst ? ia.resourceId : ib.resourceId,
+      // Snap crop values when resource changes, otherwise interpolate for crop animations
+      cropX: resourceChanges ? (useFirst ? ia.cropX : ib.cropX) : lerp(ia.cropX, ib.cropX, t),
+      cropY: resourceChanges ? (useFirst ? ia.cropY : ib.cropY) : lerp(ia.cropY, ib.cropY, t),
+      cropWidth: resourceChanges ? (useFirst ? ia.cropWidth : ib.cropWidth) : lerp(ia.cropWidth, ib.cropWidth, t),
+      cropHeight: resourceChanges ? (useFirst ? ia.cropHeight : ib.cropHeight) : lerp(ia.cropHeight, ib.cropHeight, t),
+      // Also snap video playback properties when resource changes
+      playing: useFirst ? ia.playing : ib.playing,
+      loop: useFirst ? ia.loop : ib.loop,
+      muted: useFirst ? ia.muted : ib.muted,
+      startTime: useFirst ? ia.startTime : ib.startTime,
     } as ImageElement;
   }
 
