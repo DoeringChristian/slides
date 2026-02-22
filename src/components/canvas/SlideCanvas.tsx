@@ -56,9 +56,11 @@ export const SlideCanvas: React.FC = () => {
 
   const slide = useActiveSlide();
   const objectElements = useObjectElements();
-  const { drawState, handleMouseDown: handleDrawMouseDown, handleMouseMove: handleDrawMouseMove, handleMouseUp: handleDrawMouseUp } = useDrawing();
+  const { drawState, guides: drawingGuides, handleMouseDown: handleDrawMouseDown, handleMouseMove: handleDrawMouseMove, handleMouseUp: handleDrawMouseUp } = useDrawing();
 
-  const [guides, setGuides] = useState<Guide[]>([]);
+  const [dragGuides, setDragGuides] = useState<Guide[]>([]);
+  // Combine drag and drawing guides
+  const guides = drawState.isDrawing ? drawingGuides : dragGuides;
   const [connectorHighlightId, setConnectorHighlightId] = useState<string | null>(null);
 
   // Selection drag state
@@ -185,7 +187,7 @@ export const SlideCanvas: React.FC = () => {
       .filter((e) => e.id !== id && e.visible)
       .map((e) => ({ x: e.x, y: e.y, width: e.width, height: e.height }));
     const result = computeGuides(dragged, others, 5, marginBounds);
-    setGuides(snappingEnabled ? result.guides : []);
+    setDragGuides(snappingEnabled ? result.guides : []);
 
     if (snappingEnabled) {
       let snappedX = constrainedX;
@@ -210,7 +212,7 @@ export const SlideCanvas: React.FC = () => {
   }, [slide, elements]);
 
   const handleDragEndWithGuides = useCallback((id: string, x: number, y: number) => {
-    setGuides([]);
+    setDragGuides([]);
     if (!activeSlideId) return;
 
     const { snapToGrid: snappingEnabled, showGrid: isGridVisible, gridSize: grid, marginLayoutId: currentMarginLayoutId } = useEditorStore.getState();
@@ -534,7 +536,7 @@ export const SlideCanvas: React.FC = () => {
             otherElementBounds={otherElementBounds}
             snappingEnabled={snapToGrid}
             zoom={zoom}
-            onGuides={setGuides}
+            onGuides={setDragGuides}
             keepRatio={shouldKeepRatio}
           />
           <SelectionTransformer selectedIds={editingTextId ? [] : lockedTransformerIds} stageRef={stageRef} locked />

@@ -126,6 +126,76 @@ export function computeGuides(
   return { guides: uniqueGuides, snapX, snapY };
 }
 
+/**
+ * Snap a single point to nearby element edges/centers and margin guides.
+ * Used for drawing operations where we need to snap start and end points.
+ */
+export function computePointSnap(
+  point: { x: number; y: number },
+  others: ElementBounds[],
+  threshold: number = 5,
+  marginBounds?: MarginBounds | null
+): { guides: Guide[]; snapX: number | null; snapY: number | null } {
+  const guides: Guide[] = [];
+  let snapX: number | null = null;
+  let snapY: number | null = null;
+  let bestDx = threshold + 1;
+  let bestDy = threshold + 1;
+
+  for (const other of others) {
+    const otherVerticals = [other.x, other.x + other.width / 2, other.x + other.width];
+    const otherHorizontals = [other.y, other.y + other.height / 2, other.y + other.height];
+
+    for (const ov of otherVerticals) {
+      const dist = Math.abs(point.x - ov);
+      if (dist <= threshold) {
+        if (dist < bestDx) { bestDx = dist; snapX = ov; }
+        guides.push({ type: 'vertical', position: ov });
+      }
+    }
+
+    for (const oh of otherHorizontals) {
+      const dist = Math.abs(point.y - oh);
+      if (dist <= threshold) {
+        if (dist < bestDy) { bestDy = dist; snapY = oh; }
+        guides.push({ type: 'horizontal', position: oh });
+      }
+    }
+  }
+
+  // Check margin bounds if provided
+  if (marginBounds) {
+    const marginVerticals = [marginBounds.left, marginBounds.centerX, marginBounds.right];
+    const marginHorizontals = [marginBounds.top, marginBounds.centerY, marginBounds.bottom];
+
+    for (const mv of marginVerticals) {
+      const dist = Math.abs(point.x - mv);
+      if (dist <= threshold) {
+        if (dist < bestDx) { bestDx = dist; snapX = mv; }
+        guides.push({ type: 'vertical', position: mv });
+      }
+    }
+
+    for (const mh of marginHorizontals) {
+      const dist = Math.abs(point.y - mh);
+      if (dist <= threshold) {
+        if (dist < bestDy) { bestDy = dist; snapY = mh; }
+        guides.push({ type: 'horizontal', position: mh });
+      }
+    }
+  }
+
+  const seen = new Set<string>();
+  const uniqueGuides = guides.filter((g) => {
+    const key = `${g.type}-${g.position}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  return { guides: uniqueGuides, snapX, snapY };
+}
+
 export function computeResizeSnap(
   bounds: ElementBounds,
   others: ElementBounds[],
