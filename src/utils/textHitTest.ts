@@ -1,5 +1,6 @@
 import type { TextElement } from '../types/presentation';
-import { parseBlocks, getBlockFontMultiplier, type ParsedBlock } from '../components/canvas/CustomMarkdownRenderer';
+import katex from 'katex';
+import { parseBlocks, getBlockFontMultiplier, parseInlineSegments, type ParsedBlock } from '../components/canvas/CustomMarkdownRenderer';
 
 interface Point {
   x: number;
@@ -188,29 +189,80 @@ export function calculateCursorFromClick(
 
   // Find character position in displayContent
   const clickX = clickPos.x - textStartX;
-  let displayCharIndex = 0;
 
   // If click is before the text (on the bullet/number), return start of line
   if (clickX < 0) {
     return block.sourceStart;
   }
 
-  // Use cumulative text width measurement for accuracy (accounts for kerning)
-  for (let i = 0; i < block.displayContent.length; i++) {
-    const widthUpToChar = ctx.measureText(block.displayContent.slice(0, i)).width;
-    const widthUpToNextChar = ctx.measureText(block.displayContent.slice(0, i + 1)).width;
-    const charMidpoint = (widthUpToChar + widthUpToNextChar) / 2;
+  // Parse inline segments to handle LaTeX
+  const inlineSourceOffset = block.sourceStart + block.prefixLength;
+  const segments = parseInlineSegments(block.displayContent, inlineSourceOffset);
 
-    if (clickX < charMidpoint) {
-      displayCharIndex = i;
-      break;
+  // Measure LaTeX widths by rendering to a hidden element
+  const measureLatexWidth = (latex: string, isBlock: boolean): number => {
+    const container = document.createElement('span');
+    container.style.visibility = 'hidden';
+    container.style.position = 'absolute';
+    container.style.whiteSpace = 'nowrap';
+    container.style.fontSize = `${bd.fontSize}px`;
+    document.body.appendChild(container);
+
+    try {
+      container.innerHTML = katex.renderToString(latex, { displayMode: isBlock, throwOnError: false });
+      const width = container.getBoundingClientRect().width;
+      return width;
+    } catch {
+      // Fallback: estimate width
+      return ctx.measureText(latex).width;
+    } finally {
+      document.body.removeChild(container);
     }
-    displayCharIndex = i + 1;
+  };
+
+  // Calculate rendered width of each segment and find which one was clicked
+  let accumulatedWidth = 0;
+
+  for (const segment of segments) {
+    let segmentWidth: number;
+
+    if (segment.type === 'latex') {
+      segmentWidth = measureLatexWidth(segment.displayContent, segment.isBlock);
+    } else {
+      segmentWidth = ctx.measureText(segment.displayContent).width;
+    }
+
+    if (clickX < accumulatedWidth + segmentWidth) {
+      // Click is within this segment
+      if (segment.type === 'latex') {
+        // For LaTeX, place cursor just before the closing $ or $$
+        // sourceEnd points to after the closing delimiter, so we go back 1 or 2 chars
+        const delimiterLength = segment.isBlock ? 2 : 1;
+        return segment.sourceEnd - delimiterLength;
+      } else {
+        // For text, find the exact character position
+        const relativeClickX = clickX - accumulatedWidth;
+        let charIndex = 0;
+
+        for (let i = 0; i < segment.displayContent.length; i++) {
+          const widthUpToChar = ctx.measureText(segment.displayContent.slice(0, i)).width;
+          const widthUpToNextChar = ctx.measureText(segment.displayContent.slice(0, i + 1)).width;
+          const charMidpoint = (widthUpToChar + widthUpToNextChar) / 2;
+
+          if (relativeClickX < charMidpoint) {
+            charIndex = i;
+            break;
+          }
+          charIndex = i + 1;
+        }
+
+        return segment.sourceStart + charIndex;
+      }
+    }
+
+    accumulatedWidth += segmentWidth;
   }
 
-  // Map displayCharIndex back to source position
-  // sourceStart is the start of the line, prefixLength is the stripped markdown
-  const sourcePos = block.sourceStart + block.prefixLength + displayCharIndex;
-
-  return Math.min(sourcePos, text.length);
+  // Click is past the end of content, return end of block
+  return block.sourceEnd;
 }

@@ -1,4 +1,6 @@
 import React, { useMemo, memo } from 'react';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
 import type { TextStyle } from '../../types/presentation';
 
 interface Props {
@@ -14,6 +16,99 @@ export interface ParsedBlock {
   sourceStart: number;
   sourceEnd: number;
   prefixLength: number;
+}
+
+// Represents a segment of inline content (text or latex)
+export interface InlineSegment {
+  type: 'text' | 'latex';
+  content: string;        // The full match including delimiters for latex
+  displayContent: string; // The inner content (without $ delimiters for latex)
+  sourceStart: number;    // Position in source where this segment starts
+  sourceEnd: number;      // Position in source where this segment ends
+  isBlock: boolean;       // For latex: true if $$ (block), false if $ (inline)
+}
+
+// Parse inline content to extract LaTeX segments
+export function parseInlineSegments(content: string, sourceOffset: number): InlineSegment[] {
+  const segments: InlineSegment[] = [];
+  // Match $$ ... $$ (block) or $ ... $ (inline), non-greedy
+  const latexRegex = /(\$\$[\s\S]*?\$\$|\$[^$]+?\$)/g;
+
+  let lastIndex = 0;
+  let match;
+
+  while ((match = latexRegex.exec(content)) !== null) {
+    // Add text before this match
+    if (match.index > lastIndex) {
+      const textContent = content.slice(lastIndex, match.index);
+      segments.push({
+        type: 'text',
+        content: textContent,
+        displayContent: textContent,
+        sourceStart: sourceOffset + lastIndex,
+        sourceEnd: sourceOffset + match.index,
+        isBlock: false,
+      });
+    }
+
+    // Add the latex segment
+    const fullMatch = match[0];
+    const isBlock = fullMatch.startsWith('$$');
+    const innerContent = isBlock
+      ? fullMatch.slice(2, -2)  // Remove $$
+      : fullMatch.slice(1, -1); // Remove $
+
+    segments.push({
+      type: 'latex',
+      content: fullMatch,
+      displayContent: innerContent,
+      sourceStart: sourceOffset + match.index,
+      sourceEnd: sourceOffset + match.index + fullMatch.length,
+      isBlock,
+    });
+
+    lastIndex = match.index + fullMatch.length;
+  }
+
+  // Add remaining text after last match
+  if (lastIndex < content.length) {
+    const textContent = content.slice(lastIndex);
+    segments.push({
+      type: 'text',
+      content: textContent,
+      displayContent: textContent,
+      sourceStart: sourceOffset + lastIndex,
+      sourceEnd: sourceOffset + content.length,
+      isBlock: false,
+    });
+  }
+
+  // If no segments found, return the whole content as text
+  if (segments.length === 0 && content.length > 0) {
+    segments.push({
+      type: 'text',
+      content: content,
+      displayContent: content,
+      sourceStart: sourceOffset,
+      sourceEnd: sourceOffset + content.length,
+      isBlock: false,
+    });
+  }
+
+  return segments;
+}
+
+// Render LaTeX to HTML string
+function renderLatex(latex: string, displayMode: boolean = false): string {
+  try {
+    return katex.renderToString(latex, {
+      displayMode,
+      throwOnError: false,
+      output: 'html',
+    });
+  } catch {
+    return latex;
+  }
 }
 
 // Parse text into blocks with source position tracking
@@ -61,6 +156,27 @@ export function getBlockFontMultiplier(type: ParsedBlock['type']): number {
   }
 }
 
+// Render inline content with LaTeX support
+const InlineContent = memo(({ content, sourceOffset }: { content: string; sourceOffset: number }) => {
+  const segments = useMemo(() => parseInlineSegments(content, sourceOffset), [content, sourceOffset]);
+
+  return (
+    <>
+      {segments.map((segment, i) => {
+        if (segment.type === 'latex') {
+          return (
+            <span
+              key={i}
+              dangerouslySetInnerHTML={{ __html: renderLatex(segment.displayContent, segment.isBlock) }}
+            />
+          );
+        }
+        return <span key={i}>{segment.displayContent}</span>;
+      })}
+    </>
+  );
+});
+
 // Memoized block renderer
 const BlockRenderer = memo(({
   block,
@@ -86,11 +202,14 @@ const BlockRenderer = memo(({
     display: isList ? 'flex' : undefined,
   };
 
+  // Calculate the source offset for inline content (after the prefix)
+  const inlineSourceOffset = block.sourceStart + block.prefixLength;
+
   if (block.type === 'bullet') {
     return (
       <div style={style}>
         <span style={{ marginRight: '0.5em', flexShrink: 0 }}>•</span>
-        <span>{block.displayContent}</span>
+        <span><InlineContent content={block.displayContent} sourceOffset={inlineSourceOffset} /></span>
       </div>
     );
   }
@@ -100,7 +219,7 @@ const BlockRenderer = memo(({
     return (
       <div style={style}>
         <span style={{ marginRight: '0.5em', flexShrink: 0 }}>{num}.</span>
-        <span>{block.displayContent}</span>
+        <span><InlineContent content={block.displayContent} sourceOffset={inlineSourceOffset} /></span>
       </div>
     );
   }
@@ -108,7 +227,11 @@ const BlockRenderer = memo(({
   // Headers and paragraphs
   return (
     <div style={style}>
-      {block.displayContent || <br />}
+      {block.displayContent ? (
+        <InlineContent content={block.displayContent} sourceOffset={inlineSourceOffset} />
+      ) : (
+        <br />
+      )}
     </div>
   );
 });
