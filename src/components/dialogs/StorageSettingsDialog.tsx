@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Server, HardDrive, FolderOpen, Loader2, Check, AlertCircle } from 'lucide-react';
+import { X, Server, HardDrive, FolderOpen, Loader2, AlertCircle } from 'lucide-react';
 import { useVaultStore } from '../../store/vaultStore';
 import { isFileSystemAccessSupported } from '../../types/vault';
 
@@ -23,7 +23,8 @@ export const StorageSettingsDialog: React.FC<Props> = ({ isOpen, onClose }) => {
   const setError = useVaultStore((s) => s.setError);
 
   const [inputServerUrl, setInputServerUrl] = useState(serverUrl || 'http://localhost:3001');
-  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [connecting, setConnecting] = useState(false);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
 
   useEffect(() => {
     if (serverUrl) {
@@ -33,15 +34,23 @@ export const StorageSettingsDialog: React.FC<Props> = ({ isOpen, onClose }) => {
 
   if (!isOpen) return null;
 
-  const handleTestConnection = async () => {
-    setTestStatus('testing');
-    const success = await testServer(inputServerUrl);
-    setTestStatus(success ? 'success' : 'error');
-  };
-
-  const handleSwitchToServer = async () => {
+  const handleConnectToServer = async () => {
+    setConnecting(true);
+    setConnectionError(null);
     setError(null);
+
+    // Test connection first
+    const success = await testServer(inputServerUrl);
+    if (!success) {
+      setConnectionError('Could not connect to server');
+      setConnecting(false);
+      return;
+    }
+
+    // Connection successful, switch storage mode
     await setStorageMode('server', inputServerUrl);
+    setConnecting(false);
+
     if (!useVaultStore.getState().error) {
       onClose();
     }
@@ -130,51 +139,35 @@ export const StorageSettingsDialog: React.FC<Props> = ({ isOpen, onClose }) => {
                 </p>
 
                 <div className="mt-3 space-y-2">
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={inputServerUrl}
-                      onChange={(e) => {
-                        setInputServerUrl(e.target.value);
-                        setTestStatus('idle');
-                      }}
-                      placeholder="http://localhost:3001"
-                      className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
-                    />
-                    <button
-                      onClick={handleTestConnection}
-                      disabled={testStatus === 'testing' || !inputServerUrl}
-                      className="px-3 py-2 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-1"
-                    >
-                      {testStatus === 'testing' ? (
-                        <Loader2 size={14} className="animate-spin" />
-                      ) : testStatus === 'success' ? (
-                        <Check size={14} className="text-green-600" />
-                      ) : testStatus === 'error' ? (
-                        <AlertCircle size={14} className="text-red-600" />
-                      ) : null}
-                      Test
-                    </button>
-                  </div>
+                  <input
+                    type="text"
+                    value={inputServerUrl}
+                    onChange={(e) => {
+                      setInputServerUrl(e.target.value);
+                      setConnectionError(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && inputServerUrl && !connecting) {
+                        handleConnectToServer();
+                      }
+                    }}
+                    placeholder="http://localhost:3001"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:border-blue-400"
+                  />
 
-                  {testStatus === 'success' && (
-                    <p className="text-sm text-green-600 flex items-center gap-1">
-                      <Check size={14} /> Connected successfully
-                    </p>
-                  )}
-                  {testStatus === 'error' && (
+                  {connectionError && (
                     <p className="text-sm text-red-600 flex items-center gap-1">
-                      <AlertCircle size={14} /> Could not connect to server
+                      <AlertCircle size={14} /> {connectionError}
                     </p>
                   )}
 
                   <button
-                    onClick={handleSwitchToServer}
-                    disabled={isLoading || testStatus !== 'success'}
+                    onClick={handleConnectToServer}
+                    disabled={connecting || !inputServerUrl}
                     className="w-full px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                   >
-                    {isLoading && <Loader2 size={14} className="animate-spin" />}
-                    {storageMode === 'server' ? 'Update Server' : 'Switch to Server'}
+                    {connecting && <Loader2 size={14} className="animate-spin" />}
+                    {storageMode === 'server' ? 'Update Server' : 'Connect'}
                   </button>
                 </div>
               </div>
