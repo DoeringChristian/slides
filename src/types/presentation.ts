@@ -46,6 +46,8 @@ export interface Slide {
   transition: SlideTransition;
   notes: string;
   hidden?: boolean;
+  autoAdvance?: boolean;        // Automatically advance to next slide
+  autoAdvanceDelay?: number;    // Delay in seconds before auto-advancing
 }
 
 export type SlideBackground = {

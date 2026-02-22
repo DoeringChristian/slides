@@ -184,6 +184,42 @@ export const PresenterControlPanel: React.FC = () => {
     if (prevPos !== undefined) startAnimation(prevPos);
   }, [presentingSlideIndex, visibleIndices, isAnimating, startAnimation]);
 
+  // Auto-advance timer
+  const autoAdvanceTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    // Clear any existing timer
+    if (autoAdvanceTimerRef.current) {
+      clearTimeout(autoAdvanceTimerRef.current);
+      autoAdvanceTimerRef.current = null;
+    }
+
+    // Don't auto-advance if not in presenter mode or animating
+    if (!isPresenterMode || isAnimating) return;
+
+    if (!currentSlide?.autoAdvance) return;
+
+    const delay = (currentSlide.autoAdvanceDelay ?? 0.3) * 1000;
+
+    // Check if there's a next slide
+    const pos = visibleIndices.indexOf(presentingSlideIndex);
+    const hasNext = pos !== -1 && pos < visibleIndices.length - 1;
+    if (!hasNext) return;
+
+    autoAdvanceTimerRef.current = window.setTimeout(() => {
+      const nextPos = visibleIndices[pos + 1];
+      if (nextPos !== undefined) {
+        startAnimation(nextPos);
+      }
+    }, delay);
+
+    return () => {
+      if (autoAdvanceTimerRef.current) {
+        clearTimeout(autoAdvanceTimerRef.current);
+      }
+    };
+  }, [isPresenterMode, isAnimating, presentingSlideIndex, currentSlide, visibleIndices, startAnimation]);
+
   // Keyboard navigation
   useEffect(() => {
     if (!isPresenterMode) return;

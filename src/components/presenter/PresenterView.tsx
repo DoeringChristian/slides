@@ -147,6 +147,43 @@ export const PresenterView: React.FC = () => {
     };
   }, []);
 
+  // Auto-advance timer
+  const autoAdvanceTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    // Clear any existing timer
+    if (autoAdvanceTimerRef.current) {
+      clearTimeout(autoAdvanceTimerRef.current);
+      autoAdvanceTimerRef.current = null;
+    }
+
+    // Don't auto-advance if not presenting, animating, or in presenter mode
+    if (!isPresenting || isAnimating || isPresenterMode) return;
+
+    const currentSlide = slides[slideOrder[currentIndex]];
+    if (!currentSlide?.autoAdvance) return;
+
+    const delay = (currentSlide.autoAdvanceDelay ?? 0.3) * 1000;
+
+    // Check if there's a next slide
+    const pos = visibleIndices.indexOf(currentIndex);
+    const hasNext = pos !== -1 && pos < visibleIndices.length - 1;
+    if (!hasNext) return;
+
+    autoAdvanceTimerRef.current = window.setTimeout(() => {
+      const nextPos = visibleIndices[pos + 1];
+      if (nextPos !== undefined) {
+        startAnimation(nextPos);
+      }
+    }, delay);
+
+    return () => {
+      if (autoAdvanceTimerRef.current) {
+        clearTimeout(autoAdvanceTimerRef.current);
+      }
+    };
+  }, [isPresenting, isPresenterMode, isAnimating, currentIndex, slides, slideOrder, visibleIndices, startAnimation]);
+
   const goNext = useCallback(() => {
     if (isAnimating) return;
     const pos = visibleIndices.indexOf(currentIndex);

@@ -63,6 +63,7 @@ interface PresentationStore {
   reorderSlides: (slideOrder: string[]) => void;
   updateSlideBackground: (slideId: string, background: Slide['background']) => void;
   updateSlideTransition: (slideId: string, transition: Slide['transition']) => void;
+  updateSlideAutoAdvance: (slideId: string, autoAdvance: boolean, autoAdvanceDelay?: number) => void;
   updateSlideNotes: (slideId: string, notes: string) => void;
   addSlideWithMode: (afterIndex: number, mode: 'previous' | 'next' | 'interpolate') => string;
   addEmptySlide: (index?: number) => string;
@@ -215,6 +216,27 @@ export const usePresentationStore = create<PresentationStore>()(
               slides: {
                 ...state.presentation.slides,
                 [slideId]: { ...slide, transition },
+              },
+              updatedAt: Date.now(),
+            },
+          };
+        });
+      },
+
+      updateSlideAutoAdvance: (slideId, autoAdvance, autoAdvanceDelay) => {
+        set((state) => {
+          const slide = state.presentation.slides[slideId];
+          if (!slide) return state;
+          return {
+            presentation: {
+              ...state.presentation,
+              slides: {
+                ...state.presentation.slides,
+                [slideId]: {
+                  ...slide,
+                  autoAdvance,
+                  autoAdvanceDelay: autoAdvanceDelay ?? slide.autoAdvanceDelay ?? 0.3,
+                },
               },
               updatedAt: Date.now(),
             },
