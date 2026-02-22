@@ -239,6 +239,26 @@ export function calculateCursorFromClick(
         // sourceEnd points to after the closing delimiter, so we go back 1 or 2 chars
         const delimiterLength = segment.isBlock ? 2 : 1;
         return segment.sourceEnd - delimiterLength;
+      } else if (segment.type === 'link') {
+        // For links [text](url), map clicks on displayed text to source text position
+        // linkTextStart points to position after '[', so clicking on char i maps to linkTextStart + i
+        const relativeClickX = clickX - accumulatedWidth;
+        let charIndex = 0;
+
+        for (let i = 0; i < segment.displayContent.length; i++) {
+          const widthUpToChar = ctx.measureText(segment.displayContent.slice(0, i)).width;
+          const widthUpToNextChar = ctx.measureText(segment.displayContent.slice(0, i + 1)).width;
+          const charMidpoint = (widthUpToChar + widthUpToNextChar) / 2;
+
+          if (relativeClickX < charMidpoint) {
+            charIndex = i;
+            break;
+          }
+          charIndex = i + 1;
+        }
+
+        // Map to position within the link text (after '[')
+        return (segment.linkTextStart ?? segment.sourceStart + 1) + charIndex;
       } else {
         // For text, find the exact character position
         const relativeClickX = clickX - accumulatedWidth;

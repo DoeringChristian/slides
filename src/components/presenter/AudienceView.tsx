@@ -3,7 +3,7 @@ import { Stage, Layer, Rect, Ellipse, Image as KonvaImage, Line, Arrow, Star, Re
 import useImage from 'use-image';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useAudienceReceiver } from '../../hooks/usePresenterMode';
-import { MarkdownRenderer } from '../canvas/MarkdownRenderer';
+import { CustomMarkdownRenderer } from '../canvas/CustomMarkdownRenderer';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 import { interpolateWithVisibility, lerpColor } from '../../utils/interpolation';
 import type { SlideElement, TextElement, ShapeElement, ImageElement, Slide, Resource } from '../../types/presentation';
@@ -258,7 +258,7 @@ export const AudienceView: React.FC = () => {
               }}
             >
               <div style={{ width: '100%' }}>
-                <MarkdownRenderer
+                <CustomMarkdownRenderer
                   text={element.text}
                   style={element.style}
                   zoom={scale}

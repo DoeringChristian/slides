@@ -18,26 +18,31 @@ export interface ParsedBlock {
   prefixLength: number;
 }
 
-// Represents a segment of inline content (text or latex)
+// Represents a segment of inline content (text, latex, or link)
 export interface InlineSegment {
-  type: 'text' | 'latex';
-  content: string;        // The full match including delimiters for latex
-  displayContent: string; // The inner content (without $ delimiters for latex)
+  type: 'text' | 'latex' | 'link';
+  content: string;        // The full match including delimiters
+  displayContent: string; // The visible content (text without markup)
   sourceStart: number;    // Position in source where this segment starts
   sourceEnd: number;      // Position in source where this segment ends
   isBlock: boolean;       // For latex: true if $$ (block), false if $ (inline)
+  // For links: positions to map display chars to source chars
+  linkTextStart?: number; // Position in source where link text starts (after '[')
+  linkUrl?: string;       // The URL part of the link
 }
 
-// Parse inline content to extract LaTeX segments
+// Parse inline content to extract LaTeX and link segments
 export function parseInlineSegments(content: string, sourceOffset: number): InlineSegment[] {
   const segments: InlineSegment[] = [];
-  // Match $$ ... $$ (block) or $ ... $ (inline), non-greedy
-  const latexRegex = /(\$\$[\s\S]*?\$\$|\$[^$]+?\$)/g;
+
+  // Combined regex for LaTeX and links
+  // Match: $$ ... $$ (block latex) | $ ... $ (inline latex) | [text](url) (link)
+  const combinedRegex = /(\$\$[\s\S]*?\$\$|\$[^$]+?\$|\[[^\]]+\]\([^)]+\))/g;
 
   let lastIndex = 0;
   let match;
 
-  while ((match = latexRegex.exec(content)) !== null) {
+  while ((match = combinedRegex.exec(content)) !== null) {
     // Add text before this match
     if (match.index > lastIndex) {
       const textContent = content.slice(lastIndex, match.index);
@@ -51,21 +56,42 @@ export function parseInlineSegments(content: string, sourceOffset: number): Inli
       });
     }
 
-    // Add the latex segment
     const fullMatch = match[0];
-    const isBlock = fullMatch.startsWith('$$');
-    const innerContent = isBlock
-      ? fullMatch.slice(2, -2)  // Remove $$
-      : fullMatch.slice(1, -1); // Remove $
 
-    segments.push({
-      type: 'latex',
-      content: fullMatch,
-      displayContent: innerContent,
-      sourceStart: sourceOffset + match.index,
-      sourceEnd: sourceOffset + match.index + fullMatch.length,
-      isBlock,
-    });
+    if (fullMatch.startsWith('$')) {
+      // LaTeX segment
+      const isBlock = fullMatch.startsWith('$$');
+      const innerContent = isBlock
+        ? fullMatch.slice(2, -2)  // Remove $$
+        : fullMatch.slice(1, -1); // Remove $
+
+      segments.push({
+        type: 'latex',
+        content: fullMatch,
+        displayContent: innerContent,
+        sourceStart: sourceOffset + match.index,
+        sourceEnd: sourceOffset + match.index + fullMatch.length,
+        isBlock,
+      });
+    } else if (fullMatch.startsWith('[')) {
+      // Link segment: [text](url)
+      const linkMatch = fullMatch.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+      if (linkMatch) {
+        const linkText = linkMatch[1];
+        const linkUrl = linkMatch[2];
+
+        segments.push({
+          type: 'link',
+          content: fullMatch,
+          displayContent: linkText,
+          sourceStart: sourceOffset + match.index,
+          sourceEnd: sourceOffset + match.index + fullMatch.length,
+          isBlock: false,
+          linkTextStart: sourceOffset + match.index + 1, // Position after '['
+          linkUrl: linkUrl,
+        });
+      }
+    }
 
     lastIndex = match.index + fullMatch.length;
   }
@@ -156,7 +182,7 @@ export function getBlockFontMultiplier(type: ParsedBlock['type']): number {
   }
 }
 
-// Render inline content with LaTeX support
+// Render inline content with LaTeX and link support
 const InlineContent = memo(({ content, sourceOffset }: { content: string; sourceOffset: number }) => {
   const segments = useMemo(() => parseInlineSegments(content, sourceOffset), [content, sourceOffset]);
 
@@ -169,6 +195,20 @@ const InlineContent = memo(({ content, sourceOffset }: { content: string; source
               key={i}
               dangerouslySetInnerHTML={{ __html: renderLatex(segment.displayContent, segment.isBlock) }}
             />
+          );
+        }
+        if (segment.type === 'link') {
+          return (
+            <span
+              key={i}
+              style={{
+                color: '#2563eb',
+                textDecoration: 'underline',
+                cursor: 'pointer',
+              }}
+            >
+              {segment.displayContent}
+            </span>
           );
         }
         return <span key={i}>{segment.displayContent}</span>;
