@@ -45,8 +45,22 @@ function lerpPoints(a: number[], b: number[], t: number): number[] {
   return a.map((v, i) => lerp(v, b[i], t));
 }
 
+// Calculate crossfade opacity for content changes
+// First half: fade out (1 -> 0), Second half: fade in (0 -> 1)
+function crossfadeOpacity(baseOpacity: number, t: number, contentChanges: boolean): number {
+  if (!contentChanges) return baseOpacity;
+  if (t < 0.5) {
+    // Fade out: opacity goes from baseOpacity to 0 as t goes from 0 to 0.5
+    return baseOpacity * (1 - t * 2);
+  } else {
+    // Fade in: opacity goes from 0 to baseOpacity as t goes from 0.5 to 1
+    return baseOpacity * ((t - 0.5) * 2);
+  }
+}
+
 export function interpolateElement(a: SlideElement, b: SlideElement, t: number): SlideElement {
   // Base element properties — always tween
+  const baseOpacity = lerp(a.opacity, b.opacity, t);
   const base = {
     ...a,
     x: lerp(a.x, b.x, t),
@@ -54,7 +68,7 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number):
     width: lerp(a.width, b.width, t),
     height: lerp(a.height, b.height, t),
     rotation: lerp(a.rotation, b.rotation, t),
-    opacity: lerp(a.opacity, b.opacity, t),
+    opacity: baseOpacity,
     visible: true,
   };
 
@@ -103,7 +117,7 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number):
     const ia = a as ImageElement;
     const ib = b as ImageElement;
 
-    // If resourceId changes, snap crop values along with it to avoid visual movement
+    // If resourceId changes, use crossfade animation and snap crop values
     const resourceChanges = ia.resourceId !== ib.resourceId;
     const useFirst = t < 0.5;
 
@@ -111,6 +125,8 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number):
       ...base,
       type: 'image',
       resourceId: useFirst ? ia.resourceId : ib.resourceId,
+      // Crossfade opacity when resource changes
+      opacity: crossfadeOpacity(baseOpacity, t, resourceChanges),
       // Snap crop values when resource changes, otherwise interpolate for crop animations
       cropX: resourceChanges ? (useFirst ? ia.cropX : ib.cropX) : lerp(ia.cropX, ib.cropX, t),
       cropY: resourceChanges ? (useFirst ? ia.cropY : ib.cropY) : lerp(ia.cropY, ib.cropY, t),
