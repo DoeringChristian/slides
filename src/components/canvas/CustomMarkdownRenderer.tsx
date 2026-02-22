@@ -373,7 +373,7 @@ export const CustomMarkdownRenderer: React.FC<Props> = memo(({ text, style, zoom
   }), [style.fontFamily, style.fontWeight, style.fontStyle, style.color, style.align, lineHeight, style.textDecoration]);
 
   return (
-    <div className="custom-markdown-content" style={{ padding: `${4 * zoom}px` }}>
+    <div className="custom-markdown-content">
       {blocks.map((block, index) => (
         <BlockRenderer
           key={index}
