@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { X, EyeOff, Eye } from 'lucide-react';
-import { Stage, Layer, Rect, Text, Ellipse, Image as KonvaImage, Line, Arrow, Star, RegularPolygon } from 'react-konva';
+import { Stage, Layer, Rect, Ellipse, Image as KonvaImage, Line, Arrow, Star, RegularPolygon } from 'react-konva';
 import useImage from 'use-image';
 import { usePresentationStore } from '../../store/presentationStore';
+import { CustomMarkdownRenderer } from '../canvas/CustomMarkdownRenderer';
 import type { Slide, SlideElement, TextElement, ShapeElement, ImageElement } from '../../types/presentation';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 
@@ -161,17 +162,9 @@ export const ThumbnailElement: React.FC<{ element: SlideElement; isSelected?: bo
   if (!element.visible) return null;
 
   const rendered = (() => {
+    // Text elements are rendered as HTML overlay for markdown support
     if (element.type === 'text') {
-      const el = element as TextElement;
-      return (
-        <Text
-          x={el.x} y={el.y} width={el.width} height={el.height}
-          text={el.text} fontSize={el.style.fontSize} fontFamily={el.style.fontFamily}
-          fill={el.style.color} align={el.style.align} rotation={el.rotation}
-          opacity={el.opacity} listening={false}
-          fontStyle={`${el.style.fontWeight === 'bold' ? 'bold' : ''} ${el.style.fontStyle === 'italic' ? 'italic' : ''}`.trim() || 'normal'}
-        />
-      );
+      return null;
     }
 
     if (element.type === 'shape') {
@@ -208,6 +201,7 @@ export const ThumbnailElement: React.FC<{ element: SlideElement; isSelected?: bo
 export const SlideThumbnail: React.FC<Props> = ({ slide, index, isActive, canDelete, selectedElementIds, onClick, onDelete, onToggleHidden }) => {
   const bgColor = slide.background.type === 'solid' ? slide.background.color : '#ffffff';
   const elements = slide.elementOrder.map((id) => slide.elements[id]).filter(Boolean);
+  const textElements = elements.filter((el): el is TextElement => el.type === 'text' && el.visible);
   const selectedSet = selectedElementIds && selectedElementIds.length > 0 ? new Set(selectedElementIds) : null;
   const hidden = slide.hidden;
 
@@ -218,7 +212,7 @@ export const SlideThumbnail: React.FC<Props> = ({ slide, index, isActive, canDel
     >
       <span className="text-xs text-gray-400 w-5 text-right shrink-0">{index + 1}</span>
       <div className="relative">
-        <div className={`rounded border-2 overflow-hidden ${hidden ? 'opacity-40' : ''} ${isActive ? 'border-blue-500' : 'border-gray-200 group-hover:border-gray-300'}`}>
+        <div className={`relative rounded border-2 overflow-hidden ${hidden ? 'opacity-40' : ''} ${isActive ? 'border-blue-500' : 'border-gray-200 group-hover:border-gray-300'}`}>
           <Stage width={THUMB_WIDTH} height={THUMB_HEIGHT} scaleX={THUMB_SCALE} scaleY={THUMB_SCALE} listening={false}>
             <Layer listening={false}>
               <Rect x={0} y={0} width={SLIDE_WIDTH} height={SLIDE_HEIGHT} fill={bgColor} listening={false} />
@@ -227,6 +221,36 @@ export const SlideThumbnail: React.FC<Props> = ({ slide, index, isActive, canDel
               ))}
             </Layer>
           </Stage>
+          {/* Text overlay for markdown rendering */}
+          <div className="absolute inset-0 pointer-events-none overflow-hidden">
+            {textElements.map((element) => (
+              <div
+                key={element.id}
+                style={{
+                  position: 'absolute',
+                  left: `${element.x * THUMB_SCALE}px`,
+                  top: `${element.y * THUMB_SCALE}px`,
+                  width: `${element.width * THUMB_SCALE}px`,
+                  height: `${element.height * THUMB_SCALE}px`,
+                  transform: `rotate(${element.rotation}deg)`,
+                  transformOrigin: 'top left',
+                  opacity: element.opacity,
+                  overflow: 'hidden',
+                  display: 'flex',
+                  alignItems: element.style.verticalAlign === 'middle' ? 'center' :
+                             element.style.verticalAlign === 'bottom' ? 'flex-end' : 'flex-start',
+                }}
+              >
+                <div style={{ width: '100%' }}>
+                  <CustomMarkdownRenderer
+                    text={element.text}
+                    style={element.style}
+                    zoom={THUMB_SCALE}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
         <button
           onClick={(e) => { e.stopPropagation(); onToggleHidden(); }}

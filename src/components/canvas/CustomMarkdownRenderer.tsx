@@ -18,9 +18,9 @@ export interface ParsedBlock {
   prefixLength: number;
 }
 
-// Represents a segment of inline content (text, latex, or link)
+// Represents a segment of inline content (text, latex, link, or formatted text)
 export interface InlineSegment {
-  type: 'text' | 'latex' | 'link';
+  type: 'text' | 'latex' | 'link' | 'formatted';
   content: string;        // The full match including delimiters
   displayContent: string; // The visible content (text without markup)
   sourceStart: number;    // Position in source where this segment starts
@@ -29,15 +29,24 @@ export interface InlineSegment {
   // For links: positions to map display chars to source chars
   linkTextStart?: number; // Position in source where link text starts (after '[')
   linkUrl?: string;       // The URL part of the link
+  // For formatted text: styling info
+  bold?: boolean;
+  italic?: boolean;
+  strikethrough?: boolean;
+  underline?: boolean;
+  innerSourceStart?: number; // Position in source where inner content starts (after opening delimiter)
 }
 
-// Parse inline content to extract LaTeX and link segments
+// Parse inline content to extract LaTeX, links, and formatted text segments
 export function parseInlineSegments(content: string, sourceOffset: number): InlineSegment[] {
   const segments: InlineSegment[] = [];
 
-  // Combined regex for LaTeX and links
+  // Combined regex for LaTeX, links, and formatting
+  // Order matters: longer patterns first to avoid partial matches
   // Match: $$ ... $$ (block latex) | $ ... $ (inline latex) | [text](url) (link)
-  const combinedRegex = /(\$\$[\s\S]*?\$\$|\$[^$]+?\$|\[[^\]]+\]\([^)]+\))/g;
+  //        | **...** (bold) | __...__ (bold) | *...* (italic) | _..._ (italic)
+  //        | ~~...~~ (strikethrough) | ++...++ (underline)
+  const combinedRegex = /(\$\$[\s\S]*?\$\$|\$[^$]+?\$|\[[^\]]+\]\([^)]+\)|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_|~~[^~]+~~|\+\+[^+]+\+\+)/g;
 
   let lastIndex = 0;
   let match;
@@ -58,20 +67,27 @@ export function parseInlineSegments(content: string, sourceOffset: number): Inli
 
     const fullMatch = match[0];
 
-    if (fullMatch.startsWith('$')) {
-      // LaTeX segment
-      const isBlock = fullMatch.startsWith('$$');
-      const innerContent = isBlock
-        ? fullMatch.slice(2, -2)  // Remove $$
-        : fullMatch.slice(1, -1); // Remove $
-
+    if (fullMatch.startsWith('$$')) {
+      // Block LaTeX segment
+      const innerContent = fullMatch.slice(2, -2);
       segments.push({
         type: 'latex',
         content: fullMatch,
         displayContent: innerContent,
         sourceStart: sourceOffset + match.index,
         sourceEnd: sourceOffset + match.index + fullMatch.length,
-        isBlock,
+        isBlock: true,
+      });
+    } else if (fullMatch.startsWith('$')) {
+      // Inline LaTeX segment
+      const innerContent = fullMatch.slice(1, -1);
+      segments.push({
+        type: 'latex',
+        content: fullMatch,
+        displayContent: innerContent,
+        sourceStart: sourceOffset + match.index,
+        sourceEnd: sourceOffset + match.index + fullMatch.length,
+        isBlock: false,
       });
     } else if (fullMatch.startsWith('[')) {
       // Link segment: [text](url)
@@ -91,6 +107,58 @@ export function parseInlineSegments(content: string, sourceOffset: number): Inli
           linkUrl: linkUrl,
         });
       }
+    } else if (fullMatch.startsWith('**') || fullMatch.startsWith('__')) {
+      // Bold: **text** or __text__
+      const innerContent = fullMatch.slice(2, -2);
+      segments.push({
+        type: 'formatted',
+        content: fullMatch,
+        displayContent: innerContent,
+        sourceStart: sourceOffset + match.index,
+        sourceEnd: sourceOffset + match.index + fullMatch.length,
+        isBlock: false,
+        bold: true,
+        innerSourceStart: sourceOffset + match.index + 2,
+      });
+    } else if (fullMatch.startsWith('~~')) {
+      // Strikethrough: ~~text~~
+      const innerContent = fullMatch.slice(2, -2);
+      segments.push({
+        type: 'formatted',
+        content: fullMatch,
+        displayContent: innerContent,
+        sourceStart: sourceOffset + match.index,
+        sourceEnd: sourceOffset + match.index + fullMatch.length,
+        isBlock: false,
+        strikethrough: true,
+        innerSourceStart: sourceOffset + match.index + 2,
+      });
+    } else if (fullMatch.startsWith('++')) {
+      // Underline: ++text++
+      const innerContent = fullMatch.slice(2, -2);
+      segments.push({
+        type: 'formatted',
+        content: fullMatch,
+        displayContent: innerContent,
+        sourceStart: sourceOffset + match.index,
+        sourceEnd: sourceOffset + match.index + fullMatch.length,
+        isBlock: false,
+        underline: true,
+        innerSourceStart: sourceOffset + match.index + 2,
+      });
+    } else if (fullMatch.startsWith('*') || fullMatch.startsWith('_')) {
+      // Italic: *text* or _text_
+      const innerContent = fullMatch.slice(1, -1);
+      segments.push({
+        type: 'formatted',
+        content: fullMatch,
+        displayContent: innerContent,
+        sourceStart: sourceOffset + match.index,
+        sourceEnd: sourceOffset + match.index + fullMatch.length,
+        isBlock: false,
+        italic: true,
+        innerSourceStart: sourceOffset + match.index + 1,
+      });
     }
 
     lastIndex = match.index + fullMatch.length;
@@ -182,7 +250,7 @@ export function getBlockFontMultiplier(type: ParsedBlock['type']): number {
   }
 }
 
-// Render inline content with LaTeX and link support
+// Render inline content with LaTeX, link, and formatting support
 const InlineContent = memo(({ content, sourceOffset }: { content: string; sourceOffset: number }) => {
   const segments = useMemo(() => parseInlineSegments(content, sourceOffset), [content, sourceOffset]);
 
@@ -207,6 +275,18 @@ const InlineContent = memo(({ content, sourceOffset }: { content: string; source
                 cursor: 'pointer',
               }}
             >
+              {segment.displayContent}
+            </span>
+          );
+        }
+        if (segment.type === 'formatted') {
+          const style: React.CSSProperties = {};
+          if (segment.bold) style.fontWeight = 'bold';
+          if (segment.italic) style.fontStyle = 'italic';
+          if (segment.strikethrough) style.textDecoration = 'line-through';
+          if (segment.underline) style.textDecoration = 'underline';
+          return (
+            <span key={i} style={style}>
               {segment.displayContent}
             </span>
           );

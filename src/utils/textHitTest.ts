@@ -259,6 +259,26 @@ export function calculateCursorFromClick(
 
         // Map to position within the link text (after '[')
         return (segment.linkTextStart ?? segment.sourceStart + 1) + charIndex;
+      } else if (segment.type === 'formatted') {
+        // For formatted text (**bold**, *italic*, ~~strike~~, ++underline++),
+        // map clicks to positions within the inner content (after opening delimiter)
+        const relativeClickX = clickX - accumulatedWidth;
+        let charIndex = 0;
+
+        for (let i = 0; i < segment.displayContent.length; i++) {
+          const widthUpToChar = ctx.measureText(segment.displayContent.slice(0, i)).width;
+          const widthUpToNextChar = ctx.measureText(segment.displayContent.slice(0, i + 1)).width;
+          const charMidpoint = (widthUpToChar + widthUpToNextChar) / 2;
+
+          if (relativeClickX < charMidpoint) {
+            charIndex = i;
+            break;
+          }
+          charIndex = i + 1;
+        }
+
+        // Map to position within the formatted text (after opening delimiter)
+        return (segment.innerSourceStart ?? segment.sourceStart + 2) + charIndex;
       } else {
         // For text, find the exact character position
         const relativeClickX = clickX - accumulatedWidth;
