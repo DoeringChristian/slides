@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useEditorStore } from '../../store/editorStore';
-import { Play, Download, Upload, FilePlus, Undo2, Redo2 } from 'lucide-react';
+import { usePresenterMode } from '../../hooks/usePresenterMode';
+import { Play, Download, Upload, FilePlus, Undo2, Redo2, Monitor, ChevronDown } from 'lucide-react';
 
 export const Header: React.FC = () => {
   const title = usePresentationStore((s) => s.presentation.title);
@@ -13,8 +14,12 @@ export const Header: React.FC = () => {
   const slideOrder = usePresentationStore((s) => s.presentation.slideOrder);
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
 
+  const { startPresenterMode } = usePresenterMode();
+
   const [isEditing, setIsEditing] = useState(false);
+  const [showPresentMenu, setShowPresentMenu] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -22,6 +27,18 @@ export const Header: React.FC = () => {
       inputRef.current.select();
     }
   }, [isEditing]);
+
+  // Close present menu when clicking outside
+  useEffect(() => {
+    if (!showPresentMenu) return;
+    const handleClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowPresentMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showPresentMenu]);
 
   const handlePresent = () => {
     const idx = slideOrder.indexOf(activeSlideId);
@@ -118,13 +135,47 @@ export const Header: React.FC = () => {
 
       <div className="flex-1" />
 
-      <button
-        onClick={handlePresent}
-        className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white px-4 py-1.5 rounded-md text-sm font-medium"
-      >
-        <Play size={16} />
-        Present
-      </button>
+      <div className="relative" ref={menuRef}>
+        <div className="flex">
+          <button
+            onClick={handlePresent}
+            className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white px-4 py-1.5 rounded-l-md text-sm font-medium"
+          >
+            <Play size={16} />
+            Present
+          </button>
+          <button
+            onClick={() => setShowPresentMenu(!showPresentMenu)}
+            className="flex items-center bg-blue-500 hover:bg-blue-600 text-white px-2 py-1.5 rounded-r-md border-l border-blue-400"
+          >
+            <ChevronDown size={14} />
+          </button>
+        </div>
+
+        {showPresentMenu && (
+          <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg py-1 min-w-[180px] z-50">
+            <button
+              onClick={() => { handlePresent(); setShowPresentMenu(false); }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
+            >
+              <Play size={16} />
+              Fullscreen
+            </button>
+            <button
+              onClick={() => {
+                const idx = slideOrder.indexOf(activeSlideId);
+                setPresentingSlideIndex(Math.max(0, idx));
+                startPresenterMode();
+                setShowPresentMenu(false);
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 hover:bg-gray-100"
+            >
+              <Monitor size={16} />
+              Presenter View
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

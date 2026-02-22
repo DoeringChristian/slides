@@ -1,12 +1,17 @@
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 import { AppLayout } from './components/layout/AppLayout';
 import { PresenterView } from './components/presenter/PresenterView';
+import { PresenterControlPanel } from './components/presenter/PresenterControlPanel';
+import { AudienceView } from './components/presenter/AudienceView';
 import { useEditorStore } from './store/editorStore';
 import { usePresentationStore } from './store/presentationStore';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { generateObjectName } from './utils/slideFactory';
 import { generateId } from './utils/idGenerator';
 import type { Presentation, ObjectMeta, Resource } from './types/presentation';
+
+// Check if this is the audience window
+const isAudienceMode = new URLSearchParams(window.location.search).get('audience') === 'true';
 
 function migratePresentation(data: any): Presentation {
   if (!data.objects) {
@@ -147,10 +152,16 @@ function App() {
 
   useKeyboardShortcuts();
 
+  // Render audience view for spawned presentation window
+  if (isAudienceMode) {
+    return <AudienceView />;
+  }
+
   return (
     <>
       <AppLayout />
       <PresenterView />
+      <PresenterControlPanel />
     </>
   );
 }

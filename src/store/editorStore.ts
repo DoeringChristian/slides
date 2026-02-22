@@ -17,6 +17,8 @@ interface EditorStore extends EditorState {
   croppingElementId: string | null;
   marginLayoutId: string | null;
   showMarginGuides: boolean;
+  isPresenterMode: boolean;
+  presenterStartTime: number;
   setObjectDrawerOpen: (open: boolean) => void;
   setHoveredObjectId: (id: string | null) => void;
   setActiveSlide: (slideId: string) => void;
@@ -37,6 +39,8 @@ interface EditorStore extends EditorState {
   setCroppingElementId: (id: string | null) => void;
   setMarginLayoutId: (id: string | null) => void;
   setShowMarginGuides: (show: boolean) => void;
+  setPresenterMode: (mode: boolean) => void;
+  resetPresenterTimer: () => void;
 }
 
 export const useEditorStore = create<EditorStore>()((set) => ({
@@ -57,6 +61,8 @@ export const useEditorStore = create<EditorStore>()((set) => ({
   croppingElementId: null,
   marginLayoutId: null,
   showMarginGuides: true,
+  isPresenterMode: false,
+  presenterStartTime: 0,
 
   setObjectDrawerOpen: (open) => set({ objectDrawerOpen: open }),
   setHoveredObjectId: (id) => set({ hoveredObjectId: id }),
@@ -88,4 +94,6 @@ export const useEditorStore = create<EditorStore>()((set) => ({
   setCroppingElementId: (id) => set({ croppingElementId: id }),
   setMarginLayoutId: (id) => set({ marginLayoutId: id }),
   setShowMarginGuides: (show) => set({ showMarginGuides: show }),
+  setPresenterMode: (mode) => set({ isPresenterMode: mode, presenterStartTime: mode ? Date.now() : 0 }),
+  resetPresenterTimer: () => set({ presenterStartTime: Date.now() }),
 }));
