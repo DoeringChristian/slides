@@ -232,7 +232,7 @@ export const PresenterControlPanel: React.FC = () => {
   if (!isPresenterMode) return null;
 
   // Calculate preview scales - make them fit better
-  const currentScale = 0.45;
+  const currentScale = 0.65;
   const nextScale = 0.3;
 
   return (
