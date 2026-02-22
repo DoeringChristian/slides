@@ -119,7 +119,6 @@ export const TransitionButton: React.FC<Props> = ({
   // For visibility transitions when element disappears (fade-out),
   // we store the transition on the source element since target doesn't exist
   const isFadeOut = group === 'visibility' && sourceElement?.visible && !targetElement;
-  const isFadeIn = group === 'visibility' && !sourceElement?.visible && targetElement?.visible;
 
   // Determine which element holds the transition settings
   // For fade-out: use source element (since target doesn't exist)
