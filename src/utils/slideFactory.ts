@@ -1,6 +1,6 @@
 import { generateId } from './idGenerator';
 import { DEFAULT_TEXT_STYLE, DEFAULT_SHAPE_PROPS, SLIDE_WIDTH, SLIDE_HEIGHT } from './constants';
-import type { Slide, TextElement, ShapeElement, ImageElement, ShapeType, SlideElement, Presentation, Theme, ObjectMeta, SlideTemplate, SlideBackground, Resource } from '../types/presentation';
+import type { Slide, TextElement, ShapeElement, ImageElement, VideoElement, ShapeType, SlideElement, Presentation, Theme, ObjectMeta, SlideTemplate, SlideBackground, Resource } from '../types/presentation';
 
 export function createDefaultTheme(): Theme {
   return {
@@ -70,13 +70,22 @@ export function createShapeElement(shapeType: ShapeType = 'rect', overrides?: Pa
   };
 }
 
-export function createResource(name: string, src: string, originalWidth: number, originalHeight: number): Resource {
+export function createResource(
+  name: string,
+  src: string,
+  originalWidth: number,
+  originalHeight: number,
+  type: 'image' | 'video' = 'image',
+  duration?: number
+): Resource {
   return {
     id: generateId(),
     name,
+    type,
     src,
     originalWidth,
     originalHeight,
+    ...(duration !== undefined ? { duration } : {}),
   };
 }
 
@@ -188,12 +197,80 @@ export async function loadPdfFile(file: Blob): Promise<{ resources: Resource[]; 
     const src = canvas.toDataURL('image/png');
     const w = viewport.width / scale;
     const h = viewport.height / scale;
-    const resource = createResource(`${fileName} - Page ${i}`, src, w, h);
+    const resource = createResource(`${fileName} - Page ${i}`, src, w, h, 'image');
     resources.push(resource);
     elements.push(createImageElement(resource.id, w, h));
   }
 
   return { resources, elements };
+}
+
+export function createVideoElement(
+  resourceId: string | null,
+  originalWidth: number,
+  originalHeight: number,
+  overrides?: Partial<VideoElement>
+): VideoElement {
+  const maxW = SLIDE_WIDTH * 0.6;
+  const maxH = SLIDE_HEIGHT * 0.6;
+  const scale = Math.min(maxW / originalWidth, maxH / originalHeight, 1);
+  const width = originalWidth * scale;
+  const height = originalHeight * scale;
+
+  return {
+    id: generateId(),
+    type: 'video',
+    x: (SLIDE_WIDTH - width) / 2,
+    y: (SLIDE_HEIGHT - height) / 2,
+    width,
+    height,
+    rotation: 0,
+    opacity: 1,
+    locked: false,
+    visible: true,
+    resourceId,
+    playing: true,  // Videos start playing by default
+    loop: false,
+    muted: false,
+    startTime: 0,
+    ...overrides,
+  };
+}
+
+export function loadVideoFile(
+  file: Blob,
+  overrides?: Partial<VideoElement>
+): Promise<{ resource: Resource; element: VideoElement }> {
+  const fileName = file instanceof File ? file.name : 'Video';
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const src = ev.target?.result as string;
+      const video = document.createElement('video');
+      video.preload = 'metadata';
+      video.onloadedmetadata = () => {
+        const resource = createResource(
+          fileName,
+          src,
+          video.videoWidth,
+          video.videoHeight,
+          'video',
+          video.duration
+        );
+        const element = createVideoElement(
+          resource.id,
+          video.videoWidth,
+          video.videoHeight,
+          overrides
+        );
+        resolve({ resource, element });
+      };
+      video.onerror = () => reject(new Error('Failed to load video'));
+      video.src = src;
+    };
+    reader.onerror = () => reject(new Error('Failed to read file'));
+    reader.readAsDataURL(file);
+  });
 }
 
 export function createPresentation(): Presentation {
@@ -253,6 +330,7 @@ const TYPE_LABELS: Record<string, string> = {
   arrow: 'Arrow',
   shape: 'Shape',
   image: 'Image',
+  video: 'Video',
 };
 
 export function generateObjectName(type: string, existingObjects: Record<string, ObjectMeta>): string {

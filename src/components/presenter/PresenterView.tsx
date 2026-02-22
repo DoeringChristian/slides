@@ -6,7 +6,7 @@ import { usePresentationStore } from '../../store/presentationStore';
 import { MarkdownRenderer } from '../canvas/MarkdownRenderer';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 import { interpolateWithVisibility, lerpColor } from '../../utils/interpolation';
-import type { SlideElement, TextElement, ShapeElement, ImageElement, Slide, Resource } from '../../types/presentation';
+import type { SlideElement, TextElement, ShapeElement, ImageElement, VideoElement, Slide, Resource } from '../../types/presentation';
 
 const PresentationImageElement: React.FC<{ element: ImageElement; resources: Record<string, Resource> }> = ({ element, resources }) => {
   const resource = element.resourceId ? resources[element.resourceId] : undefined;
@@ -42,7 +42,11 @@ const PresentationSlideElement: React.FC<{ element: SlideElement; resources: Rec
 
   if (element.type === 'text') {
     // Text is rendered as HTML overlay for markdown support
-    // Konva text is transparent but kept for layout calculations
+    return null;
+  }
+
+  if (element.type === 'video') {
+    // Video is rendered as HTML overlay
     return null;
   }
 
@@ -270,6 +274,11 @@ export const PresenterView: React.FC = () => {
     (el): el is TextElement => el.type === 'text' && el.visible
   );
 
+  // Get video elements for HTML video rendering
+  const videoElements = renderedElements.filter(
+    (el): el is VideoElement => el.type === 'video' && el.visible
+  );
+
   return (
     <div ref={containerRef} className="fixed inset-0 bg-black z-[9999] flex items-center justify-center cursor-none"
       onClick={(e) => {
@@ -285,6 +294,35 @@ export const PresenterView: React.FC = () => {
             {renderedElements.map((el) => <PresentationSlideElement key={el.id} element={el} resources={resources} />)}
           </Layer>
         </Stage>
+
+        {/* Video overlay */}
+        <div className="absolute inset-0 pointer-events-none overflow-hidden">
+          {videoElements.map((element) => {
+            const resource = element.resourceId ? resources[element.resourceId] : undefined;
+            if (!resource) return null;
+            return (
+              <video
+                key={element.id}
+                src={resource.src}
+                autoPlay={element.playing}
+                loop={element.loop}
+                muted={element.muted}
+                playsInline
+                style={{
+                  position: 'absolute',
+                  left: `${element.x * scale}px`,
+                  top: `${element.y * scale}px`,
+                  width: `${element.width * scale}px`,
+                  height: `${element.height * scale}px`,
+                  transform: `rotate(${element.rotation}deg)`,
+                  transformOrigin: 'top left',
+                  opacity: element.opacity,
+                  objectFit: 'cover',
+                }}
+              />
+            );
+          })}
+        </div>
 
         {/* Markdown text overlay */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden">

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Type, Square, Image } from 'lucide-react';
+import { Type, Square, Image, Video } from 'lucide-react';
 import { usePresentationStore } from '../../store/presentationStore';
 import type { SlideElement, ObjectMeta } from '../../types/presentation';
 
@@ -12,6 +12,7 @@ const FALLBACK_ICONS: Record<string, React.FC<{ size: number; className?: string
   text: Type,
   shape: Square,
   image: Image,
+  video: Video,
 };
 
 const SHAPE_CLIP_PATHS: Record<string, string> = {
@@ -106,6 +107,33 @@ export const ObjectPreview: React.FC<Props> = ({ element, objectType }) => {
           className="w-full h-full object-cover"
           draggable={false}
         />
+      </div>
+    );
+  }
+
+  if (element.type === 'video') {
+    const resource = element.resourceId ? resources[element.resourceId] : undefined;
+
+    // Show fallback icon if no resource
+    if (!resource) {
+      return (
+        <div className="w-full h-full flex items-center justify-center bg-gray-900">
+          <Video size={24} className="text-gray-500" />
+        </div>
+      );
+    }
+
+    return (
+      <div className="w-full h-full bg-gray-900 relative">
+        <video
+          src={resource.src}
+          className="w-full h-full object-cover"
+          muted
+          playsInline
+        />
+        <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+          <Video size={20} className="text-white/80" />
+        </div>
       </div>
     );
   }

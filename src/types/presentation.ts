@@ -1,15 +1,17 @@
 export interface ObjectMeta {
   id: string;
   name: string;
-  type: 'text' | 'shape' | 'image';
+  type: 'text' | 'shape' | 'image' | 'video';
 }
 
 export interface Resource {
   id: string;
   name: string;
+  type: 'image' | 'video';
   src: string;
   originalWidth: number;
   originalHeight: number;
+  duration?: number; // For videos, duration in seconds
 }
 
 export interface SlideTemplate {
@@ -62,7 +64,7 @@ export interface SlideTransition {
   duration: number;
 }
 
-export type SlideElement = TextElement | ShapeElement | ImageElement | GroupElement;
+export type SlideElement = TextElement | ShapeElement | ImageElement | VideoElement | GroupElement;
 
 export interface BaseElement {
   id: string;
@@ -120,6 +122,15 @@ export interface ImageElement extends BaseElement {
   cropY: number;
   cropWidth: number;
   cropHeight: number;
+}
+
+export interface VideoElement extends BaseElement {
+  type: 'video';
+  resourceId?: string | null;
+  playing: boolean;  // Whether video should be playing (can be toggled per keyframe)
+  loop: boolean;
+  muted: boolean;
+  startTime: number; // Start position in seconds
 }
 
 export interface GroupElement extends BaseElement {

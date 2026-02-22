@@ -1,9 +1,9 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, EyeOff, Eye } from 'lucide-react';
 import { Stage, Layer, Rect, Text, Ellipse, Image as KonvaImage, Line, Arrow, Star, RegularPolygon } from 'react-konva';
 import useImage from 'use-image';
 import { usePresentationStore } from '../../store/presentationStore';
-import type { Slide, SlideElement, TextElement, ShapeElement, ImageElement } from '../../types/presentation';
+import type { Slide, SlideElement, TextElement, ShapeElement, ImageElement, VideoElement } from '../../types/presentation';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 
 const THUMB_WIDTH = 192;
@@ -70,6 +70,90 @@ const ThumbnailImageElement: React.FC<{ element: ImageElement }> = ({ element })
   );
 };
 
+// Cache for video first frames to avoid re-extracting
+const videoFrameCache: Record<string, HTMLCanvasElement> = {};
+
+const ThumbnailVideoElement: React.FC<{ element: VideoElement }> = ({ element }) => {
+  const resource = usePresentationStore((s) =>
+    element.resourceId ? s.presentation.resources[element.resourceId] : undefined
+  );
+  const [frameImage, setFrameImage] = useState<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    if (!resource?.src) {
+      setFrameImage(null);
+      return;
+    }
+
+    // Check cache first
+    if (videoFrameCache[resource.id]) {
+      setFrameImage(videoFrameCache[resource.id]);
+      return;
+    }
+
+    // Extract first frame
+    const video = document.createElement('video');
+    video.src = resource.src;
+    video.muted = true;
+    video.preload = 'metadata';
+
+    video.onloadeddata = () => {
+      // Seek to first frame
+      video.currentTime = 0;
+    };
+
+    video.onseeked = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(video, 0, 0);
+        videoFrameCache[resource.id] = canvas;
+        setFrameImage(canvas);
+      }
+      video.src = ''; // Clean up
+    };
+
+    video.onerror = () => {
+      setFrameImage(null);
+    };
+
+    return () => {
+      video.src = '';
+    };
+  }, [resource?.src, resource?.id]);
+
+  if (!resource || !frameImage) {
+    // Show placeholder rectangle for video
+    return (
+      <Rect
+        x={element.x}
+        y={element.y}
+        width={element.width}
+        height={element.height}
+        rotation={element.rotation}
+        opacity={element.opacity}
+        fill="#1f2937"
+        listening={false}
+      />
+    );
+  }
+
+  return (
+    <KonvaImage
+      image={frameImage}
+      x={element.x}
+      y={element.y}
+      width={element.width}
+      height={element.height}
+      rotation={element.rotation}
+      opacity={element.opacity}
+      listening={false}
+    />
+  );
+};
+
 export const ThumbnailElement: React.FC<{ element: SlideElement; isSelected?: boolean }> = ({ element, isSelected }) => {
   if (!element.visible) return null;
 
@@ -103,6 +187,10 @@ export const ThumbnailElement: React.FC<{ element: SlideElement; isSelected?: bo
 
     if (element.type === 'image') {
       return <ThumbnailImageElement element={element as ImageElement} />;
+    }
+
+    if (element.type === 'video') {
+      return <ThumbnailVideoElement element={element as VideoElement} />;
     }
 
     return null;

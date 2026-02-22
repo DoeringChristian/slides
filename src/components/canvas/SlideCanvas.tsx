@@ -23,7 +23,7 @@ import { getBindingTarget, getAnchorPoint } from '../../utils/connectorUtils';
 import { snapToGrid as snapToGridFn } from '../../utils/geometry';
 import { isCtrlHeld } from '../../utils/keyboard';
 import { SLIDE_WIDTH, SLIDE_HEIGHT, CANVAS_PADDING } from '../../utils/constants';
-import { loadImageFile, loadPdfFile } from '../../utils/slideFactory';
+import { loadImageFile, loadPdfFile, loadVideoFile } from '../../utils/slideFactory';
 import type { ShapeElement } from '../../types/presentation';
 import type Konva from 'konva';
 
@@ -365,6 +365,11 @@ export const SlideCanvas: React.FC = () => {
         }
       } else if (file.type.startsWith('image/') || file.name.endsWith('.svg')) {
         const { resource, element } = await loadImageFile(file, { x: dropX, y: dropY });
+        addResource(resource);
+        addElement(activeSlideId, element);
+        setSelectedElements([element.id]);
+      } else if (file.type.startsWith('video/')) {
+        const { resource, element } = await loadVideoFile(file, { x: dropX, y: dropY });
         addResource(resource);
         addElement(activeSlideId, element);
         setSelectedElements([element.id]);

@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useEditorStore } from '../store/editorStore';
 import { usePresentationStore } from '../store/presentationStore';
-import { duplicateElement, loadImageFile, loadPdfFile } from '../utils/slideFactory';
+import { duplicateElement, loadImageFile, loadPdfFile, loadVideoFile } from '../utils/slideFactory';
 
 export function useKeyboardShortcuts() {
   const store = usePresentationStore;
@@ -233,6 +233,17 @@ export function useKeyboardShortcuts() {
           if (!file) continue;
           e.preventDefault();
           loadImageFile(file).then(({ resource, element }) => {
+            store.getState().addResource(resource);
+            store.getState().addElement(activeSlideId, element);
+            editor.getState().setSelectedElements([element.id]);
+          });
+          return;
+        }
+        if (item.type.startsWith('video/')) {
+          const file = item.getAsFile();
+          if (!file) continue;
+          e.preventDefault();
+          loadVideoFile(file).then(({ resource, element }) => {
             store.getState().addResource(resource);
             store.getState().addElement(activeSlideId, element);
             editor.getState().setSelectedElements([element.id]);
