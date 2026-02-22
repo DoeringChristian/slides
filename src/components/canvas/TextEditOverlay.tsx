@@ -3,6 +3,7 @@ import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { computeGuides, type Guide } from '../../hooks/useAlignmentGuides';
 import { getMarginLayout, getMarginBounds } from '../../utils/marginLayouts';
+import { MarkdownEditor } from './MarkdownEditor';
 import type { TextElement } from '../../types/presentation';
 import { CANVAS_PADDING } from '../../utils/constants';
 
@@ -10,77 +11,6 @@ interface Props {
   stageRef: React.RefObject<HTMLDivElement | null>;
   zoom: number;
   onGuides?: (guides: Guide[]) => void;
-}
-
-/**
- * Calculate the cursor position (character index) from a click position within a text element.
- */
-function calculateCursorPosition(element: TextElement, clickPos: { x: number; y: number }): number {
-  const { text, width, style } = element;
-  const { fontSize, fontFamily, fontWeight, lineHeight, align, verticalAlign } = style;
-  const padding = 4;
-
-  if (!text) return 0;
-
-  // Create a canvas to measure text
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return 0;
-
-  ctx.font = `${fontWeight === 'bold' ? 'bold ' : ''}${fontSize}px ${fontFamily}`;
-
-  const lines = text.split('\n');
-  const lineHeightPx = fontSize * (lineHeight || 1.2);
-  const totalTextHeight = lines.length * lineHeightPx;
-  const contentWidth = width - padding * 2;
-  const contentHeight = element.height - padding * 2;
-
-  // Calculate vertical offset based on verticalAlign
-  let textStartY = padding;
-  if (verticalAlign === 'middle') {
-    textStartY = padding + (contentHeight - totalTextHeight) / 2;
-  } else if (verticalAlign === 'bottom') {
-    textStartY = padding + contentHeight - totalTextHeight;
-  }
-
-  // Find which line was clicked
-  const clickY = clickPos.y - textStartY;
-  let lineIndex = Math.floor(clickY / lineHeightPx);
-  lineIndex = Math.max(0, Math.min(lines.length - 1, lineIndex));
-
-  // Calculate horizontal offset for this line based on align
-  const line = lines[lineIndex];
-  const lineWidth = ctx.measureText(line).width;
-
-  let lineStartX = padding;
-  if (align === 'center') {
-    lineStartX = padding + (contentWidth - lineWidth) / 2;
-  } else if (align === 'right') {
-    lineStartX = padding + contentWidth - lineWidth;
-  }
-
-  // Find which character was clicked
-  const clickX = clickPos.x - lineStartX;
-  let charIndex = 0;
-  let accumulatedWidth = 0;
-
-  for (let i = 0; i < line.length; i++) {
-    const charWidth = ctx.measureText(line[i]).width;
-    if (accumulatedWidth + charWidth / 2 > clickX) {
-      break;
-    }
-    accumulatedWidth += charWidth;
-    charIndex++;
-  }
-
-  // Convert to absolute position in the full text
-  let absolutePos = 0;
-  for (let i = 0; i < lineIndex; i++) {
-    absolutePos += lines[i].length + 1; // +1 for newline
-  }
-  absolutePos += charIndex;
-
-  return Math.min(absolutePos, text.length);
 }
 
 export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom, onGuides }) => {
@@ -93,18 +23,21 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom, onGuides }) =
   const updateElement = usePresentationStore((s) => s.updateElement);
   const slide = usePresentationStore((s) => s.presentation.slides[activeSlideId]);
 
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const dragStartRef = useRef<{ x: number; y: number; elemX: number; elemY: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
   const element = editingTextId && slide ? slide.elements[editingTextId] as TextElement | undefined : undefined;
 
-  const handleBlur = useCallback(() => {
-    if (textareaRef.current && editingTextId && activeSlideId) {
-      updateElement(activeSlideId, editingTextId, { text: textareaRef.current.value });
+  const handleTextChange = useCallback((newText: string) => {
+    if (editingTextId && activeSlideId) {
+      updateElement(activeSlideId, editingTextId, { text: newText });
     }
     setEditingTextId(null);
   }, [editingTextId, activeSlideId, updateElement, setEditingTextId]);
+
+  const handleEscape = useCallback(() => {
+    setEditingTextId(null);
+  }, [setEditingTextId]);
 
   const handleDragStart = useCallback((e: React.MouseEvent) => {
     if (!element) return;
@@ -119,21 +52,6 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom, onGuides }) =
     };
   }, [element]);
 
-  useEffect(() => {
-    if (element && textareaRef.current) {
-      textareaRef.current.value = element.text;
-      textareaRef.current.focus();
-
-      // If we have a click position, calculate cursor position; otherwise select all (e.g., for new text)
-      if (textEditClickPosition && element.text) {
-        const cursorPos = calculateCursorPosition(element, textEditClickPosition);
-        textareaRef.current.selectionStart = cursorPos;
-        textareaRef.current.selectionEnd = cursorPos;
-      } else {
-        textareaRef.current.select();
-      }
-    }
-  }, [element, textEditClickPosition]);
 
   useEffect(() => {
     if (!isDragging) return;
@@ -275,40 +193,28 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom, onGuides }) =
         onMouseDown={handleDragStart}
       />
 
-      <textarea
-        ref={textareaRef}
+      <div
         style={{
           position: 'absolute',
           left: `${left}px`,
           top: `${top}px`,
           width: `${width}px`,
           height: `${height}px`,
-          padding: `${4 * zoom}px`,
-          boxSizing: 'border-box',
-          fontSize: `${element.style.fontSize * zoom}px`,
-          fontFamily: element.style.fontFamily,
-          fontWeight: element.style.fontWeight,
-          fontStyle: element.style.fontStyle,
-          color: element.style.color,
-          textAlign: element.style.align,
-          lineHeight: element.style.lineHeight,
-          background: 'transparent',
-          border: 'none',
-          outline: 'none',
-          resize: 'none',
           transform: `rotate(${element.rotation}deg)`,
           transformOrigin: 'top left',
           pointerEvents: 'auto',
           zIndex: 1000,
         }}
-        onBlur={handleBlur}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') {
-            handleBlur();
-          }
-          e.stopPropagation();
-        }}
-      />
+      >
+        <MarkdownEditor
+          text={element.text}
+          style={element.style}
+          zoom={zoom}
+          onBlur={handleTextChange}
+          onEscape={handleEscape}
+          clickPosition={textEditClickPosition}
+        />
+      </div>
     </div>
   );
 };
