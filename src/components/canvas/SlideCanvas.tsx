@@ -1,5 +1,5 @@
 import React, { useRef, useCallback, useMemo, useState, useEffect, type DragEvent } from 'react';
-import { Stage, Layer } from 'react-konva';
+import { Stage, Layer, Rect } from 'react-konva';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useActiveSlide, useObjectElements } from '../../store/selectors';
@@ -56,10 +56,19 @@ export const SlideCanvas: React.FC = () => {
 
   const slide = useActiveSlide();
   const objectElements = useObjectElements();
-  const { drawState, handleMouseDown, handleMouseMove, handleMouseUp } = useDrawing();
+  const { drawState, handleMouseDown: handleDrawMouseDown, handleMouseMove: handleDrawMouseMove, handleMouseUp: handleDrawMouseUp } = useDrawing();
 
   const [guides, setGuides] = useState<Guide[]>([]);
   const [connectorHighlightId, setConnectorHighlightId] = useState<string | null>(null);
+
+  // Selection drag state
+  const [selectionDrag, setSelectionDrag] = useState<{
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+    isSelecting: boolean;
+  } | null>(null);
 
   const elements = useMemo(() => {
     if (!slide) return [];
@@ -97,7 +106,15 @@ export const SlideCanvas: React.FC = () => {
     return { unlockedTransformerIds: unlocked, lockedTransformerIds: locked };
   }, [selectedElementIds, soleSelectedLineElement, slide]);
 
+  // Track if we just completed a selection drag to prevent click from clearing selection
+  const justFinishedSelectionDrag = useRef(false);
+
   const handleStageClick = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
+    // Don't clear selection if we just finished a drag selection
+    if (justFinishedSelectionDrag.current) {
+      justFinishedSelectionDrag.current = false;
+      return;
+    }
     if (e.target === e.target.getStage()) {
       setSelectedElements([]);
       setEditingTextId(null);
@@ -372,6 +389,75 @@ export const SlideCanvas: React.FC = () => {
     return elements.filter((el) => el.visible);
   }, [elements]);
 
+  // Combined mouse handlers for drawing and selection drag
+  const handleMouseDown = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
+    if (tool !== 'select') {
+      handleDrawMouseDown(e);
+      return;
+    }
+    // Only start selection drag when clicking on the stage (empty area)
+    if (e.target !== e.target.getStage()) return;
+    const stage = e.target.getStage();
+    if (!stage) return;
+    const pos = stage.getRelativePointerPosition();
+    if (!pos) return;
+    setSelectionDrag({
+      startX: pos.x,
+      startY: pos.y,
+      currentX: pos.x,
+      currentY: pos.y,
+      isSelecting: true,
+    });
+  }, [tool, handleDrawMouseDown]);
+
+  const handleMouseMove = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
+    if (tool !== 'select') {
+      handleDrawMouseMove(e);
+      return;
+    }
+    if (!selectionDrag?.isSelecting) return;
+    const stage = e.target.getStage();
+    if (!stage) return;
+    const pos = stage.getRelativePointerPosition();
+    if (!pos) return;
+    setSelectionDrag((prev) => prev ? { ...prev, currentX: pos.x, currentY: pos.y } : null);
+  }, [tool, handleDrawMouseMove, selectionDrag?.isSelecting]);
+
+  const handleMouseUp = useCallback(() => {
+    if (tool !== 'select') {
+      handleDrawMouseUp();
+      return;
+    }
+    if (!selectionDrag?.isSelecting) return;
+
+    // Calculate selection rectangle bounds
+    const x = Math.min(selectionDrag.startX, selectionDrag.currentX);
+    const y = Math.min(selectionDrag.startY, selectionDrag.currentY);
+    const width = Math.abs(selectionDrag.currentX - selectionDrag.startX);
+    const height = Math.abs(selectionDrag.currentY - selectionDrag.startY);
+
+    // Only select if the drag was significant (not just a click)
+    if (width > 5 || height > 5) {
+      // Find elements that intersect with the selection rectangle
+      const selectedIds = elements
+        .filter((el) => {
+          if (!el.visible) return false;
+          // Check if element bounds intersect with selection rectangle
+          const elRight = el.x + el.width;
+          const elBottom = el.y + el.height;
+          const selRight = x + width;
+          const selBottom = y + height;
+          return !(el.x > selRight || elRight < x || el.y > selBottom || elBottom < y);
+        })
+        .map((el) => el.id);
+      setSelectedElements(selectedIds);
+      // Prevent the click handler from clearing the selection
+      justFinishedSelectionDrag.current = true;
+    }
+
+    setSelectionDrag(null);
+  }, [tool, handleDrawMouseUp, selectionDrag, elements, setSelectedElements]);
+
   const stageWidth = (SLIDE_WIDTH + 2 * CANVAS_PADDING) * zoom;
   const stageHeight = (SLIDE_HEIGHT + 2 * CANVAS_PADDING) * zoom;
   const cursor = tool === 'select' ? 'default' : 'crosshair';
@@ -418,6 +504,20 @@ export const SlideCanvas: React.FC = () => {
         <Layer>
           <GridOverlay gridSize={gridSize} visible={showGrid} />
           <MarginGuidesOverlay />
+          {/* Selection drag rectangle */}
+          {selectionDrag?.isSelecting && (
+            <Rect
+              x={Math.min(selectionDrag.startX, selectionDrag.currentX)}
+              y={Math.min(selectionDrag.startY, selectionDrag.currentY)}
+              width={Math.abs(selectionDrag.currentX - selectionDrag.startX)}
+              height={Math.abs(selectionDrag.currentY - selectionDrag.startY)}
+              fill="rgba(66, 133, 244, 0.1)"
+              stroke="#4285f4"
+              strokeWidth={1}
+              dash={[5, 5]}
+              listening={false}
+            />
+          )}
           <AlignmentGuides guides={guides} />
           <SelectionTransformer
             selectedIds={editingTextId ? [] : unlockedTransformerIds}
