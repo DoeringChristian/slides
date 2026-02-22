@@ -1,18 +1,23 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
+import { computeGuides, type Guide } from '../../hooks/useAlignmentGuides';
+import { getMarginLayout, getMarginBounds } from '../../utils/marginLayouts';
 import type { TextElement } from '../../types/presentation';
 import { CANVAS_PADDING } from '../../utils/constants';
 
 interface Props {
   stageRef: React.RefObject<HTMLDivElement | null>;
   zoom: number;
+  onGuides?: (guides: Guide[]) => void;
 }
 
-export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
+export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom, onGuides }) => {
   const editingTextId = useEditorStore((s) => s.editingTextId);
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const setEditingTextId = useEditorStore((s) => s.setEditingTextId);
+  const snapToGrid = useEditorStore((s) => s.snapToGrid);
+  const marginLayoutId = useEditorStore((s) => s.marginLayoutId);
   const updateElement = usePresentationStore((s) => s.updateElement);
   const slide = usePresentationStore((s) => s.presentation.slides[activeSlideId]);
 
@@ -54,18 +59,58 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     if (!isDragging) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-      if (!dragStartRef.current || !activeSlideId || !editingTextId) return;
+      if (!dragStartRef.current || !activeSlideId || !editingTextId || !element) return;
       const dx = (e.clientX - dragStartRef.current.x) / zoom;
       const dy = (e.clientY - dragStartRef.current.y) / zoom;
+
+      let newX = dragStartRef.current.elemX + dx;
+      let newY = dragStartRef.current.elemY + dy;
+
+      // Apply snapping if enabled
+      if (snapToGrid && slide) {
+        // Get other elements (excluding the current one)
+        const others = Object.values(slide.elements)
+          .filter((el) => el.id !== editingTextId && el.visible)
+          .map((el) => ({ x: el.x, y: el.y, width: el.width, height: el.height }));
+
+        // Get margin bounds
+        const marginLayout = getMarginLayout(marginLayoutId);
+        const marginBounds = marginLayout ? getMarginBounds(marginLayout) : null;
+
+        // Create bounds for the dragged element at its tentative new position
+        const draggedBounds = {
+          x: newX,
+          y: newY,
+          width: element.width,
+          height: element.height,
+        };
+
+        // Compute snapping
+        const snapResult = computeGuides(draggedBounds, others, 5, marginBounds);
+
+        // Apply snapped positions
+        if (snapResult.snapX !== null) {
+          newX = snapResult.snapX;
+        }
+        if (snapResult.snapY !== null) {
+          newY = snapResult.snapY;
+        }
+
+        // Notify parent about guides
+        onGuides?.(snapResult.guides);
+      }
+
       updateElement(activeSlideId, editingTextId, {
-        x: dragStartRef.current.elemX + dx,
-        y: dragStartRef.current.elemY + dy,
+        x: newX,
+        y: newY,
       });
     };
 
     const handleMouseUp = () => {
       setIsDragging(false);
       dragStartRef.current = null;
+      // Clear guides when drag ends
+      onGuides?.([]);
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -74,7 +119,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging, activeSlideId, editingTextId, updateElement, zoom]);
+  }, [isDragging, activeSlideId, editingTextId, updateElement, zoom, snapToGrid, marginLayoutId, element, slide, onGuides]);
 
   if (!element || !stageRef.current) return null;
 
@@ -150,24 +195,6 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
         onMouseDown={handleDragStart}
       />
 
-      {/* Selection border - matches transformer style */}
-      <div
-        style={{
-          position: 'absolute',
-          left: `${left}px`,
-          top: `${top}px`,
-          width: `${width}px`,
-          height: `${height}px`,
-          border: '2px solid #4285f4',
-          borderRadius: '2px',
-          transform: `rotate(${element.rotation}deg)`,
-          transformOrigin: 'top left',
-          pointerEvents: 'none',
-          zIndex: 1002,
-          boxSizing: 'border-box',
-        }}
-      />
-
       <textarea
         ref={textareaRef}
         style={{
@@ -176,6 +203,8 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
           top: `${top}px`,
           width: `${width}px`,
           height: `${height}px`,
+          padding: `${4 * zoom}px`,
+          boxSizing: 'border-box',
           fontSize: `${element.style.fontSize * zoom}px`,
           fontFamily: element.style.fontFamily,
           fontWeight: element.style.fontWeight,

@@ -587,7 +587,7 @@ export const SlideCanvas: React.FC = () => {
       </Stage>
 
       <MarkdownTextOverlay stageRef={containerRef} zoom={zoom} />
-      <TextEditOverlay stageRef={containerRef} zoom={zoom} />
+      <TextEditOverlay stageRef={containerRef} zoom={zoom} onGuides={setDragGuides} />
       <CropOverlay stageRef={containerRef} zoom={zoom} />
       {visibleElements.map((el) => (
         <SelectionActionBar
