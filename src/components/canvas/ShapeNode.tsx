@@ -11,9 +11,11 @@ interface Props {
   onDragEnd: (id: string, x: number, y: number) => void;
   onDragMove?: (id: string, x: number, y: number, node: Konva.Node) => void;
   onTransformEnd: (id: string, attrs: Record<string, number>) => void;
+  onMouseEnter?: (id: string) => void;
+  onMouseLeave?: (id: string) => void;
 }
 
-export const ShapeNode: React.FC<Props> = ({ element, isSelected, disableInteraction, onSelect, onDragEnd, onDragMove, onTransformEnd }) => {
+export const ShapeNode: React.FC<Props> = ({ element, isSelected, disableInteraction, onSelect, onDragEnd, onDragMove, onTransformEnd, onMouseEnter, onMouseLeave }) => {
   const shapeRef = useRef<any>(null);
 
   // These shapes use center positioning, need to convert coordinates
@@ -32,6 +34,8 @@ export const ShapeNode: React.FC<Props> = ({ element, isSelected, disableInterac
     listening: !disableInteraction,
     onClick: (e: Konva.KonvaEventObject<MouseEvent>) => onSelect(element.id, e),
     onTap: (e: any) => onSelect(element.id, e),
+    onMouseEnter: () => onMouseEnter?.(element.id),
+    onMouseLeave: () => onMouseLeave?.(element.id),
     onDragMove: (e: Konva.KonvaEventObject<DragEvent>) => {
       // Convert center position to top-left for center-based shapes
       const x = isCenterBased ? e.target.x() - element.width / 2 : e.target.x();

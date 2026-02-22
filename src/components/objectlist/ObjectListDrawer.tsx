@@ -11,6 +11,7 @@ export const ObjectListDrawer: React.FC = () => {
   const selectedElementIds = useEditorStore((s) => s.selectedElementIds);
   const setSelectedElements = useEditorStore((s) => s.setSelectedElements);
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
+  const hoveredObjectId = useEditorStore((s) => s.hoveredObjectId);
   const setHoveredObjectId = useEditorStore((s) => s.setHoveredObjectId);
   const renameObject = usePresentationStore((s) => s.renameObject);
   const hideElement = usePresentationStore((s) => s.hideElement);
@@ -81,6 +82,7 @@ export const ObjectListDrawer: React.FC = () => {
               {sortedObjects.map((obj) => {
                 const isVisibleOnSlide = !!(slide?.elements[obj.id]?.visible);
                 const isSelected = selectedElementIds.includes(obj.id);
+                const isHovered = hoveredObjectId === obj.id;
                 return (
                   <ObjectListItem
                     key={obj.id}
@@ -88,6 +90,7 @@ export const ObjectListDrawer: React.FC = () => {
                     element={objectElements[obj.id]}
                     isVisibleOnSlide={isVisibleOnSlide}
                     isSelected={isSelected}
+                    isHovered={isHovered}
                     onSelect={() => {
                       if (isVisibleOnSlide) {
                         setSelectedElements([obj.id]);

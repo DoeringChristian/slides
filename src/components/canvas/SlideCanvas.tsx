@@ -48,6 +48,7 @@ export const SlideCanvas: React.FC = () => {
   const showGrid = useEditorStore((s) => s.showGrid);
   const gridSize = useEditorStore((s) => s.gridSize);
   const hoveredObjectId = useEditorStore((s) => s.hoveredObjectId);
+  const setHoveredObjectId = useEditorStore((s) => s.setHoveredObjectId);
   const snapToGrid = useEditorStore((s) => s.snapToGrid);
   const marginLayoutId = useEditorStore((s) => s.marginLayoutId);
   const updateElement = usePresentationStore((s) => s.updateElement);
@@ -311,6 +312,14 @@ export const SlideCanvas: React.FC = () => {
     updateElement(activeSlideId, soleSelectedLineElement.id, attrs);
   }, [activeSlideId, soleSelectedLineElement, updateElement]);
 
+  const handleMouseEnter = useCallback((id: string) => {
+    setHoveredObjectId(id);
+  }, [setHoveredObjectId]);
+
+  const handleMouseLeave = useCallback(() => {
+    setHoveredObjectId(null);
+  }, [setHoveredObjectId]);
+
   const handleBindingDrag = useCallback((point: { x: number; y: number }, endpoint: 'start' | 'end') => {
     if (!slide || !soleSelectedLineElement) return;
     const target = getBindingTarget(point, Object.values(slide.elements), soleSelectedLineElement.id, 30);
@@ -564,6 +573,8 @@ export const SlideCanvas: React.FC = () => {
               onDragMove={handleDragMove}
               onTransformEnd={handleTransformEnd}
               onDoubleClick={handleDoubleClick}
+              onMouseEnter={handleMouseEnter}
+              onMouseLeave={handleMouseLeave}
             />
           ))}
         </Layer>
@@ -611,7 +622,9 @@ export const SlideCanvas: React.FC = () => {
           {connectorHighlightId && slide && slide.elements[connectorHighlightId] && (
             <ConnectorHighlight element={slide.elements[connectorHighlightId]} />
           )}
-          {hoveredElement && <HoverOverlay element={hoveredElement} isVisibleOnSlide={isHoveredVisibleOnSlide} />}
+          {hoveredElement && !selectedElementIds.includes(hoveredElement.id) && (
+            <HoverOverlay element={hoveredElement} isVisibleOnSlide={isHoveredVisibleOnSlide} />
+          )}
           <DrawingPreview drawState={drawState} tool={tool} />
         </Layer>
       </Stage>

@@ -14,6 +14,8 @@ interface Props {
   onDragMove?: (id: string, x: number, y: number, node: Konva.Node) => void;
   onTransformEnd: (id: string, attrs: Record<string, number>) => void;
   onDoubleClick: (id: string) => void;
+  onMouseEnter?: (id: string) => void;
+  onMouseLeave?: (id: string) => void;
 }
 
 export const ElementRenderer: React.FC<Props> = (props) => {

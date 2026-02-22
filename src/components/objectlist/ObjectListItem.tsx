@@ -8,6 +8,7 @@ interface Props {
   element: SlideElement | undefined;
   isVisibleOnSlide: boolean;
   isSelected: boolean;
+  isHovered: boolean;
   onSelect: () => void;
   onRename: (name: string) => void;
   onToggleVisibility: () => void;
@@ -21,6 +22,7 @@ export const ObjectListItem: React.FC<Props> = ({
   element,
   isVisibleOnSlide,
   isSelected,
+  isHovered,
   onSelect,
   onRename,
   onToggleVisibility,
@@ -67,6 +69,8 @@ export const ObjectListItem: React.FC<Props> = ({
       className={`group flex flex-col rounded-md border cursor-pointer select-none overflow-hidden ${
         isSelected
           ? 'border-blue-500 bg-blue-50'
+          : isHovered
+          ? 'border-amber-500 bg-amber-50'
           : 'border-gray-200 hover:border-gray-300 bg-white'
       } ${!isVisibleOnSlide ? 'opacity-50' : ''}`}
       onClick={onSelect}

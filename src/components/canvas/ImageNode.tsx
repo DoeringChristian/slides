@@ -13,9 +13,11 @@ interface Props {
   onDragEnd: (id: string, x: number, y: number) => void;
   onDragMove?: (id: string, x: number, y: number, node: Konva.Node) => void;
   onTransformEnd: (id: string, attrs: Record<string, number>) => void;
+  onMouseEnter?: (id: string) => void;
+  onMouseLeave?: (id: string) => void;
 }
 
-export const ImageNode: React.FC<Props> = ({ element, isSelected, disableInteraction, onSelect, onDragEnd, onDragMove, onTransformEnd }) => {
+export const ImageNode: React.FC<Props> = ({ element, isSelected, disableInteraction, onSelect, onDragEnd, onDragMove, onTransformEnd, onMouseEnter, onMouseLeave }) => {
   const imgRef = useRef<Konva.Image>(null);
   const rectRef = useRef<Konva.Rect>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -129,6 +131,8 @@ export const ImageNode: React.FC<Props> = ({ element, isSelected, disableInterac
     listening: !disableInteraction,
     onClick: (e: Konva.KonvaEventObject<MouseEvent>) => onSelect(element.id, e),
     onTap: (e: any) => onSelect(element.id, e),
+    onMouseEnter: () => onMouseEnter?.(element.id),
+    onMouseLeave: () => onMouseLeave?.(element.id),
     onDragMove: (e: Konva.KonvaEventObject<DragEvent>) => {
       onDragMove?.(element.id, e.target.x(), e.target.y(), e.target);
     },
