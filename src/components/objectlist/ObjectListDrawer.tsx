@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useEffect } from 'react';
 import { ChevronDown, ChevronUp, Layers } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
@@ -15,6 +15,7 @@ export const ObjectListDrawer: React.FC = () => {
   const renameObject = usePresentationStore((s) => s.renameObject);
   const hideElement = usePresentationStore((s) => s.hideElement);
   const unhideElement = usePresentationStore((s) => s.unhideElement);
+  const removeObject = usePresentationStore((s) => s.removeObject);
 
   const objects = useAllObjects();
   const slide = useActiveSlide();
@@ -43,6 +44,17 @@ export const ObjectListDrawer: React.FC = () => {
       }
     },
     [activeSlideId, hideElement, unhideElement, selectedElementIds, setSelectedElements],
+  );
+
+  const handleDelete = useCallback(
+    (objectId: string) => {
+      // Deselect the element before removing
+      if (selectedElementIds.includes(objectId)) {
+        setSelectedElements(selectedElementIds.filter((id) => id !== objectId));
+      }
+      removeObject(objectId);
+    },
+    [removeObject, selectedElementIds, setSelectedElements],
   );
 
   return (
@@ -83,6 +95,7 @@ export const ObjectListDrawer: React.FC = () => {
                     }}
                     onRename={(name) => renameObject(obj.id, name)}
                     onToggleVisibility={() => handleToggleVisibility(obj.id, isVisibleOnSlide)}
+                    onDelete={() => handleDelete(obj.id)}
                     onHover={() => setHoveredObjectId(obj.id)}
                     onHoverEnd={() => setHoveredObjectId(null)}
                   />

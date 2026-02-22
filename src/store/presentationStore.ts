@@ -43,6 +43,16 @@ function getObjectSubtype(el: SlideElement): string {
   return el.type;
 }
 
+// Check if an object is visible in any slide
+function isObjectVisibleAnywhere(slides: Record<string, Slide>, objectId: string): boolean {
+  for (const slide of Object.values(slides)) {
+    if (slide.elements[objectId]?.visible) {
+      return true;
+    }
+  }
+  return false;
+}
+
 interface PresentationStore {
   presentation: Presentation;
 
@@ -78,6 +88,7 @@ interface PresentationStore {
   resetElementToKeyframe: (slideId: string, elementId: string) => void;
   resetElementToNextKeyframe: (slideId: string, elementId: string) => void;
   renameObject: (objectId: string, name: string) => void;
+  removeObject: (objectId: string) => void;
 
   // Template actions
   saveAsTemplate: (slideId: string, name: string) => string;
@@ -435,9 +446,11 @@ export const usePresentationStore = create<PresentationStore>()(
           // hideElement behavior: set visible: false on this slide + subsequent
           let slides = { ...state.presentation.slides };
           const { slideOrder } = state.presentation;
+          let objects = { ...state.presentation.objects };
+          let resources = { ...state.presentation.resources };
 
           for (const elementId of elementIds) {
-            if (!slide.elements[elementId]) continue;
+            if (!slides[slideId].elements[elementId]) continue;
             // Set visible: false on this slide
             const currentSlide = slides[slideId];
             slides[slideId] = {
@@ -449,12 +462,42 @@ export const usePresentationStore = create<PresentationStore>()(
             };
             // Propagate to subsequent slides
             slides = propagateToSubsequentSlides(slides, slideOrder, slideId, elementId, { visible: false });
+
+            // Check if object is now invisible in all slides - if so, remove it
+            if (!isObjectVisibleAnywhere(slides, elementId)) {
+              const { [elementId]: _removedObject, ...remainingObjects } = objects;
+              objects = remainingObjects;
+
+              // Remove from all slides
+              let resourceIdToRemove: string | null = null;
+              for (const [sid, s] of Object.entries(slides)) {
+                const element = s.elements[elementId];
+                if (element) {
+                  if (element.type === 'image' && 'resourceId' in element && element.resourceId) {
+                    resourceIdToRemove = element.resourceId;
+                  }
+                  const { [elementId]: _removed, ...remainingElements } = s.elements;
+                  slides[sid] = {
+                    ...s,
+                    elements: remainingElements,
+                    elementOrder: s.elementOrder.filter((id) => id !== elementId),
+                  };
+                }
+              }
+
+              if (resourceIdToRemove) {
+                const { [resourceIdToRemove]: _removedResource, ...remainingResources } = resources;
+                resources = remainingResources;
+              }
+            }
           }
 
           return {
             presentation: {
               ...state.presentation,
               slides,
+              objects,
+              resources,
               updatedAt: Date.now(),
             },
           };
@@ -586,6 +629,49 @@ export const usePresentationStore = create<PresentationStore>()(
               },
             },
           };
+
+          // Check if object is now invisible in all slides - if so, remove it
+          if (!isObjectVisibleAnywhere(slides, elementId)) {
+            // Remove object completely
+            const { [elementId]: removedObject, ...remainingObjects } = state.presentation.objects;
+
+            // Remove from all slides
+            const cleanedSlides: Record<string, Slide> = {};
+            let resourceIdToRemove: string | null = null;
+
+            for (const [sid, s] of Object.entries(slides)) {
+              const element = s.elements[elementId];
+              if (element) {
+                if (element.type === 'image' && 'resourceId' in element && element.resourceId) {
+                  resourceIdToRemove = element.resourceId;
+                }
+                const { [elementId]: _removed, ...remainingElements } = s.elements;
+                cleanedSlides[sid] = {
+                  ...s,
+                  elements: remainingElements,
+                  elementOrder: s.elementOrder.filter((id) => id !== elementId),
+                };
+              } else {
+                cleanedSlides[sid] = s;
+              }
+            }
+
+            let resources = state.presentation.resources;
+            if (resourceIdToRemove) {
+              const { [resourceIdToRemove]: _removedResource, ...remainingResources } = resources;
+              resources = remainingResources;
+            }
+
+            return {
+              presentation: {
+                ...state.presentation,
+                objects: remainingObjects,
+                slides: cleanedSlides,
+                resources,
+                updatedAt: Date.now(),
+              },
+            };
+          }
 
           return {
             presentation: { ...state.presentation, slides, updatedAt: Date.now() },
@@ -736,6 +822,54 @@ export const usePresentationStore = create<PresentationStore>()(
                 ...state.presentation.objects,
                 [objectId]: { ...state.presentation.objects[objectId], name },
               },
+              updatedAt: Date.now(),
+            },
+          };
+        });
+      },
+
+      removeObject: (objectId: string) => {
+        set((state) => {
+          // Remove from objects registry
+          const { [objectId]: removedObject, ...remainingObjects } = state.presentation.objects;
+          if (!removedObject) return state;
+
+          // Remove from all slides
+          const updatedSlides: Record<string, Slide> = {};
+          let resourceIdToRemove: string | null = null;
+
+          for (const [slideId, slide] of Object.entries(state.presentation.slides)) {
+            const element = slide.elements[objectId];
+            if (element) {
+              // Track resource ID if this is an image element
+              if (element.type === 'image' && 'resourceId' in element && element.resourceId) {
+                resourceIdToRemove = element.resourceId;
+              }
+              // Remove element from this slide
+              const { [objectId]: _removed, ...remainingElements } = slide.elements;
+              updatedSlides[slideId] = {
+                ...slide,
+                elements: remainingElements,
+                elementOrder: slide.elementOrder.filter((id) => id !== objectId),
+              };
+            } else {
+              updatedSlides[slideId] = slide;
+            }
+          }
+
+          // Remove associated resource if it's an image
+          let resources = state.presentation.resources;
+          if (resourceIdToRemove) {
+            const { [resourceIdToRemove]: _removedResource, ...remainingResources } = resources;
+            resources = remainingResources;
+          }
+
+          return {
+            presentation: {
+              ...state.presentation,
+              objects: remainingObjects,
+              slides: updatedSlides,
+              resources,
               updatedAt: Date.now(),
             },
           };

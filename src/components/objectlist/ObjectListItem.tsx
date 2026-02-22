@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, X } from 'lucide-react';
 import type { ObjectMeta, SlideElement } from '../../types/presentation';
 import { ObjectPreview } from './ObjectPreview';
 
@@ -11,6 +11,7 @@ interface Props {
   onSelect: () => void;
   onRename: (name: string) => void;
   onToggleVisibility: () => void;
+  onDelete: () => void;
   onHover: () => void;
   onHoverEnd: () => void;
 }
@@ -23,6 +24,7 @@ export const ObjectListItem: React.FC<Props> = ({
   onSelect,
   onRename,
   onToggleVisibility,
+  onDelete,
   onHover,
   onHoverEnd,
 }) => {
@@ -55,6 +57,11 @@ export const ObjectListItem: React.FC<Props> = ({
     onToggleVisibility();
   }, [onToggleVisibility]);
 
+  const handleDeleteClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    onDelete();
+  }, [onDelete]);
+
   return (
     <div
       className={`group flex flex-col rounded-md border cursor-pointer select-none overflow-hidden ${
@@ -71,6 +78,14 @@ export const ObjectListItem: React.FC<Props> = ({
       {/* Preview area */}
       <div className="relative aspect-square overflow-hidden">
         <ObjectPreview element={element} objectType={object.type} />
+        {/* Delete button overlay */}
+        <button
+          onClick={handleDeleteClick}
+          className="absolute top-1 left-1 p-0.5 rounded bg-white/80 hover:bg-red-100 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
+          title="Delete object"
+        >
+          <X size={12} className="text-gray-500 hover:text-red-600" />
+        </button>
         {/* Visibility toggle overlay */}
         <button
           onClick={handleVisibilityClick}

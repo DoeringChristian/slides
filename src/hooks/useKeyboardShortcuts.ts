@@ -38,12 +38,12 @@ export function useKeyboardShortcuts() {
       const activeSlideId = editor.getState().activeSlideId;
       const selectedIds = editor.getState().selectedElementIds;
 
-      // Delete — hide elements, or delete slide if nothing selected
+      // Delete — remove elements completely, or delete slide if nothing selected
       if ((e.key === 'Delete' || e.key === 'Backspace') && !isInput) {
         if (selectedIds.length > 0) {
           e.preventDefault();
           for (const id of selectedIds) {
-            store.getState().hideElement(activeSlideId, id);
+            store.getState().removeObject(id);
           }
           editor.getState().setSelectedElements([]);
           return;
