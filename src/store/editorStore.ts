@@ -19,6 +19,7 @@ interface EditorStore extends EditorState {
   showMarginGuides: boolean;
   isPresenterMode: boolean;
   presenterStartTime: number;
+  textEditClickPosition: { x: number; y: number } | null;
   setObjectDrawerOpen: (open: boolean) => void;
   setHoveredObjectId: (id: string | null) => void;
   setActiveSlide: (slideId: string) => void;
@@ -34,7 +35,7 @@ interface EditorStore extends EditorState {
   setSnapToGrid: (snap: boolean) => void;
   setGridSize: (size: number) => void;
   setClipboard: (elements: SlideElement[]) => void;
-  setEditingTextId: (id: string | null) => void;
+  setEditingTextId: (id: string | null, clickPosition?: { x: number; y: number }) => void;
   setIsPanning: (panning: boolean) => void;
   setCroppingElementId: (id: string | null) => void;
   setMarginLayoutId: (id: string | null) => void;
@@ -63,6 +64,7 @@ export const useEditorStore = create<EditorStore>()((set) => ({
   showMarginGuides: true,
   isPresenterMode: false,
   presenterStartTime: 0,
+  textEditClickPosition: null,
 
   setObjectDrawerOpen: (open) => set({ objectDrawerOpen: open }),
   setHoveredObjectId: (id) => set({ hoveredObjectId: id }),
@@ -89,7 +91,7 @@ export const useEditorStore = create<EditorStore>()((set) => ({
   setSnapToGrid: (snap) => set({ snapToGrid: snap }),
   setGridSize: (size) => set({ gridSize: size }),
   setClipboard: (elements) => set({ clipboard: elements }),
-  setEditingTextId: (id) => set({ editingTextId: id }),
+  setEditingTextId: (id, clickPosition) => set({ editingTextId: id, textEditClickPosition: clickPosition ?? null }),
   setIsPanning: (panning) => set({ isPanning: panning }),
   setCroppingElementId: (id) => set({ croppingElementId: id }),
   setMarginLayoutId: (id) => set({ marginLayoutId: id }),

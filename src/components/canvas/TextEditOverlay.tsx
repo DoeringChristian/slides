@@ -12,12 +12,84 @@ interface Props {
   onGuides?: (guides: Guide[]) => void;
 }
 
+/**
+ * Calculate the cursor position (character index) from a click position within a text element.
+ */
+function calculateCursorPosition(element: TextElement, clickPos: { x: number; y: number }): number {
+  const { text, width, style } = element;
+  const { fontSize, fontFamily, fontWeight, lineHeight, align, verticalAlign } = style;
+  const padding = 4;
+
+  if (!text) return 0;
+
+  // Create a canvas to measure text
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return 0;
+
+  ctx.font = `${fontWeight === 'bold' ? 'bold ' : ''}${fontSize}px ${fontFamily}`;
+
+  const lines = text.split('\n');
+  const lineHeightPx = fontSize * (lineHeight || 1.2);
+  const totalTextHeight = lines.length * lineHeightPx;
+  const contentWidth = width - padding * 2;
+  const contentHeight = element.height - padding * 2;
+
+  // Calculate vertical offset based on verticalAlign
+  let textStartY = padding;
+  if (verticalAlign === 'middle') {
+    textStartY = padding + (contentHeight - totalTextHeight) / 2;
+  } else if (verticalAlign === 'bottom') {
+    textStartY = padding + contentHeight - totalTextHeight;
+  }
+
+  // Find which line was clicked
+  const clickY = clickPos.y - textStartY;
+  let lineIndex = Math.floor(clickY / lineHeightPx);
+  lineIndex = Math.max(0, Math.min(lines.length - 1, lineIndex));
+
+  // Calculate horizontal offset for this line based on align
+  const line = lines[lineIndex];
+  const lineWidth = ctx.measureText(line).width;
+
+  let lineStartX = padding;
+  if (align === 'center') {
+    lineStartX = padding + (contentWidth - lineWidth) / 2;
+  } else if (align === 'right') {
+    lineStartX = padding + contentWidth - lineWidth;
+  }
+
+  // Find which character was clicked
+  const clickX = clickPos.x - lineStartX;
+  let charIndex = 0;
+  let accumulatedWidth = 0;
+
+  for (let i = 0; i < line.length; i++) {
+    const charWidth = ctx.measureText(line[i]).width;
+    if (accumulatedWidth + charWidth / 2 > clickX) {
+      break;
+    }
+    accumulatedWidth += charWidth;
+    charIndex++;
+  }
+
+  // Convert to absolute position in the full text
+  let absolutePos = 0;
+  for (let i = 0; i < lineIndex; i++) {
+    absolutePos += lines[i].length + 1; // +1 for newline
+  }
+  absolutePos += charIndex;
+
+  return Math.min(absolutePos, text.length);
+}
+
 export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom, onGuides }) => {
   const editingTextId = useEditorStore((s) => s.editingTextId);
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const setEditingTextId = useEditorStore((s) => s.setEditingTextId);
   const snapToGrid = useEditorStore((s) => s.snapToGrid);
   const marginLayoutId = useEditorStore((s) => s.marginLayoutId);
+  const textEditClickPosition = useEditorStore((s) => s.textEditClickPosition);
   const updateElement = usePresentationStore((s) => s.updateElement);
   const slide = usePresentationStore((s) => s.presentation.slides[activeSlideId]);
 
@@ -51,9 +123,17 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom, onGuides }) =
     if (element && textareaRef.current) {
       textareaRef.current.value = element.text;
       textareaRef.current.focus();
-      textareaRef.current.select();
+
+      // If we have a click position, calculate cursor position; otherwise select all (e.g., for new text)
+      if (textEditClickPosition && element.text) {
+        const cursorPos = calculateCursorPosition(element, textEditClickPosition);
+        textareaRef.current.selectionStart = cursorPos;
+        textareaRef.current.selectionEnd = cursorPos;
+      } else {
+        textareaRef.current.select();
+      }
     }
-  }, [element]);
+  }, [element, textEditClickPosition]);
 
   useEffect(() => {
     if (!isDragging) return;

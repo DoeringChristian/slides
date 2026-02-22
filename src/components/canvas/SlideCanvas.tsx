@@ -180,7 +180,7 @@ export const SlideCanvas: React.FC = () => {
 
             // Only enter edit mode if click is on actual text content
             if (isPointOnTextContent(clickedElement as TextElement, { x: localX, y: localY })) {
-              setEditingTextId(id);
+              setEditingTextId(id, { x: localX, y: localY });
             }
           }
         }
