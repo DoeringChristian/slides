@@ -82,6 +82,7 @@ export interface PropertyTransitions {
   lineHeight?: EasingType;
   crop?: EasingType;          // cropX, cropY, cropWidth, cropHeight
   resource?: EasingType;      // resourceId (supports crossfade)
+  visibility?: EasingType;    // fade-in/fade-out animation
 }
 
 export type SlideElement = TextElement | ShapeElement | ImageElement | GroupElement;

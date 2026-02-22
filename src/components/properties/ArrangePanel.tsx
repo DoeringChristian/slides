@@ -2,7 +2,7 @@ import React from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { usePrevKeyframeElement, useNextKeyframeElement } from '../../store/selectors';
-import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, ChevronsUp, ChevronsDown, Lock, Unlock } from 'lucide-react';
+import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, ChevronsUp, ChevronsDown, Lock, Unlock, Eye, EyeOff } from 'lucide-react';
 import { TransitionButton } from './TransitionButton';
 import type { SlideElement } from '../../types/presentation';
 
@@ -146,13 +146,29 @@ export const ArrangePanel: React.FC<Props> = ({ element }) => {
         </button>
       </div>
 
-      <button
-        onClick={() => update({ locked: !element.locked })}
-        className="flex items-center gap-2 text-xs text-gray-600 hover:text-gray-800"
-      >
-        {element.locked ? <Lock size={12} /> : <Unlock size={12} />}
-        {element.locked ? 'Locked' : 'Unlocked'}
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => update({ locked: !element.locked })}
+          className="flex items-center gap-2 text-xs text-gray-600 hover:text-gray-800"
+        >
+          {element.locked ? <Lock size={12} /> : <Unlock size={12} />}
+          {element.locked ? 'Locked' : 'Unlocked'}
+        </button>
+      </div>
+
+      <div className="flex items-center">
+        <button
+          onClick={() => update({ visible: !element.visible })}
+          className={`flex items-center gap-2 text-xs ${element.visible ? 'text-gray-600 hover:text-gray-800' : 'text-orange-500 hover:text-orange-600'}`}
+        >
+          {element.visible ? <Eye size={12} /> : <EyeOff size={12} />}
+          {element.visible ? 'Visible' : 'Hidden'}
+        </button>
+        <div className="flex items-center gap-0.5 ml-auto">
+          <TransitionButton elementId={element.id} group="visibility" direction="in" />
+          <TransitionButton elementId={element.id} group="visibility" direction="out" />
+        </div>
+      </div>
     </div>
   );
 };

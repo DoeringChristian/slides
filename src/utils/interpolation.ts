@@ -183,6 +183,8 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number):
 }
 
 // Build an interpolated element for visibility transitions
+// Fade-out happens in the first half (t: 0 -> 0.5)
+// Fade-in happens in the second half (t: 0.5 -> 1)
 export function interpolateWithVisibility(
   elA: SlideElement | undefined,
   elB: SlideElement | undefined,
@@ -198,11 +200,21 @@ export function interpolateWithVisibility(
   }
 
   if (aVisible && !bVisible) {
-    // Fade out: tween opacity to 0
-    return { ...elA, opacity: lerp(elA.opacity, 0, t), visible: true } as SlideElement;
+    // Fade out: completes at t=0.5, stays invisible after
+    if (t >= 0.5) return null;
+    // Map t from [0, 0.5] to [0, 1] for the fade-out
+    const fadeOutT = t * 2;
+    const easing = elA.transitions?.visibility;
+    const easedT = applyEasing(fadeOutT, easing);
+    return { ...elA, opacity: lerp(elA.opacity, 0, easedT), visible: true } as SlideElement;
   }
 
-  // !aVisible && bVisible: fade in
+  // !aVisible && bVisible: fade in starts at t=0.5
+  if (t < 0.5) return null;
+  // Map t from [0.5, 1] to [0, 1] for the fade-in
+  const fadeInT = (t - 0.5) * 2;
   const target = elB!;
-  return { ...target, opacity: lerp(0, target.opacity, t), visible: true } as SlideElement;
+  const easing = target.transitions?.visibility;
+  const easedT = applyEasing(fadeInT, easing);
+  return { ...target, opacity: lerp(0, target.opacity, easedT), visible: true } as SlideElement;
 }

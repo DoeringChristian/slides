@@ -28,7 +28,7 @@ const EASING_LABELS: Record<EasingType, string> = {
 };
 
 // Map property groups to the actual element fields to compare
-function getPropertyValues(element: SlideElement, group: keyof PropertyTransitions): (number | string | null | undefined)[] {
+function getPropertyValues(element: SlideElement, group: keyof PropertyTransitions): (number | string | boolean | null | undefined)[] {
   switch (group) {
     case 'position': return [element.x, element.y];
     case 'size': return [element.width, element.height];
@@ -48,6 +48,7 @@ function getPropertyValues(element: SlideElement, group: keyof PropertyTransitio
       (element as ImageElement).cropHeight,
     ] : [];
     case 'resource': return element.type === 'image' ? [(element as ImageElement).resourceId] : [];
+    case 'visibility': return [element.visible];
     default: return [];
   }
 }
@@ -152,8 +153,7 @@ export const TransitionButton: React.FC<Props> = ({
       {isOpen && (
         <div
           ref={menuRef}
-          className="absolute z-[9999] top-full mt-1 bg-white border border-gray-200 rounded shadow-lg py-1 min-w-[140px]"
-          style={{ [direction === 'in' ? 'right' : 'left']: 0 }}
+          className="absolute z-[9999] top-full mt-1 right-0 bg-white border border-gray-200 rounded shadow-lg py-1 min-w-[140px]"
         >
           {availableTypes.map((type) => (
             <button
