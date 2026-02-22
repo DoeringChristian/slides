@@ -8,13 +8,14 @@ import type Konva from 'konva';
 interface Props {
   element: ImageElement;
   isSelected: boolean;
+  disableInteraction?: boolean;
   onSelect: (id: string, e: Konva.KonvaEventObject<MouseEvent>) => void;
   onDragEnd: (id: string, x: number, y: number) => void;
   onDragMove?: (id: string, x: number, y: number, node: Konva.Node) => void;
   onTransformEnd: (id: string, attrs: Record<string, number>) => void;
 }
 
-export const ImageNode: React.FC<Props> = ({ element, isSelected, onSelect, onDragEnd, onDragMove, onTransformEnd }) => {
+export const ImageNode: React.FC<Props> = ({ element, isSelected, disableInteraction, onSelect, onDragEnd, onDragMove, onTransformEnd }) => {
   const imgRef = useRef<Konva.Image>(null);
   const rectRef = useRef<Konva.Rect>(null);
   const resource = usePresentationStore((s) =>
@@ -30,7 +31,8 @@ export const ImageNode: React.FC<Props> = ({ element, isSelected, onSelect, onDr
     height: element.height,
     rotation: element.rotation,
     opacity: element.opacity,
-    draggable: !element.locked,
+    draggable: !element.locked && !disableInteraction,
+    listening: !disableInteraction,
     onClick: (e: Konva.KonvaEventObject<MouseEvent>) => onSelect(element.id, e),
     onTap: (e: any) => onSelect(element.id, e),
     onDragMove: (e: Konva.KonvaEventObject<DragEvent>) => {

@@ -395,6 +395,7 @@ export const SlideCanvas: React.FC = () => {
               key={el.id}
               element={el}
               isSelected={selectedElementIds.includes(el.id)}
+              disableInteraction={tool !== 'select'}
               onSelect={handleSelect}
               onDragEnd={handleDragEndWithGuides}
               onDragMove={handleDragMove}

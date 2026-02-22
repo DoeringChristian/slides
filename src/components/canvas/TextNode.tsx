@@ -6,6 +6,7 @@ import type Konva from 'konva';
 interface Props {
   element: TextElement;
   isSelected: boolean;
+  disableInteraction?: boolean;
   onSelect: (id: string, e: Konva.KonvaEventObject<MouseEvent>) => void;
   onDragEnd: (id: string, x: number, y: number) => void;
   onDragMove?: (id: string, x: number, y: number, node: Konva.Node) => void;
@@ -13,7 +14,7 @@ interface Props {
   onDoubleClick: (id: string) => void;
 }
 
-export const TextNode: React.FC<Props> = ({ element, isSelected, onSelect, onDragEnd, onDragMove, onTransformEnd, onDoubleClick }) => {
+export const TextNode: React.FC<Props> = ({ element, isSelected, disableInteraction, onSelect, onDragEnd, onDragMove, onTransformEnd, onDoubleClick }) => {
   const textRef = useRef<Konva.Text>(null);
 
   useEffect(() => {
@@ -43,7 +44,8 @@ export const TextNode: React.FC<Props> = ({ element, isSelected, onSelect, onDra
       align={element.style.align}
       verticalAlign={element.style.verticalAlign}
       lineHeight={element.style.lineHeight}
-      draggable={!element.locked}
+      draggable={!element.locked && !disableInteraction}
+      listening={!disableInteraction}
       onClick={(e) => onSelect(element.id, e)}
       onTap={(e) => onSelect(element.id, e as any)}
       onDblClick={() => onDoubleClick(element.id)}

@@ -8,6 +8,7 @@ import type Konva from 'konva';
 interface Props {
   element: SlideElement;
   isSelected: boolean;
+  disableInteraction?: boolean;
   onSelect: (id: string, e: Konva.KonvaEventObject<MouseEvent>) => void;
   onDragEnd: (id: string, x: number, y: number) => void;
   onDragMove?: (id: string, x: number, y: number, node: Konva.Node) => void;
