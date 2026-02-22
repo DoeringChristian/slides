@@ -135,12 +135,14 @@ export function useDrawing() {
       return;
     }
 
+    // Set tool to select first (this clears selection/editingTextId, so we set those after)
+    setTool('select');
+
     if (tool === 'text') {
       const el = createTextElement({ x, y, width: Math.max(width, 100), height: Math.max(height, 40) });
       addElement(activeSlideId, el);
       setSelectedElements([el.id]);
-      // Automatically enter edit mode for new text elements (defer to ensure element is in store)
-      setTimeout(() => setEditingTextId(el.id), 0);
+      setEditingTextId(el.id);
     } else if (tool === 'line' || tool === 'arrow') {
       const el = createShapeElement(tool, {
         x: drawState.snappedStartX,
@@ -156,8 +158,6 @@ export function useDrawing() {
       addElement(activeSlideId, el);
       setSelectedElements([el.id]);
     }
-
-    setTool('select');
     setDrawState({
       startX: 0, startY: 0, currentX: 0, currentY: 0, isDrawing: false,
       snappedStartX: 0, snappedStartY: 0, snappedCurrentX: 0, snappedCurrentY: 0,

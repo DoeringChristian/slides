@@ -47,9 +47,9 @@ export const ProjectCard: React.FC<Props> = ({ project, onOpen, onDuplicate, onD
   };
 
   return (
-    <button
+    <div
       onClick={onOpen}
-      className="group relative flex flex-col border rounded-lg overflow-hidden hover:border-blue-400 hover:shadow-md transition-all text-left bg-white"
+      className="group relative flex flex-col border rounded-lg overflow-hidden hover:border-blue-400 hover:shadow-md transition-all text-left bg-white cursor-pointer"
     >
       {/* Thumbnail */}
       <div className="aspect-video bg-gray-100 relative overflow-hidden">
@@ -111,7 +111,7 @@ export const ProjectCard: React.FC<Props> = ({ project, onOpen, onDuplicate, onD
           {formatRelativeTime(project.updatedAt)}
         </div>
       </div>
-    </button>
+    </div>
   );
 };
 

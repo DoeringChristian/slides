@@ -26,6 +26,7 @@ interface Props {
   zoom?: number;
   onGuides?: (guides: Guide[]) => void;
   keepRatio?: boolean;
+  elementCount?: number; // Used to trigger re-attachment when elements are added
 }
 
 const COLOR_DEFAULT = '#4285f4';
@@ -75,7 +76,7 @@ function getRotateIcon(color: string): HTMLCanvasElement {
   return rotateIconCache[color];
 }
 
-export const SelectionTransformer: React.FC<Props> = ({ selectedIds, stageRef, locked = false, otherElementBounds, snappingEnabled, zoom, onGuides, keepRatio = false }) => {
+export const SelectionTransformer: React.FC<Props> = ({ selectedIds, stageRef, locked = false, otherElementBounds, snappingEnabled, zoom, onGuides, keepRatio = false, elementCount }) => {
   const trRef = useRef<Konva.Transformer>(null);
   const [iconReady, setIconReady] = useState(false);
   const lastGuidesRef = useRef<Guide[]>([]);
@@ -108,16 +109,31 @@ export const SelectionTransformer: React.FC<Props> = ({ selectedIds, stageRef, l
     if (!trRef.current || !stageRef.current) return;
 
     const stage = stageRef.current;
-    const nodes: Konva.Node[] = [];
 
-    for (const id of selectedIds) {
-      const node = stage.findOne('#' + id);
-      if (node) nodes.push(node);
-    }
+    // Use requestAnimationFrame to ensure Konva nodes are rendered before attaching
+    const attachNodes = () => {
+      if (!trRef.current) return;
 
-    trRef.current.nodes(nodes);
-    trRef.current.getLayer()?.batchDraw();
-  }, [selectedIds, stageRef]);
+      const nodes: Konva.Node[] = [];
+      for (const id of selectedIds) {
+        const node = stage.findOne('#' + id);
+        if (node) nodes.push(node);
+      }
+
+      trRef.current.nodes(nodes);
+      trRef.current.getLayer()?.batchDraw();
+    };
+
+    // Run immediately and also after frames to catch newly created elements
+    attachNodes();
+    const rafId1 = requestAnimationFrame(() => {
+      attachNodes();
+      // Second RAF to ensure Konva has fully rendered
+      requestAnimationFrame(attachNodes);
+    });
+
+    return () => cancelAnimationFrame(rafId1);
+  }, [selectedIds, stageRef, elementCount]);
 
   if (selectedIds.length === 0) return null;
 

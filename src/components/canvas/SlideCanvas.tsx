@@ -117,13 +117,18 @@ export const SlideCanvas: React.FC = () => {
     });
   }, [selectedElementIds, slide]);
 
-  // Track if we just completed a selection drag to prevent click from clearing selection
+  // Track if we just completed a selection drag or drawing to prevent click from clearing selection
   const justFinishedSelectionDrag = useRef(false);
+  const lastDrawingFinishedAt = useRef(0);
 
   const handleStageClick = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
     // Don't clear selection if we just finished a drag selection
     if (justFinishedSelectionDrag.current) {
       justFinishedSelectionDrag.current = false;
+      return;
+    }
+    // Don't clear selection if we just finished drawing (within 100ms)
+    if (Date.now() - lastDrawingFinishedAt.current < 100) {
       return;
     }
     if (e.target === e.target.getStage()) {
@@ -133,8 +138,20 @@ export const SlideCanvas: React.FC = () => {
   }, [setSelectedElements, setEditingTextId]);
 
   const handleSelect = useCallback((id: string, e: Konva.KonvaEventObject<MouseEvent>) => {
-    if (editingTextId) return;
     const metaPressed = e.evt.shiftKey || e.evt.ctrlKey || e.evt.metaKey;
+
+    // Check if clicking on a text element
+    const clickedElement = slide?.elements[id];
+    const isTextElement = clickedElement?.type === 'text';
+
+    // If already editing this text element, let the textarea handle clicks
+    if (editingTextId === id) return;
+
+    // If clicking on a different element while editing, exit edit mode first
+    if (editingTextId && editingTextId !== id) {
+      setEditingTextId(null);
+    }
+
     if (metaPressed) {
       const ids = selectedElementIds.includes(id)
         ? selectedElementIds.filter((sid) => sid !== id)
@@ -142,8 +159,12 @@ export const SlideCanvas: React.FC = () => {
       setSelectedElements(ids);
     } else {
       setSelectedElements([id]);
+      // Auto-enter edit mode for text elements on single click
+      if (isTextElement) {
+        setEditingTextId(id);
+      }
     }
-  }, [selectedElementIds, setSelectedElements, editingTextId]);
+  }, [selectedElementIds, setSelectedElements, editingTextId, setEditingTextId, slide]);
 
   const handleTransformEnd = useCallback((id: string, attrs: Record<string, number>) => {
     if (activeSlideId) {
@@ -442,6 +463,7 @@ export const SlideCanvas: React.FC = () => {
   const handleMouseUp = useCallback(() => {
     if (tool !== 'select') {
       handleDrawMouseUp();
+      lastDrawingFinishedAt.current = Date.now();
       return;
     }
     if (!selectionDrag?.isSelecting) return;
@@ -536,15 +558,16 @@ export const SlideCanvas: React.FC = () => {
           )}
           <AlignmentGuides guides={guides} />
           <SelectionTransformer
-            selectedIds={editingTextId ? [] : unlockedTransformerIds}
+            selectedIds={unlockedTransformerIds}
             stageRef={stageRef}
             otherElementBounds={otherElementBounds}
             snappingEnabled={snapToGrid}
             zoom={zoom}
             onGuides={setDragGuides}
             keepRatio={shouldKeepRatio}
+            elementCount={elements.length}
           />
-          <SelectionTransformer selectedIds={editingTextId ? [] : lockedTransformerIds} stageRef={stageRef} locked />
+          <SelectionTransformer selectedIds={lockedTransformerIds} stageRef={stageRef} locked elementCount={elements.length} />
           {soleSelectedLineElement && !editingTextId && (
             <LineEndpointHandles
               element={soleSelectedLineElement}
