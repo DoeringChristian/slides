@@ -152,8 +152,8 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number):
     const resourceChanges = ia.resourceId !== ib.resourceId;
     const useFirst = t < 0.5;
 
-    // Determine resource transition behavior (default to const when resource changes)
-    const resourceEasing = tr.resource ?? 'const';
+    // Determine resource transition behavior (default to crossfade when resource changes)
+    const resourceEasing = tr.resource ?? 'crossfade';
     const useCrossfade = resourceChanges && resourceEasing === 'crossfade';
 
     // For crop: if resource changes, snap values; otherwise interpolate with easing
