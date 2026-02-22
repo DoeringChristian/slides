@@ -3,6 +3,7 @@ import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { usePrevKeyframeElement, useNextKeyframeElement } from '../../store/selectors';
 import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, ChevronsUp, ChevronsDown, Lock, Unlock } from 'lucide-react';
+import { TransitionButton } from './TransitionButton';
 import type { SlideElement } from '../../types/presentation';
 
 interface Props {
@@ -73,6 +74,10 @@ export const ArrangePanel: React.FC<Props> = ({ element }) => {
       <div>
         <div className="flex items-center mb-1">
           <span className="text-xs text-gray-500">Position</span>
+          <div className="flex items-center gap-0.5 ml-auto">
+            <TransitionButton elementId={element.id} group="position" direction="in" />
+            <TransitionButton elementId={element.id} group="position" direction="out" />
+          </div>
           <KeyframeButtons element={element} prev={prev} next={next} fields={['x', 'y']} update={update} />
         </div>
         <div className="grid grid-cols-2 gap-2">
@@ -92,6 +97,10 @@ export const ArrangePanel: React.FC<Props> = ({ element }) => {
       <div>
         <div className="flex items-center mb-1">
           <span className="text-xs text-gray-500">Size</span>
+          <div className="flex items-center gap-0.5 ml-auto">
+            <TransitionButton elementId={element.id} group="size" direction="in" />
+            <TransitionButton elementId={element.id} group="size" direction="out" />
+          </div>
           <KeyframeButtons element={element} prev={prev} next={next} fields={['width', 'height']} update={update} />
         </div>
         <div className="grid grid-cols-2 gap-2">
@@ -111,6 +120,10 @@ export const ArrangePanel: React.FC<Props> = ({ element }) => {
       <div>
         <div className="flex items-center mb-1">
           <span className="text-xs text-gray-500">Rotation</span>
+          <div className="flex items-center gap-0.5 ml-auto">
+            <TransitionButton elementId={element.id} group="rotation" direction="in" />
+            <TransitionButton elementId={element.id} group="rotation" direction="out" />
+          </div>
           <KeyframeButtons element={element} prev={prev} next={next} fields={['rotation']} update={update} />
         </div>
         <input type="number" value={Math.round(element.rotation)} onChange={(e) => update({ rotation: Number(e.target.value) })}

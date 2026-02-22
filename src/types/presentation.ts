@@ -64,6 +64,26 @@ export interface SlideTransition {
   duration: number;
 }
 
+// Animation easing types for property transitions
+export type EasingType = 'const' | 'linear' | 'ease' | 'crossfade';
+
+// Per-property-group transition settings
+export interface PropertyTransitions {
+  position?: EasingType;      // x, y
+  size?: EasingType;          // width, height
+  rotation?: EasingType;
+  opacity?: EasingType;
+  fill?: EasingType;
+  stroke?: EasingType;
+  strokeWidth?: EasingType;
+  cornerRadius?: EasingType;
+  fontSize?: EasingType;
+  color?: EasingType;         // text color
+  lineHeight?: EasingType;
+  crop?: EasingType;          // cropX, cropY, cropWidth, cropHeight
+  resource?: EasingType;      // resourceId (supports crossfade)
+}
+
 export type SlideElement = TextElement | ShapeElement | ImageElement | GroupElement;
 
 export interface BaseElement {
@@ -76,6 +96,7 @@ export interface BaseElement {
   opacity: number;
   locked: boolean;
   visible: boolean;
+  transitions?: PropertyTransitions;  // How to animate FROM previous slide TO this one
 }
 
 export interface TextStyle {

@@ -2,6 +2,7 @@ import React from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { ColorPicker } from '../toolbar/ColorPicker';
+import { TransitionButton } from './TransitionButton';
 import type { ShapeElement } from '../../types/presentation';
 
 interface Props {
@@ -19,15 +20,33 @@ export const ShapeProperties: React.FC<Props> = ({ element }) => {
   return (
     <div className="space-y-3">
       <div>
-        <label className="text-xs text-gray-500 block mb-1">Fill</label>
+        <div className="flex items-center mb-1">
+          <label className="text-xs text-gray-500">Fill</label>
+          <div className="flex items-center gap-0.5 ml-auto">
+            <TransitionButton elementId={element.id} group="fill" direction="in" />
+            <TransitionButton elementId={element.id} group="fill" direction="out" />
+          </div>
+        </div>
         <ColorPicker color={element.fill} onChange={(fill) => update({ fill })} />
       </div>
       <div>
-        <label className="text-xs text-gray-500 block mb-1">Stroke</label>
+        <div className="flex items-center mb-1">
+          <label className="text-xs text-gray-500">Stroke</label>
+          <div className="flex items-center gap-0.5 ml-auto">
+            <TransitionButton elementId={element.id} group="stroke" direction="in" />
+            <TransitionButton elementId={element.id} group="stroke" direction="out" />
+          </div>
+        </div>
         <ColorPicker color={element.stroke} onChange={(stroke) => update({ stroke })} />
       </div>
       <div>
-        <label className="text-xs text-gray-500 block mb-1">Stroke Width</label>
+        <div className="flex items-center mb-1">
+          <label className="text-xs text-gray-500">Stroke Width</label>
+          <div className="flex items-center gap-0.5 ml-auto">
+            <TransitionButton elementId={element.id} group="strokeWidth" direction="in" />
+            <TransitionButton elementId={element.id} group="strokeWidth" direction="out" />
+          </div>
+        </div>
         <input
           type="number"
           value={element.strokeWidth}
@@ -38,7 +57,13 @@ export const ShapeProperties: React.FC<Props> = ({ element }) => {
       </div>
       {element.shapeType === 'rect' && (
         <div>
-          <label className="text-xs text-gray-500 block mb-1">Corner Radius</label>
+          <div className="flex items-center mb-1">
+            <label className="text-xs text-gray-500">Corner Radius</label>
+            <div className="flex items-center gap-0.5 ml-auto">
+              <TransitionButton elementId={element.id} group="cornerRadius" direction="in" />
+              <TransitionButton elementId={element.id} group="cornerRadius" direction="out" />
+            </div>
+          </div>
           <input
             type="number"
             value={element.cornerRadius}
@@ -49,7 +74,13 @@ export const ShapeProperties: React.FC<Props> = ({ element }) => {
         </div>
       )}
       <div>
-        <label className="text-xs text-gray-500 block mb-1">Opacity</label>
+        <div className="flex items-center mb-1">
+          <label className="text-xs text-gray-500">Opacity</label>
+          <div className="flex items-center gap-0.5 ml-auto">
+            <TransitionButton elementId={element.id} group="opacity" direction="in" />
+            <TransitionButton elementId={element.id} group="opacity" direction="out" />
+          </div>
+        </div>
         <input
           type="range"
           value={element.opacity * 100}

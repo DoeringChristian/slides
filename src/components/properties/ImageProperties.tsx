@@ -3,6 +3,7 @@ import { Play, Pause, Repeat, VolumeX, Volume2 } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { ResourcePicker } from './ResourcePicker';
+import { TransitionButton } from './TransitionButton';
 import { computeResourceUpdate } from '../../utils/imageUtils';
 import type { ImageElement } from '../../types/presentation';
 
@@ -40,7 +41,13 @@ export const ImageProperties: React.FC<Props> = ({ element }) => {
   return (
     <div className="space-y-3">
       <div>
-        <label className="text-xs text-gray-500 block mb-1">Opacity</label>
+        <div className="flex items-center mb-1">
+          <label className="text-xs text-gray-500">Opacity</label>
+          <div className="flex items-center gap-0.5 ml-auto">
+            <TransitionButton elementId={element.id} group="opacity" direction="in" />
+            <TransitionButton elementId={element.id} group="opacity" direction="out" />
+          </div>
+        </div>
         <input
           type="range"
           value={element.opacity * 100}
@@ -50,14 +57,23 @@ export const ImageProperties: React.FC<Props> = ({ element }) => {
         />
       </div>
 
-      {resource && (
-        <div className="text-xs text-gray-400">
-          {isVideo ? 'Video' : 'Original'}: {resource.originalWidth} x {resource.originalHeight}
-          {isVideo && resource.duration && (
-            <span className="ml-2">({Math.round(resource.duration)}s)</span>
-          )}
+      <div>
+        <div className="flex items-center mb-1">
+          <label className="text-xs text-gray-500">Resource</label>
+          <div className="flex items-center gap-0.5 ml-auto">
+            <TransitionButton elementId={element.id} group="resource" direction="in" availableTypes={['const', 'crossfade']} />
+            <TransitionButton elementId={element.id} group="resource" direction="out" availableTypes={['const', 'crossfade']} />
+          </div>
         </div>
-      )}
+        {resource && (
+          <div className="text-xs text-gray-400">
+            {isVideo ? 'Video' : 'Original'}: {resource.originalWidth} x {resource.originalHeight}
+            {isVideo && resource.duration && (
+              <span className="ml-2">({Math.round(resource.duration)}s)</span>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Video controls */}
       {isVideo && (

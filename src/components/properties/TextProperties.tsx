@@ -2,6 +2,7 @@ import React from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { ColorPicker } from '../toolbar/ColorPicker';
+import { TransitionButton } from './TransitionButton';
 import { FONT_FAMILIES, FONT_SIZES } from '../../utils/constants';
 import type { TextElement, TextStyle } from '../../types/presentation';
 
@@ -33,7 +34,13 @@ export const TextProperties: React.FC<Props> = ({ element }) => {
       </div>
       <div className="flex gap-2">
         <div className="flex-1">
-          <label className="text-xs text-gray-500 block mb-1">Size</label>
+          <div className="flex items-center mb-1">
+            <label className="text-xs text-gray-500">Size</label>
+            <div className="flex items-center gap-0.5 ml-auto">
+              <TransitionButton elementId={element.id} group="fontSize" direction="in" />
+              <TransitionButton elementId={element.id} group="fontSize" direction="out" />
+            </div>
+          </div>
           <select
             value={element.style.fontSize}
             onChange={(e) => updateStyle({ fontSize: Number(e.target.value) })}
@@ -43,12 +50,24 @@ export const TextProperties: React.FC<Props> = ({ element }) => {
           </select>
         </div>
         <div className="flex-1">
-          <label className="text-xs text-gray-500 block mb-1">Color</label>
+          <div className="flex items-center mb-1">
+            <label className="text-xs text-gray-500">Color</label>
+            <div className="flex items-center gap-0.5 ml-auto">
+              <TransitionButton elementId={element.id} group="color" direction="in" />
+              <TransitionButton elementId={element.id} group="color" direction="out" />
+            </div>
+          </div>
           <ColorPicker color={element.style.color} onChange={(color) => updateStyle({ color })} />
         </div>
       </div>
       <div>
-        <label className="text-xs text-gray-500 block mb-1">Line Height</label>
+        <div className="flex items-center mb-1">
+          <label className="text-xs text-gray-500">Line Height</label>
+          <div className="flex items-center gap-0.5 ml-auto">
+            <TransitionButton elementId={element.id} group="lineHeight" direction="in" />
+            <TransitionButton elementId={element.id} group="lineHeight" direction="out" />
+          </div>
+        </div>
         <input
           type="number"
           value={element.style.lineHeight}
@@ -58,7 +77,13 @@ export const TextProperties: React.FC<Props> = ({ element }) => {
         />
       </div>
       <div>
-        <label className="text-xs text-gray-500 block mb-1">Opacity</label>
+        <div className="flex items-center mb-1">
+          <label className="text-xs text-gray-500">Opacity</label>
+          <div className="flex items-center gap-0.5 ml-auto">
+            <TransitionButton elementId={element.id} group="opacity" direction="in" />
+            <TransitionButton elementId={element.id} group="opacity" direction="out" />
+          </div>
+        </div>
         <input
           type="range"
           value={element.opacity * 100}
