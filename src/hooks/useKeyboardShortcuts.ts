@@ -20,6 +20,21 @@ export function useKeyboardShortcuts() {
 
       const ctrl = e.ctrlKey || e.metaKey;
 
+      // Save
+      if (ctrl && e.key === 's') {
+        e.preventDefault();
+        const presentation = store.getState().presentation;
+        const data = JSON.stringify(presentation);
+        const blob = new Blob([data], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${presentation.title.replace(/\s+/g, '_')}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        return;
+      }
+
       // Undo/Redo
       if (ctrl && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
