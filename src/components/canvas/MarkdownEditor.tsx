@@ -214,6 +214,15 @@ export const MarkdownEditor: React.FC<Props> = ({
     }
   }, [text, element, renderText, clickPosition, setCursorPosition]);
 
+  // Re-render when zoom changes
+  useEffect(() => {
+    if (editorRef.current && isInitializedRef.current) {
+      const cursorPos = getCursorPosition();
+      renderText(currentTextRef.current);
+      setCursorPosition(cursorPos);
+    }
+  }, [zoom, renderText, getCursorPosition, setCursorPosition]);
+
   const handleInput = useCallback(() => {
     if (!editorRef.current) return;
 
