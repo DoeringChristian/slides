@@ -41,16 +41,8 @@ export function isPointOnTextContent(element: TextElement, point: Point): boolea
 
     ctx.font = `${blockFontWeight}${blockFontSize}px ${fontFamily}`;
 
-    // Calculate visual prefix width for bullets/numbered lists
-    let visualPrefixWidth = 0;
-    if (block.type === 'bullet') {
-      visualPrefixWidth = ctx.measureText('•').width + blockFontSize * 0.5;
-    } else if (block.type === 'numbered') {
-      const num = block.content.match(/^(\d+)\./)?.[1] || '1';
-      visualPrefixWidth = ctx.measureText(num + '.').width + blockFontSize * 0.5;
-    }
-
-    const blockWidth = visualPrefixWidth + ctx.measureText(block.displayContent).width;
+    // Note: bullets and numbered lists now include the prefix in displayContent
+    const blockWidth = ctx.measureText(block.displayContent).width;
     const blockHeight = blockFontSize * lineHeightMultiplier;
 
     totalHeight += blockHeight;
@@ -205,22 +197,11 @@ export function calculateCursorFromClick(
   // Set font for measuring
   ctx.font = `${bd.isBold ? 'bold ' : ''}${bd.fontSize}px ${fontFamily}`;
 
-  // Calculate visual prefix width for bullets/numbered lists
-  // The renderer shows "• " or "1. " with marginRight: 0.5em before displayContent
-  let visualPrefixWidth = 0;
-  if (block.type === 'bullet') {
-    // "•" + marginRight (0.5em)
-    visualPrefixWidth = ctx.measureText('•').width + bd.fontSize * 0.5;
-  } else if (block.type === 'numbered') {
-    // Extract the number from the original content
-    const num = block.content.match(/^(\d+)\./)?.[1] || '1';
-    // "N." + marginRight (0.5em)
-    visualPrefixWidth = ctx.measureText(num + '.').width + bd.fontSize * 0.5;
-  }
-
   // Calculate block X position
+  // Note: bullets and numbered lists now render the full source line (e.g., "- text")
+  // so there's no separate visual prefix
   const displayWidth = ctx.measureText(block.displayContent).width;
-  const totalRenderedWidth = visualPrefixWidth + displayWidth;
+  const totalRenderedWidth = displayWidth;
 
   let blockX = padding;
   if (align === 'center') {
@@ -229,11 +210,8 @@ export function calculateCursorFromClick(
     blockX = padding + contentWidth - totalRenderedWidth;
   }
 
-  // The actual text content starts after the visual prefix
-  const textStartX = blockX + visualPrefixWidth;
-
   // Find character position in displayContent
-  const clickX = clickPos.x - textStartX;
+  const clickX = clickPos.x - blockX;
 
   // If click is before the text (on the bullet/number), return start of line
   if (clickX < 0) {

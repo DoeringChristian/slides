@@ -224,11 +224,11 @@ export function parseBlocks(text: string): ParsedBlock[] {
     } else if (line.startsWith('# ')) {
       block = { type: 'h1', content: line, displayContent: line.slice(2), sourceStart, sourceEnd, prefixLength: 2 };
     } else if (/^[-*]\s/.test(line)) {
-      block = { type: 'bullet', content: line, displayContent: line.slice(2), sourceStart, sourceEnd, prefixLength: 2 };
+      // Keep the full line as displayContent to match editor exactly
+      block = { type: 'bullet', content: line, displayContent: line, sourceStart, sourceEnd, prefixLength: 0 };
     } else if (/^\d+\.\s/.test(line)) {
-      const match = line.match(/^(\d+\.\s)/);
-      const prefixLength = match ? match[1].length : 3;
-      block = { type: 'numbered', content: line, displayContent: line.slice(prefixLength), sourceStart, sourceEnd, prefixLength };
+      // Keep the full line as displayContent to match editor exactly
+      block = { type: 'numbered', content: line, displayContent: line, sourceStart, sourceEnd, prefixLength: 0 };
     } else {
       block = { type: 'paragraph', content: line, displayContent: line, sourceStart, sourceEnd, prefixLength: 0 };
     }
@@ -325,21 +325,12 @@ const BlockRenderer = memo(({
   // Calculate the source offset for inline content (after the prefix)
   const inlineSourceOffset = block.sourceStart + block.prefixLength;
 
-  if (block.type === 'bullet') {
+  // Bullet and numbered lists are now rendered with the full line (including prefix)
+  // to match the editor exactly
+  if (block.type === 'bullet' || block.type === 'numbered') {
     return (
       <div style={style}>
-        <span style={{ marginRight: '0.5em', flexShrink: 0 }}>•</span>
-        <span><InlineContent content={block.displayContent} sourceOffset={inlineSourceOffset} /></span>
-      </div>
-    );
-  }
-
-  if (block.type === 'numbered') {
-    const num = block.content.match(/^(\d+)\./)?.[1] || '1';
-    return (
-      <div style={style}>
-        <span style={{ marginRight: '0.5em', flexShrink: 0 }}>{num}.</span>
-        <span><InlineContent content={block.displayContent} sourceOffset={inlineSourceOffset} /></span>
+        <InlineContent content={block.displayContent} sourceOffset={inlineSourceOffset} />
       </div>
     );
   }
