@@ -1,8 +1,9 @@
 import React, { useEffect, useCallback, useRef, useState } from 'react';
-import { Stage, Layer, Rect, Text, Ellipse, Image as KonvaImage, Line, Arrow, Star, RegularPolygon } from 'react-konva';
+import { Stage, Layer, Rect, Ellipse, Image as KonvaImage, Line, Arrow, Star, RegularPolygon } from 'react-konva';
 import useImage from 'use-image';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
+import { MarkdownRenderer } from '../canvas/MarkdownRenderer';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 import { interpolateWithVisibility, lerpColor } from '../../utils/interpolation';
 import type { SlideElement, TextElement, ShapeElement, ImageElement, Slide, Resource } from '../../types/presentation';
@@ -40,19 +41,9 @@ const PresentationSlideElement: React.FC<{ element: SlideElement; resources: Rec
   if (!element.visible) return null;
 
   if (element.type === 'text') {
-    const el = element as TextElement;
-    return (
-      <Text
-        x={el.x} y={el.y} width={el.width} height={el.height}
-        text={el.text} fontSize={el.style.fontSize} fontFamily={el.style.fontFamily}
-        fill={el.style.color} align={el.style.align} rotation={el.rotation}
-        opacity={el.opacity} listening={false}
-        fontStyle={`${el.style.fontWeight === 'bold' ? 'bold' : ''} ${el.style.fontStyle === 'italic' ? 'italic' : ''}`.trim() || 'normal'}
-        textDecoration={el.style.textDecoration === 'none' ? '' : el.style.textDecoration}
-        verticalAlign={el.style.verticalAlign}
-        lineHeight={el.style.lineHeight}
-      />
-    );
+    // Text is rendered as HTML overlay for markdown support
+    // Konva text is transparent but kept for layout calculations
+    return null;
   }
 
   if (element.type === 'shape') {
@@ -274,6 +265,11 @@ export const PresenterView: React.FC = () => {
       .filter(Boolean);
   }
 
+  // Get text elements for markdown rendering
+  const textElements = renderedElements.filter(
+    (el): el is TextElement => el.type === 'text' && el.visible
+  );
+
   return (
     <div ref={containerRef} className="fixed inset-0 bg-black z-[9999] flex items-center justify-center cursor-none"
       onClick={(e) => {
@@ -282,12 +278,45 @@ export const PresenterView: React.FC = () => {
         else goPrev();
       }}
     >
-      <Stage width={stageW} height={stageH} scaleX={scale} scaleY={scale} listening={false}>
-        <Layer listening={false}>
-          <Rect x={0} y={0} width={SLIDE_WIDTH} height={SLIDE_HEIGHT} fill={bgColor} listening={false} />
-          {renderedElements.map((el) => <PresentationSlideElement key={el.id} element={el} resources={resources} />)}
-        </Layer>
-      </Stage>
+      <div className="relative" style={{ width: stageW, height: stageH }}>
+        <Stage width={stageW} height={stageH} scaleX={scale} scaleY={scale} listening={false}>
+          <Layer listening={false}>
+            <Rect x={0} y={0} width={SLIDE_WIDTH} height={SLIDE_HEIGHT} fill={bgColor} listening={false} />
+            {renderedElements.map((el) => <PresentationSlideElement key={el.id} element={el} resources={resources} />)}
+          </Layer>
+        </Stage>
+
+        {/* Markdown text overlay */}
+        <div className="absolute inset-0 pointer-events-none overflow-hidden">
+          {textElements.map((element) => (
+            <div
+              key={element.id}
+              style={{
+                position: 'absolute',
+                left: `${element.x * scale}px`,
+                top: `${element.y * scale}px`,
+                width: `${element.width * scale}px`,
+                height: `${element.height * scale}px`,
+                transform: `rotate(${element.rotation}deg)`,
+                transformOrigin: 'top left',
+                opacity: element.opacity,
+                overflow: 'hidden',
+                display: 'flex',
+                alignItems: element.style.verticalAlign === 'middle' ? 'center' :
+                           element.style.verticalAlign === 'bottom' ? 'flex-end' : 'flex-start',
+              }}
+            >
+              <div style={{ width: '100%' }}>
+                <MarkdownRenderer
+                  text={element.text}
+                  style={element.style}
+                  zoom={scale}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
 
       {/* Slide counter */}
       <div className="absolute bottom-4 right-4 text-white text-sm opacity-50">

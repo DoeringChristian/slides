@@ -22,6 +22,8 @@ export const TextNode: React.FC<Props> = ({ element, isSelected, onSelect, onDra
     }
   }, [element]);
 
+  // Konva text is invisible - HTML overlays handle rendering (markdown or textarea)
+  // Konva element is kept for hit detection, selection, and transforms
   return (
     <Text
       ref={textRef}
@@ -37,7 +39,7 @@ export const TextNode: React.FC<Props> = ({ element, isSelected, onSelect, onDra
       fontFamily={element.style.fontFamily}
       fontStyle={`${element.style.fontWeight === 'bold' ? 'bold' : ''} ${element.style.fontStyle === 'italic' ? 'italic' : ''}`.trim() || 'normal'}
       textDecoration={element.style.textDecoration === 'none' ? '' : element.style.textDecoration}
-      fill={element.style.color}
+      fill="transparent"
       align={element.style.align}
       verticalAlign={element.style.verticalAlign}
       lineHeight={element.style.lineHeight}
