@@ -119,6 +119,7 @@ export const SlideCanvas: React.FC = () => {
     });
   }, [selectedElementIds, slide]);
 
+
   // Track if we just completed a selection drag or drawing to prevent click from clearing selection
   const justFinishedSelectionDrag = useRef(false);
   const lastDrawingFinishedAt = useRef(0);

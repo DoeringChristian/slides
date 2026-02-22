@@ -5,7 +5,7 @@ import useImage from 'use-image';
 import { usePresentationStore } from '../../store/presentationStore';
 import { CustomMarkdownRenderer } from '../canvas/CustomMarkdownRenderer';
 import type { Slide, SlideElement, TextElement, ShapeElement, ImageElement } from '../../types/presentation';
-import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
+import { SLIDE_WIDTH, SLIDE_HEIGHT, TEXT_BOX_PADDING } from '../../utils/constants';
 
 const THUMB_WIDTH = 192;
 const THUMB_SCALE = THUMB_WIDTH / SLIDE_WIDTH;
@@ -247,7 +247,7 @@ export const SlideThumbnail: React.FC<Props> = ({ slide, index, isActive, canDel
                              element.style.verticalAlign === 'bottom' ? 'flex-end' : 'flex-start',
                 }}
               >
-                <div style={{ width: '100%' }}>
+                <div style={{ width: '100%', padding: `${TEXT_BOX_PADDING * THUMB_SCALE}px` }}>
                   <CustomMarkdownRenderer
                     text={element.text}
                     style={element.style}

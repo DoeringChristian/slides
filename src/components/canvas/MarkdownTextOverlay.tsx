@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { CustomMarkdownRenderer } from './CustomMarkdownRenderer';
-import { CANVAS_PADDING } from '../../utils/constants';
+import { CANVAS_PADDING, TEXT_BOX_PADDING } from '../../utils/constants';
 import type { TextElement } from '../../types/presentation';
 
 interface Props {
@@ -75,7 +75,7 @@ export const MarkdownTextOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
                          element.style.verticalAlign === 'bottom' ? 'flex-end' : 'flex-start',
             }}
           >
-            <div style={{ width: '100%' }}>
+            <div style={{ width: '100%', padding: `${TEXT_BOX_PADDING * zoom}px` }}>
               <CustomMarkdownRenderer
                 text={element.text}
                 style={element.style}

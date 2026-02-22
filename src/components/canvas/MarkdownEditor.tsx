@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useCallback } from 'react';
 import type { TextElement } from '../../types/presentation';
 import { calculateCursorFromClick as calculateCursorFromClickUtil } from '../../utils/textHitTest';
+import { TEXT_BOX_PADDING } from '../../utils/constants';
 
 interface Props {
   element: TextElement;
@@ -48,7 +49,7 @@ export const MarkdownEditor: React.FC<Props> = ({
   const currentTextRef = useRef(text);
 
   const baseFontSize = style.fontSize * zoom;
-  const padding = 4 * zoom;
+  const padding = TEXT_BOX_PADDING * zoom;
 
   // Get the current text from the editor
   const getTextFromEditor = useCallback((): string => {

@@ -4,7 +4,7 @@ import useImage from 'use-image';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useAudienceReceiver } from '../../hooks/usePresenterMode';
 import { CustomMarkdownRenderer } from '../canvas/CustomMarkdownRenderer';
-import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
+import { SLIDE_WIDTH, SLIDE_HEIGHT, TEXT_BOX_PADDING } from '../../utils/constants';
 import { interpolateWithVisibility, lerpColor } from '../../utils/interpolation';
 import type { SlideElement, TextElement, ShapeElement, ImageElement, Slide, Resource } from '../../types/presentation';
 
@@ -257,7 +257,7 @@ export const AudienceView: React.FC = () => {
                            element.style.verticalAlign === 'bottom' ? 'flex-end' : 'flex-start',
               }}
             >
-              <div style={{ width: '100%' }}>
+              <div style={{ width: '100%', padding: `${TEXT_BOX_PADDING * scale}px` }}>
                 <CustomMarkdownRenderer
                   text={element.text}
                   style={element.style}

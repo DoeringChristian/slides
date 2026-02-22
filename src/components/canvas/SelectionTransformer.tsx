@@ -245,6 +245,17 @@ export const SelectionTransformer: React.FC<Props> = ({ selectedIds, stageRef, l
           anchor.fillPatternImage(icon);
           anchor.fillPatternOffset({ x: 0, y: 0 });
           anchor.fill('');
+        } else {
+          // Extend hit region for resize anchors while keeping visual size
+          const hitPadding = 8;
+          anchor.hitFunc((context) => {
+            const w = anchor.width();
+            const h = anchor.height();
+            context.beginPath();
+            context.rect(-hitPadding, -hitPadding, w + hitPadding * 2, h + hitPadding * 2);
+            context.closePath();
+            context.fillStrokeShape(anchor);
+          });
         }
       }}
       keepRatio={keepRatio}
