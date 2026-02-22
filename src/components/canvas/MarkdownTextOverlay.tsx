@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { CustomMarkdownRenderer } from './CustomMarkdownRenderer';
@@ -14,8 +14,29 @@ export const MarkdownTextOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
   const editingTextId = useEditorStore((s) => s.editingTextId);
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const slide = usePresentationStore((s) => s.presentation.slides[activeSlideId]);
+  const [stageReady, setStageReady] = useState(false);
 
-  if (!slide || !stageRef.current) return null;
+  // Watch for Konva stage to be mounted
+  useEffect(() => {
+    if (!stageRef.current) {
+      setStageReady(false);
+      return;
+    }
+
+    const checkStage = () => {
+      const stageElement = stageRef.current?.querySelector('.konvajs-content');
+      if (stageElement) {
+        setStageReady(true);
+      } else {
+        // Retry on next frame if not ready
+        requestAnimationFrame(checkStage);
+      }
+    };
+
+    checkStage();
+  }, [stageRef, activeSlideId]);
+
+  if (!slide || !stageRef.current || !stageReady) return null;
 
   const containerRect = stageRef.current.getBoundingClientRect();
   const stageElement = stageRef.current.querySelector('.konvajs-content');
