@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useEditorStore } from '../store/editorStore';
+import { usePresentationStore } from '../store/presentationStore';
 
 export interface PresenterMessage {
   type: 'slide-change' | 'animation-state' | 'exit' | 'sync-request' | 'sync-response';
@@ -10,9 +11,11 @@ export interface PresenterMessage {
 }
 
 const CHANNEL_NAME = 'slides-presenter';
+const DATA_CHANNEL_NAME = 'slides-presenter-data';
 
 // Singleton channel and window reference
 let channel: BroadcastChannel | null = null;
+let dataChannel: BroadcastChannel | null = null;
 let audienceWindow: Window | null = null;
 
 function getChannel(): BroadcastChannel {
@@ -20,6 +23,13 @@ function getChannel(): BroadcastChannel {
     channel = new BroadcastChannel(CHANNEL_NAME);
   }
   return channel;
+}
+
+function getDataChannel(): BroadcastChannel {
+  if (!dataChannel) {
+    dataChannel = new BroadcastChannel(DATA_CHANNEL_NAME);
+  }
+  return dataChannel;
 }
 
 export function usePresenterMode() {
@@ -54,6 +64,22 @@ export function usePresenterMode() {
       }, 1000);
     }
   }, [setPresenterMode, setPresenting]);
+
+  // Listen for presentation data requests from audience window
+  useEffect(() => {
+    const dc = getDataChannel();
+    const handler = (event: MessageEvent) => {
+      if (event.data.type === 'request-presentation') {
+        // Send presentation data to audience window
+        dc.postMessage({
+          type: 'presentation-data',
+          presentation: usePresentationStore.getState().presentation,
+        });
+      }
+    };
+    dc.addEventListener('message', handler);
+    return () => dc.removeEventListener('message', handler);
+  }, []);
 
   // Exit presenter mode
   const exitPresenterMode = useCallback(() => {

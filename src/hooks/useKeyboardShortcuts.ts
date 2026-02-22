@@ -203,13 +203,16 @@ export function useKeyboardShortcuts() {
       if (!items) return;
 
       const activeSlideId = editor.getState().activeSlideId;
+      const existingResources = store.getState().presentation.resources;
       for (const item of Array.from(items)) {
         if (item.type === 'application/pdf') {
           const file = item.getAsFile();
           if (!file) continue;
           e.preventDefault();
-          loadPdfFile(file).then(({ resources, elements }) => {
-            resources.forEach((r) => store.getState().addResource(r));
+          loadPdfFile(file, existingResources).then(({ resources, elements, isExisting }) => {
+            if (!isExisting) {
+              resources.forEach((r) => store.getState().addResource(r));
+            }
             if (elements.length === 1) {
               store.getState().addElement(activeSlideId, elements[0]);
               editor.getState().setSelectedElements([elements[0].id]);
@@ -232,8 +235,10 @@ export function useKeyboardShortcuts() {
           const file = item.getAsFile();
           if (!file) continue;
           e.preventDefault();
-          loadImageFile(file).then(({ resource, element }) => {
-            store.getState().addResource(resource);
+          loadImageFile(file, undefined, existingResources).then(({ resource, element, isExisting }) => {
+            if (!isExisting) {
+              store.getState().addResource(resource);
+            }
             store.getState().addElement(activeSlideId, element);
             editor.getState().setSelectedElements([element.id]);
           });
@@ -243,8 +248,10 @@ export function useKeyboardShortcuts() {
           const file = item.getAsFile();
           if (!file) continue;
           e.preventDefault();
-          loadVideoFile(file).then(({ resource, element }) => {
-            store.getState().addResource(resource);
+          loadVideoFile(file, undefined, existingResources).then(({ resource, element, isExisting }) => {
+            if (!isExisting) {
+              store.getState().addResource(resource);
+            }
             store.getState().addElement(activeSlideId, element);
             editor.getState().setSelectedElements([element.id]);
           });

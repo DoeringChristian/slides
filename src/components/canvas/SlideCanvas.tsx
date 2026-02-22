@@ -400,13 +400,15 @@ export const SlideCanvas: React.FC = () => {
     const dropX = (e.clientX - rect.left) / zoom - CANVAS_PADDING;
     const dropY = (e.clientY - rect.top) / zoom - CANVAS_PADDING;
 
-    const { slideOrder } = usePresentationStore.getState().presentation;
+    const { slideOrder, resources: existingResources } = usePresentationStore.getState().presentation;
     const currentIdx = slideOrder.indexOf(activeSlideId);
 
     Array.from(files).forEach(async (file) => {
       if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
-        const { resources, elements } = await loadPdfFile(file);
-        resources.forEach((r) => addResource(r));
+        const { resources, elements, isExisting } = await loadPdfFile(file, existingResources);
+        if (!isExisting) {
+          resources.forEach((r) => addResource(r));
+        }
         if (elements.length === 1) {
           elements[0].x = dropX;
           elements[0].y = dropY;
@@ -424,13 +426,17 @@ export const SlideCanvas: React.FC = () => {
           if (lastSlideId) setActiveSlide(lastSlideId);
         }
       } else if (file.type.startsWith('image/') || file.name.endsWith('.svg')) {
-        const { resource, element } = await loadImageFile(file, { x: dropX, y: dropY });
-        addResource(resource);
+        const { resource, element, isExisting } = await loadImageFile(file, { x: dropX, y: dropY }, existingResources);
+        if (!isExisting) {
+          addResource(resource);
+        }
         addElement(activeSlideId, element);
         setSelectedElements([element.id]);
       } else if (file.type.startsWith('video/')) {
-        const { resource, element } = await loadVideoFile(file, { x: dropX, y: dropY });
-        addResource(resource);
+        const { resource, element, isExisting } = await loadVideoFile(file, { x: dropX, y: dropY }, existingResources);
+        if (!isExisting) {
+          addResource(resource);
+        }
         addElement(activeSlideId, element);
         setSelectedElements([element.id]);
       }

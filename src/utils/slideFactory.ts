@@ -1,5 +1,6 @@
 import { generateId } from './idGenerator';
 import { DEFAULT_TEXT_STYLE, DEFAULT_SHAPE_PROPS, SLIDE_WIDTH, SLIDE_HEIGHT } from './constants';
+import { computeFileHash } from './fileHash';
 import type { Slide, TextElement, ShapeElement, ImageElement, ShapeType, SlideElement, Presentation, Theme, ObjectMeta, Resource } from '../types/presentation';
 
 export function createDefaultTheme(): Theme {
@@ -76,7 +77,8 @@ export function createResource(
   originalWidth: number,
   originalHeight: number,
   type: 'image' | 'video' = 'image',
-  duration?: number
+  duration?: number,
+  hash?: string
 ): Resource {
   return {
     id: generateId(),
@@ -86,7 +88,15 @@ export function createResource(
     originalWidth,
     originalHeight,
     ...(duration !== undefined ? { duration } : {}),
+    ...(hash !== undefined ? { hash } : {}),
   };
+}
+
+/**
+ * Find an existing resource by its content hash.
+ */
+export function findResourceByHash(resources: Record<string, Resource>, hash: string): Resource | undefined {
+  return Object.values(resources).find(r => r.hash === hash);
 }
 
 export function createImageElement(resourceId: string | null, originalWidth: number, originalHeight: number, overrides?: Partial<ImageElement>): ImageElement {
@@ -141,9 +151,26 @@ function parseSvgDimensions(svgText: string): { width: number; height: number } 
   return null;
 }
 
-export function loadImageFile(file: Blob, overrides?: Partial<ImageElement>): Promise<{ resource: Resource; element: ImageElement }> {
+export async function loadImageFile(
+  file: Blob,
+  overrides?: Partial<ImageElement>,
+  existingResources?: Record<string, Resource>
+): Promise<{ resource: Resource; element: ImageElement; isExisting: boolean }> {
   const isSvg = file.type === 'image/svg+xml' || (file instanceof File && file.name.endsWith('.svg'));
   const fileName = file instanceof File ? file.name : 'Image';
+
+  // Compute hash for deduplication
+  const hash = await computeFileHash(file);
+
+  // Check for existing resource with same hash
+  if (existingResources) {
+    const existing = findResourceByHash(existingResources, hash);
+    if (existing) {
+      const element = createImageElement(existing.id, existing.originalWidth, existing.originalHeight, overrides);
+      return { resource: existing, element, isExisting: true };
+    }
+  }
+
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (ev) => {
@@ -156,18 +183,18 @@ export function loadImageFile(file: Blob, overrides?: Partial<ImageElement>): Pr
         img.onload = () => {
           const w = dims?.width || img.width || SLIDE_WIDTH * 0.6;
           const h = dims?.height || img.height || SLIDE_HEIGHT * 0.6;
-          const resource = createResource(fileName, src, w, h);
+          const resource = createResource(fileName, src, w, h, 'image', undefined, hash);
           const element = createImageElement(resource.id, w, h, overrides);
-          resolve({ resource, element });
+          resolve({ resource, element, isExisting: false });
         };
         img.onerror = () => reject(new Error('Failed to load SVG'));
         img.src = src;
       } else {
         const img = new window.Image();
         img.onload = () => {
-          const resource = createResource(fileName, src, img.width, img.height);
+          const resource = createResource(fileName, src, img.width, img.height, 'image', undefined, hash);
           const element = createImageElement(resource.id, img.width, img.height, overrides);
-          resolve({ resource, element });
+          resolve({ resource, element, isExisting: false });
         };
         img.onerror = () => reject(new Error('Failed to load image'));
         img.src = src;
@@ -178,7 +205,27 @@ export function loadImageFile(file: Blob, overrides?: Partial<ImageElement>): Pr
   });
 }
 
-export async function loadPdfFile(file: Blob): Promise<{ resources: Resource[]; elements: ImageElement[] }> {
+export async function loadPdfFile(
+  file: Blob,
+  existingResources?: Record<string, Resource>
+): Promise<{ resources: Resource[]; elements: ImageElement[]; isExisting: boolean }> {
+  // Compute hash of the PDF file for deduplication
+  const pdfHash = await computeFileHash(file);
+
+  // Check if this PDF was already imported (check for any page with matching base hash)
+  if (existingResources) {
+    const existingPages = Object.values(existingResources).filter(
+      r => r.hash?.startsWith(pdfHash.slice(0, 16))
+    );
+    if (existingPages.length > 0) {
+      // PDF was already imported, create elements pointing to existing resources
+      const elements = existingPages.map(r =>
+        createImageElement(r.id, r.originalWidth, r.originalHeight)
+      );
+      return { resources: existingPages, elements, isExisting: true };
+    }
+  }
+
   const pdfjs = await import('pdfjs-dist');
   pdfjs.GlobalWorkerOptions.workerSrc = new URL(
     'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -203,19 +250,35 @@ export async function loadPdfFile(file: Blob): Promise<{ resources: Resource[]; 
     const src = canvas.toDataURL('image/png');
     const w = viewport.width / scale;
     const h = viewport.height / scale;
-    const resource = createResource(`${fileName} - Page ${i}`, src, w, h, 'image');
+    // Use PDF hash + page number for unique but related page hashes
+    const pageHash = `${pdfHash.slice(0, 16)}_page${i}`;
+    const resource = createResource(`${fileName} - Page ${i}`, src, w, h, 'image', undefined, pageHash);
     resources.push(resource);
     elements.push(createImageElement(resource.id, w, h));
   }
 
-  return { resources, elements };
+  return { resources, elements, isExisting: false };
 }
 
-export function loadVideoFile(
+export async function loadVideoFile(
   file: Blob,
-  overrides?: Partial<ImageElement>
-): Promise<{ resource: Resource; element: ImageElement }> {
+  overrides?: Partial<ImageElement>,
+  existingResources?: Record<string, Resource>
+): Promise<{ resource: Resource; element: ImageElement; isExisting: boolean }> {
   const fileName = file instanceof File ? file.name : 'Video';
+
+  // Compute hash for deduplication
+  const hash = await computeFileHash(file);
+
+  // Check for existing resource with same hash
+  if (existingResources) {
+    const existing = findResourceByHash(existingResources, hash);
+    if (existing) {
+      const element = createImageElement(existing.id, existing.originalWidth, existing.originalHeight, overrides);
+      return { resource: existing, element, isExisting: true };
+    }
+  }
+
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (ev) => {
@@ -229,7 +292,8 @@ export function loadVideoFile(
           video.videoWidth,
           video.videoHeight,
           'video',
-          video.duration
+          video.duration,
+          hash
         );
         const element = createImageElement(
           resource.id,
@@ -237,7 +301,7 @@ export function loadVideoFile(
           video.videoHeight,
           overrides
         );
-        resolve({ resource, element });
+        resolve({ resource, element, isExisting: false });
       };
       video.onerror = () => reject(new Error('Failed to load video'));
       video.src = src;

@@ -141,12 +141,16 @@ export const ResourcePicker: React.FC<ResourcePickerProps> = ({
       if (!file) return;
 
       if (file.type.startsWith('video/')) {
-        const { resource } = await loadVideoFile(file);
-        addResource(resource);
+        const { resource, isExisting } = await loadVideoFile(file, undefined, resources);
+        if (!isExisting) {
+          addResource(resource);
+        }
         onSelect(resource.id);
       } else {
-        const { resource } = await loadImageFile(file);
-        addResource(resource);
+        const { resource, isExisting } = await loadImageFile(file, undefined, resources);
+        if (!isExisting) {
+          addResource(resource);
+        }
         onSelect(resource.id);
       }
       onClose();

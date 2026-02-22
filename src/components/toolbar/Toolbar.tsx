@@ -47,9 +47,12 @@ export const Toolbar: React.FC = () => {
     input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (!file) return;
+      const existingResources = usePresentationStore.getState().presentation.resources;
       if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
-        const { resources, elements } = await loadPdfFile(file);
-        resources.forEach((r) => addResource(r));
+        const { resources, elements, isExisting } = await loadPdfFile(file, existingResources);
+        if (!isExisting) {
+          resources.forEach((r) => addResource(r));
+        }
         if (elements.length === 1) {
           addElement(activeSlideId, elements[0]);
           setSelectedElements([elements[0].id]);
@@ -66,8 +69,10 @@ export const Toolbar: React.FC = () => {
           if (lastSlideId) setActiveSlide(lastSlideId);
         }
       } else {
-        const { resource, element } = await loadImageFile(file);
-        addResource(resource);
+        const { resource, element, isExisting } = await loadImageFile(file, undefined, existingResources);
+        if (!isExisting) {
+          addResource(resource);
+        }
         addElement(activeSlideId, element);
         setSelectedElements([element.id]);
       }

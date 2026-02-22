@@ -82,6 +82,7 @@ function collectElementIds(slideA: Slide | null, slideB: Slide | null): string[]
 
 export const PresenterView: React.FC = () => {
   const isPresenting = useEditorStore((s) => s.isPresenting);
+  const isPresenterMode = useEditorStore((s) => s.isPresenterMode);
   const presentingSlideIndex = useEditorStore((s) => s.presentingSlideIndex);
   const setPresentingSlideIndex = useEditorStore((s) => s.setPresentingSlideIndex);
   const setPresenting = useEditorStore((s) => s.setPresenting);
@@ -224,7 +225,9 @@ export const PresenterView: React.FC = () => {
     };
   }, [isPresenting, goNext, goPrev, exitPresentation, setPresentingSlideIndex, totalSlides, setPresenting, isAnimating]);
 
-  if (!isPresenting) return null;
+  // Don't render when in presenter mode (PresenterControlPanel handles that)
+  // This view is only for simple fullscreen presentation
+  if (!isPresenting || isPresenterMode) return null;
 
   const currentSlide = slides[slideOrder[currentIndex]] || null;
   if (!currentSlide) return null;

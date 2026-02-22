@@ -12,6 +12,7 @@ export interface Resource {
   originalWidth: number;
   originalHeight: number;
   duration?: number; // For videos, duration in seconds
+  hash?: string; // Content hash for deduplication
 }
 
 export interface SlideTemplate {
