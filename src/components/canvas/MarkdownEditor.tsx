@@ -244,15 +244,64 @@ export const MarkdownEditor: React.FC<Props> = ({
       const cursorPos = getCursorPosition();
       const currentText = currentTextRef.current;
 
-      // Insert newline at cursor position
-      const newText = currentText.slice(0, cursorPos) + '\n' + currentText.slice(cursorPos);
+      // Find the current line
+      const textBeforeCursor = currentText.slice(0, cursorPos);
+      const lastNewlineIndex = textBeforeCursor.lastIndexOf('\n');
+      const currentLineStart = lastNewlineIndex + 1;
+      const currentLine = currentText.slice(currentLineStart, cursorPos);
+
+      // Check if current line is a list item
+      const bulletMatch = currentLine.match(/^([-*])\s/);
+      const numberedMatch = currentLine.match(/^(\d+)\.\s/);
+
+      let insertText = '\n';
+      let newCursorOffset = 1;
+
+      if (bulletMatch) {
+        // Current line is a bullet list item
+        const bulletChar = bulletMatch[1];
+        const contentAfterPrefix = currentLine.slice(2).trim();
+
+        if (contentAfterPrefix === '') {
+          // Empty bullet item - remove the bullet prefix instead of adding new one
+          const newText = currentText.slice(0, currentLineStart) + currentText.slice(cursorPos);
+          currentTextRef.current = newText;
+          renderText(newText);
+          setCursorPosition(currentLineStart);
+          return;
+        }
+
+        // Add new bullet on next line
+        insertText = `\n${bulletChar} `;
+        newCursorOffset = insertText.length;
+      } else if (numberedMatch) {
+        // Current line is a numbered list item
+        const currentNum = parseInt(numberedMatch[1], 10);
+        const contentAfterPrefix = currentLine.slice(numberedMatch[0].length).trim();
+
+        if (contentAfterPrefix === '') {
+          // Empty numbered item - remove the number prefix instead of adding new one
+          const newText = currentText.slice(0, currentLineStart) + currentText.slice(cursorPos);
+          currentTextRef.current = newText;
+          renderText(newText);
+          setCursorPosition(currentLineStart);
+          return;
+        }
+
+        // Add next number on next line
+        insertText = `\n${currentNum + 1}. `;
+        newCursorOffset = insertText.length;
+      }
+
+      // Insert newline (with optional list prefix) at cursor position
+      const newText = currentText.slice(0, cursorPos) + insertText + currentText.slice(cursorPos);
       currentTextRef.current = newText;
 
       // Re-render
       renderText(newText);
 
-      // Place cursor after the newline
-      setCursorPosition(cursorPos + 1);
+      // Place cursor after the inserted text
+      setCursorPosition(cursorPos + newCursorOffset);
       return;
     }
 
