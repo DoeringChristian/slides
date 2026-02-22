@@ -1,0 +1,47 @@
+{
+  "id": "qPOmFq5dPjHT",
+  "presentation": {
+    "id": "qPOmFq5dPjHT",
+    "title": "test",
+    "slides": {
+      "Yu3RQp0XAKfq": {
+        "id": "Yu3RQp0XAKfq",
+        "elements": {},
+        "elementOrder": [],
+        "background": {
+          "type": "solid",
+          "color": "#ffffff"
+        },
+        "transition": {
+          "duration": 300
+        },
+        "notes": ""
+      }
+    },
+    "slideOrder": [
+      "Yu3RQp0XAKfq"
+    ],
+    "objects": {},
+    "resources": {},
+    "templates": {},
+    "theme": {
+      "name": "Light",
+      "colors": {
+        "primary": "#4285f4",
+        "secondary": "#5f6368",
+        "accent": "#ea4335",
+        "background": "#ffffff",
+        "text": "#333333",
+        "heading": "#202124"
+      },
+      "fonts": {
+        "heading": "Arial",
+        "body": "Arial"
+      }
+    },
+    "width": 960,
+    "height": 540,
+    "createdAt": 1771760381827,
+    "updatedAt": 1771760381827
+  }
+}
