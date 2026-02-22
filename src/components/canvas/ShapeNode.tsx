@@ -16,6 +16,9 @@ interface Props {
 export const ShapeNode: React.FC<Props> = ({ element, isSelected, disableInteraction, onSelect, onDragEnd, onDragMove, onTransformEnd }) => {
   const shapeRef = useRef<any>(null);
 
+  // These shapes use center positioning, need to convert coordinates
+  const isCenterBased = ['ellipse', 'triangle', 'star'].includes(element.shapeType);
+
   const commonProps = {
     id: element.id,
     x: element.x,
@@ -30,10 +33,16 @@ export const ShapeNode: React.FC<Props> = ({ element, isSelected, disableInterac
     onClick: (e: Konva.KonvaEventObject<MouseEvent>) => onSelect(element.id, e),
     onTap: (e: any) => onSelect(element.id, e),
     onDragMove: (e: Konva.KonvaEventObject<DragEvent>) => {
-      onDragMove?.(element.id, e.target.x(), e.target.y(), e.target);
+      // Convert center position to top-left for center-based shapes
+      const x = isCenterBased ? e.target.x() - element.width / 2 : e.target.x();
+      const y = isCenterBased ? e.target.y() - element.height / 2 : e.target.y();
+      onDragMove?.(element.id, x, y, e.target);
     },
     onDragEnd: (e: Konva.KonvaEventObject<DragEvent>) => {
-      onDragEnd(element.id, e.target.x(), e.target.y());
+      // Convert center position to top-left for center-based shapes
+      const x = isCenterBased ? e.target.x() - element.width / 2 : e.target.x();
+      const y = isCenterBased ? e.target.y() - element.height / 2 : e.target.y();
+      onDragEnd(element.id, x, y);
     },
     onTransformEnd: () => {
       const node = shapeRef.current;

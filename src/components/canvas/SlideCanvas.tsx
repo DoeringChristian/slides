@@ -128,6 +128,9 @@ export const SlideCanvas: React.FC = () => {
     const el = slide.elements[id];
     if (!el) return;
 
+    // Check if this is a center-based shape (ellipse, triangle, star use center positioning in Konva)
+    const isCenterBased = el.type === 'shape' && ['ellipse', 'triangle', 'star'].includes((el as ShapeElement).shapeType);
+
     // Ctrl-constrain: lock to horizontal or vertical axis
     let constrainedX = x;
     let constrainedY = y;
@@ -139,8 +142,11 @@ export const SlideCanvas: React.FC = () => {
       } else {
         constrainedX = el.x; // vertical lock
       }
-      node.x(constrainedX);
-      node.y(constrainedY);
+      // Convert to node coordinates (center for center-based shapes)
+      const nodeX = isCenterBased ? constrainedX + el.width / 2 : constrainedX;
+      const nodeY = isCenterBased ? constrainedY + el.height / 2 : constrainedY;
+      node.x(nodeX);
+      node.y(nodeY);
     }
 
     const { snapToGrid: snappingEnabled, showGrid: isGridVisible, gridSize: grid, marginLayoutId: currentMarginLayoutId } = useEditorStore.getState();
@@ -169,8 +175,11 @@ export const SlideCanvas: React.FC = () => {
       if (result.snapX !== null) snappedX = result.snapX;
       if (result.snapY !== null) snappedY = result.snapY;
 
-      node.x(snappedX);
-      node.y(snappedY);
+      // Convert to node coordinates (center for center-based shapes)
+      const nodeX = isCenterBased ? snappedX + el.width / 2 : snappedX;
+      const nodeY = isCenterBased ? snappedY + el.height / 2 : snappedY;
+      node.x(nodeX);
+      node.y(nodeY);
     }
   }, [slide, elements]);
 
