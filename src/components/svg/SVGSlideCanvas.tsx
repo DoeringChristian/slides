@@ -59,7 +59,7 @@ export const SVGSlideCanvas: React.FC = () => {
   const objectElements = useObjectElements();
 
   const [dragGuides, setDragGuides] = useState<Guide[]>([]);
-  const [connectorHighlightId, _setConnectorHighlightId] = useState<string | null>(null);
+  const [connectorHighlightId, setConnectorHighlightId] = useState<string | null>(null);
 
   // Selection drag state
   const [selectionDrag, setSelectionDrag] = useState<{
@@ -603,6 +603,7 @@ export const SVGSlideCanvas: React.FC = () => {
               onUpdate={handleLineUpdate}
               onTransformStart={handleTransformStart}
               onGuidesChange={setDragGuides}
+              onConnectorHighlight={setConnectorHighlightId}
             />
           )}
 
