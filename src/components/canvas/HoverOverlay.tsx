@@ -107,21 +107,46 @@ const GhostElement: React.FC<{ element: SlideElement }> = ({ element }) => {
   return null;
 };
 
-const HighlightRect: React.FC<{ element: SlideElement }> = ({ element }) => (
-  <Group x={element.x} y={element.y} rotation={element.rotation} listening={false}>
-    <Rect
-      x={-3}
-      y={-3}
-      width={element.width + 6}
-      height={element.height + 6}
-      stroke={HIGHLIGHT_COLOR}
-      strokeWidth={2}
-      cornerRadius={3}
-      dash={[6, 3]}
-      listening={false}
-    />
-  </Group>
-);
+// Calculate bounding box for lines/arrows from their points
+function getLineBoundingBox(element: ShapeElement): { x: number; y: number; width: number; height: number } {
+  const points = element.points ?? [0, 0, element.width, 0];
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+  for (let i = 0; i < points.length; i += 2) {
+    minX = Math.min(minX, points[i]);
+    maxX = Math.max(maxX, points[i]);
+    minY = Math.min(minY, points[i + 1]);
+    maxY = Math.max(maxY, points[i + 1]);
+  }
+
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+const HighlightRect: React.FC<{ element: SlideElement }> = ({ element }) => {
+  // For lines and arrows, calculate bounding box from points
+  const isLine = element.type === 'shape' &&
+    ((element as ShapeElement).shapeType === 'line' || (element as ShapeElement).shapeType === 'arrow');
+
+  const bounds = isLine
+    ? getLineBoundingBox(element as ShapeElement)
+    : { x: 0, y: 0, width: element.width, height: element.height };
+
+  return (
+    <Group x={element.x} y={element.y} rotation={element.rotation} listening={false}>
+      <Rect
+        x={bounds.x - 3}
+        y={bounds.y - 3}
+        width={bounds.width + 6}
+        height={bounds.height + 6}
+        stroke={HIGHLIGHT_COLOR}
+        strokeWidth={2}
+        cornerRadius={3}
+        dash={[6, 3]}
+        listening={false}
+      />
+    </Group>
+  );
+};
 
 export const HoverOverlay: React.FC<Props> = ({ element, isVisibleOnSlide }) => {
   if (isVisibleOnSlide) {
