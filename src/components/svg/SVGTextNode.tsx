@@ -1,20 +1,23 @@
 import React from 'react';
 import type { TextElement } from '../../types/presentation';
+import { SVGTextContent } from './SVGTextContent';
 
 interface Props {
   element: TextElement;
   disableInteraction?: boolean;
+  isEditing?: boolean;
   onMouseDown?: (e: React.MouseEvent) => void;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
   onDoubleClick?: () => void;
 }
 
-// SVGTextNode renders an invisible hit area for text elements
-// The actual text rendering is handled by MarkdownTextOverlay (HTML)
+// SVGTextNode renders text elements as actual SVG text
+// with a transparent hit area rect on top for interaction
 export const SVGTextNode: React.FC<Props> = ({
   element,
   disableInteraction,
+  isEditing = false,
   onMouseDown,
   onMouseEnter,
   onMouseLeave,
@@ -26,23 +29,32 @@ export const SVGTextNode: React.FC<Props> = ({
   const transform = element.rotation ? `rotate(${element.rotation}, ${cx}, ${cy})` : undefined;
 
   return (
-    <g transform={transform} data-element-id={element.id}>
-      <rect
-        x={element.x}
-        y={element.y}
-        width={element.width}
-        height={element.height}
-        fill="transparent"
-        opacity={element.opacity}
-        style={{
-          cursor: disableInteraction ? 'default' : (element.locked ? 'default' : 'move'),
-          pointerEvents: disableInteraction ? 'none' : 'auto',
-        }}
-        onMouseDown={disableInteraction ? undefined : onMouseDown}
-        onMouseEnter={disableInteraction ? undefined : onMouseEnter}
-        onMouseLeave={disableInteraction ? undefined : onMouseLeave}
-        onDoubleClick={disableInteraction ? undefined : onDoubleClick}
+    <g data-element-id={element.id}>
+      {/* Render actual text content */}
+      <SVGTextContent
+        element={element}
+        isEditing={isEditing}
       />
+
+      {/* Transparent hit area for interaction (on top of text) */}
+      <g transform={transform}>
+        <rect
+          x={element.x}
+          y={element.y}
+          width={element.width}
+          height={element.height}
+          fill="transparent"
+          opacity={element.opacity}
+          style={{
+            cursor: disableInteraction ? 'default' : (element.locked ? 'default' : 'move'),
+            pointerEvents: disableInteraction ? 'none' : 'auto',
+          }}
+          onMouseDown={disableInteraction ? undefined : onMouseDown}
+          onMouseEnter={disableInteraction ? undefined : onMouseEnter}
+          onMouseLeave={disableInteraction ? undefined : onMouseLeave}
+          onDoubleClick={disableInteraction ? undefined : onDoubleClick}
+        />
+      </g>
     </g>
   );
 };

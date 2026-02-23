@@ -15,7 +15,6 @@ import { SVGSelectionTransformer } from './SVGSelectionTransformer';
 import { useSVGDrag } from './useSVGDrag';
 import { useSVGDrawing } from './useSVGDrawing';
 import { TextEditOverlay } from '../canvas/TextEditOverlay';
-import { MarkdownTextOverlay } from '../canvas/MarkdownTextOverlay';
 import { CropOverlay } from '../canvas/CropOverlay';
 import { SelectionActionBar } from '../canvas/SelectionActionBar';
 import { computeGuides } from '../../hooks/useAlignmentGuides';
@@ -42,7 +41,7 @@ export const SVGSlideCanvas: React.FC = () => {
   const setSelectedElements = useEditorStore((s) => s.setSelectedElements);
   const setEditingTextId = useEditorStore((s) => s.setEditingTextId);
   const editingTextId = useEditorStore((s) => s.editingTextId);
-  const activeSlideId = useEditorStore((s) => s.activeSlideId);
+    const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const showGrid = useEditorStore((s) => s.showGrid);
   const gridSize = useEditorStore((s) => s.gridSize);
   const hoveredObjectId = useEditorStore((s) => s.hoveredObjectId);
@@ -70,6 +69,7 @@ export const SVGSlideCanvas: React.FC = () => {
     isSelecting: boolean;
   } | null>(null);
 
+  
   const elements = useMemo(() => {
     if (!slide) return [];
     return slide.elementOrder.map((id) => slide.elements[id]).filter(Boolean);
@@ -197,7 +197,6 @@ export const SVGSlideCanvas: React.FC = () => {
     if (editingTextId === id) return;
 
     if (editingTextId && editingTextId !== id) {
-      console.log('handleSelect clearing editingTextId because different element clicked');
       setEditingTextId(null);
     }
 
@@ -238,17 +237,7 @@ export const SVGSlideCanvas: React.FC = () => {
         const localX = unrotatedRelX + clickedElement.width / 2;
         const localY = unrotatedRelY + clickedElement.height / 2;
 
-        const isOnContent = isPointOnTextContent(clickedElement as TextElement, { x: localX, y: localY });
-        console.log('Text click debug:', {
-          pos,
-          element: { x: clickedElement.x, y: clickedElement.y, width: clickedElement.width, height: clickedElement.height },
-          localX,
-          localY,
-          isOnContent,
-        });
-
-        if (isOnContent) {
-          console.log('Setting editingTextId to:', id);
+        if (isPointOnTextContent(clickedElement as TextElement, { x: localX, y: localY })) {
           setEditingTextId(id, { x: localX, y: localY });
         }
       }
@@ -277,23 +266,11 @@ export const SVGSlideCanvas: React.FC = () => {
   }, [setHoveredObjectId]);
 
   const handleStageClick = useCallback((e: React.MouseEvent) => {
-    const targetEl = e.target as Element;
-    const hasSvgBgClass = targetEl.classList.contains('svg-background');
-    const isCurrentTarget = e.target === e.currentTarget;
-    console.log('handleStageClick called', {
-      target: e.target,
-      currentTarget: e.currentTarget,
-      targetClassName: targetEl.className,
-      hasSvgBgClass,
-      isCurrentTarget,
-      willClear: isCurrentTarget || hasSvgBgClass
-    });
     if (justFinishedSelectionDrag.current) {
       justFinishedSelectionDrag.current = false;
       return;
     }
-    if (isCurrentTarget || hasSvgBgClass) {
-      console.log('handleStageClick clearing editingTextId');
+    if (e.target === e.currentTarget || (e.target as Element).classList.contains('svg-background')) {
       setSelectedElements([]);
       setEditingTextId(null);
     }
@@ -561,6 +538,7 @@ export const SVGSlideCanvas: React.FC = () => {
               key={el.id}
               element={el}
               disableInteraction={tool !== 'select'}
+              editingTextId={editingTextId}
               onMouseDown={handleSelect}
               onMouseEnter={handleMouseEnter}
               onMouseLeave={handleMouseLeave}
@@ -611,8 +589,7 @@ export const SVGSlideCanvas: React.FC = () => {
       </svg>
 
       {/* HTML overlays */}
-      <MarkdownTextOverlay stageRef={containerRef} zoom={zoom} />
-      <TextEditOverlay stageRef={containerRef} zoom={zoom} onGuides={setDragGuides} />
+      <TextEditOverlay stageRef={containerRef} zoom={zoom} />
       <CropOverlay stageRef={containerRef} zoom={zoom} />
       {visibleElements.map((el) => (
         <SelectionActionBar

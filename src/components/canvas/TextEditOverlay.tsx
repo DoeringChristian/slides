@@ -1,217 +1,384 @@
-import React, { useRef, useEffect, useCallback, useState } from 'react';
+import React, { useRef, useEffect, useCallback, useMemo } from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
-import { computeGuides, type Guide } from '../../hooks/useAlignmentGuides';
-import { getMarginLayout, getMarginBounds } from '../../utils/marginLayouts';
-import { MarkdownEditor } from './MarkdownEditor';
+import { useActiveSlide } from '../../store/selectors';
+import { TEXT_BOX_PADDING, CANVAS_PADDING } from '../../utils/constants';
+import { calculateCursorFromClick } from '../../utils/textHitTest';
 import type { TextElement } from '../../types/presentation';
-import { CANVAS_PADDING } from '../../utils/constants';
 
 interface Props {
   stageRef: React.RefObject<HTMLDivElement | null>;
   zoom: number;
-  onGuides?: (guides: Guide[]) => void;
 }
 
-export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom, onGuides }) => {
+export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
   const editingTextId = useEditorStore((s) => s.editingTextId);
-  const activeSlideId = useEditorStore((s) => s.activeSlideId);
-  const setEditingTextId = useEditorStore((s) => s.setEditingTextId);
-  const snapToGrid = useEditorStore((s) => s.snapToGrid);
-  const marginLayoutId = useEditorStore((s) => s.marginLayoutId);
   const textEditClickPosition = useEditorStore((s) => s.textEditClickPosition);
+  const setEditingTextId = useEditorStore((s) => s.setEditingTextId);
+  const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const updateElement = usePresentationStore((s) => s.updateElement);
-  const slide = usePresentationStore((s) => s.presentation.slides[activeSlideId]);
+  const slide = useActiveSlide();
 
-  const dragStartRef = useRef<{ x: number; y: number; elemX: number; elemY: number } | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const isInitializedRef = useRef(false);
+  const currentTextRef = useRef('');
+  const mountTimeRef = useRef(Date.now());
 
-  const element = editingTextId && slide ? slide.elements[editingTextId] as TextElement | undefined : undefined;
+  // Get the editing element
+  const element = editingTextId ? slide?.elements[editingTextId] : null;
+  const textElement = element && element.type === 'text' ? (element as TextElement) : null;
 
-  const handleTextChange = useCallback((newText: string) => {
-    if (editingTextId && activeSlideId) {
-      updateElement(activeSlideId, editingTextId, { text: newText });
+  // Parse line for styling
+  const parseLine = useCallback((line: string) => {
+    if (line.startsWith('### ')) {
+      return { text: line, type: 'h3', fontSizeMultiplier: 1.25 };
     }
-    setEditingTextId(null);
-  }, [editingTextId, activeSlideId, updateElement, setEditingTextId]);
+    if (line.startsWith('## ')) {
+      return { text: line, type: 'h2', fontSizeMultiplier: 1.5 };
+    }
+    if (line.startsWith('# ')) {
+      return { text: line, type: 'h1', fontSizeMultiplier: 2 };
+    }
+    return { text: line, type: 'normal', fontSizeMultiplier: 1 };
+  }, []);
 
-  const handleEscape = useCallback(() => {
-    setEditingTextId(null);
-  }, [setEditingTextId]);
+  // Get text from editor
+  const getTextFromEditor = useCallback((): string => {
+    if (!editorRef.current) return '';
 
-  const handleDragStart = useCallback((e: React.MouseEvent) => {
-    if (!element) return;
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(true);
-    dragStartRef.current = {
-      x: e.clientX,
-      y: e.clientY,
-      elemX: element.x,
-      elemY: element.y,
-    };
-  }, [element]);
+    const lines: string[] = [];
+    const divs = editorRef.current.querySelectorAll('div[data-line]');
 
+    if (divs.length === 0) {
+      return editorRef.current.textContent || '';
+    }
 
-  useEffect(() => {
-    if (!isDragging) return;
+    divs.forEach((div) => {
+      if (div.querySelector('br') && div.childNodes.length === 1) {
+        lines.push('');
+      } else {
+        lines.push(div.textContent || '');
+      }
+    });
 
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!dragStartRef.current || !activeSlideId || !editingTextId || !element) return;
-      const dx = (e.clientX - dragStartRef.current.x) / zoom;
-      const dy = (e.clientY - dragStartRef.current.y) / zoom;
+    return lines.join('\n');
+  }, []);
 
-      let newX = dragStartRef.current.elemX + dx;
-      let newY = dragStartRef.current.elemY + dy;
+  // Render text as formatted HTML
+  const renderText = useCallback((plainText: string, style: TextElement['style']) => {
+    if (!editorRef.current) return;
 
-      // Apply snapping if enabled
-      if (snapToGrid && slide) {
-        // Get other elements (excluding the current one)
-        const others = Object.values(slide.elements)
-          .filter((el) => el.id !== editingTextId && el.visible)
-          .map((el) => ({ x: el.x, y: el.y, width: el.width, height: el.height }));
+    const baseFontSize = style.fontSize * zoom;
+    const lines = plainText.split('\n');
+    const html = lines.map((line, index) => {
+      const lineInfo = parseLine(line);
+      const fontSize = baseFontSize * lineInfo.fontSizeMultiplier;
+      const fontWeight = lineInfo.type.startsWith('h') ? 'bold' : 'inherit';
 
-        // Get margin bounds
-        const marginLayout = getMarginLayout(marginLayoutId);
-        const marginBounds = marginLayout ? getMarginBounds(marginLayout) : null;
+      const escapedLine = line
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
 
-        // Create bounds for the dragged element at its tentative new position
-        const draggedBounds = {
-          x: newX,
-          y: newY,
-          width: element.width,
-          height: element.height,
-        };
+      return `<div data-line="${index}" style="font-size: ${fontSize}px; font-weight: ${fontWeight}; min-height: ${fontSize * (style.lineHeight || 1.2)}px;">${escapedLine || '<br>'}</div>`;
+    }).join('');
 
-        // Compute snapping
-        const snapResult = computeGuides(draggedBounds, others, 5, marginBounds);
+    editorRef.current.innerHTML = html;
+  }, [zoom, parseLine]);
 
-        // Apply snapped positions
-        if (snapResult.snapX !== null) {
-          newX = snapResult.snapX;
+  // Get cursor position
+  const getCursorPosition = useCallback((): number => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || !editorRef.current) return 0;
+
+    const range = selection.getRangeAt(0);
+    let offset = 0;
+    const divs = Array.from(editorRef.current.querySelectorAll('div[data-line]'));
+
+    for (let i = 0; i < divs.length; i++) {
+      const div = divs[i];
+      if (div.contains(range.startContainer)) {
+        const textNode = Array.from(div.childNodes).find(n => n.nodeType === Node.TEXT_NODE);
+        if (textNode && textNode === range.startContainer) {
+          offset += range.startOffset;
         }
-        if (snapResult.snapY !== null) {
-          newY = snapResult.snapY;
-        }
+        break;
+      }
+      offset += (div.textContent || '').length;
+      if (i < divs.length - 1) {
+        offset += 1; // newline
+      }
+    }
 
-        // Notify parent about guides
-        onGuides?.(snapResult.guides);
+    return offset;
+  }, []);
+
+  // Set cursor position
+  const setCursorPosition = useCallback((offset: number) => {
+    if (!editorRef.current) return;
+
+    const selection = window.getSelection();
+    if (!selection) return;
+
+    let currentOffset = 0;
+    const divs = Array.from(editorRef.current.querySelectorAll('div[data-line]'));
+
+    for (let i = 0; i < divs.length; i++) {
+      const div = divs[i];
+      const textNode = Array.from(div.childNodes).find(n => n.nodeType === Node.TEXT_NODE);
+
+      if (textNode) {
+        const nodeLength = textNode.textContent?.length || 0;
+        if (currentOffset + nodeLength >= offset) {
+          const range = document.createRange();
+          range.setStart(textNode, offset - currentOffset);
+          range.collapse(true);
+          selection.removeAllRanges();
+          selection.addRange(range);
+          return;
+        }
+        currentOffset += nodeLength;
+      } else {
+        if (currentOffset === offset) {
+          const range = document.createRange();
+          range.setStart(div, 0);
+          range.collapse(true);
+          selection.removeAllRanges();
+          selection.addRange(range);
+          return;
+        }
       }
 
-      updateElement(activeSlideId, editingTextId, {
-        x: newX,
-        y: newY,
-      });
-    };
+      if (i < divs.length - 1) {
+        currentOffset += 1;
+      }
+    }
 
-    const handleMouseUp = () => {
-      setIsDragging(false);
-      dragStartRef.current = null;
-      // Clear guides when drag ends
-      onGuides?.([]);
-    };
+    // Fallback: end of last div
+    if (divs.length > 0) {
+      const lastDiv = divs[divs.length - 1];
+      const textNode = Array.from(lastDiv.childNodes).find(n => n.nodeType === Node.TEXT_NODE);
+      const range = document.createRange();
+      if (textNode) {
+        range.setStart(textNode, textNode.textContent?.length || 0);
+      } else {
+        range.setStart(lastDiv, 0);
+      }
+      range.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+  }, []);
 
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
+  // Calculate initial cursor position from click
+  const initialCursorPosition = useMemo(() => {
+    if (!textElement || !textEditClickPosition) return null;
+    return calculateCursorFromClick(textElement, textEditClickPosition);
+  }, [textElement, textEditClickPosition]);
+
+  // Initialize editor
+  useEffect(() => {
+    if (!textElement || !editorRef.current || isInitializedRef.current) return;
+
+    const text = textElement.text || '';
+    currentTextRef.current = text;
+    mountTimeRef.current = Date.now();
+    renderText(text, textElement.style);
+
+    // Focus and set cursor
+    queueMicrotask(() => {
+      if (!editorRef.current) return;
+      editorRef.current.focus();
+
+      if (initialCursorPosition !== null && text) {
+        // Place cursor at click position
+        setCursorPosition(initialCursorPosition);
+      } else if (text) {
+        // No click position - select all
+        const selection = window.getSelection();
+        const range = document.createRange();
+        range.selectNodeContents(editorRef.current);
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+      }
+    });
+
+    isInitializedRef.current = true;
+
     return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
+      isInitializedRef.current = false;
     };
-  }, [isDragging, activeSlideId, editingTextId, updateElement, zoom, snapToGrid, marginLayoutId, element, slide, onGuides]);
+  }, [textElement, initialCursorPosition, renderText, setCursorPosition]);
 
-  if (!element || !stageRef.current) return null;
+  // Handle input
+  const handleInput = useCallback(() => {
+    if (!editorRef.current || !textElement) return;
 
-  // Position text relative to the container with canvas padding
-  const left = (element.x + CANVAS_PADDING) * zoom;
-  const top = (element.y + CANVAS_PADDING) * zoom;
-  const width = element.width * zoom;
-  const height = element.height * zoom;
+    const cursorPos = getCursorPosition();
+    const newText = getTextFromEditor();
+    currentTextRef.current = newText;
 
-  // Drag handle dimensions - keep them narrow and inset to not block transformer resize handles
-  const dragHandleThickness = 6;
-  const cornerInset = 12; // Leave space for corner resize handles
+    renderText(newText, textElement.style);
+    setCursorPosition(cursorPos);
+  }, [getTextFromEditor, renderText, getCursorPosition, setCursorPosition, textElement]);
+
+  // Handle keydown
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      if (activeSlideId && editingTextId) {
+        updateElement(activeSlideId, editingTextId, { text: currentTextRef.current });
+      }
+      setEditingTextId(null);
+      return;
+    }
+
+    if (e.key === 'Enter') {
+      e.preventDefault();
+
+      const cursorPos = getCursorPosition();
+      const currentText = currentTextRef.current;
+
+      // Find current line
+      const textBeforeCursor = currentText.slice(0, cursorPos);
+      const lastNewlineIndex = textBeforeCursor.lastIndexOf('\n');
+      const currentLineStart = lastNewlineIndex + 1;
+      const currentLine = currentText.slice(currentLineStart, cursorPos);
+
+      // Check for list items
+      const bulletMatch = currentLine.match(/^([-*])\s/);
+      const numberedMatch = currentLine.match(/^(\d+)\.\s/);
+
+      let insertText = '\n';
+      let newCursorOffset = 1;
+
+      if (bulletMatch) {
+        const bulletChar = bulletMatch[1];
+        const contentAfterPrefix = currentLine.slice(2).trim();
+
+        if (contentAfterPrefix === '') {
+          const newText = currentText.slice(0, currentLineStart) + currentText.slice(cursorPos);
+          currentTextRef.current = newText;
+          if (textElement) renderText(newText, textElement.style);
+          setCursorPosition(currentLineStart);
+          return;
+        }
+
+        insertText = `\n${bulletChar} `;
+        newCursorOffset = insertText.length;
+      } else if (numberedMatch) {
+        const currentNum = parseInt(numberedMatch[1], 10);
+        const contentAfterPrefix = currentLine.slice(numberedMatch[0].length).trim();
+
+        if (contentAfterPrefix === '') {
+          const newText = currentText.slice(0, currentLineStart) + currentText.slice(cursorPos);
+          currentTextRef.current = newText;
+          if (textElement) renderText(newText, textElement.style);
+          setCursorPosition(currentLineStart);
+          return;
+        }
+
+        insertText = `\n${currentNum + 1}. `;
+        newCursorOffset = insertText.length;
+      }
+
+      const newText = currentText.slice(0, cursorPos) + insertText + currentText.slice(cursorPos);
+      currentTextRef.current = newText;
+
+      if (textElement) renderText(newText, textElement.style);
+      setCursorPosition(cursorPos + newCursorOffset);
+      return;
+    }
+
+    e.stopPropagation();
+  }, [activeSlideId, editingTextId, updateElement, setEditingTextId, getCursorPosition, renderText, setCursorPosition, textElement]);
+
+  // Handle blur
+  const handleBlur = useCallback(() => {
+    // Ignore blur within 200ms of mount
+    if (Date.now() - mountTimeRef.current < 200) return;
+
+    if (activeSlideId && editingTextId) {
+      const finalText = getTextFromEditor();
+      updateElement(activeSlideId, editingTextId, { text: finalText });
+    }
+    setEditingTextId(null);
+  }, [activeSlideId, editingTextId, updateElement, setEditingTextId, getTextFromEditor]);
+
+  if (!textElement || !stageRef.current) return null;
+
+  const { style } = textElement;
+  const padding = TEXT_BOX_PADDING * zoom;
+
+  // Calculate content height for vertical alignment
+  const text = textElement.text || '';
+  const lines = text.split('\n');
+  let totalContentHeight = 0;
+  for (const line of lines) {
+    const lineInfo = parseLine(line);
+    const fontSize = style.fontSize * zoom * lineInfo.fontSizeMultiplier;
+    totalContentHeight += fontSize * (style.lineHeight || 1.2);
+  }
+
+  // Calculate vertical offset based on alignment
+  const contentAreaHeight = textElement.height * zoom - padding * 2;
+  let paddingTop = padding;
+  if (style.verticalAlign === 'middle') {
+    paddingTop = padding + Math.max(0, (contentAreaHeight - totalContentHeight) / 2);
+  } else if (style.verticalAlign === 'bottom') {
+    paddingTop = padding + Math.max(0, contentAreaHeight - totalContentHeight);
+  }
+
+  // Account for canvas padding - SVG viewBox starts at -CANVAS_PADDING
+  // so element at SVG coordinate (0,0) appears at pixel (CANVAS_PADDING * zoom, CANVAS_PADDING * zoom)
+  const offsetX = (textElement.x + CANVAS_PADDING) * zoom;
+  const offsetY = (textElement.y + CANVAS_PADDING) * zoom;
 
   return (
-    <div className="text-edit-overlay absolute" style={{ left: 0, top: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
-      {/* Border drag handles - positioned around the textarea, inset from corners */}
-      {/* Top border */}
+    <div
+      style={{
+        position: 'absolute',
+        left: offsetX,
+        top: offsetY,
+        width: textElement.width * zoom,
+        height: textElement.height * zoom,
+        transform: textElement.rotation ? `rotate(${textElement.rotation}deg)` : undefined,
+        transformOrigin: 'center center',
+        pointerEvents: 'auto',
+        zIndex: 1000,
+      }}
+    >
       <div
+        ref={editorRef}
+        contentEditable
+        suppressContentEditableWarning
+        onInput={handleInput}
+        onBlur={handleBlur}
+        onKeyDown={handleKeyDown}
         style={{
-          position: 'absolute',
-          left: `${left + cornerInset}px`,
-          top: `${top - dragHandleThickness}px`,
-          width: `${Math.max(0, width - cornerInset * 2)}px`,
-          height: `${dragHandleThickness}px`,
-          cursor: 'move',
-          pointerEvents: 'auto',
-          zIndex: 1001,
+          width: '100%',
+          height: '100%',
+          paddingTop: `${paddingTop}px`,
+          paddingLeft: `${padding}px`,
+          paddingRight: `${padding}px`,
+          paddingBottom: `${padding}px`,
+          boxSizing: 'border-box',
+          fontFamily: style.fontFamily,
+          fontWeight: style.fontWeight,
+          fontStyle: style.fontStyle,
+          color: style.color,
+          textAlign: style.align,
+          lineHeight: style.lineHeight,
+          background: 'transparent',
+          border: '2px solid #4285f4',
+          borderRadius: '2px',
+          outline: 'none',
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+          overflow: 'hidden',
+          cursor: 'text',
         }}
-        onMouseDown={handleDragStart}
       />
-      {/* Bottom border */}
-      <div
-        style={{
-          position: 'absolute',
-          left: `${left + cornerInset}px`,
-          top: `${top + height}px`,
-          width: `${Math.max(0, width - cornerInset * 2)}px`,
-          height: `${dragHandleThickness}px`,
-          cursor: 'move',
-          pointerEvents: 'auto',
-          zIndex: 1001,
-        }}
-        onMouseDown={handleDragStart}
-      />
-      {/* Left border */}
-      <div
-        style={{
-          position: 'absolute',
-          left: `${left - dragHandleThickness}px`,
-          top: `${top + cornerInset}px`,
-          width: `${dragHandleThickness}px`,
-          height: `${Math.max(0, height - cornerInset * 2)}px`,
-          cursor: 'move',
-          pointerEvents: 'auto',
-          zIndex: 1001,
-        }}
-        onMouseDown={handleDragStart}
-      />
-      {/* Right border */}
-      <div
-        style={{
-          position: 'absolute',
-          left: `${left + width}px`,
-          top: `${top + cornerInset}px`,
-          width: `${dragHandleThickness}px`,
-          height: `${Math.max(0, height - cornerInset * 2)}px`,
-          cursor: 'move',
-          pointerEvents: 'auto',
-          zIndex: 1001,
-        }}
-        onMouseDown={handleDragStart}
-      />
-
-      <div
-        style={{
-          position: 'absolute',
-          left: `${left + width / 2}px`,
-          top: `${top + height / 2}px`,
-          width: `${width}px`,
-          height: `${height}px`,
-          transform: `translate(-50%, -50%) rotate(${element.rotation}deg)`,
-          transformOrigin: 'center',
-          pointerEvents: 'auto',
-          zIndex: 1000,
-        }}
-      >
-        <MarkdownEditor
-          element={element}
-          zoom={zoom}
-          onBlur={handleTextChange}
-          onEscape={handleEscape}
-          clickPosition={textEditClickPosition}
-        />
-      </div>
     </div>
   );
 };

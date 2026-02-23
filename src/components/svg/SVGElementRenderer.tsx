@@ -7,6 +7,7 @@ import type { SlideElement } from '../../types/presentation';
 interface Props {
   element: SlideElement;
   disableInteraction?: boolean;
+  editingTextId?: string | null;
   onMouseDown?: (id: string, e: React.MouseEvent) => void;
   onMouseEnter?: (id: string) => void;
   onMouseLeave?: (id: string) => void;
@@ -16,6 +17,7 @@ interface Props {
 export const SVGElementRenderer: React.FC<Props> = ({
   element,
   disableInteraction,
+  editingTextId,
   onMouseDown,
   onMouseEnter,
   onMouseLeave,
@@ -34,6 +36,7 @@ export const SVGElementRenderer: React.FC<Props> = ({
         <SVGTextNode
           element={element}
           disableInteraction={disableInteraction}
+          isEditing={editingTextId === element.id}
           onMouseDown={handleMouseDown}
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
