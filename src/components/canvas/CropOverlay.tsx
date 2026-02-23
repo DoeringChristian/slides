@@ -279,15 +279,17 @@ export const CropOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
         onClick={handleApply}
         style={{
           left,
-        top,
-        width: fullWidth,
-        height: fullHeight,
-        transform: `rotate(${element.rotation}deg)`,
-        transformOrigin: `${currentCropDisplayX}px ${currentCropDisplayY}px`,
-        pointerEvents: 'auto',
-        zIndex: 1000,
-      }}
-    >
+          top,
+          width: fullWidth,
+          height: fullHeight,
+          transform: element.rotation ? `rotate(${element.rotation}deg)` : undefined,
+          // The element rotates around its center, so the overlay should too.
+          // Element center in overlay coords = (element.width/2 * zoom + currentCropDisplayX, element.height/2 * zoom + currentCropDisplayY)
+          transformOrigin: `${(element.width / 2) * zoom + currentCropDisplayX}px ${(element.height / 2) * zoom + currentCropDisplayY}px`,
+          pointerEvents: 'auto',
+          zIndex: 1000,
+        }}
+      >
       {/* Full image */}
       <img
         src={resource.src}

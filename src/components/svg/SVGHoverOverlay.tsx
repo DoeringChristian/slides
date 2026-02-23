@@ -10,7 +10,7 @@ interface Props {
 const HIGHLIGHT_COLOR = '#f59e0b';
 const GHOST_OPACITY = 0.35;
 
-// Calculate bounding box for lines/arrows from their points
+// Calculate bounding box for lines/arrows from their points (in absolute coordinates)
 function getLineBoundingBox(element: ShapeElement): { x: number; y: number; width: number; height: number } {
   const points = element.points ?? [0, 0, element.width, 0];
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -22,7 +22,16 @@ function getLineBoundingBox(element: ShapeElement): { x: number; y: number; widt
     maxY = Math.max(maxY, points[i + 1]);
   }
 
-  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+  return { x: element.x + minX, y: element.y + minY, width: maxX - minX, height: maxY - minY };
+}
+
+// Get the center of a line/arrow for rotation
+function getLineCenter(element: ShapeElement): { x: number; y: number } {
+  const points = element.points ?? [0, 0, element.width, 0];
+  return {
+    x: element.x + (points[0] + points[2]) / 2,
+    y: element.y + (points[1] + points[3]) / 2,
+  };
 }
 
 const GhostImage: React.FC<{ element: ImageElement }> = ({ element }) => {
@@ -140,8 +149,10 @@ const GhostShape: React.FC<{ element: ShapeElement }> = ({ element }) => {
     }
     case 'line': {
       const pts = element.points ?? [0, 0, element.width, 0];
+      const lineCenter = getLineCenter(element);
+      const lineTransform = element.rotation ? `rotate(${element.rotation}, ${lineCenter.x}, ${lineCenter.y})` : undefined;
       return (
-        <g transform={transform}>
+        <g transform={lineTransform}>
           <line
             x1={element.x + pts[0]}
             y1={element.y + pts[1]}
@@ -165,6 +176,11 @@ const GhostShape: React.FC<{ element: ShapeElement }> = ({ element }) => {
       const headLength = 10;
       const headWidth = 10;
       const tip = { x: element.x + pts[2], y: element.y + pts[3] };
+      // Line should stop at the base of the arrowhead
+      const lineEnd = {
+        x: tip.x - headLength * Math.cos(angle),
+        y: tip.y - headLength * Math.sin(angle),
+      };
       const left = {
         x: tip.x - headLength * Math.cos(angle) + headWidth / 2 * Math.sin(angle),
         y: tip.y - headLength * Math.sin(angle) - headWidth / 2 * Math.cos(angle),
@@ -173,13 +189,15 @@ const GhostShape: React.FC<{ element: ShapeElement }> = ({ element }) => {
         x: tip.x - headLength * Math.cos(angle) - headWidth / 2 * Math.sin(angle),
         y: tip.y - headLength * Math.sin(angle) + headWidth / 2 * Math.cos(angle),
       };
+      const lineCenter = getLineCenter(element);
+      const arrowTransform = element.rotation ? `rotate(${element.rotation}, ${lineCenter.x}, ${lineCenter.y})` : undefined;
       return (
-        <g transform={transform} style={{ pointerEvents: 'none' }}>
+        <g transform={arrowTransform} style={{ pointerEvents: 'none' }}>
           <line
             x1={element.x + pts[0]}
             y1={element.y + pts[1]}
-            x2={element.x + pts[2]}
-            y2={element.y + pts[3]}
+            x2={lineEnd.x}
+            y2={lineEnd.y}
             stroke={strokeColor}
             strokeWidth={strokeW}
             strokeLinecap="round"
@@ -236,9 +254,16 @@ const HighlightRect: React.FC<{ element: SlideElement }> = ({ element }) => {
     ? getLineBoundingBox(element as ShapeElement)
     : { x: element.x, y: element.y, width: element.width, height: element.height };
 
-  // Rotate around the center of the element
-  const cx = element.x + element.width / 2;
-  const cy = element.y + element.height / 2;
+  // Rotate around the center of the element (use line center for lines/arrows)
+  let cx: number, cy: number;
+  if (isLine) {
+    const center = getLineCenter(element as ShapeElement);
+    cx = center.x;
+    cy = center.y;
+  } else {
+    cx = element.x + element.width / 2;
+    cy = element.y + element.height / 2;
+  }
   const transform = element.rotation ? `rotate(${element.rotation}, ${cx}, ${cy})` : undefined;
 
   return (

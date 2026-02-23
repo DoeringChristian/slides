@@ -12,6 +12,7 @@ import { SVGConnectorHighlight } from './SVGConnectorHighlight';
 import { SVGDrawingPreview } from './SVGDrawingPreview';
 import { SVGSelectionDrag } from './SVGSelectionDrag';
 import { SVGSelectionTransformer } from './SVGSelectionTransformer';
+import { SVGLineEndpointHandles } from './SVGLineEndpointHandles';
 import { useSVGDrag } from './useSVGDrag';
 import { useSVGDrawing } from './useSVGDrawing';
 import { TextEditOverlay } from '../canvas/TextEditOverlay';
@@ -359,6 +360,13 @@ export const SVGSlideCanvas: React.FC = () => {
     }
   }, [activeSlideId, updateElement]);
 
+  // Line endpoint update handler
+  const handleLineUpdate = useCallback((attrs: Partial<ShapeElement>) => {
+    if (activeSlideId && soleSelectedLineElement) {
+      updateElement(activeSlideId, soleSelectedLineElement.id, attrs);
+    }
+  }, [activeSlideId, soleSelectedLineElement, updateElement]);
+
   // Drag and drop handlers
   const handleDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
     if (e.dataTransfer.types.includes('application/x-object-id') || e.dataTransfer.types.includes('Files')) {
@@ -582,6 +590,19 @@ export const SVGSlideCanvas: React.FC = () => {
               locked
               zoom={zoom}
               svgRef={svgRef}
+            />
+          )}
+
+          {/* Line/Arrow endpoint handles */}
+          {soleSelectedLineElement && !soleSelectedLineElement.locked && (
+            <SVGLineEndpointHandles
+              element={soleSelectedLineElement}
+              elements={elements}
+              zoom={zoom}
+              svgRef={svgRef}
+              onUpdate={handleLineUpdate}
+              onTransformStart={handleTransformStart}
+              onGuidesChange={setDragGuides}
             />
           )}
 

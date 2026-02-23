@@ -107,8 +107,12 @@ export const SVGShapeNode: React.FC<Props> = ({
       const pts = element.points ?? [0, 0, element.width, 0];
       const lineStroke = element.stroke || element.fill || '#000';
       const lineStrokeWidth = element.strokeWidth || 3;
+      // Rotate around line center, not bounding box center
+      const lineCx = element.x + (pts[0] + pts[2]) / 2;
+      const lineCy = element.y + (pts[1] + pts[3]) / 2;
+      const lineTransform = element.rotation ? `rotate(${element.rotation}, ${lineCx}, ${lineCy})` : undefined;
       return (
-        <g transform={transform} data-element-id={element.id}>
+        <g transform={lineTransform} data-element-id={element.id}>
           <line
             x1={element.x + pts[0]}
             y1={element.y + pts[1]}
@@ -151,6 +155,11 @@ export const SVGShapeNode: React.FC<Props> = ({
       const headWidth = 10;
 
       const tip = { x: element.x + pts[2], y: element.y + pts[3] };
+      // Line should stop at the base of the arrowhead
+      const lineEnd = {
+        x: tip.x - headLength * Math.cos(angle),
+        y: tip.y - headLength * Math.sin(angle),
+      };
       const left = {
         x: tip.x - headLength * Math.cos(angle) + headWidth / 2 * Math.sin(angle),
         y: tip.y - headLength * Math.sin(angle) - headWidth / 2 * Math.cos(angle),
@@ -159,14 +168,18 @@ export const SVGShapeNode: React.FC<Props> = ({
         x: tip.x - headLength * Math.cos(angle) - headWidth / 2 * Math.sin(angle),
         y: tip.y - headLength * Math.sin(angle) + headWidth / 2 * Math.cos(angle),
       };
+      // Rotate around line center, not bounding box center
+      const arrowCx = element.x + (pts[0] + pts[2]) / 2;
+      const arrowCy = element.y + (pts[1] + pts[3]) / 2;
+      const arrowTransform = element.rotation ? `rotate(${element.rotation}, ${arrowCx}, ${arrowCy})` : undefined;
 
       return (
-        <g transform={transform} data-element-id={element.id}>
+        <g transform={arrowTransform} data-element-id={element.id}>
           <line
             x1={element.x + pts[0]}
             y1={element.y + pts[1]}
-            x2={element.x + pts[2]}
-            y2={element.y + pts[3]}
+            x2={lineEnd.x}
+            y2={lineEnd.y}
             stroke={strokeColor}
             strokeWidth={strokeW}
             strokeLinecap="round"
