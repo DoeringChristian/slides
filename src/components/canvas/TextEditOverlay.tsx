@@ -13,14 +13,12 @@ interface Props {
 
 export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
   const editingTextId = useEditorStore((s) => s.editingTextId);
-  const textEditClickPosition = useEditorStore((s) => s.textEditClickPosition);
   const setEditingTextId = useEditorStore((s) => s.setEditingTextId);
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const updateElement = usePresentationStore((s) => s.updateElement);
   const slide = useActiveSlide();
 
   const editorRef = useRef<HTMLDivElement>(null);
-  const isInitializedRef = useRef(false);
   const currentTextRef = useRef('');
   const mountTimeRef = useRef(Date.now());
 
@@ -170,29 +168,34 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     }
   }, []);
 
-  // Calculate initial cursor position from click
-  const initialCursorPosition = useMemo(() => {
-    if (!textElement || !textEditClickPosition) return null;
-    return calculateCursorFromClick(textElement, textEditClickPosition);
-  }, [textElement, textEditClickPosition]);
-
-  // Initialize editor
+  // Initialize editor when entering edit mode
+  const prevEditingIdRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!textElement || !editorRef.current || isInitializedRef.current) return;
+    // Only initialize when editingTextId changes to a new value (entering edit mode)
+    if (editingTextId === prevEditingIdRef.current) return;
+    prevEditingIdRef.current = editingTextId;
+
+    if (!editingTextId || !textElement || !editorRef.current) return;
 
     const text = textElement.text || '';
     currentTextRef.current = text;
     mountTimeRef.current = Date.now();
     renderText(text, textElement.style);
 
-    // Focus and set cursor
-    queueMicrotask(() => {
+    // Focus and set cursor - use setTimeout to ensure DOM is ready
+    const timer = setTimeout(() => {
       if (!editorRef.current) return;
       editorRef.current.focus();
 
-      if (initialCursorPosition !== null && text) {
+      // Re-read click position from store
+      const clickPos = useEditorStore.getState().textEditClickPosition;
+      const cursorPos = clickPos && textElement
+        ? calculateCursorFromClick(textElement, clickPos)
+        : null;
+
+      if (cursorPos !== null && text) {
         // Place cursor at click position
-        setCursorPosition(initialCursorPosition);
+        setCursorPosition(cursorPos);
       } else if (text) {
         // No click position - select all
         const selection = window.getSelection();
@@ -201,14 +204,10 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
         selection?.removeAllRanges();
         selection?.addRange(range);
       }
-    });
+    }, 10);
 
-    isInitializedRef.current = true;
-
-    return () => {
-      isInitializedRef.current = false;
-    };
-  }, [textElement, initialCursorPosition, renderText, setCursorPosition]);
+    return () => clearTimeout(timer);
+  }, [editingTextId, textElement, renderText, setCursorPosition]);
 
   // Handle input
   const handleInput = useCallback(() => {

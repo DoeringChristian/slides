@@ -57,7 +57,7 @@ export const TextProperties: React.FC<Props> = ({ element }) => {
               <TransitionButton elementId={element.id} group="color" direction="out" />
             </div>
           </div>
-          <ColorPicker color={element.style.color} onChange={(color) => updateStyle({ color })} />
+          <ColorPicker color={element.style.color} onChange={(color) => updateStyle({ color })} allowTransparent={false} />
         </div>
       </div>
       <div>
