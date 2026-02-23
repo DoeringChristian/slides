@@ -334,8 +334,8 @@ export const SlideCanvas: React.FC = () => {
     setConnectorHighlightId(target ? target.elementId : null);
   }, [slide, soleSelectedLineElement]);
 
-  const handleBindingDragEnd = useCallback((point: { x: number; y: number }, endpoint: 'start' | 'end') => {
-    if (!slide || !soleSelectedLineElement || !activeSlideId) return;
+  const handleBindingDragEnd = useCallback((point: { x: number; y: number }, endpoint: 'start' | 'end'): boolean => {
+    if (!slide || !soleSelectedLineElement || !activeSlideId) return false;
     const target = getBindingTarget(point, Object.values(slide.elements), soleSelectedLineElement.id, 30);
     if (target) {
       const bindingKey = endpoint === 'start' ? 'startBinding' : 'endBinding';
@@ -358,9 +358,11 @@ export const SlideCanvas: React.FC = () => {
           });
         }
       }
+      return true; // Binding was made, position handled
     } else {
       const bindingKey = endpoint === 'start' ? 'startBinding' : 'endBinding';
       updateElement(activeSlideId, soleSelectedLineElement.id, { [bindingKey]: null } as any);
+      return false; // No binding, caller should handle position
     }
   }, [slide, soleSelectedLineElement, activeSlideId, updateElement]);
 

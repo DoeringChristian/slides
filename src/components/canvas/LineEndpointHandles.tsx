@@ -10,7 +10,7 @@ interface Props {
   zoom: number;
   onUpdate: (attrs: Partial<ShapeElement>) => void;
   onBindingDrag?: (point: { x: number; y: number }, endpoint: 'start' | 'end') => void;
-  onBindingDragEnd?: (point: { x: number; y: number }, endpoint: 'start' | 'end') => void;
+  onBindingDragEnd?: (point: { x: number; y: number }, endpoint: 'start' | 'end') => boolean;
   onBindingDragStop?: () => void;
 }
 
@@ -58,20 +58,23 @@ export const LineEndpointHandles: React.FC<Props> = ({
       newStartY = constrained.y;
     }
 
-    // Check for binding snap
-    onBindingDragEnd?.({ x: newStartX, y: newStartY }, 'start');
+    // Check for binding snap - returns true if bound (and handles position update)
+    const wasBound = onBindingDragEnd?.({ x: newStartX, y: newStartY }, 'start');
 
-    // New element position becomes the start point
-    // End point stays at its absolute position, recalculated relative to new origin
-    const newPoints = [0, 0, endX - newStartX, endY - newStartY];
+    // Only update position manually if binding didn't handle it
+    if (!wasBound) {
+      // New element position becomes the start point
+      // End point stays at its absolute position, recalculated relative to new origin
+      const newPoints = [0, 0, endX - newStartX, endY - newStartY];
 
-    onUpdate({
-      x: newStartX,
-      y: newStartY,
-      points: newPoints,
-      width: Math.abs(endX - newStartX),
-      height: Math.abs(endY - newStartY),
-    });
+      onUpdate({
+        x: newStartX,
+        y: newStartY,
+        points: newPoints,
+        width: Math.abs(endX - newStartX),
+        height: Math.abs(endY - newStartY),
+      });
+    }
 
     onBindingDragStop?.();
   }, [endX, endY, onUpdate, onBindingDragEnd, onBindingDragStop]);
@@ -101,19 +104,22 @@ export const LineEndpointHandles: React.FC<Props> = ({
       newEndY = constrained.y;
     }
 
-    // Check for binding snap
-    onBindingDragEnd?.({ x: newEndX, y: newEndY }, 'end');
+    // Check for binding snap - returns true if bound (and handles position update)
+    const wasBound = onBindingDragEnd?.({ x: newEndX, y: newEndY }, 'end');
 
-    // Keep start point as origin, update end point relative to start
-    const newPoints = [0, 0, newEndX - startX, newEndY - startY];
+    // Only update position manually if binding didn't handle it
+    if (!wasBound) {
+      // Keep start point as origin, update end point relative to start
+      const newPoints = [0, 0, newEndX - startX, newEndY - startY];
 
-    onUpdate({
-      x: startX,
-      y: startY,
-      points: newPoints,
-      width: Math.abs(newEndX - startX),
-      height: Math.abs(newEndY - startY),
-    });
+      onUpdate({
+        x: startX,
+        y: startY,
+        points: newPoints,
+        width: Math.abs(newEndX - startX),
+        height: Math.abs(newEndY - startY),
+      });
+    }
 
     onBindingDragStop?.();
   }, [startX, startY, onUpdate, onBindingDragEnd, onBindingDragStop]);

@@ -396,8 +396,8 @@ export const usePresentationStore = create<PresentationStore>()(
             [elementId]: { ...slide.elements[elementId], ...changes } as SlideElement,
           };
 
-          // If a non-connector element moved, update any connectors bound to it
-          if (changes.x !== undefined || changes.y !== undefined || changes.width !== undefined || changes.height !== undefined) {
+          // If a non-connector element moved or rotated, update any connectors bound to it
+          if (changes.x !== undefined || changes.y !== undefined || changes.width !== undefined || changes.height !== undefined || changes.rotation !== undefined) {
             for (const elId of slide.elementOrder) {
               if (elId === elementId) continue;
               const el = updatedElements[elId];
