@@ -175,9 +175,17 @@ export const SlideCanvas: React.FC = () => {
         if (stage) {
           const pointerPos = stage.getPointerPosition();
           if (pointerPos) {
-            // Convert to element-local coordinates
-            const localX = pointerPos.x / zoom - CANVAS_PADDING - clickedElement.x;
-            const localY = pointerPos.y / zoom - CANVAS_PADDING - clickedElement.y;
+            // Convert to element-local coordinates, accounting for rotation
+            const canvasX = pointerPos.x / zoom - CANVAS_PADDING - clickedElement.x;
+            const canvasY = pointerPos.y / zoom - CANVAS_PADDING - clickedElement.y;
+
+            // Rotate the point by the negative of the element's rotation to get local coords
+            const rotation = clickedElement.rotation || 0;
+            const radians = -rotation * Math.PI / 180;
+            const cos = Math.cos(radians);
+            const sin = Math.sin(radians);
+            const localX = canvasX * cos - canvasY * sin;
+            const localY = canvasX * sin + canvasY * cos;
 
             // Only enter edit mode if click is on actual text content
             if (isPointOnTextContent(clickedElement as TextElement, { x: localX, y: localY })) {
