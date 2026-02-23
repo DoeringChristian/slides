@@ -143,6 +143,7 @@ export const SVGSlideCanvas: React.FC = () => {
 
   const handleDragEnd = useCallback((id: string, x: number, y: number) => {
     setDragGuides([]);
+    isElementDragging.current = false;
     if (!activeSlideId || !slide) return;
 
     const { snapToGrid: snappingEnabled, showGrid: isGridVisible, gridSize: grid, marginLayoutId: currentMarginLayoutId } = useEditorStore.getState();
