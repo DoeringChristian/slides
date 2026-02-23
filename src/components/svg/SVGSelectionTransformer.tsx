@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { SlideElement, ShapeElement } from '../../types/presentation';
 import { CANVAS_PADDING } from '../../utils/constants';
+import { useEditorStore } from '../../store/editorStore';
+import { computeResizeSnap, type Guide } from '../../hooks/useAlignmentGuides';
+import { getMarginLayout, getMarginBounds } from '../../utils/marginLayouts';
 
 interface Props {
   elements: SlideElement[];
@@ -11,6 +14,7 @@ interface Props {
   onTransformStart?: () => void;
   onTransform?: (id: string, attrs: { x?: number; y?: number; width?: number; height?: number; rotation?: number }) => void;
   onTransformEnd?: (id: string, attrs: { x?: number; y?: number; width?: number; height?: number; rotation?: number }) => void;
+  onGuidesChange?: (guides: Guide[]) => void;
 }
 
 const COLOR_DEFAULT = '#4285f4';
@@ -75,6 +79,7 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
   onTransformStart,
   onTransform,
   onTransformEnd,
+  onGuidesChange,
 }) => {
   // Convert screen coordinates to SVG coordinates
   const screenToSVG = useCallback((clientX: number, clientY: number) => {
@@ -173,6 +178,9 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
         const dy = (e.clientY - resizing.startY) / zoom;
         const { anchor, startBounds } = resizing;
 
+        // Get snapping settings
+        const { snapToGrid: snappingEnabled, marginLayoutId } = useEditorStore.getState();
+
         let newX = startBounds.x;
         let newY = startBounds.y;
         let newWidth = startBounds.width;
@@ -191,6 +199,39 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
         }
         if (anchor.includes('bottom')) {
           newHeight = startBounds.height + dy;
+        }
+
+        // Snap to alignment guides if enabled
+        if (snappingEnabled) {
+          const marginLayout = getMarginLayout(marginLayoutId);
+          const marginBounds = marginLayout ? getMarginBounds(marginLayout) : null;
+          const others = elements
+            .filter((el) => el.id !== singleElement.id && el.visible)
+            .map((el) => ({ x: el.x, y: el.y, width: el.width, height: el.height }));
+
+          const currentBounds = { x: newX, y: newY, width: newWidth, height: newHeight };
+          const snapResult = computeResizeSnap(currentBounds, others, 5, marginBounds);
+
+          onGuidesChange?.(snapResult.guides);
+
+          if (anchor.includes('left') && snapResult.leftSnap !== null) {
+            const snapDelta = snapResult.leftSnap - newX;
+            newX = snapResult.leftSnap;
+            newWidth = newWidth - snapDelta;
+          }
+          if (anchor.includes('right') && snapResult.rightSnap !== null) {
+            newWidth = snapResult.rightSnap - newX;
+          }
+          if (anchor.includes('top') && snapResult.topSnap !== null) {
+            const snapDelta = snapResult.topSnap - newY;
+            newY = snapResult.topSnap;
+            newHeight = newHeight - snapDelta;
+          }
+          if (anchor.includes('bottom') && snapResult.bottomSnap !== null) {
+            newHeight = snapResult.bottomSnap - newY;
+          }
+        } else {
+          onGuidesChange?.([]);
         }
 
         // Minimum size
@@ -215,7 +256,7 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
         let deltaAngle = newAngle - rotating.startAngle;
         let finalRotation = rotating.elementRotation + deltaAngle;
 
-        // Snap to 15 degree increments when Ctrl/Cmd held
+        // Snap to 15 degree increments only when Ctrl/Cmd held
         if (ctrlHeld.current) {
           finalRotation = Math.round(finalRotation / 15) * 15;
         }
@@ -232,6 +273,7 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
       if (resizing && singleElement) {
         // Final values already applied via onTransform during drag
         onTransformEnd?.(singleElement.id, {});
+        onGuidesChange?.([]);
       }
       if (rotating && singleElement) {
         onTransformEnd?.(singleElement.id, {});

@@ -340,6 +340,13 @@ export const SVGSlideCanvas: React.FC = () => {
   }, [tool, handleDrawMouseUp, selectionDrag, elements, setSelectedElements]);
 
   // Transform handlers
+  const handleTransformStart = useCallback(() => {
+    // Exit text edit mode when starting any transform
+    if (editingTextId) {
+      setEditingTextId(null);
+    }
+  }, [editingTextId, setEditingTextId]);
+
   const handleTransform = useCallback((id: string, attrs: Record<string, number>) => {
     if (activeSlideId) {
       updateElement(activeSlideId, id, attrs);
@@ -562,8 +569,10 @@ export const SVGSlideCanvas: React.FC = () => {
               selectedIds={unlockedSelectedIds}
               zoom={zoom}
               svgRef={svgRef}
+              onTransformStart={handleTransformStart}
               onTransform={handleTransform}
               onTransformEnd={handleTransformEnd}
+              onGuidesChange={setDragGuides}
             />
           )}
           {lockedSelectedIds.length > 0 && (
