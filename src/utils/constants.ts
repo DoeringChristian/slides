@@ -6,7 +6,7 @@ export const MAX_ZOOM = 3;
 export const DEFAULT_ZOOM = 1;
 export const GRID_SIZE = 20;
 export const CANVAS_PADDING = 100;
-export const TEXT_BOX_PADDING = 8; // Inner padding for text elements
+export const TEXT_BOX_PADDING = 14; // Inner padding for text elements (includes space for transform handles)
 
 export const DEFAULT_TEXT_STYLE = {
   fontFamily: 'Arial',

@@ -80,7 +80,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
 
-      return `<div data-line="${index}" style="font-size: ${fontSize}px; font-weight: ${fontWeight}; min-height: ${fontSize * (style.lineHeight || 1.2)}px;">${escapedLine || '<br>'}</div>`;
+      return `<div data-line="${index}" style="margin: 0; padding: 0; font-size: ${fontSize}px; font-weight: ${fontWeight}; line-height: 1; min-height: ${fontSize * (style.lineHeight || 1.2)}px;">${escapedLine || '<br>'}</div>`;
     }).join('');
 
     editorRef.current.innerHTML = html;
@@ -334,6 +334,9 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
   const offsetX = (textElement.x + CANVAS_PADDING) * zoom;
   const offsetY = (textElement.y + CANVAS_PADDING) * zoom;
 
+  // Vertical alignment offset (beyond base padding)
+  const verticalAlignOffset = paddingTop - padding;
+
   return (
     <div
       style={{
@@ -344,8 +347,9 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
         height: textElement.height * zoom,
         transform: textElement.rotation ? `rotate(${textElement.rotation}deg)` : undefined,
         transformOrigin: 'center center',
-        pointerEvents: 'auto',
         zIndex: 1000,
+        // Let clicks on border pass through to SVG for dragging
+        pointerEvents: 'none',
       }}
     >
       <div
@@ -356,12 +360,15 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
         style={{
-          width: '100%',
-          height: '100%',
-          paddingTop: `${paddingTop}px`,
-          paddingLeft: `${padding}px`,
-          paddingRight: `${padding}px`,
-          paddingBottom: `${padding}px`,
+          position: 'absolute',
+          left: padding,
+          top: padding,
+          width: textElement.width * zoom - padding * 2,
+          height: textElement.height * zoom - padding * 2,
+          paddingTop: `${verticalAlignOffset}px`,
+          paddingLeft: 0,
+          paddingRight: 0,
+          paddingBottom: 0,
           boxSizing: 'border-box',
           fontFamily: style.fontFamily,
           fontWeight: style.fontWeight,
@@ -371,12 +378,13 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
           lineHeight: style.lineHeight,
           background: 'transparent',
           border: 'none',
-          outline: '2px solid #4285f4',
-          outlineOffset: '-1px',
+          outline: 'none',
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
           overflow: 'hidden',
           cursor: 'text',
+          // Enable pointer events on the contentEditable (parent has pointerEvents: none)
+          pointerEvents: 'auto',
         }}
       />
     </div>

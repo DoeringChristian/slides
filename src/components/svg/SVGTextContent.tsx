@@ -285,8 +285,8 @@ export const SVGTextContent: React.FC<Props> = memo(({
   return (
     <g transform={transform} style={{ pointerEvents: 'none' }}>
       {lineData.lines.map(({ block, segments, height, fontSize }, index) => {
-        // Position at baseline (adjust Y for SVG text baseline)
-        const lineY = currentY + fontSize * 0.85; // Approximate baseline position
+        // Position at baseline (y coordinate is baseline position with dominant-baseline="auto")
+        const lineY = currentY + fontSize * 0.8;
         currentY += height;
 
         return (

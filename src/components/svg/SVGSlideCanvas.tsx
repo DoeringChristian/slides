@@ -195,7 +195,36 @@ export const SVGSlideCanvas: React.FC = () => {
     const clickedElement = slide?.elements[id];
     const isTextElement = clickedElement?.type === 'text';
 
-    if (editingTextId === id) return;
+    if (editingTextId === id) {
+      // We're editing this text element - check if click is on border (not text content)
+      // If on border, exit edit mode and allow drag to start
+      if (isTextElement && clickedElement) {
+        const pos = screenToSVG(e.clientX, e.clientY);
+
+        // Transform click to local coordinates (handle rotation)
+        const centerX = clickedElement.x + clickedElement.width / 2;
+        const centerY = clickedElement.y + clickedElement.height / 2;
+        const relCenterX = pos.x - centerX;
+        const relCenterY = pos.y - centerY;
+        const rotation = clickedElement.rotation || 0;
+        const radians = -rotation * Math.PI / 180;
+        const cos = Math.cos(radians);
+        const sin = Math.sin(radians);
+        const unrotatedRelX = relCenterX * cos - relCenterY * sin;
+        const unrotatedRelY = relCenterX * sin + relCenterY * cos;
+        const localX = unrotatedRelX + clickedElement.width / 2;
+        const localY = unrotatedRelY + clickedElement.height / 2;
+
+        if (!isPointOnTextContent(clickedElement as TextElement, { x: localX, y: localY })) {
+          // Click is on border, not text - exit edit mode and start drag
+          setEditingTextId(null);
+          if (!clickedElement.locked) {
+            handleElementMouseDown(id, clickedElement.x, clickedElement.y, e);
+          }
+        }
+      }
+      return;
+    }
 
     if (editingTextId && editingTextId !== id) {
       setEditingTextId(null);
