@@ -132,6 +132,7 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
   const rotation = singleElement?.rotation || 0;
 
   const handleResizeStart = useCallback((anchor: string, e: React.MouseEvent) => {
+    e.preventDefault(); // Prevent text selection
     e.stopPropagation();
     if (locked) return;
     onTransformStart?.();
@@ -144,6 +145,7 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
   }, [bounds, locked, onTransformStart]);
 
   const handleRotateStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault(); // Prevent text selection
     e.stopPropagation();
     if (locked || !singleElement) return;
     onTransformStart?.();
@@ -165,6 +167,7 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
     if (!resizing && !rotating) return;
 
     const handleMouseMove = (e: MouseEvent) => {
+      e.preventDefault(); // Prevent text selection during transform
       if (resizing && singleElement) {
         const dx = (e.clientX - resizing.startX) / zoom;
         const dy = (e.clientY - resizing.startY) / zoom;

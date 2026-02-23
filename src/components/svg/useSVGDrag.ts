@@ -41,6 +41,7 @@ export function useSVGDrag(options: UseSVGDragOptions) {
     elementY: number,
     e: React.MouseEvent
   ) => {
+    e.preventDefault(); // Prevent text selection
     e.stopPropagation();
     isDraggingRef.current = true;
     onDragStart?.(id);
@@ -60,6 +61,7 @@ export function useSVGDrag(options: UseSVGDragOptions) {
     if (!dragState.isDragging) return;
 
     const handleMouseMove = (e: MouseEvent) => {
+      e.preventDefault(); // Prevent text selection during drag
       const dx = (e.clientX - dragState.startX) / zoom;
       const dy = (e.clientY - dragState.startY) / zoom;
 
