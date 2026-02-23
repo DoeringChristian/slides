@@ -1,6 +1,4 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Stage, Layer, Rect, Ellipse, Image as KonvaImage, Line, Arrow, Star, RegularPolygon } from 'react-konva';
-import useImage from 'use-image';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useAudienceReceiver } from '../../hooks/usePresenterMode';
 import { CustomMarkdownRenderer } from '../canvas/CustomMarkdownRenderer';
@@ -8,32 +6,196 @@ import { SLIDE_WIDTH, SLIDE_HEIGHT, TEXT_BOX_PADDING } from '../../utils/constan
 import { interpolateWithVisibility, lerpColor } from '../../utils/interpolation';
 import type { SlideElement, TextElement, ShapeElement, ImageElement, Slide, Resource } from '../../types/presentation';
 
+const AudienceShapeElement: React.FC<{ element: ShapeElement }> = ({ element }) => {
+  if (!element.visible) return null;
+
+  const transform = `translate(${element.x}, ${element.y}) rotate(${element.rotation || 0})`;
+
+  const commonProps = {
+    opacity: element.opacity,
+    fill: element.fill || 'transparent',
+    stroke: element.stroke || 'none',
+    strokeWidth: element.strokeWidth || 0,
+    style: { pointerEvents: 'none' as const },
+  };
+
+  switch (element.shapeType) {
+    case 'rect':
+      return (
+        <g transform={transform}>
+          <rect
+            x={0}
+            y={0}
+            width={element.width}
+            height={element.height}
+            rx={element.cornerRadius || 0}
+            ry={element.cornerRadius || 0}
+            {...commonProps}
+          />
+        </g>
+      );
+
+    case 'ellipse':
+      return (
+        <g transform={transform}>
+          <ellipse
+            cx={element.width / 2}
+            cy={element.height / 2}
+            rx={element.width / 2}
+            ry={element.height / 2}
+            {...commonProps}
+          />
+        </g>
+      );
+
+    case 'triangle': {
+      const cx = element.width / 2;
+      const cy = element.height / 2;
+      const r = Math.min(element.width, element.height) / 2;
+      const points = [
+        [cx, cy - r],
+        [cx - r * Math.cos(Math.PI / 6), cy + r * Math.sin(Math.PI / 6)],
+        [cx + r * Math.cos(Math.PI / 6), cy + r * Math.sin(Math.PI / 6)],
+      ];
+      const d = `M ${points[0][0]} ${points[0][1]} L ${points[1][0]} ${points[1][1]} L ${points[2][0]} ${points[2][1]} Z`;
+      return (
+        <g transform={transform}>
+          <path d={d} {...commonProps} />
+        </g>
+      );
+    }
+
+    case 'star': {
+      const cx = element.width / 2;
+      const cy = element.height / 2;
+      const outerR = Math.min(element.width, element.height) / 2;
+      const innerR = outerR / 2;
+      const starPoints: string[] = [];
+      for (let i = 0; i < 10; i++) {
+        const r = i % 2 === 0 ? outerR : innerR;
+        const angle = (i * Math.PI) / 5 - Math.PI / 2;
+        starPoints.push(`${cx + r * Math.cos(angle)},${cy + r * Math.sin(angle)}`);
+      }
+      return (
+        <g transform={transform}>
+          <polygon points={starPoints.join(' ')} {...commonProps} />
+        </g>
+      );
+    }
+
+    case 'line': {
+      const pts = element.points ?? [0, 0, element.width, 0];
+      return (
+        <g transform={transform}>
+          <line
+            x1={pts[0]}
+            y1={pts[1]}
+            x2={pts[2]}
+            y2={pts[3]}
+            stroke={element.stroke || element.fill || '#000'}
+            strokeWidth={element.strokeWidth || 3}
+            strokeLinecap="round"
+            opacity={element.opacity}
+            style={{ pointerEvents: 'none' }}
+          />
+        </g>
+      );
+    }
+
+    case 'arrow': {
+      const pts = element.points ?? [0, 0, element.width, 0];
+      const strokeColor = element.stroke || element.fill || '#000';
+      const strokeW = element.strokeWidth || 3;
+      const dx = pts[2] - pts[0];
+      const dy = pts[3] - pts[1];
+      const angle = Math.atan2(dy, dx);
+      const headLength = 10;
+      const headWidth = 10;
+      const tip = { x: pts[2], y: pts[3] };
+      const left = {
+        x: tip.x - headLength * Math.cos(angle) + headWidth / 2 * Math.sin(angle),
+        y: tip.y - headLength * Math.sin(angle) - headWidth / 2 * Math.cos(angle),
+      };
+      const right = {
+        x: tip.x - headLength * Math.cos(angle) - headWidth / 2 * Math.sin(angle),
+        y: tip.y - headLength * Math.sin(angle) + headWidth / 2 * Math.cos(angle),
+      };
+      return (
+        <g transform={transform} style={{ pointerEvents: 'none' }}>
+          <line
+            x1={pts[0]}
+            y1={pts[1]}
+            x2={pts[2]}
+            y2={pts[3]}
+            stroke={strokeColor}
+            strokeWidth={strokeW}
+            strokeLinecap="round"
+            opacity={element.opacity}
+          />
+          <polygon
+            points={`${tip.x},${tip.y} ${left.x},${left.y} ${right.x},${right.y}`}
+            fill={strokeColor}
+            opacity={element.opacity}
+          />
+        </g>
+      );
+    }
+
+    default:
+      return null;
+  }
+};
+
 const AudienceImageElement: React.FC<{ element: ImageElement; resources: Record<string, Resource> }> = ({ element, resources }) => {
   const resource = element.resourceId ? resources[element.resourceId] : undefined;
-  const [image] = useImage(resource?.type === 'image' ? (resource?.src || '') : '');
 
   if (!resource) return null;
   if (resource.type === 'video') return null;
 
-  const crop = {
-    x: element.cropX,
-    y: element.cropY,
-    width: element.cropWidth,
-    height: element.cropHeight,
-  };
+  const transform = `translate(${element.x}, ${element.y}) rotate(${element.rotation || 0})`;
+  const hasCrop = element.cropWidth > 0 && element.cropHeight > 0;
+
+  if (hasCrop) {
+    const clipId = `clip-audience-${element.id}`;
+    const scaleX = element.width / element.cropWidth;
+    const scaleY = element.height / element.cropHeight;
+
+    return (
+      <g transform={transform}>
+        <defs>
+          <clipPath id={clipId}>
+            <rect x={0} y={0} width={element.width} height={element.height} />
+          </clipPath>
+        </defs>
+        <g clipPath={`url(#${clipId})`}>
+          <image
+            href={resource.src}
+            x={-element.cropX * scaleX}
+            y={-element.cropY * scaleY}
+            width={resource.originalWidth * scaleX}
+            height={resource.originalHeight * scaleY}
+            opacity={element.opacity}
+            preserveAspectRatio="none"
+            style={{ pointerEvents: 'none' }}
+          />
+        </g>
+      </g>
+    );
+  }
 
   return (
-    <KonvaImage
-      image={image}
-      x={element.x}
-      y={element.y}
-      width={element.width}
-      height={element.height}
-      rotation={element.rotation}
-      opacity={element.opacity}
-      crop={crop}
-      listening={false}
-    />
+    <g transform={transform}>
+      <image
+        href={resource.src}
+        x={0}
+        y={0}
+        width={element.width}
+        height={element.height}
+        opacity={element.opacity}
+        preserveAspectRatio="none"
+        style={{ pointerEvents: 'none' }}
+      />
+    </g>
   );
 };
 
@@ -43,17 +205,7 @@ const AudienceSlideElement: React.FC<{ element: SlideElement; resources: Record<
   if (element.type === 'text') return null;
 
   if (element.type === 'shape') {
-    const el = element as ShapeElement;
-    const common = { x: el.x, y: el.y, rotation: el.rotation, opacity: el.opacity, fill: el.fill, stroke: el.stroke, strokeWidth: el.strokeWidth, listening: false };
-    switch (el.shapeType) {
-      case 'rect': return <Rect {...common} width={el.width} height={el.height} cornerRadius={el.cornerRadius} />;
-      case 'ellipse': return <Ellipse {...common} x={el.x + el.width/2} y={el.y + el.height/2} radiusX={el.width/2} radiusY={el.height/2} />;
-      case 'triangle': return <RegularPolygon {...common} x={el.x + el.width/2} y={el.y + el.height/2} sides={3} radius={Math.min(el.width, el.height)/2} />;
-      case 'star': return <Star {...common} x={el.x + el.width/2} y={el.y + el.height/2} numPoints={5} innerRadius={Math.min(el.width, el.height)/4} outerRadius={Math.min(el.width, el.height)/2} />;
-      case 'line': return <Line {...common} points={el.points ?? [0, 0, el.width, 0]} stroke={el.stroke || el.fill} strokeWidth={el.strokeWidth || 3} fill="" />;
-      case 'arrow': return <Arrow {...common} points={el.points ?? [0, 0, el.width, 0]} stroke={el.stroke || el.fill} strokeWidth={el.strokeWidth || 3} fill={el.stroke || el.fill} pointerLength={10} pointerWidth={10} />;
-      default: return null;
-    }
+    return <AudienceShapeElement element={element as ShapeElement} />;
   }
 
   if (element.type === 'image') {
@@ -162,12 +314,17 @@ export const AudienceView: React.FC = () => {
   return (
     <div ref={containerRef} className="fixed inset-0 bg-black flex items-center justify-center cursor-none">
       <div className="relative" style={{ width: stageW, height: stageH }}>
-        <Stage width={stageW} height={stageH} scaleX={scale} scaleY={scale} listening={false}>
-          <Layer listening={false}>
-            <Rect x={0} y={0} width={SLIDE_WIDTH} height={SLIDE_HEIGHT} fill={bgColor} listening={false} />
-            {renderedElements.map((el) => <AudienceSlideElement key={el.id} element={el} resources={resources} />)}
-          </Layer>
-        </Stage>
+        <svg
+          width={stageW}
+          height={stageH}
+          viewBox={`0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}`}
+          style={{ display: 'block' }}
+        >
+          <rect x={0} y={0} width={SLIDE_WIDTH} height={SLIDE_HEIGHT} fill={bgColor} />
+          {renderedElements.map((el) => (
+            <AudienceSlideElement key={el.id} element={el} resources={resources} />
+          ))}
+        </svg>
 
         {/* Video overlay */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden">

@@ -1,10 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Stage, Layer, Rect } from 'react-konva';
 import { X, ChevronLeft, ChevronRight, RotateCcw, Monitor } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { usePresenterMode } from '../../hooks/usePresenterMode';
-import { ThumbnailElement } from '../sidebar/SlideThumbnail';
+import { SVGStaticSlide } from '../svg/SVGStaticSlide';
 import { CustomMarkdownRenderer } from '../canvas/CustomMarkdownRenderer';
 import { SLIDE_WIDTH, SLIDE_HEIGHT, TEXT_BOX_PADDING } from '../../utils/constants';
 import type { Slide, TextElement } from '../../types/presentation';
@@ -41,7 +40,6 @@ const SlidePreview: React.FC<SlidePreviewProps> = ({ slide, scale, label, onClic
     );
   }
 
-  const bgColor = slide.background.type === 'solid' ? slide.background.color : '#ffffff';
   const elements = slide.elementOrder.map((id) => slide.elements[id]).filter(Boolean);
   const textElements = elements.filter((el): el is TextElement => el.type === 'text' && el.visible);
 
@@ -52,20 +50,11 @@ const SlidePreview: React.FC<SlidePreviewProps> = ({ slide, scale, label, onClic
         className={`relative rounded overflow-hidden border-2 border-gray-700 ${onClick ? 'cursor-pointer hover:border-gray-500' : ''}`}
         onClick={onClick}
       >
-        <Stage
+        <SVGStaticSlide
+          slide={slide}
           width={SLIDE_WIDTH * scale}
           height={SLIDE_HEIGHT * scale}
-          scaleX={scale}
-          scaleY={scale}
-          listening={false}
-        >
-          <Layer listening={false}>
-            <Rect x={0} y={0} width={SLIDE_WIDTH} height={SLIDE_HEIGHT} fill={bgColor} listening={false} />
-            {elements.map((el) => (
-              <ThumbnailElement key={el.id} element={el} />
-            ))}
-          </Layer>
-        </Stage>
+        />
         {/* Text overlay for markdown rendering */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
           {textElements.map((element) => (
@@ -380,7 +369,6 @@ export const PresenterControlPanel: React.FC = () => {
           if (!slide || slide.hidden) return null;
           const isActive = index === presentingSlideIndex;
           const thumbScale = 0.08;
-          const bgColor = slide.background.type === 'solid' ? slide.background.color : '#ffffff';
           const elements = slide.elementOrder.map((id) => slide.elements[id]).filter(Boolean);
           const textEls = elements.filter((el): el is TextElement => el.type === 'text' && el.visible);
 
@@ -392,20 +380,11 @@ export const PresenterControlPanel: React.FC = () => {
                 isActive ? 'border-blue-500' : 'border-gray-600 hover:border-gray-400'
               }`}
             >
-              <Stage
+              <SVGStaticSlide
+                slide={slide}
                 width={SLIDE_WIDTH * thumbScale}
                 height={SLIDE_HEIGHT * thumbScale}
-                scaleX={thumbScale}
-                scaleY={thumbScale}
-                listening={false}
-              >
-                <Layer listening={false}>
-                  <Rect x={0} y={0} width={SLIDE_WIDTH} height={SLIDE_HEIGHT} fill={bgColor} listening={false} />
-                  {elements.map((el) => (
-                    <ThumbnailElement key={el.id} element={el} />
-                  ))}
-                </Layer>
-              </Stage>
+              />
               {/* Text overlay */}
               <div className="absolute inset-0 pointer-events-none overflow-hidden">
                 {textEls.map((element) => (

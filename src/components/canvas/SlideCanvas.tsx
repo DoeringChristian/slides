@@ -453,19 +453,43 @@ export const SlideCanvas: React.FC = () => {
     });
   }, [activeSlideId, zoom, unhideElement, setSelectedElements, addElement, addEmptySlide, setActiveSlide, addResource]);
 
-  // Ctrl+wheel and trackpad pinch-to-zoom
+  // Ctrl+wheel and trackpad pinch-to-zoom with throttling
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+
+    let pendingZoom: number | null = null;
+    let rafId: number | null = null;
+
+    const applyZoom = () => {
+      if (pendingZoom !== null) {
+        setZoom(pendingZoom);
+        pendingZoom = null;
+      }
+      rafId = null;
+    };
+
     const handleWheel = (e: WheelEvent) => {
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
-      const zoomRef = useEditorStore.getState().zoom;
+
+      const currentZoom = pendingZoom ?? useEditorStore.getState().zoom;
       const delta = -e.deltaY * 0.01;
-      setZoom(zoomRef + delta);
+      pendingZoom = currentZoom + delta;
+
+      // Throttle updates to animation frame rate
+      if (rafId === null) {
+        rafId = requestAnimationFrame(applyZoom);
+      }
     };
+
     el.addEventListener('wheel', handleWheel, { passive: false });
-    return () => el.removeEventListener('wheel', handleWheel);
+    return () => {
+      el.removeEventListener('wheel', handleWheel);
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+    };
   }, [setZoom]);
 
   // Resolve hovered element: prefer current slide, fall back to objectElements for rendering data

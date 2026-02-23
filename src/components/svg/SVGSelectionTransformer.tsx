@@ -1,0 +1,320 @@
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import type { SlideElement, ShapeElement } from '../../types/presentation';
+
+interface Props {
+  elements: SlideElement[];
+  selectedIds: string[];
+  locked?: boolean;
+  zoom: number;
+  onTransformStart?: () => void;
+  onTransform?: (id: string, attrs: { x?: number; y?: number; width?: number; height?: number; rotation?: number }) => void;
+  onTransformEnd?: (id: string, attrs: { x?: number; y?: number; width?: number; height?: number; rotation?: number }) => void;
+}
+
+const COLOR_DEFAULT = '#4285f4';
+const COLOR_LOCKED = '#dc2626';
+const ANCHOR_SIZE = 10;
+const ROTATION_ANCHOR_OFFSET = 30;
+
+// Calculate bounding box for lines/arrows from their points
+function getLineBoundingBox(element: ShapeElement): { x: number; y: number; width: number; height: number } {
+  const points = element.points ?? [0, 0, element.width, 0];
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+  for (let i = 0; i < points.length; i += 2) {
+    minX = Math.min(minX, points[i]);
+    maxX = Math.max(maxX, points[i]);
+    minY = Math.min(minY, points[i + 1]);
+    maxY = Math.max(maxY, points[i + 1]);
+  }
+
+  return { x: element.x + minX, y: element.y + minY, width: maxX - minX, height: maxY - minY };
+}
+
+function getElementBounds(element: SlideElement): { x: number; y: number; width: number; height: number } {
+  const isLine = element.type === 'shape' &&
+    ((element as ShapeElement).shapeType === 'line' || (element as ShapeElement).shapeType === 'arrow');
+
+  if (isLine) {
+    return getLineBoundingBox(element as ShapeElement);
+  }
+
+  return { x: element.x, y: element.y, width: element.width, height: element.height };
+}
+
+function getBoundingBox(elements: SlideElement[]): { x: number; y: number; width: number; height: number } {
+  if (elements.length === 0) {
+    return { x: 0, y: 0, width: 0, height: 0 };
+  }
+
+  if (elements.length === 1) {
+    return getElementBounds(elements[0]);
+  }
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+
+  for (const el of elements) {
+    const bounds = getElementBounds(el);
+    minX = Math.min(minX, bounds.x);
+    minY = Math.min(minY, bounds.y);
+    maxX = Math.max(maxX, bounds.x + bounds.width);
+    maxY = Math.max(maxY, bounds.y + bounds.height);
+  }
+
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+export const SVGSelectionTransformer: React.FC<Props> = ({
+  elements,
+  selectedIds,
+  locked = false,
+  zoom,
+  onTransformStart,
+  onTransform,
+  onTransformEnd,
+}) => {
+  const [resizing, setResizing] = useState<{
+    anchor: string;
+    startX: number;
+    startY: number;
+    startBounds: { x: number; y: number; width: number; height: number };
+  } | null>(null);
+
+  const [rotating, setRotating] = useState<{
+    startAngle: number;
+    elementRotation: number;
+    centerX: number;
+    centerY: number;
+  } | null>(null);
+
+  const ctrlHeld = useRef(false);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Control' || e.key === 'Meta') ctrlHeld.current = true;
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key === 'Control' || e.key === 'Meta') ctrlHeld.current = false;
+    };
+    const onBlur = () => { ctrlHeld.current = false; };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, []);
+
+  const selectedElements = elements.filter((el) => selectedIds.includes(el.id));
+
+  if (selectedIds.length === 0 || selectedElements.length === 0) return null;
+
+  const bounds = getBoundingBox(selectedElements);
+  const singleElement = selectedElements.length === 1 ? selectedElements[0] : null;
+  const rotation = singleElement?.rotation || 0;
+
+  const handleResizeStart = useCallback((anchor: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (locked) return;
+    onTransformStart?.();
+    setResizing({
+      anchor,
+      startX: e.clientX,
+      startY: e.clientY,
+      startBounds: { ...bounds },
+    });
+  }, [bounds, locked, onTransformStart]);
+
+  const handleRotateStart = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (locked || !singleElement) return;
+    onTransformStart?.();
+    const centerX = bounds.x + bounds.width / 2;
+    const centerY = bounds.y + bounds.height / 2;
+    const dx = e.clientX / zoom - centerX;
+    const dy = e.clientY / zoom - centerY;
+    setRotating({
+      startAngle: Math.atan2(dy, dx) * 180 / Math.PI,
+      elementRotation: singleElement.rotation || 0,
+      centerX,
+      centerY,
+    });
+  }, [bounds, locked, singleElement, zoom, onTransformStart]);
+
+  useEffect(() => {
+    if (!resizing && !rotating) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (resizing && singleElement) {
+        const dx = (e.clientX - resizing.startX) / zoom;
+        const dy = (e.clientY - resizing.startY) / zoom;
+        const { anchor, startBounds } = resizing;
+
+        let newX = startBounds.x;
+        let newY = startBounds.y;
+        let newWidth = startBounds.width;
+        let newHeight = startBounds.height;
+
+        if (anchor.includes('left')) {
+          newX = startBounds.x + dx;
+          newWidth = startBounds.width - dx;
+        }
+        if (anchor.includes('right')) {
+          newWidth = startBounds.width + dx;
+        }
+        if (anchor.includes('top')) {
+          newY = startBounds.y + dy;
+          newHeight = startBounds.height - dy;
+        }
+        if (anchor.includes('bottom')) {
+          newHeight = startBounds.height + dy;
+        }
+
+        // Minimum size
+        if (newWidth < 10) {
+          if (anchor.includes('left')) newX = startBounds.x + startBounds.width - 10;
+          newWidth = 10;
+        }
+        if (newHeight < 10) {
+          if (anchor.includes('top')) newY = startBounds.y + startBounds.height - 10;
+          newHeight = 10;
+        }
+
+        onTransform?.(singleElement.id, { x: newX, y: newY, width: newWidth, height: newHeight });
+      }
+
+      if (rotating && singleElement) {
+        const dx = e.clientX / zoom - rotating.centerX;
+        const dy = e.clientY / zoom - rotating.centerY;
+        let newAngle = Math.atan2(dy, dx) * 180 / Math.PI;
+        let deltaAngle = newAngle - rotating.startAngle;
+        let finalRotation = rotating.elementRotation + deltaAngle;
+
+        // Snap to 15 degree increments when Ctrl/Cmd held
+        if (ctrlHeld.current) {
+          finalRotation = Math.round(finalRotation / 15) * 15;
+        }
+
+        // Normalize to 0-360
+        while (finalRotation < 0) finalRotation += 360;
+        while (finalRotation >= 360) finalRotation -= 360;
+
+        onTransform?.(singleElement.id, { rotation: finalRotation });
+      }
+    };
+
+    const handleMouseUp = () => {
+      if (resizing && singleElement) {
+        // Final values already applied via onTransform during drag
+        onTransformEnd?.(singleElement.id, {});
+      }
+      if (rotating && singleElement) {
+        onTransformEnd?.(singleElement.id, {});
+      }
+      setResizing(null);
+      setRotating(null);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [resizing, rotating, zoom, singleElement, onTransform, onTransformEnd]);
+
+  const color = locked ? COLOR_LOCKED : COLOR_DEFAULT;
+  const halfAnchor = ANCHOR_SIZE / 2;
+
+  // Transform origin for rotation
+  const cx = bounds.x + bounds.width / 2;
+  const cy = bounds.y + bounds.height / 2;
+  const transform = rotation ? `rotate(${rotation}, ${cx}, ${cy})` : undefined;
+
+  const anchors = [
+    { name: 'top-left', x: bounds.x, y: bounds.y, cursor: 'nwse-resize' },
+    { name: 'top-center', x: bounds.x + bounds.width / 2, y: bounds.y, cursor: 'ns-resize' },
+    { name: 'top-right', x: bounds.x + bounds.width, y: bounds.y, cursor: 'nesw-resize' },
+    { name: 'middle-left', x: bounds.x, y: bounds.y + bounds.height / 2, cursor: 'ew-resize' },
+    { name: 'middle-right', x: bounds.x + bounds.width, y: bounds.y + bounds.height / 2, cursor: 'ew-resize' },
+    { name: 'bottom-left', x: bounds.x, y: bounds.y + bounds.width, cursor: 'nesw-resize' },
+    { name: 'bottom-center', x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height, cursor: 'ns-resize' },
+    { name: 'bottom-right', x: bounds.x + bounds.width, y: bounds.y + bounds.height, cursor: 'nwse-resize' },
+  ];
+
+  // Fix bottom-left y coordinate
+  anchors[5].y = bounds.y + bounds.height;
+
+  return (
+    <g className="selection-transformer" transform={transform}>
+      {/* Selection border */}
+      <rect
+        x={bounds.x}
+        y={bounds.y}
+        width={bounds.width}
+        height={bounds.height}
+        fill="none"
+        stroke={color}
+        strokeWidth={2}
+        style={{ pointerEvents: 'none' }}
+      />
+
+      {/* Resize anchors */}
+      {!locked && anchors.map((anchor) => (
+        <rect
+          key={anchor.name}
+          x={anchor.x - halfAnchor}
+          y={anchor.y - halfAnchor}
+          width={ANCHOR_SIZE}
+          height={ANCHOR_SIZE}
+          fill="white"
+          stroke={color}
+          strokeWidth={2}
+          rx={2}
+          ry={2}
+          style={{ cursor: anchor.cursor }}
+          onMouseDown={(e) => handleResizeStart(anchor.name, e)}
+        />
+      ))}
+
+      {/* Rotation anchor (only for single selection) */}
+      {!locked && singleElement && (
+        <>
+          {/* Line from top-center to rotation anchor */}
+          <line
+            x1={bounds.x + bounds.width / 2}
+            y1={bounds.y}
+            x2={bounds.x + bounds.width / 2}
+            y2={bounds.y - ROTATION_ANCHOR_OFFSET}
+            stroke={color}
+            strokeWidth={1}
+            style={{ pointerEvents: 'none' }}
+          />
+          {/* Rotation anchor circle */}
+          <circle
+            cx={bounds.x + bounds.width / 2}
+            cy={bounds.y - ROTATION_ANCHOR_OFFSET}
+            r={ANCHOR_SIZE / 2 + 2}
+            fill="white"
+            stroke={color}
+            strokeWidth={2}
+            style={{ cursor: 'grab' }}
+            onMouseDown={handleRotateStart}
+          />
+          {/* Rotation icon (simple arc) */}
+          <path
+            d={`M ${bounds.x + bounds.width / 2 - 4} ${bounds.y - ROTATION_ANCHOR_OFFSET - 2}
+                A 4 4 0 1 1 ${bounds.x + bounds.width / 2 + 4} ${bounds.y - ROTATION_ANCHOR_OFFSET - 2}`}
+            fill="none"
+            stroke={color}
+            strokeWidth={1.5}
+            strokeLinecap="round"
+            style={{ pointerEvents: 'none' }}
+          />
+        </>
+      )}
+    </g>
+  );
+};

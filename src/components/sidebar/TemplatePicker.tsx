@@ -1,10 +1,9 @@
 import React, { useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Stage, Layer, Rect } from 'react-konva';
 import { X } from 'lucide-react';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useEditorStore } from '../../store/editorStore';
-import { ThumbnailElement } from './SlideThumbnail';
+import { SVGStaticSlide } from '../svg/SVGStaticSlide';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 import type { SlideTemplate } from '../../types/presentation';
 
@@ -22,19 +21,23 @@ interface TemplatePickerProps {
 }
 
 const TemplatePreview: React.FC<{ template: SlideTemplate }> = ({ template }) => {
-  const bgColor = template.background.type === 'solid' ? template.background.color : '#ffffff';
-  const elements = template.elementOrder.map((id) => template.elements[id]).filter(Boolean);
+  // Create a pseudo-slide object for the static renderer
+  const pseudoSlide = {
+    id: template.id,
+    elements: template.elements,
+    elementOrder: template.elementOrder,
+    background: template.background,
+    transition: { duration: 300 },
+    notes: '',
+  };
 
   return (
     <div className="rounded border border-gray-200 overflow-hidden shrink-0">
-      <Stage width={PREVIEW_WIDTH} height={PREVIEW_HEIGHT} scaleX={PREVIEW_SCALE} scaleY={PREVIEW_SCALE} listening={false}>
-        <Layer listening={false}>
-          <Rect x={0} y={0} width={SLIDE_WIDTH} height={SLIDE_HEIGHT} fill={bgColor} listening={false} />
-          {elements.map((el) => (
-            <ThumbnailElement key={el.id} element={el} />
-          ))}
-        </Layer>
-      </Stage>
+      <SVGStaticSlide
+        slide={pseudoSlide}
+        width={PREVIEW_WIDTH}
+        height={PREVIEW_HEIGHT}
+      />
     </div>
   );
 };

@@ -2,7 +2,7 @@ import React from 'react';
 import { Header } from './Header';
 import { StatusBar } from './StatusBar';
 import { SlidePanel } from '../sidebar/SlidePanel';
-import { SlideCanvas } from '../canvas/SlideCanvas';
+import { SVGSlideCanvas } from '../svg/SVGSlideCanvas';
 import { Toolbar } from '../toolbar/Toolbar';
 import { PropertiesPanel } from '../properties/PropertiesPanel';
 import { NotesEditor } from '../notes/NotesEditor';
@@ -17,7 +17,7 @@ export const AppLayout: React.FC = () => {
         <SlidePanel />
         <div className="flex flex-col flex-1 overflow-hidden">
           <div className="flex-1 overflow-auto relative bg-gray-200 flex items-center justify-center">
-            <SlideCanvas />
+            <SVGSlideCanvas />
           </div>
           <ObjectListDrawer />
           <NotesEditor />
