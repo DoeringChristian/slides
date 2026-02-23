@@ -9,25 +9,7 @@ interface Props {
   isEditing?: boolean;
 }
 
-// Convert alignment to SVG text-anchor
-function getTextAnchor(align: 'left' | 'center' | 'right'): 'start' | 'middle' | 'end' {
-  switch (align) {
-    case 'center': return 'middle';
-    case 'right': return 'end';
-    default: return 'start';
-  }
-}
-
-// Get X position based on alignment
-function getAlignedX(align: 'left' | 'center' | 'right', elementX: number, width: number, padding: number): number {
-  switch (align) {
-    case 'center': return elementX + width / 2;
-    case 'right': return elementX + width - padding;
-    default: return elementX + padding;
-  }
-}
-
-// Render LaTeX to HTML string for foreignObject
+// Render LaTeX to HTML string
 function renderLatex(latex: string, displayMode: boolean = false): string {
   try {
     return katex.renderToString(latex, {
@@ -40,173 +22,38 @@ function renderLatex(latex: string, displayMode: boolean = false): string {
   }
 }
 
-// Render a single inline segment as SVG tspan or foreignObject
-interface SegmentRenderProps {
-  segment: InlineSegment;
-  baseStyle: {
-    fontFamily: string;
-    fontSize: number;
-    fontWeight: 'normal' | 'bold';
-    fontStyle: 'normal' | 'italic';
-    fill: string;
-  };
+// Render text block as HTML for foreignObject
+function renderBlockAsHtml(block: ParsedBlock, segments: InlineSegment[]): string {
+  return segments.map((segment) => {
+    if (segment.type === 'latex') {
+      return renderLatex(segment.displayContent, segment.isBlock);
+    }
+    if (segment.type === 'link') {
+      const escaped = segment.displayContent
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+      return `<span style="color:#2563eb;text-decoration:underline">${escaped}</span>`;
+    }
+    if (segment.type === 'formatted') {
+      let style = '';
+      if (segment.bold) style += 'font-weight:bold;';
+      if (segment.italic) style += 'font-style:italic;';
+      if (segment.strikethrough) style += 'text-decoration:line-through;';
+      if (segment.underline) style += 'text-decoration:underline;';
+      const escaped = segment.displayContent
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+      return `<span style="${style}">${escaped}</span>`;
+    }
+    // Plain text - escape HTML
+    return segment.displayContent
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }).join('');
 }
-
-const renderSegment = ({ segment, baseStyle }: SegmentRenderProps): React.ReactNode => {
-  if (segment.type === 'latex') {
-    // LaTeX will be rendered via foreignObject in a separate pass
-    // For now, return a placeholder tspan
-    return null; // Handled separately
-  }
-
-  if (segment.type === 'link') {
-    return (
-      <tspan
-        key={`${segment.sourceStart}-link`}
-        fill="#2563eb"
-        textDecoration="underline"
-        style={{ cursor: 'pointer' }}
-      >
-        {segment.displayContent}
-      </tspan>
-    );
-  }
-
-  if (segment.type === 'formatted') {
-    let fontWeight = baseStyle.fontWeight;
-    let fontStyle = baseStyle.fontStyle;
-    let textDecoration: string | undefined;
-
-    if (segment.bold) fontWeight = 'bold';
-    if (segment.italic) fontStyle = 'italic';
-    if (segment.strikethrough) textDecoration = 'line-through';
-    if (segment.underline) textDecoration = 'underline';
-
-    return (
-      <tspan
-        key={`${segment.sourceStart}-formatted`}
-        fontWeight={fontWeight}
-        fontStyle={fontStyle}
-        textDecoration={textDecoration}
-      >
-        {segment.displayContent}
-      </tspan>
-    );
-  }
-
-  // Plain text
-  return (
-    <tspan key={`${segment.sourceStart}-text`}>
-      {segment.displayContent}
-    </tspan>
-  );
-};
-
-// Check if a block contains LaTeX
-function hasLatex(segments: InlineSegment[]): boolean {
-  return segments.some(s => s.type === 'latex');
-}
-
-// Render a line of text as SVG
-interface LineRenderProps {
-  block: ParsedBlock;
-  segments: InlineSegment[];
-  x: number;
-  y: number;
-  baseStyle: {
-    fontFamily: string;
-    fontSize: number;
-    fontWeight: 'normal' | 'bold';
-    fontStyle: 'normal' | 'italic';
-    fill: string;
-  };
-  textAnchor: 'start' | 'middle' | 'end';
-  lineHeight: number;
-  elementX: number;
-  elementWidth: number;
-}
-
-const SVGTextLine: React.FC<LineRenderProps> = memo(({
-  block,
-  segments,
-  x,
-  y,
-  baseStyle,
-  textAnchor,
-  lineHeight,
-  elementX,
-  elementWidth,
-}) => {
-  const multiplier = getBlockFontMultiplier(block.type);
-  const fontSize = baseStyle.fontSize * multiplier;
-  const isHeader = block.type === 'h1' || block.type === 'h2' || block.type === 'h3';
-  const fontWeight = isHeader ? 'bold' : baseStyle.fontWeight;
-
-  // Check if this line has LaTeX - if so, use foreignObject
-  if (hasLatex(segments)) {
-    // Build HTML content with LaTeX
-    const htmlContent = segments.map((segment) => {
-      if (segment.type === 'latex') {
-        return renderLatex(segment.displayContent, segment.isBlock);
-      }
-      if (segment.type === 'link') {
-        return `<span style="color:#2563eb;text-decoration:underline">${segment.displayContent}</span>`;
-      }
-      if (segment.type === 'formatted') {
-        let style = '';
-        if (segment.bold) style += 'font-weight:bold;';
-        if (segment.italic) style += 'font-style:italic;';
-        if (segment.strikethrough) style += 'text-decoration:line-through;';
-        if (segment.underline) style += 'text-decoration:underline;';
-        return `<span style="${style}">${segment.displayContent}</span>`;
-      }
-      return segment.displayContent;
-    }).join('');
-
-    const padding = TEXT_BOX_PADDING;
-    const foWidth = elementWidth - padding * 2;
-    const foHeight = fontSize * lineHeight;
-
-    return (
-      <foreignObject
-        x={elementX + padding}
-        y={y - fontSize * 0.8} // Adjust for baseline
-        width={foWidth}
-        height={foHeight}
-      >
-        <div
-          style={{
-            fontFamily: baseStyle.fontFamily,
-            fontSize: `${fontSize}px`,
-            fontWeight,
-            fontStyle: baseStyle.fontStyle,
-            color: baseStyle.fill,
-            lineHeight: lineHeight,
-            textAlign: textAnchor === 'middle' ? 'center' : textAnchor === 'end' ? 'right' : 'left',
-          }}
-          dangerouslySetInnerHTML={{ __html: htmlContent }}
-        />
-      </foreignObject>
-    );
-  }
-
-  // No LaTeX - render as pure SVG text
-  return (
-    <text
-      x={x}
-      y={y}
-      fontFamily={baseStyle.fontFamily}
-      fontSize={fontSize}
-      fontWeight={fontWeight}
-      fontStyle={baseStyle.fontStyle}
-      fill={baseStyle.fill}
-      textAnchor={textAnchor}
-      dominantBaseline="auto"
-    >
-      {segments.map((segment) => renderSegment({ segment, baseStyle: { ...baseStyle, fontSize, fontWeight } }))}
-    </text>
-  );
-});
 
 export const SVGTextContent: React.FC<Props> = memo(({
   element,
@@ -217,93 +64,98 @@ export const SVGTextContent: React.FC<Props> = memo(({
 
   const { text, style, x: elementX, y: elementY, width, height, rotation } = element;
 
-  // Parse text into blocks
-  const blocks = useMemo(() => parseBlocks(text || ''), [text]);
+  // Parse text into blocks and segments - memoized to only update when text changes
+  const blocksWithHtml = useMemo(() => {
+    const blocks = parseBlocks(text || '');
+    return blocks.map(block => {
+      const segments = parseInlineSegments(block.displayContent, block.sourceStart + block.prefixLength);
+      return {
+        block,
+        html: renderBlockAsHtml(block, segments),
+      };
+    });
+  }, [text]);
 
-  // Parse inline segments for each block
-  const blocksWithSegments = useMemo(() => {
-    return blocks.map(block => ({
-      block,
-      segments: parseInlineSegments(block.displayContent, block.sourceStart + block.prefixLength),
-    }));
-  }, [blocks]);
-
-  // Calculate line heights and total content height
-  const lineData = useMemo(() => {
+  // Build complete HTML content - memoized based on text and style
+  const htmlContent = useMemo(() => {
     const lineHeight = style.lineHeight || 1.2;
-    let totalHeight = 0;
-    const lines: { block: ParsedBlock; segments: InlineSegment[]; height: number; fontSize: number }[] = [];
 
-    for (const { block, segments } of blocksWithSegments) {
+    return blocksWithHtml.map(({ block, html }) => {
       const multiplier = getBlockFontMultiplier(block.type);
       const fontSize = style.fontSize * multiplier;
-      const height = fontSize * lineHeight;
-      lines.push({ block, segments, height, fontSize });
-      totalHeight += height;
-    }
+      const isHeader = block.type === 'h1' || block.type === 'h2' || block.type === 'h3';
+      const fontWeight = isHeader ? 'bold' : style.fontWeight;
 
-    return { lines, totalHeight, lineHeight };
-  }, [blocksWithSegments, style.fontSize, style.lineHeight]);
+      return `<div style="font-size:${fontSize}px;font-weight:${fontWeight};line-height:${lineHeight};min-height:${fontSize * lineHeight}px;margin:0;padding:0;">${html || '&nbsp;'}</div>`;
+    }).join('');
+  }, [blocksWithHtml, style.fontSize, style.fontWeight, style.lineHeight]);
 
-  // Calculate starting Y based on vertical alignment
-  const startY = useMemo(() => {
-    const padding = TEXT_BOX_PADDING;
-    const contentHeight = height - padding * 2;
-    const { totalHeight } = lineData;
-
+  // Calculate vertical alignment offset
+  const verticalAlignStyle = useMemo(() => {
     switch (style.verticalAlign) {
       case 'middle':
-        return elementY + padding + (contentHeight - totalHeight) / 2;
+        return { display: 'flex', flexDirection: 'column' as const, justifyContent: 'center' };
       case 'bottom':
-        return elementY + padding + contentHeight - totalHeight;
-      default: // top
-        return elementY + padding;
+        return { display: 'flex', flexDirection: 'column' as const, justifyContent: 'flex-end' };
+      default:
+        return {};
     }
-  }, [elementY, height, lineData, style.verticalAlign]);
-
-  // Get text anchor and X position
-  const textAnchor = getTextAnchor(style.align);
-  const alignedX = getAlignedX(style.align, elementX, width, TEXT_BOX_PADDING);
-
-  // Base style for text
-  const baseStyle = useMemo(() => ({
-    fontFamily: style.fontFamily,
-    fontSize: style.fontSize,
-    fontWeight: style.fontWeight,
-    fontStyle: style.fontStyle,
-    fill: style.color,
-  }), [style.fontFamily, style.fontSize, style.fontWeight, style.fontStyle, style.color]);
+  }, [style.verticalAlign]);
 
   // Rotation transform
   const cx = elementX + width / 2;
   const cy = elementY + height / 2;
   const transform = rotation ? `rotate(${rotation}, ${cx}, ${cy})` : undefined;
 
-  // Render each line
-  let currentY = startY;
+  const padding = TEXT_BOX_PADDING;
 
   return (
     <g transform={transform} style={{ pointerEvents: 'none' }}>
-      {lineData.lines.map(({ block, segments, height, fontSize }, index) => {
-        // Position at baseline (y coordinate is baseline position with dominant-baseline="auto")
-        const lineY = currentY + fontSize * 0.8;
-        currentY += height;
-
-        return (
-          <SVGTextLine
-            key={index}
-            block={block}
-            segments={segments}
-            x={alignedX}
-            y={lineY}
-            baseStyle={baseStyle}
-            textAnchor={textAnchor}
-            lineHeight={lineData.lineHeight}
-            elementX={elementX}
-            elementWidth={width}
-          />
-        );
-      })}
+      <foreignObject
+        x={elementX + padding}
+        y={elementY + padding}
+        width={width - padding * 2}
+        height={height - padding * 2}
+      >
+        <div
+          style={{
+            width: '100%',
+            height: '100%',
+            fontFamily: style.fontFamily,
+            fontStyle: style.fontStyle,
+            color: style.color,
+            textAlign: style.align,
+            wordWrap: 'break-word',
+            overflowWrap: 'break-word',
+            whiteSpace: 'pre-wrap',
+            overflow: 'hidden',
+            ...verticalAlignStyle,
+          }}
+          dangerouslySetInnerHTML={{ __html: htmlContent }}
+        />
+      </foreignObject>
     </g>
+  );
+}, (prevProps, nextProps) => {
+  // Custom comparison - only re-render when these specific properties change
+  const prev = prevProps.element;
+  const next = nextProps.element;
+
+  return (
+    prevProps.isEditing === nextProps.isEditing &&
+    prev.text === next.text &&
+    prev.width === next.width &&
+    prev.height === next.height &&
+    prev.x === next.x &&
+    prev.y === next.y &&
+    prev.rotation === next.rotation &&
+    prev.style.fontSize === next.style.fontSize &&
+    prev.style.fontFamily === next.style.fontFamily &&
+    prev.style.fontWeight === next.style.fontWeight &&
+    prev.style.fontStyle === next.style.fontStyle &&
+    prev.style.color === next.style.color &&
+    prev.style.align === next.style.align &&
+    prev.style.verticalAlign === next.style.verticalAlign &&
+    prev.style.lineHeight === next.style.lineHeight
   );
 });
