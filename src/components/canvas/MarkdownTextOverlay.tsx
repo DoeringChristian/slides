@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { CustomMarkdownRenderer } from './CustomMarkdownRenderer';
@@ -14,34 +14,8 @@ export const MarkdownTextOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
   const editingTextId = useEditorStore((s) => s.editingTextId);
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const slide = usePresentationStore((s) => s.presentation.slides[activeSlideId]);
-  const [stageReady, setStageReady] = useState(false);
 
-  // Watch for Konva stage to be mounted
-  useEffect(() => {
-    if (!stageRef.current) {
-      setStageReady(false);
-      return;
-    }
-
-    const checkStage = () => {
-      const stageElement = stageRef.current?.querySelector('.konvajs-content');
-      if (stageElement) {
-        setStageReady(true);
-      } else {
-        // Retry on next frame if not ready
-        requestAnimationFrame(checkStage);
-      }
-    };
-
-    checkStage();
-  }, [stageRef, activeSlideId]);
-
-  if (!slide || !stageRef.current || !stageReady) return null;
-
-  const containerRect = stageRef.current.getBoundingClientRect();
-  const stageElement = stageRef.current.querySelector('.konvajs-content');
-  if (!stageElement) return null;
-  const stageRect = stageElement.getBoundingClientRect();
+  if (!slide || !stageRef.current) return null;
 
   // Get all visible text elements that are not being edited
   const textElements = Object.values(slide.elements).filter(
@@ -54,8 +28,9 @@ export const MarkdownTextOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
       style={{ left: 0, top: 0, width: '100%', height: '100%', pointerEvents: 'none', overflow: 'hidden' }}
     >
       {textElements.map((element) => {
-        const left = stageRect.left - containerRect.left + (element.x + CANVAS_PADDING) * zoom;
-        const top = stageRect.top - containerRect.top + (element.y + CANVAS_PADDING) * zoom;
+        // Position text relative to the container with canvas padding
+        const left = (element.x + CANVAS_PADDING) * zoom;
+        const top = (element.y + CANVAS_PADDING) * zoom;
 
         return (
           <div

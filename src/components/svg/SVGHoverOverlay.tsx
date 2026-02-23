@@ -30,14 +30,17 @@ const GhostImage: React.FC<{ element: ImageElement }> = ({ element }) => {
     element.resourceId ? s.presentation.resources[element.resourceId] : undefined
   );
 
-  const transform = `translate(${element.x}, ${element.y}) rotate(${element.rotation || 0})`;
+  // Rotate around the center of the element
+  const cx = element.x + element.width / 2;
+  const cy = element.y + element.height / 2;
+  const transform = element.rotation ? `rotate(${element.rotation}, ${cx}, ${cy})` : undefined;
 
   if (!resource || resource.type === 'video') {
     return (
       <g transform={transform}>
         <rect
-          x={0}
-          y={0}
+          x={element.x}
+          y={element.y}
           width={element.width}
           height={element.height}
           fill={resource?.type === 'video' ? '#1f2937' : '#f3f4f6'}
@@ -51,8 +54,8 @@ const GhostImage: React.FC<{ element: ImageElement }> = ({ element }) => {
     <g transform={transform}>
       <image
         href={resource.src}
-        x={0}
-        y={0}
+        x={element.x}
+        y={element.y}
         width={element.width}
         height={element.height}
         preserveAspectRatio="none"
@@ -63,7 +66,10 @@ const GhostImage: React.FC<{ element: ImageElement }> = ({ element }) => {
 };
 
 const GhostShape: React.FC<{ element: ShapeElement }> = ({ element }) => {
-  const transform = `translate(${element.x}, ${element.y}) rotate(${element.rotation || 0})`;
+  // Rotate around the center of the element
+  const cx = element.x + element.width / 2;
+  const cy = element.y + element.height / 2;
+  const transform = element.rotation ? `rotate(${element.rotation}, ${cx}, ${cy})` : undefined;
 
   const commonProps = {
     fill: element.fill || 'transparent',
@@ -77,8 +83,8 @@ const GhostShape: React.FC<{ element: ShapeElement }> = ({ element }) => {
       return (
         <g transform={transform}>
           <rect
-            x={0}
-            y={0}
+            x={element.x}
+            y={element.y}
             width={element.width}
             height={element.height}
             rx={element.cornerRadius || 0}
@@ -91,8 +97,8 @@ const GhostShape: React.FC<{ element: ShapeElement }> = ({ element }) => {
       return (
         <g transform={transform}>
           <ellipse
-            cx={element.width / 2}
-            cy={element.height / 2}
+            cx={element.x + element.width / 2}
+            cy={element.y + element.height / 2}
             rx={element.width / 2}
             ry={element.height / 2}
             {...commonProps}
@@ -100,13 +106,13 @@ const GhostShape: React.FC<{ element: ShapeElement }> = ({ element }) => {
         </g>
       );
     case 'triangle': {
-      const cx = element.width / 2;
-      const cy = element.height / 2;
+      const tcx = element.x + element.width / 2;
+      const tcy = element.y + element.height / 2;
       const r = Math.min(element.width, element.height) / 2;
       const points = [
-        [cx, cy - r],
-        [cx - r * Math.cos(Math.PI / 6), cy + r * Math.sin(Math.PI / 6)],
-        [cx + r * Math.cos(Math.PI / 6), cy + r * Math.sin(Math.PI / 6)],
+        [tcx, tcy - r],
+        [tcx - r * Math.cos(Math.PI / 6), tcy + r * Math.sin(Math.PI / 6)],
+        [tcx + r * Math.cos(Math.PI / 6), tcy + r * Math.sin(Math.PI / 6)],
       ];
       const d = `M ${points[0][0]} ${points[0][1]} L ${points[1][0]} ${points[1][1]} L ${points[2][0]} ${points[2][1]} Z`;
       return (
@@ -116,15 +122,15 @@ const GhostShape: React.FC<{ element: ShapeElement }> = ({ element }) => {
       );
     }
     case 'star': {
-      const cx = element.width / 2;
-      const cy = element.height / 2;
+      const scx = element.x + element.width / 2;
+      const scy = element.y + element.height / 2;
       const outerR = Math.min(element.width, element.height) / 2;
       const innerR = outerR / 2;
       const starPoints: string[] = [];
       for (let i = 0; i < 10; i++) {
         const r = i % 2 === 0 ? outerR : innerR;
         const angle = (i * Math.PI) / 5 - Math.PI / 2;
-        starPoints.push(`${cx + r * Math.cos(angle)},${cy + r * Math.sin(angle)}`);
+        starPoints.push(`${scx + r * Math.cos(angle)},${scy + r * Math.sin(angle)}`);
       }
       return (
         <g transform={transform}>
@@ -137,10 +143,10 @@ const GhostShape: React.FC<{ element: ShapeElement }> = ({ element }) => {
       return (
         <g transform={transform}>
           <line
-            x1={pts[0]}
-            y1={pts[1]}
-            x2={pts[2]}
-            y2={pts[3]}
+            x1={element.x + pts[0]}
+            y1={element.y + pts[1]}
+            x2={element.x + pts[2]}
+            y2={element.y + pts[3]}
             stroke={element.stroke || element.fill || '#000'}
             strokeWidth={element.strokeWidth || 3}
             strokeLinecap="round"
@@ -158,7 +164,7 @@ const GhostShape: React.FC<{ element: ShapeElement }> = ({ element }) => {
       const angle = Math.atan2(dy, dx);
       const headLength = 10;
       const headWidth = 10;
-      const tip = { x: pts[2], y: pts[3] };
+      const tip = { x: element.x + pts[2], y: element.y + pts[3] };
       const left = {
         x: tip.x - headLength * Math.cos(angle) + headWidth / 2 * Math.sin(angle),
         y: tip.y - headLength * Math.sin(angle) - headWidth / 2 * Math.cos(angle),
@@ -170,10 +176,10 @@ const GhostShape: React.FC<{ element: ShapeElement }> = ({ element }) => {
       return (
         <g transform={transform} style={{ pointerEvents: 'none' }}>
           <line
-            x1={pts[0]}
-            y1={pts[1]}
-            x2={pts[2]}
-            y2={pts[3]}
+            x1={element.x + pts[0]}
+            y1={element.y + pts[1]}
+            x2={element.x + pts[2]}
+            y2={element.y + pts[3]}
             stroke={strokeColor}
             strokeWidth={strokeW}
             strokeLinecap="round"
@@ -193,12 +199,15 @@ const GhostShape: React.FC<{ element: ShapeElement }> = ({ element }) => {
 const GhostElement: React.FC<{ element: SlideElement }> = ({ element }) => {
   if (element.type === 'text') {
     // Text ghost - just a simple rect since actual text is rendered via HTML overlay
-    const transform = `translate(${element.x}, ${element.y}) rotate(${element.rotation || 0})`;
+    // Rotate around the center of the element
+    const cx = element.x + element.width / 2;
+    const cy = element.y + element.height / 2;
+    const transform = element.rotation ? `rotate(${element.rotation}, ${cx}, ${cy})` : undefined;
     return (
       <g transform={transform}>
         <rect
-          x={0}
-          y={0}
+          x={element.x}
+          y={element.y}
           width={element.width}
           height={element.height}
           fill="#e5e7eb"
@@ -225,9 +234,12 @@ const HighlightRect: React.FC<{ element: SlideElement }> = ({ element }) => {
 
   const bounds = isLine
     ? getLineBoundingBox(element as ShapeElement)
-    : { x: 0, y: 0, width: element.width, height: element.height };
+    : { x: element.x, y: element.y, width: element.width, height: element.height };
 
-  const transform = `translate(${element.x}, ${element.y}) rotate(${element.rotation || 0})`;
+  // Rotate around the center of the element
+  const cx = element.x + element.width / 2;
+  const cy = element.y + element.height / 2;
+  const transform = element.rotation ? `rotate(${element.rotation}, ${cx}, ${cy})` : undefined;
 
   return (
     <g transform={transform} style={{ pointerEvents: 'none' }}>

@@ -121,13 +121,9 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom, onGuides }) =
 
   if (!element || !stageRef.current) return null;
 
-  const containerRect = stageRef.current.getBoundingClientRect();
-  const stageElement = stageRef.current.querySelector('.konvajs-content');
-  if (!stageElement) return null;
-  const stageRect = stageElement.getBoundingClientRect();
-
-  const left = stageRect.left - containerRect.left + (element.x + CANVAS_PADDING) * zoom;
-  const top = stageRect.top - containerRect.top + (element.y + CANVAS_PADDING) * zoom;
+  // Position text relative to the container with canvas padding
+  const left = (element.x + CANVAS_PADDING) * zoom;
+  const top = (element.y + CANVAS_PADDING) * zoom;
   const width = element.width * zoom;
   const height = element.height * zoom;
 
@@ -198,12 +194,12 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom, onGuides }) =
       <div
         style={{
           position: 'absolute',
-          left: `${left}px`,
-          top: `${top}px`,
+          left: `${left + width / 2}px`,
+          top: `${top + height / 2}px`,
           width: `${width}px`,
           height: `${height}px`,
-          transform: `rotate(${element.rotation}deg)`,
-          transformOrigin: 'top left',
+          transform: `translate(-50%, -50%) rotate(${element.rotation}deg)`,
+          transformOrigin: 'center',
           pointerEvents: 'auto',
           zIndex: 1000,
         }}

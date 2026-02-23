@@ -47,6 +47,7 @@ export const MarkdownEditor: React.FC<Props> = ({
   const editorRef = useRef<HTMLDivElement>(null);
   const isInitializedRef = useRef(false);
   const currentTextRef = useRef(text);
+  const canBlurRef = useRef(false);
 
   const baseFontSize = style.fontSize * zoom;
   const padding = TEXT_BOX_PADDING * zoom;
@@ -197,9 +198,11 @@ export const MarkdownEditor: React.FC<Props> = ({
       renderText(text);
       editorRef.current.focus();
 
+      // Calculate cursor position if we have a click position
+      let cursorPos: number | null = null;
       if (clickPosition && text) {
         // Use the external calculateCursorFromClick which handles rendered vs source mapping
-        const cursorPos = calculateCursorFromClickUtil(element, clickPosition);
+        cursorPos = calculateCursorFromClickUtil(element, clickPosition);
         setCursorPosition(cursorPos);
       } else {
         // Select all for new/empty text
@@ -211,6 +214,20 @@ export const MarkdownEditor: React.FC<Props> = ({
       }
 
       isInitializedRef.current = true;
+
+      // Allow blur after a short delay to avoid the initial blur from the click event
+      // Also ensure focus is maintained after the initial click completes
+      setTimeout(() => {
+        canBlurRef.current = true;
+        // Re-focus to ensure cursor is visible after the click event completes
+        if (editorRef.current) {
+          editorRef.current.focus();
+          // Restore cursor position after re-focus
+          if (cursorPos !== null) {
+            setCursorPosition(cursorPos);
+          }
+        }
+      }, 50);
     }
   }, [text, element, renderText, clickPosition, setCursorPosition]);
 
@@ -319,6 +336,10 @@ export const MarkdownEditor: React.FC<Props> = ({
   }, [onEscape, getCursorPosition, renderText, setCursorPosition]);
 
   const handleBlur = useCallback(() => {
+    // Ignore blur events that happen immediately after mounting
+    // (caused by the click event that triggered edit mode)
+    if (!canBlurRef.current) return;
+
     if (editorRef.current) {
       const finalText = getTextFromEditor();
       onBlur(finalText);

@@ -20,13 +20,16 @@ export const SVGTextNode: React.FC<Props> = ({
   onMouseLeave,
   onDoubleClick,
 }) => {
-  const transform = `translate(${element.x}, ${element.y}) rotate(${element.rotation || 0})`;
+  // Rotate around the center of the element
+  const cx = element.x + element.width / 2;
+  const cy = element.y + element.height / 2;
+  const transform = element.rotation ? `rotate(${element.rotation}, ${cx}, ${cy})` : undefined;
 
   return (
     <g transform={transform} data-element-id={element.id}>
       <rect
-        x={0}
-        y={0}
+        x={element.x}
+        y={element.y}
         width={element.width}
         height={element.height}
         fill="transparent"

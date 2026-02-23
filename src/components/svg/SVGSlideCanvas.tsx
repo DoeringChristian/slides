@@ -97,13 +97,17 @@ export const SVGSlideCanvas: React.FC = () => {
 
   // Drag handling
   const handleDragStart = useCallback((id: string) => {
-    isElementDragging.current = true;
+    // Don't set isElementDragging here - we only want to set it when actual movement happens
+    // This allows single-click on text to enter edit mode
     if (!selectedElementIds.includes(id)) {
       setSelectedElements([id]);
     }
   }, [selectedElementIds, setSelectedElements]);
 
   const handleDragMove = useCallback((id: string, x: number, y: number) => {
+    // Mark that an actual drag is happening (mouse moved while button down)
+    isElementDragging.current = true;
+
     if (!slide) return;
     const el = slide.elements[id];
     if (!el) return;
@@ -193,6 +197,7 @@ export const SVGSlideCanvas: React.FC = () => {
     if (editingTextId === id) return;
 
     if (editingTextId && editingTextId !== id) {
+      console.log('handleSelect clearing editingTextId because different element clicked');
       setEditingTextId(null);
     }
 
@@ -209,18 +214,42 @@ export const SVGSlideCanvas: React.FC = () => {
 
       if (isTextElement && clickedElement && !wasDragging) {
         const pos = screenToSVG(e.clientX, e.clientY);
-        const localX = pos.x - clickedElement.x;
-        const localY = pos.y - clickedElement.y;
 
+        // With center-based rotation, we need to:
+        // 1. Get the click position relative to the element's center
+        // 2. Rotate that point back to unrotated space
+        // 3. Convert back to top-left relative coordinates
+        const centerX = clickedElement.x + clickedElement.width / 2;
+        const centerY = clickedElement.y + clickedElement.height / 2;
+
+        // Position relative to center
+        const relCenterX = pos.x - centerX;
+        const relCenterY = pos.y - centerY;
+
+        // Rotate back (negative angle to undo the rotation)
         const rotation = clickedElement.rotation || 0;
         const radians = -rotation * Math.PI / 180;
         const cos = Math.cos(radians);
         const sin = Math.sin(radians);
-        const rotatedX = localX * cos - localY * sin;
-        const rotatedY = localX * sin + localY * cos;
+        const unrotatedRelX = relCenterX * cos - relCenterY * sin;
+        const unrotatedRelY = relCenterX * sin + relCenterY * cos;
 
-        if (isPointOnTextContent(clickedElement as TextElement, { x: rotatedX, y: rotatedY })) {
-          setEditingTextId(id, { x: rotatedX, y: rotatedY });
+        // Convert back to top-left relative coordinates
+        const localX = unrotatedRelX + clickedElement.width / 2;
+        const localY = unrotatedRelY + clickedElement.height / 2;
+
+        const isOnContent = isPointOnTextContent(clickedElement as TextElement, { x: localX, y: localY });
+        console.log('Text click debug:', {
+          pos,
+          element: { x: clickedElement.x, y: clickedElement.y, width: clickedElement.width, height: clickedElement.height },
+          localX,
+          localY,
+          isOnContent,
+        });
+
+        if (isOnContent) {
+          console.log('Setting editingTextId to:', id);
+          setEditingTextId(id, { x: localX, y: localY });
         }
       }
     }
@@ -248,11 +277,23 @@ export const SVGSlideCanvas: React.FC = () => {
   }, [setHoveredObjectId]);
 
   const handleStageClick = useCallback((e: React.MouseEvent) => {
+    const targetEl = e.target as Element;
+    const hasSvgBgClass = targetEl.classList.contains('svg-background');
+    const isCurrentTarget = e.target === e.currentTarget;
+    console.log('handleStageClick called', {
+      target: e.target,
+      currentTarget: e.currentTarget,
+      targetClassName: targetEl.className,
+      hasSvgBgClass,
+      isCurrentTarget,
+      willClear: isCurrentTarget || hasSvgBgClass
+    });
     if (justFinishedSelectionDrag.current) {
       justFinishedSelectionDrag.current = false;
       return;
     }
-    if (e.target === e.currentTarget || (e.target as Element).classList.contains('svg-background')) {
+    if (isCurrentTarget || hasSvgBgClass) {
+      console.log('handleStageClick clearing editingTextId');
       setSelectedElements([]);
       setEditingTextId(null);
     }
@@ -542,6 +583,7 @@ export const SVGSlideCanvas: React.FC = () => {
               elements={elements}
               selectedIds={unlockedSelectedIds}
               zoom={zoom}
+              svgRef={svgRef}
               onTransform={handleTransform}
               onTransformEnd={handleTransformEnd}
             />
@@ -552,6 +594,7 @@ export const SVGSlideCanvas: React.FC = () => {
               selectedIds={lockedSelectedIds}
               locked
               zoom={zoom}
+              svgRef={svgRef}
             />
           )}
 

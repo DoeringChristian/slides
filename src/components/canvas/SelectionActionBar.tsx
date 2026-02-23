@@ -25,8 +25,9 @@ export const SelectionActionBar: React.FC<Props> = ({ element, zoom, isSelected 
   const buttonRef = useRef<HTMLButtonElement>(null);
 
   // Calculate position based on element position and zoom
-  const left = (element.x + CANVAS_PADDING) * zoom;
-  const top = (element.y + CANVAS_PADDING) * zoom;
+  // For center-based rotation, we position the container at the element's center
+  const centerX = (element.x + element.width / 2 + CANVAS_PADDING) * zoom;
+  const centerY = (element.y + element.height / 2 + CANVAS_PADDING) * zoom;
   const width = element.width * zoom;
   const height = element.height * zoom;
 
@@ -72,12 +73,12 @@ export const SelectionActionBar: React.FC<Props> = ({ element, zoom, isSelected 
       <div
         className="absolute"
         style={{
-          left,
-          top,
+          left: centerX,
+          top: centerY,
           width,
           height,
-          transform: `rotate(${element.rotation}deg)`,
-          transformOrigin: 'top left',
+          transform: `translate(-50%, -50%) rotate(${element.rotation}deg)`,
+          transformOrigin: 'center',
           pointerEvents: 'none',
         }}
       >

@@ -18,7 +18,10 @@ export const SVGShapeNode: React.FC<Props> = ({
   onMouseLeave,
   onDoubleClick,
 }) => {
-  const transform = `translate(${element.x}, ${element.y}) rotate(${element.rotation || 0})`;
+  // Rotate around the center of the element
+  const cx = element.x + element.width / 2;
+  const cy = element.y + element.height / 2;
+  const transform = element.rotation ? `rotate(${element.rotation}, ${cx}, ${cy})` : undefined;
 
   const commonProps = {
     opacity: element.opacity,
@@ -40,8 +43,8 @@ export const SVGShapeNode: React.FC<Props> = ({
       return (
         <g transform={transform} data-element-id={element.id}>
           <rect
-            x={0}
-            y={0}
+            x={element.x}
+            y={element.y}
             width={element.width}
             height={element.height}
             rx={element.cornerRadius || 0}
@@ -55,8 +58,8 @@ export const SVGShapeNode: React.FC<Props> = ({
       return (
         <g transform={transform} data-element-id={element.id}>
           <ellipse
-            cx={element.width / 2}
-            cy={element.height / 2}
+            cx={element.x + element.width / 2}
+            cy={element.y + element.height / 2}
             rx={element.width / 2}
             ry={element.height / 2}
             {...commonProps}
@@ -65,14 +68,14 @@ export const SVGShapeNode: React.FC<Props> = ({
       );
 
     case 'triangle': {
-      const cx = element.width / 2;
-      const cy = element.height / 2;
+      const tcx = element.x + element.width / 2;
+      const tcy = element.y + element.height / 2;
       const r = Math.min(element.width, element.height) / 2;
       // Triangle points (pointing up)
       const points = [
-        [cx, cy - r],
-        [cx - r * Math.cos(Math.PI / 6), cy + r * Math.sin(Math.PI / 6)],
-        [cx + r * Math.cos(Math.PI / 6), cy + r * Math.sin(Math.PI / 6)],
+        [tcx, tcy - r],
+        [tcx - r * Math.cos(Math.PI / 6), tcy + r * Math.sin(Math.PI / 6)],
+        [tcx + r * Math.cos(Math.PI / 6), tcy + r * Math.sin(Math.PI / 6)],
       ];
       const d = `M ${points[0][0]} ${points[0][1]} L ${points[1][0]} ${points[1][1]} L ${points[2][0]} ${points[2][1]} Z`;
       return (
@@ -83,15 +86,15 @@ export const SVGShapeNode: React.FC<Props> = ({
     }
 
     case 'star': {
-      const cx = element.width / 2;
-      const cy = element.height / 2;
+      const scx = element.x + element.width / 2;
+      const scy = element.y + element.height / 2;
       const outerR = Math.min(element.width, element.height) / 2;
       const innerR = outerR / 2;
       const points: string[] = [];
       for (let i = 0; i < 10; i++) {
         const r = i % 2 === 0 ? outerR : innerR;
         const angle = (i * Math.PI) / 5 - Math.PI / 2;
-        points.push(`${cx + r * Math.cos(angle)},${cy + r * Math.sin(angle)}`);
+        points.push(`${scx + r * Math.cos(angle)},${scy + r * Math.sin(angle)}`);
       }
       return (
         <g transform={transform} data-element-id={element.id}>
@@ -107,10 +110,10 @@ export const SVGShapeNode: React.FC<Props> = ({
       return (
         <g transform={transform} data-element-id={element.id}>
           <line
-            x1={pts[0]}
-            y1={pts[1]}
-            x2={pts[2]}
-            y2={pts[3]}
+            x1={element.x + pts[0]}
+            y1={element.y + pts[1]}
+            x2={element.x + pts[2]}
+            y2={element.y + pts[3]}
             stroke={lineStroke}
             strokeWidth={lineStrokeWidth}
             strokeLinecap="round"
@@ -120,10 +123,10 @@ export const SVGShapeNode: React.FC<Props> = ({
           />
           {/* Invisible wider line for easier selection */}
           <line
-            x1={pts[0]}
-            y1={pts[1]}
-            x2={pts[2]}
-            y2={pts[3]}
+            x1={element.x + pts[0]}
+            y1={element.y + pts[1]}
+            x2={element.x + pts[2]}
+            y2={element.y + pts[3]}
             stroke="transparent"
             strokeWidth={20}
             style={commonProps.style}
@@ -147,7 +150,7 @@ export const SVGShapeNode: React.FC<Props> = ({
       const headLength = 10;
       const headWidth = 10;
 
-      const tip = { x: pts[2], y: pts[3] };
+      const tip = { x: element.x + pts[2], y: element.y + pts[3] };
       const left = {
         x: tip.x - headLength * Math.cos(angle) + headWidth / 2 * Math.sin(angle),
         y: tip.y - headLength * Math.sin(angle) - headWidth / 2 * Math.cos(angle),
@@ -160,10 +163,10 @@ export const SVGShapeNode: React.FC<Props> = ({
       return (
         <g transform={transform} data-element-id={element.id}>
           <line
-            x1={pts[0]}
-            y1={pts[1]}
-            x2={pts[2]}
-            y2={pts[3]}
+            x1={element.x + pts[0]}
+            y1={element.y + pts[1]}
+            x2={element.x + pts[2]}
+            y2={element.y + pts[3]}
             stroke={strokeColor}
             strokeWidth={strokeW}
             strokeLinecap="round"
@@ -176,10 +179,10 @@ export const SVGShapeNode: React.FC<Props> = ({
           />
           {/* Invisible wider line for easier selection */}
           <line
-            x1={pts[0]}
-            y1={pts[1]}
-            x2={pts[2]}
-            y2={pts[3]}
+            x1={element.x + pts[0]}
+            y1={element.y + pts[1]}
+            x2={element.x + pts[2]}
+            y2={element.y + pts[3]}
             stroke="transparent"
             strokeWidth={20}
             style={commonProps.style}

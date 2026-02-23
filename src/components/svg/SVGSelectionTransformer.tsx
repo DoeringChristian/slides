@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { SlideElement, ShapeElement } from '../../types/presentation';
+import { CANVAS_PADDING } from '../../utils/constants';
 
 interface Props {
   elements: SlideElement[];
   selectedIds: string[];
   locked?: boolean;
   zoom: number;
+  svgRef?: React.RefObject<SVGSVGElement | null>;
   onTransformStart?: () => void;
   onTransform?: (id: string, attrs: { x?: number; y?: number; width?: number; height?: number; rotation?: number }) => void;
   onTransformEnd?: (id: string, attrs: { x?: number; y?: number; width?: number; height?: number; rotation?: number }) => void;
@@ -69,10 +71,24 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
   selectedIds,
   locked = false,
   zoom,
+  svgRef,
   onTransformStart,
   onTransform,
   onTransformEnd,
 }) => {
+  // Convert screen coordinates to SVG coordinates
+  const screenToSVG = useCallback((clientX: number, clientY: number) => {
+    if (!svgRef?.current) {
+      // Fallback: simple zoom division (less accurate but works)
+      return { x: clientX / zoom - CANVAS_PADDING, y: clientY / zoom - CANVAS_PADDING };
+    }
+    const svg = svgRef.current;
+    const rect = svg.getBoundingClientRect();
+    return {
+      x: (clientX - rect.left) / zoom - CANVAS_PADDING,
+      y: (clientY - rect.top) / zoom - CANVAS_PADDING,
+    };
+  }, [svgRef, zoom]);
   const [resizing, setResizing] = useState<{
     anchor: string;
     startX: number;
@@ -131,17 +147,19 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
     e.stopPropagation();
     if (locked || !singleElement) return;
     onTransformStart?.();
+    // Use the center of the element as rotation center
     const centerX = bounds.x + bounds.width / 2;
     const centerY = bounds.y + bounds.height / 2;
-    const dx = e.clientX / zoom - centerX;
-    const dy = e.clientY / zoom - centerY;
+    const pos = screenToSVG(e.clientX, e.clientY);
+    const dx = pos.x - centerX;
+    const dy = pos.y - centerY;
     setRotating({
       startAngle: Math.atan2(dy, dx) * 180 / Math.PI,
       elementRotation: singleElement.rotation || 0,
       centerX,
       centerY,
     });
-  }, [bounds, locked, singleElement, zoom, onTransformStart]);
+  }, [locked, singleElement, bounds, screenToSVG, onTransformStart]);
 
   useEffect(() => {
     if (!resizing && !rotating) return;
@@ -186,8 +204,10 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
       }
 
       if (rotating && singleElement) {
-        const dx = e.clientX / zoom - rotating.centerX;
-        const dy = e.clientY / zoom - rotating.centerY;
+        // Convert screen coordinates to SVG coordinates
+        const pos = screenToSVG(e.clientX, e.clientY);
+        const dx = pos.x - rotating.centerX;
+        const dy = pos.y - rotating.centerY;
         let newAngle = Math.atan2(dy, dx) * 180 / Math.PI;
         let deltaAngle = newAngle - rotating.startAngle;
         let finalRotation = rotating.elementRotation + deltaAngle;
@@ -223,15 +243,15 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [resizing, rotating, zoom, singleElement, onTransform, onTransformEnd]);
+  }, [resizing, rotating, zoom, singleElement, onTransform, onTransformEnd, screenToSVG]);
 
   const color = locked ? COLOR_LOCKED : COLOR_DEFAULT;
   const halfAnchor = ANCHOR_SIZE / 2;
 
-  // Transform origin for rotation
-  const cx = bounds.x + bounds.width / 2;
-  const cy = bounds.y + bounds.height / 2;
-  const transform = rotation ? `rotate(${rotation}, ${cx}, ${cy})` : undefined;
+  // Rotate around the center of the bounding box (matches how elements rotate)
+  const rotationOriginX = bounds.x + bounds.width / 2;
+  const rotationOriginY = bounds.y + bounds.height / 2;
+  const transform = rotation ? `rotate(${rotation}, ${rotationOriginX}, ${rotationOriginY})` : undefined;
 
   const anchors = [
     { name: 'top-left', x: bounds.x, y: bounds.y, cursor: 'nwse-resize' },

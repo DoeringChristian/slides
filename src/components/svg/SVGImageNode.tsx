@@ -102,7 +102,10 @@ export const SVGImageNode: React.FC<Props> = ({
     return () => cancelAnimationFrame(animationId);
   }, [isVideo, videoReady]);
 
-  const transform = `translate(${element.x}, ${element.y}) rotate(${element.rotation || 0})`;
+  // Rotate around the center of the element
+  const cx = element.x + element.width / 2;
+  const cy = element.y + element.height / 2;
+  const transform = element.rotation ? `rotate(${element.rotation}, ${cx}, ${cy})` : undefined;
 
   const commonStyle: React.CSSProperties = {
     cursor: disableInteraction ? 'default' : (element.locked ? 'default' : 'move'),
@@ -114,8 +117,8 @@ export const SVGImageNode: React.FC<Props> = ({
     return (
       <g transform={transform} data-element-id={element.id}>
         <rect
-          x={0}
-          y={0}
+          x={element.x}
+          y={element.y}
           width={element.width}
           height={element.height}
           fill="#f3f4f6"
@@ -141,8 +144,8 @@ export const SVGImageNode: React.FC<Props> = ({
     return (
       <g transform={transform} data-element-id={element.id}>
         <foreignObject
-          x={0}
-          y={0}
+          x={element.x}
+          y={element.y}
           width={element.width}
           height={element.height}
           opacity={element.opacity}
@@ -186,14 +189,14 @@ export const SVGImageNode: React.FC<Props> = ({
         <g transform={transform} data-element-id={element.id}>
           <defs>
             <clipPath id={clipId}>
-              <rect x={0} y={0} width={element.width} height={element.height} />
+              <rect x={element.x} y={element.y} width={element.width} height={element.height} />
             </clipPath>
           </defs>
           <g clipPath={`url(#${clipId})`}>
             <image
               href={resource.src}
-              x={-element.cropX * scaleX}
-              y={-element.cropY * scaleY}
+              x={element.x - element.cropX * scaleX}
+              y={element.y - element.cropY * scaleY}
               width={resource.originalWidth * scaleX}
               height={resource.originalHeight * scaleY}
               opacity={element.opacity}
@@ -212,8 +215,8 @@ export const SVGImageNode: React.FC<Props> = ({
       <g transform={transform} data-element-id={element.id}>
         <image
           href={resource.src}
-          x={0}
-          y={0}
+          x={element.x}
+          y={element.y}
           width={element.width}
           height={element.height}
           opacity={element.opacity}
@@ -231,8 +234,8 @@ export const SVGImageNode: React.FC<Props> = ({
   return (
     <g transform={transform} data-element-id={element.id}>
       <rect
-        x={0}
-        y={0}
+        x={element.x}
+        y={element.y}
         width={element.width}
         height={element.height}
         fill="#1f2937"

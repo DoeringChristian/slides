@@ -91,7 +91,13 @@ export const useEditorStore = create<EditorStore>()((set) => ({
   setSnapToGrid: (snap) => set({ snapToGrid: snap }),
   setGridSize: (size) => set({ gridSize: size }),
   setClipboard: (elements) => set({ clipboard: elements }),
-  setEditingTextId: (id, clickPosition) => set({ editingTextId: id, textEditClickPosition: clickPosition ?? null }),
+  setEditingTextId: (id, clickPosition) => {
+    console.log('setEditingTextId called with:', id, clickPosition);
+    if (id === null) {
+      console.trace('setEditingTextId(null) stack trace:');
+    }
+    return set({ editingTextId: id, textEditClickPosition: clickPosition ?? null });
+  },
   setIsPanning: (panning) => set({ isPanning: panning }),
   setCroppingElementId: (id) => set({ croppingElementId: id }),
   setMarginLayoutId: (id) => set({ marginLayoutId: id }),
