@@ -181,9 +181,12 @@ export const SVGSlideCanvas: React.FC = () => {
     });
   }, [slide, elements]);
 
+  const justFinishedElementDrag = useRef(false);
+
   const handleDragEnd = useCallback((id: string, x: number, y: number) => {
     setDragGuides([]);
     setDragPreview(null);
+    justFinishedElementDrag.current = isElementDragging.current;
     isElementDragging.current = false;
     draggingElementId.current = null;
     if (!activeSlideId || !slide) return;
@@ -349,6 +352,11 @@ export const SVGSlideCanvas: React.FC = () => {
     }
     if (justFinishedDrawing.current) {
       justFinishedDrawing.current = false;
+      return;
+    }
+    // Skip if an element drag just finished (click fires after mouseup on background)
+    if (justFinishedElementDrag.current) {
+      justFinishedElementDrag.current = false;
       return;
     }
     if (e.target === e.currentTarget || (e.target as Element).classList.contains('svg-background')) {
