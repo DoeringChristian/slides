@@ -4,6 +4,7 @@ import { CANVAS_PADDING } from '../../utils/constants';
 import { useEditorStore } from '../../store/editorStore';
 import { computeResizeSnap, type Guide } from '../../hooks/useAlignmentGuides';
 import { getMarginLayout, getMarginBounds } from '../../utils/marginLayouts';
+import { isShiftHeld } from '../../utils/keyboard';
 
 interface Props {
   elements: SlideElement[];
@@ -178,8 +179,9 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
         const dy = (e.clientY - resizing.startY) / zoom;
         const { anchor, startBounds } = resizing;
 
-        // Get snapping settings
+        // Get snapping settings - shift key disables snapping
         const { snapToGrid: snappingEnabled, marginLayoutId } = useEditorStore.getState();
+        const effectiveSnapping = snappingEnabled && !isShiftHeld();
 
         let newX = startBounds.x;
         let newY = startBounds.y;
@@ -202,7 +204,7 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
         }
 
         // Snap to alignment guides if enabled
-        if (snappingEnabled) {
+        if (effectiveSnapping) {
           const marginLayout = getMarginLayout(marginLayoutId);
           const marginBounds = marginLayout ? getMarginBounds(marginLayout) : null;
           const others = elements

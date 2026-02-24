@@ -21,6 +21,7 @@ import { SelectionActionBar } from '../canvas/SelectionActionBar';
 import { computeGuides } from '../../hooks/useAlignmentGuides';
 import { getMarginLayout, getMarginBounds } from '../../utils/marginLayouts';
 import { snapToGrid as snapToGridFn } from '../../utils/geometry';
+import { isShiftHeld } from '../../utils/keyboard';
 import { SLIDE_WIDTH, SLIDE_HEIGHT, CANVAS_PADDING } from '../../utils/constants';
 import { loadImageFile, loadPdfFile, loadVideoFile } from '../../utils/slideFactory';
 import { isPointOnTextContent } from '../../utils/textHitTest';
@@ -114,6 +115,8 @@ export const SVGSlideCanvas: React.FC = () => {
     if (!el) return;
 
     const { snapToGrid: snappingEnabled, showGrid: isGridVisible, gridSize: grid, marginLayoutId: currentMarginLayoutId } = useEditorStore.getState();
+    // Shift key disables snapping for precise placement
+    const effectiveSnapping = snappingEnabled && !isShiftHeld();
     const marginLayout = getMarginLayout(currentMarginLayoutId);
     const marginBounds = marginLayout ? getMarginBounds(marginLayout) : null;
 
@@ -122,12 +125,12 @@ export const SVGSlideCanvas: React.FC = () => {
       .filter((e) => e.id !== id && e.visible)
       .map((e) => ({ x: e.x, y: e.y, width: e.width, height: e.height }));
     const result = computeGuides(dragged, others, 5, marginBounds);
-    setDragGuides(snappingEnabled ? result.guides : []);
+    setDragGuides(effectiveSnapping ? result.guides : []);
 
     let snappedX = x;
     let snappedY = y;
 
-    if (snappingEnabled) {
+    if (effectiveSnapping) {
       if (isGridVisible) {
         snappedX = snapToGridFn(x, grid);
         snappedY = snapToGridFn(y, grid);
@@ -147,6 +150,8 @@ export const SVGSlideCanvas: React.FC = () => {
     if (!activeSlideId || !slide) return;
 
     const { snapToGrid: snappingEnabled, showGrid: isGridVisible, gridSize: grid, marginLayoutId: currentMarginLayoutId } = useEditorStore.getState();
+    // Shift key disables snapping for precise placement
+    const effectiveSnapping = snappingEnabled && !isShiftHeld();
     const marginLayout = getMarginLayout(currentMarginLayoutId);
     const marginBounds = marginLayout ? getMarginBounds(marginLayout) : null;
     const el = slide.elements[id];
@@ -154,7 +159,7 @@ export const SVGSlideCanvas: React.FC = () => {
     let snappedX = x;
     let snappedY = y;
 
-    if (snappingEnabled && el) {
+    if (effectiveSnapping && el) {
       const dragged = { x, y, width: el.width, height: el.height };
       const others = elements
         .filter((e) => e.id !== id && e.visible)

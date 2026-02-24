@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import type { ShapeElement, SlideElement, ConnectorBinding } from '../../types/presentation';
-import { isCtrlHeld } from '../../utils/keyboard';
+import { isCtrlHeld, isShiftHeld } from '../../utils/keyboard';
 import { constrainToAngle } from '../../utils/geometry';
 import { CANVAS_PADDING } from '../../utils/constants';
 import { useEditorStore } from '../../store/editorStore';
@@ -118,9 +118,10 @@ export const SVGLineEndpointHandles: React.FC<Props> = ({
       } else {
         onConnectorHighlight?.(null);
 
-        // Apply snapping to other elements (only if not binding)
+        // Apply snapping to other elements (only if not binding, shift disables snapping)
         const { snapToGrid: snappingEnabled, marginLayoutId } = useEditorStore.getState();
-        if (snappingEnabled) {
+        const effectiveSnapping = snappingEnabled && !isShiftHeld();
+        if (effectiveSnapping) {
           const marginLayout = getMarginLayout(marginLayoutId);
           const marginBounds = marginLayout ? getMarginBounds(marginLayout) : null;
           const others = elements

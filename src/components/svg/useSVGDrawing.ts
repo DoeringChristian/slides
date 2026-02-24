@@ -4,6 +4,7 @@ import { usePresentationStore } from '../../store/presentationStore';
 import { createTextElement, createShapeElement } from '../../utils/slideFactory';
 import { computePointSnap, type Guide } from '../../hooks/useAlignmentGuides';
 import { getMarginLayout, getMarginBounds } from '../../utils/marginLayouts';
+import { isShiftHeld } from '../../utils/keyboard';
 
 interface DrawState {
   startX: number;
@@ -35,7 +36,8 @@ export function useSVGDrawing() {
   const getSnapContext = useCallback(() => {
     const { snapToGrid, marginLayoutId } = useEditorStore.getState();
     const slide = usePresentationStore.getState().presentation.slides[activeSlideId];
-    if (!snapToGrid || !slide) return { others: [], marginBounds: null };
+    // Shift key disables snapping for precise placement
+    if (!snapToGrid || isShiftHeld() || !slide) return { others: [], marginBounds: null, snappingEnabled: false };
 
     const others = Object.values(slide.elements)
       .filter((el) => el.visible)
@@ -44,7 +46,7 @@ export function useSVGDrawing() {
     const marginLayout = getMarginLayout(marginLayoutId);
     const marginBounds = marginLayout ? getMarginBounds(marginLayout) : null;
 
-    return { others, marginBounds };
+    return { others, marginBounds, snappingEnabled: true };
   }, [activeSlideId]);
 
   const handleMouseDown = useCallback((
@@ -55,8 +57,8 @@ export function useSVGDrawing() {
 
     const pos = screenToSVG(e.clientX, e.clientY);
 
-    const { others, marginBounds } = getSnapContext();
-    const startSnap = computePointSnap(pos, others, 5, marginBounds);
+    const { others, marginBounds, snappingEnabled } = getSnapContext();
+    const startSnap = snappingEnabled ? computePointSnap(pos, others, 5, marginBounds) : { snapX: null, snapY: null, guides: [] };
     const snappedStartX = startSnap.snapX ?? pos.x;
     const snappedStartY = startSnap.snapY ?? pos.y;
 
@@ -82,31 +84,45 @@ export function useSVGDrawing() {
 
     const pos = screenToSVG(e.clientX, e.clientY);
 
-    const { others, marginBounds } = getSnapContext();
-    const currentSnap = computePointSnap(pos, others, 5, marginBounds);
-    const snappedCurrentX = currentSnap.snapX ?? pos.x;
-    const snappedCurrentY = currentSnap.snapY ?? pos.y;
+    const { others, marginBounds, snappingEnabled } = getSnapContext();
 
-    const startSnap = computePointSnap({ x: drawState.startX, y: drawState.startY }, others, 5, marginBounds);
-    const allGuides = [...startSnap.guides, ...currentSnap.guides];
-    const seen = new Set<string>();
-    const uniqueGuides = allGuides.filter((g) => {
-      const key = `${g.type}-${g.position}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+    if (snappingEnabled) {
+      const currentSnap = computePointSnap(pos, others, 5, marginBounds);
+      const snappedCurrentX = currentSnap.snapX ?? pos.x;
+      const snappedCurrentY = currentSnap.snapY ?? pos.y;
 
-    setGuides(uniqueGuides);
-    setDrawState((s) => ({
-      ...s,
-      currentX: pos.x,
-      currentY: pos.y,
-      snappedCurrentX,
-      snappedCurrentY,
-      snappedStartX: startSnap.snapX ?? s.startX,
-      snappedStartY: startSnap.snapY ?? s.startY,
-    }));
+      const startSnap = computePointSnap({ x: drawState.startX, y: drawState.startY }, others, 5, marginBounds);
+      const allGuides = [...startSnap.guides, ...currentSnap.guides];
+      const seen = new Set<string>();
+      const uniqueGuides = allGuides.filter((g) => {
+        const key = `${g.type}-${g.position}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      setGuides(uniqueGuides);
+      setDrawState((s) => ({
+        ...s,
+        currentX: pos.x,
+        currentY: pos.y,
+        snappedCurrentX,
+        snappedCurrentY,
+        snappedStartX: startSnap.snapX ?? s.startX,
+        snappedStartY: startSnap.snapY ?? s.startY,
+      }));
+    } else {
+      setGuides([]);
+      setDrawState((s) => ({
+        ...s,
+        currentX: pos.x,
+        currentY: pos.y,
+        snappedCurrentX: pos.x,
+        snappedCurrentY: pos.y,
+        snappedStartX: s.startX,
+        snappedStartY: s.startY,
+      }));
+    }
   }, [drawState.isDrawing, drawState.startX, drawState.startY, getSnapContext]);
 
   const handleMouseUp = useCallback(() => {
