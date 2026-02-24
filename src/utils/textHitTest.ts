@@ -52,12 +52,15 @@ export function isPointOnTextContent(element: TextElement, point: Point): boolea
   const contentWidth = width - padding * 2;
   const contentHeight = height - padding * 2;
 
+  // With word wrapping, text fills up to the content width
+  const effectiveTextWidth = Math.min(maxWidth, contentWidth);
+
   // Calculate text position based on alignment
   let textX = padding;
   if (align === 'center') {
-    textX = padding + (contentWidth - maxWidth) / 2;
+    textX = padding + (contentWidth - effectiveTextWidth) / 2;
   } else if (align === 'right') {
-    textX = padding + contentWidth - maxWidth;
+    textX = padding + contentWidth - effectiveTextWidth;
   }
 
   let textY = padding;
@@ -67,11 +70,18 @@ export function isPointOnTextContent(element: TextElement, point: Point): boolea
     textY = padding + contentHeight - totalHeight;
   }
 
+  // Border margin: clicks near box edges always start a drag, not edit mode
+  const borderMargin = 8;
+  if (point.x < borderMargin || point.x > width - borderMargin ||
+      point.y < borderMargin || point.y > height - borderMargin) {
+    return false;
+  }
+
   const tolerance = 4;
   const textBounds = {
     left: Math.max(0, textX - tolerance),
     top: Math.max(0, textY - tolerance),
-    right: Math.min(width, textX + maxWidth + tolerance),
+    right: Math.min(width, textX + effectiveTextWidth + tolerance),
     bottom: Math.min(height, textY + totalHeight + tolerance),
   };
 

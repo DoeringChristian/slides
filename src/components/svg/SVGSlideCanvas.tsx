@@ -117,6 +117,7 @@ export const SVGSlideCanvas: React.FC = () => {
   const isElementDragging = useRef(false);
   const justFinishedSelectionDrag = useRef(false);
   const draggingElementId = useRef<string | null>(null);
+  const pendingTextEdit = useRef<{ id: string; localX: number; localY: number } | null>(null);
 
   // Drawing hook
   const { drawState, guides: drawingGuides, handleMouseDown: handleDrawMouseDown, handleMouseMove: handleDrawMouseMove, handleMouseUp: handleDrawMouseUp, justFinishedDrawing } = useSVGDrawing();
@@ -186,9 +187,20 @@ export const SVGSlideCanvas: React.FC = () => {
   const handleDragEnd = useCallback((id: string, x: number, y: number) => {
     setDragGuides([]);
     setDragPreview(null);
-    justFinishedElementDrag.current = isElementDragging.current;
+    const didDrag = isElementDragging.current;
+    justFinishedElementDrag.current = didDrag;
     isElementDragging.current = false;
     draggingElementId.current = null;
+
+    // If no actual drag happened and we had a pending text edit, enter edit mode
+    if (!didDrag && pendingTextEdit.current && pendingTextEdit.current.id === id) {
+      const { id: textId, localX, localY } = pendingTextEdit.current;
+      pendingTextEdit.current = null;
+      setEditingTextId(textId, { x: localX, y: localY });
+      return;
+    }
+    pendingTextEdit.current = null;
+
     if (!activeSlideId || !slide) return;
 
     const { snapToGrid: snappingEnabled, showGrid: isGridVisible, gridSize: grid, marginLayoutId: currentMarginLayoutId } = useEditorStore.getState();
@@ -217,7 +229,10 @@ export const SVGSlideCanvas: React.FC = () => {
       if (result.snapY !== null) snappedY = result.snapY;
     }
 
-    updateElement(activeSlideId, id, { x: snappedX, y: snappedY });
+    // Only update if position actually changed (avoids re-render that breaks dblclick)
+    if (el && (snappedX !== el.x || snappedY !== el.y)) {
+      updateElement(activeSlideId, id, { x: snappedX, y: snappedY });
+    }
   }, [activeSlideId, updateElement, slide, elements]);
 
   const { handleMouseDown: handleElementMouseDown } = useSVGDrag({
@@ -278,7 +293,6 @@ export const SVGSlideCanvas: React.FC = () => {
       setEditingTextId(null);
     }
 
-    const wasDragging = isElementDragging.current;
     isElementDragging.current = false;
 
     if (metaPressed) {
@@ -289,41 +303,27 @@ export const SVGSlideCanvas: React.FC = () => {
     } else {
       setSelectedElements([id]);
 
-      let enteredEditMode = false;
-      if (isTextElement && clickedElement && !wasDragging) {
+      // Store click info for potential edit-mode entry on mouseup (no drag)
+      if (isTextElement && clickedElement) {
         const pos = screenToSVG(e.clientX, e.clientY);
-
-        // With center-based rotation, we need to:
-        // 1. Get the click position relative to the element's center
-        // 2. Rotate that point back to unrotated space
-        // 3. Convert back to top-left relative coordinates
         const centerX = clickedElement.x + clickedElement.width / 2;
         const centerY = clickedElement.y + clickedElement.height / 2;
-
-        // Position relative to center
         const relCenterX = pos.x - centerX;
         const relCenterY = pos.y - centerY;
-
-        // Rotate back (negative angle to undo the rotation)
         const rotation = clickedElement.rotation || 0;
         const radians = -rotation * Math.PI / 180;
         const cos = Math.cos(radians);
         const sin = Math.sin(radians);
-        const unrotatedRelX = relCenterX * cos - relCenterY * sin;
-        const unrotatedRelY = relCenterX * sin + relCenterY * cos;
-
-        // Convert back to top-left relative coordinates
-        const localX = unrotatedRelX + clickedElement.width / 2;
-        const localY = unrotatedRelY + clickedElement.height / 2;
+        const localX = relCenterX * cos - relCenterY * sin + clickedElement.width / 2;
+        const localY = relCenterX * sin + relCenterY * cos + clickedElement.height / 2;
 
         if (isPointOnTextContent(clickedElement as TextElement, { x: localX, y: localY })) {
-          setEditingTextId(id, { x: localX, y: localY });
-          enteredEditMode = true;
+          pendingTextEdit.current = { id, localX, localY };
         }
       }
 
-      // Start drag (but not when entering text edit mode - that would cause snapping on mouseup)
-      if (!clickedElement?.locked && !enteredEditMode) {
+      // Always start drag
+      if (!clickedElement?.locked) {
         handleElementMouseDown(id, clickedElement?.x || 0, clickedElement?.y || 0, e);
       }
     }
@@ -354,9 +354,13 @@ export const SVGSlideCanvas: React.FC = () => {
       justFinishedDrawing.current = false;
       return;
     }
-    // Skip if an element drag just finished (click fires after mouseup on background)
+    // Skip if an element drag or transform just finished (click fires after mouseup on background)
     if (justFinishedElementDrag.current) {
       justFinishedElementDrag.current = false;
+      return;
+    }
+    if (justFinishedTransform.current) {
+      justFinishedTransform.current = false;
       return;
     }
     if (e.target === e.currentTarget || (e.target as Element).classList.contains('svg-background')) {
@@ -453,8 +457,11 @@ export const SVGSlideCanvas: React.FC = () => {
     });
   }, [slide]);
 
+  const justFinishedTransform = useRef(false);
+
   const handleTransformEnd = useCallback((id: string, attrs: Record<string, number>) => {
     setTransformPreview(null);
+    justFinishedTransform.current = true;
     if (activeSlideId) {
       updateElement(activeSlideId, id, attrs);
     }
