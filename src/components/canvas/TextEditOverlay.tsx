@@ -78,7 +78,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
 
-      return `<div data-line="${index}" style="margin: 0; padding: 0; font-size: ${fontSize}px; font-weight: ${fontWeight}; line-height: 1; min-height: ${fontSize * (style.lineHeight || 1.2)}px;">${escapedLine || '<br>'}</div>`;
+      return `<div data-line="${index}" style="margin: 0; padding: 0; font-size: ${fontSize}px; font-weight: ${fontWeight}; line-height: ${style.lineHeight || 1.2}; min-height: ${fontSize * (style.lineHeight || 1.2)}px;">${escapedLine || '<br>'}</div>`;
     }).join('');
 
     editorRef.current.innerHTML = html;
