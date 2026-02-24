@@ -8,9 +8,6 @@ import { ShapeProperties } from './ShapeProperties';
 import { ImageProperties } from './ImageProperties';
 import { SlideProperties } from './SlideProperties';
 import { ArrangePanel } from './ArrangePanel';
-import { TransitionButton } from './TransitionButton';
-import { SlideSyncButton } from './SlideSyncButton';
-import type { TextElement } from '../../types/presentation';
 
 export const PropertiesPanel: React.FC = () => {
   const selected = useSelectedElements();
@@ -25,49 +22,40 @@ export const PropertiesPanel: React.FC = () => {
   const hasPrevDiff = element && prevElement && JSON.stringify(element) !== JSON.stringify(prevElement);
   const hasNextDiff = element && nextElement && JSON.stringify(element) !== JSON.stringify(nextElement);
 
+  // Hide header for image/text elements (controls are in their respective Properties components)
+  const showHeader = !element || (element.type !== 'image' && element.type !== 'text');
+
   return (
     <div className="w-64 bg-white border-l border-gray-200 flex flex-col shrink-0 overflow-y-auto">
-      <div className="p-3 border-b border-gray-200">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-gray-500 uppercase">
-            {element ? element.type : 'Slide'}
-          </span>
-          <div className="flex items-center gap-0.5">
-            {element && (
-              <SlideSyncButton elementId={element.id} fields={element.type === 'text' ? ['text'] : []} />
-            )}
-            {element?.type === 'text' && (
-              <>
-                <TransitionButton elementId={element.id} group="content" direction="in" />
-                <TransitionButton elementId={element.id} group="content" direction="out" />
-              </>
-            )}
-            {hasPrevDiff && (
-              <button
-                onClick={() => resetElementToKeyframe(activeSlideId, element.id)}
-                className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
-                title="Reset to previous keyframe"
-              >
-                <ArrowLeft size={14} />
-              </button>
-            )}
-            {hasNextDiff && (
-              <button
-                onClick={() => resetElementToNextKeyframe(activeSlideId, element.id)}
-                className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
-                title="Reset to next keyframe"
-              >
-                <ArrowRight size={14} />
-              </button>
-            )}
+      {showHeader && (
+        <div className="p-3 border-b border-gray-200">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-gray-500 uppercase">
+              {element ? element.type : 'Slide'}
+            </span>
+            <div className="flex items-center gap-0.5">
+              {hasPrevDiff && (
+                <button
+                  onClick={() => resetElementToKeyframe(activeSlideId, element.id)}
+                  className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+                  title="Reset to previous keyframe"
+                >
+                  <ArrowLeft size={14} />
+                </button>
+              )}
+              {hasNextDiff && (
+                <button
+                  onClick={() => resetElementToNextKeyframe(activeSlideId, element.id)}
+                  className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+                  title="Reset to next keyframe"
+                >
+                  <ArrowRight size={14} />
+                </button>
+              )}
+            </div>
           </div>
         </div>
-        {element?.type === 'text' && (
-          <div className="text-xs text-gray-400 truncate mt-1">
-            {(element as TextElement).text?.slice(0, 50) || '(empty)'}{(element as TextElement).text && (element as TextElement).text.length > 50 ? '...' : ''}
-          </div>
-        )}
-      </div>
+      )}
 
       <div className="p-3 space-y-4">
         {element ? (

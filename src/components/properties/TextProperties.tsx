@@ -1,5 +1,8 @@
 import React from 'react';
-import { useMultiSlideUpdate } from '../../store/selectors';
+import { ArrowLeft, ArrowRight } from 'lucide-react';
+import { useMultiSlideUpdate, usePreviousSlideElement, useNextSlideElement } from '../../store/selectors';
+import { useEditorStore } from '../../store/editorStore';
+import { usePresentationStore } from '../../store/presentationStore';
 import { ColorPicker } from '../toolbar/ColorPicker';
 import { TransitionButton } from './TransitionButton';
 import { SlideSyncButton } from './SlideSyncButton';
@@ -12,6 +15,14 @@ interface Props {
 
 export const TextProperties: React.FC<Props> = ({ element }) => {
   const update = useMultiSlideUpdate(element.id);
+  const activeSlideId = useEditorStore((s) => s.activeSlideId);
+  const updateElement = usePresentationStore((s) => s.updateElement);
+
+  // For content reset buttons
+  const prevElement = usePreviousSlideElement(element.id) as TextElement | undefined;
+  const nextElement = useNextSlideElement(element.id) as TextElement | undefined;
+  const hasPrevContentDiff = prevElement && prevElement.text !== element.text;
+  const hasNextContentDiff = nextElement && nextElement.text !== element.text;
 
   const updateStyle = (changes: Partial<TextStyle>) => {
     update({
@@ -21,6 +32,38 @@ export const TextProperties: React.FC<Props> = ({ element }) => {
 
   return (
     <div className="space-y-3">
+      <div className="text-xs font-medium text-gray-500 uppercase">Text</div>
+      <div>
+        <div className="flex items-center mb-1">
+          <label className="text-xs text-gray-500">Content</label>
+          <div className="flex items-center gap-0.5 ml-auto">
+            <SlideSyncButton elementId={element.id} fields={['text']} />
+            <TransitionButton elementId={element.id} group="content" direction="in" />
+            <TransitionButton elementId={element.id} group="content" direction="out" />
+            {hasPrevContentDiff && (
+              <button
+                onClick={() => updateElement(activeSlideId, element.id, { text: prevElement!.text })}
+                className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+                title="Reset to previous keyframe"
+              >
+                <ArrowLeft size={14} />
+              </button>
+            )}
+            {hasNextContentDiff && (
+              <button
+                onClick={() => updateElement(activeSlideId, element.id, { text: nextElement!.text })}
+                className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+                title="Reset to next keyframe"
+              >
+                <ArrowRight size={14} />
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="text-xs text-gray-400 truncate">
+          {element.text?.slice(0, 50) || '(empty)'}{element.text && element.text.length > 50 ? '...' : ''}
+        </div>
+      </div>
       <div>
         <div className="flex items-center mb-1">
           <label className="text-xs text-gray-500">Font</label>

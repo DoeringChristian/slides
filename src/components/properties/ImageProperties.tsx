@@ -1,8 +1,8 @@
 import React, { useState, useRef } from 'react';
-import { Play, Pause, Repeat, VolumeX, Volume2 } from 'lucide-react';
+import { Play, Pause, Repeat, VolumeX, Volume2, ArrowLeft, ArrowRight } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
-import { useMultiSlideUpdate } from '../../store/selectors';
+import { useMultiSlideUpdate, usePreviousSlideElement, useNextSlideElement } from '../../store/selectors';
 import { ResourcePicker } from './ResourcePicker';
 import { TransitionButton } from './TransitionButton';
 import { SlideSyncButton } from './SlideSyncButton';
@@ -26,6 +26,26 @@ export const ImageProperties: React.FC<Props> = ({ element }) => {
 
   const isVideo = resource?.type === 'video';
 
+  // For reset buttons
+  const prevElement = usePreviousSlideElement(element.id) as ImageElement | undefined;
+  const nextElement = useNextSlideElement(element.id) as ImageElement | undefined;
+  const hasPrevResourceDiff = prevElement && prevElement.resourceId !== element.resourceId;
+  const hasNextResourceDiff = nextElement && nextElement.resourceId !== element.resourceId;
+
+  const resetResourceToPrev = () => {
+    if (!prevElement) return;
+    const prevResource = prevElement.resourceId ? resources[prevElement.resourceId] : undefined;
+    const updates = computeResourceUpdate(prevElement.resourceId ?? null, prevResource, element);
+    updateElement(activeSlideId, element.id, updates);
+  };
+
+  const resetResourceToNext = () => {
+    if (!nextElement) return;
+    const nextResource = nextElement.resourceId ? resources[nextElement.resourceId] : undefined;
+    const updates = computeResourceUpdate(nextElement.resourceId ?? null, nextResource, element);
+    updateElement(activeSlideId, element.id, updates);
+  };
+
   const handleOpenPicker = () => {
     if (buttonRef.current) {
       setAnchorRect(buttonRef.current.getBoundingClientRect());
@@ -43,6 +63,7 @@ export const ImageProperties: React.FC<Props> = ({ element }) => {
 
   return (
     <div className="space-y-3">
+      <div className="text-xs font-medium text-gray-500 uppercase">{isVideo ? 'Video' : 'Image'}</div>
       <div>
         <div className="flex items-center mb-1">
           <label className="text-xs text-gray-500">Opacity</label>
@@ -68,6 +89,24 @@ export const ImageProperties: React.FC<Props> = ({ element }) => {
             <SlideSyncButton elementId={element.id} fields={['resourceId']} />
             <TransitionButton elementId={element.id} group="resource" direction="in" />
             <TransitionButton elementId={element.id} group="resource" direction="out" />
+            {hasPrevResourceDiff && (
+              <button
+                onClick={resetResourceToPrev}
+                className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+                title="Reset to previous keyframe"
+              >
+                <ArrowLeft size={14} />
+              </button>
+            )}
+            {hasNextResourceDiff && (
+              <button
+                onClick={resetResourceToNext}
+                className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+                title="Reset to next keyframe"
+              >
+                <ArrowRight size={14} />
+              </button>
+            )}
           </div>
         </div>
         {resource && (
