@@ -15,13 +15,19 @@ export interface DragPreviewState {
 
 interface Props {
   preview: DragPreviewState | DragPreviewState[] | null;
+  zoom?: number;
 }
 
 const STROKE_COLOR = 'rgba(100, 100, 100, 0.8)';
 const FILL_COLOR = 'rgba(128, 128, 128, 0.15)';
 
-const SinglePreview: React.FC<{ preview: DragPreviewState }> = memo(({ preview }) => {
+const SinglePreview: React.FC<{ preview: DragPreviewState; zoom: number }> = memo(({ preview, zoom }) => {
   const { elementType, x, y, width, height, rotation, points } = preview;
+
+  // Scale sizes inversely with zoom to keep them constant on screen
+  const strokeW = 1.5 / zoom;
+  const lineStrokeW = 2 / zoom;
+  const dashArray = `${6 / zoom} ${3 / zoom}`;
 
   // Line/arrow preview
   if (elementType === 'line' && points) {
@@ -37,8 +43,8 @@ const SinglePreview: React.FC<{ preview: DragPreviewState }> = memo(({ preview }
           x2={x + points[2]}
           y2={y + points[3]}
           stroke={STROKE_COLOR}
-          strokeWidth={2}
-          strokeDasharray="6 3"
+          strokeWidth={lineStrokeW}
+          strokeDasharray={dashArray}
         />
       </g>
     );
@@ -58,14 +64,14 @@ const SinglePreview: React.FC<{ preview: DragPreviewState }> = memo(({ preview }
       transform={transform}
       fill={FILL_COLOR}
       stroke={STROKE_COLOR}
-      strokeWidth={1.5}
-      strokeDasharray="6 3"
+      strokeWidth={strokeW}
+      strokeDasharray={dashArray}
       style={{ pointerEvents: 'none' }}
     />
   );
 });
 
-export const SVGDragPreview: React.FC<Props> = memo(({ preview }) => {
+export const SVGDragPreview: React.FC<Props> = memo(({ preview, zoom = 1 }) => {
   if (!preview) return null;
 
   // Handle array of previews
@@ -75,7 +81,7 @@ export const SVGDragPreview: React.FC<Props> = memo(({ preview }) => {
     return (
       <g>
         {activePreviews.map((p, i) => (
-          <SinglePreview key={i} preview={p} />
+          <SinglePreview key={i} preview={p} zoom={zoom} />
         ))}
       </g>
     );
@@ -83,5 +89,5 @@ export const SVGDragPreview: React.FC<Props> = memo(({ preview }) => {
 
   // Single preview (backwards compatible)
   if (!preview.isDragging) return null;
-  return <SinglePreview preview={preview} />;
+  return <SinglePreview preview={preview} zoom={zoom} />;
 });

@@ -36,12 +36,13 @@ export function useKeyboardShortcuts() {
       }
 
       // Undo/Redo
-      if (ctrl && e.key === 'z' && !e.shiftKey) {
+      const key = e.key.toLowerCase();
+      if (ctrl && key === 'z' && !e.shiftKey) {
         e.preventDefault();
         (store as any).temporal?.getState()?.undo();
         return;
       }
-      if (ctrl && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+      if (ctrl && (key === 'y' || (key === 'z' && e.shiftKey))) {
         e.preventDefault();
         (store as any).temporal?.getState()?.redo();
         return;

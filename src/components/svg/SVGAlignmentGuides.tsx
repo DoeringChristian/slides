@@ -8,9 +8,14 @@ interface Guide {
 
 interface Props {
   guides: Guide[];
+  zoom?: number;
 }
 
-export const SVGAlignmentGuides: React.FC<Props> = ({ guides }) => {
+export const SVGAlignmentGuides: React.FC<Props> = ({ guides, zoom = 1 }) => {
+  // Scale sizes inversely with zoom to keep them constant on screen
+  const strokeW = 1 / zoom;
+  const dashArray = `${4 / zoom} ${4 / zoom}`;
+
   return (
     <g className="alignment-guides">
       {guides.map((guide, i) => (
@@ -21,8 +26,8 @@ export const SVGAlignmentGuides: React.FC<Props> = ({ guides }) => {
           x2={guide.type === 'vertical' ? guide.position : SLIDE_WIDTH}
           y2={guide.type === 'vertical' ? SLIDE_HEIGHT : guide.position}
           stroke="#ff4081"
-          strokeWidth={1}
-          strokeDasharray="4 4"
+          strokeWidth={strokeW}
+          strokeDasharray={dashArray}
           style={{ pointerEvents: 'none' }}
         />
       ))}

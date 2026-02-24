@@ -3,7 +3,11 @@ import { useEditorStore } from '../../store/editorStore';
 import { getMarginLayout, getMarginBounds } from '../../utils/marginLayouts';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 
-export const SVGMarginGuides: React.FC = () => {
+interface Props {
+  zoom?: number;
+}
+
+export const SVGMarginGuides: React.FC<Props> = ({ zoom = 1 }) => {
   const marginLayoutId = useEditorStore((s) => s.marginLayoutId);
   const showMarginGuides = useEditorStore((s) => s.showMarginGuides);
 
@@ -11,6 +15,11 @@ export const SVGMarginGuides: React.FC = () => {
   if (!layout || !showMarginGuides) return null;
 
   const bounds = getMarginBounds(layout);
+
+  // Scale sizes inversely with zoom to keep them constant on screen
+  const strokeW = 1 / zoom;
+  const dashArray = `${6 / zoom} ${4 / zoom}`;
+  const centerDashArray = `${2 / zoom} ${6 / zoom}`;
 
   return (
     <g className="margin-guides" style={{ pointerEvents: 'none' }}>
@@ -21,8 +30,8 @@ export const SVGMarginGuides: React.FC = () => {
         x2={bounds.left}
         y2={SLIDE_HEIGHT}
         stroke="#3b82f6"
-        strokeWidth={1}
-        strokeDasharray="6 4"
+        strokeWidth={strokeW}
+        strokeDasharray={dashArray}
         opacity={0.5}
       />
       {/* Right margin */}
@@ -32,8 +41,8 @@ export const SVGMarginGuides: React.FC = () => {
         x2={bounds.right}
         y2={SLIDE_HEIGHT}
         stroke="#3b82f6"
-        strokeWidth={1}
-        strokeDasharray="6 4"
+        strokeWidth={strokeW}
+        strokeDasharray={dashArray}
         opacity={0.5}
       />
       {/* Top margin */}
@@ -43,8 +52,8 @@ export const SVGMarginGuides: React.FC = () => {
         x2={SLIDE_WIDTH}
         y2={bounds.top}
         stroke="#3b82f6"
-        strokeWidth={1}
-        strokeDasharray="6 4"
+        strokeWidth={strokeW}
+        strokeDasharray={dashArray}
         opacity={0.5}
       />
       {/* Bottom margin */}
@@ -54,8 +63,8 @@ export const SVGMarginGuides: React.FC = () => {
         x2={SLIDE_WIDTH}
         y2={bounds.bottom}
         stroke="#3b82f6"
-        strokeWidth={1}
-        strokeDasharray="6 4"
+        strokeWidth={strokeW}
+        strokeDasharray={dashArray}
         opacity={0.5}
       />
       {/* Center vertical */}
@@ -65,8 +74,8 @@ export const SVGMarginGuides: React.FC = () => {
         x2={bounds.centerX}
         y2={SLIDE_HEIGHT}
         stroke="#3b82f6"
-        strokeWidth={1}
-        strokeDasharray="2 6"
+        strokeWidth={strokeW}
+        strokeDasharray={centerDashArray}
         opacity={0.3}
       />
       {/* Center horizontal */}
@@ -76,8 +85,8 @@ export const SVGMarginGuides: React.FC = () => {
         x2={SLIDE_WIDTH}
         y2={bounds.centerY}
         stroke="#3b82f6"
-        strokeWidth={1}
-        strokeDasharray="2 6"
+        strokeWidth={strokeW}
+        strokeDasharray={centerDashArray}
         opacity={0.3}
       />
     </g>

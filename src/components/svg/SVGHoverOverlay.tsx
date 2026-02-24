@@ -5,6 +5,7 @@ import type { SlideElement, ShapeElement, ImageElement } from '../../types/prese
 interface Props {
   element: SlideElement;
   isVisibleOnSlide: boolean;
+  zoom?: number;
 }
 
 const HIGHLIGHT_COLOR = '#f59e0b';
@@ -246,7 +247,7 @@ const GhostElement: React.FC<{ element: SlideElement }> = ({ element }) => {
   return null;
 };
 
-const HighlightRect: React.FC<{ element: SlideElement }> = ({ element }) => {
+const HighlightRect: React.FC<{ element: SlideElement; zoom: number }> = ({ element, zoom }) => {
   const isLine = element.type === 'shape' &&
     ((element as ShapeElement).shapeType === 'line' || (element as ShapeElement).shapeType === 'arrow');
 
@@ -266,27 +267,33 @@ const HighlightRect: React.FC<{ element: SlideElement }> = ({ element }) => {
   }
   const transform = element.rotation ? `rotate(${element.rotation}, ${cx}, ${cy})` : undefined;
 
+  // Scale sizes inversely with zoom to keep them constant on screen
+  const padding = 3 / zoom;
+  const strokeW = 2 / zoom;
+  const radius = 3 / zoom;
+  const dashArray = `${6 / zoom} ${3 / zoom}`;
+
   return (
     <g transform={transform} style={{ pointerEvents: 'none' }}>
       <rect
-        x={bounds.x - 3}
-        y={bounds.y - 3}
-        width={bounds.width + 6}
-        height={bounds.height + 6}
+        x={bounds.x - padding}
+        y={bounds.y - padding}
+        width={bounds.width + padding * 2}
+        height={bounds.height + padding * 2}
         fill="none"
         stroke={HIGHLIGHT_COLOR}
-        strokeWidth={2}
-        rx={3}
-        ry={3}
-        strokeDasharray="6 3"
+        strokeWidth={strokeW}
+        rx={radius}
+        ry={radius}
+        strokeDasharray={dashArray}
       />
     </g>
   );
 };
 
-export const SVGHoverOverlay: React.FC<Props> = ({ element, isVisibleOnSlide }) => {
+export const SVGHoverOverlay: React.FC<Props> = ({ element, isVisibleOnSlide, zoom = 1 }) => {
   if (isVisibleOnSlide) {
-    return <HighlightRect element={element} />;
+    return <HighlightRect element={element} zoom={zoom} />;
   }
 
   return (
@@ -294,7 +301,7 @@ export const SVGHoverOverlay: React.FC<Props> = ({ element, isVisibleOnSlide }) 
       <g opacity={GHOST_OPACITY}>
         <GhostElement element={element} />
       </g>
-      <HighlightRect element={element} />
+      <HighlightRect element={element} zoom={zoom} />
     </g>
   );
 };

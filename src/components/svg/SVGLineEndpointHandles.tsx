@@ -224,6 +224,12 @@ export const SVGLineEndpointHandles: React.FC<Props> = ({
   const displayEndX = dragging?.endpoint === 'end' && currentPos ? currentPos.x : endX;
   const displayEndY = dragging?.endpoint === 'end' && currentPos ? currentPos.y : endY;
 
+  // Scale sizes inversely with zoom to keep them constant on screen
+  const handleRadius = HANDLE_RADIUS / zoom;
+  const strokeW = STROKE_WIDTH / zoom;
+  const thinStrokeW = 1 / zoom;
+  const dashArray = `${4 / zoom} ${2 / zoom}`;
+
   return (
     <g className="line-endpoint-handles">
       {/* Selection line connecting endpoints */}
@@ -233,8 +239,8 @@ export const SVGLineEndpointHandles: React.FC<Props> = ({
         x2={displayEndX}
         y2={displayEndY}
         stroke={COLOR}
-        strokeWidth={1}
-        strokeDasharray="4 2"
+        strokeWidth={thinStrokeW}
+        strokeDasharray={dashArray}
         style={{ pointerEvents: 'none' }}
       />
 
@@ -242,10 +248,10 @@ export const SVGLineEndpointHandles: React.FC<Props> = ({
       <circle
         cx={displayStartX}
         cy={displayStartY}
-        r={HANDLE_RADIUS}
+        r={handleRadius}
         fill="white"
         stroke={COLOR}
-        strokeWidth={STROKE_WIDTH}
+        strokeWidth={strokeW}
         style={{ cursor: 'move' }}
         onMouseDown={(e) => handleMouseDown('start', e)}
       />
@@ -254,10 +260,10 @@ export const SVGLineEndpointHandles: React.FC<Props> = ({
       <circle
         cx={displayEndX}
         cy={displayEndY}
-        r={HANDLE_RADIUS}
+        r={handleRadius}
         fill="white"
         stroke={COLOR}
-        strokeWidth={STROKE_WIDTH}
+        strokeWidth={strokeW}
         style={{ cursor: 'move' }}
         onMouseDown={(e) => handleMouseDown('end', e)}
       />

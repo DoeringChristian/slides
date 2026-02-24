@@ -326,7 +326,14 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
   if (selectedIds.length === 0 || selectedElements.length === 0) return null;
 
   const color = locked ? COLOR_LOCKED : COLOR_DEFAULT;
-  const halfAnchor = ANCHOR_SIZE / 2;
+
+  // Scale sizes inversely with zoom to keep them constant on screen
+  const anchorSize = ANCHOR_SIZE / zoom;
+  const halfAnchor = anchorSize / 2;
+  const strokeW = 2 / zoom;
+  const thinStrokeW = 1 / zoom;
+  const rotationOffset = ROTATION_ANCHOR_OFFSET / zoom;
+  const anchorRadius = 2 / zoom;
 
   // Rotate around the center of the bounding box (matches how elements rotate)
   const rotationOriginX = bounds.x + bounds.width / 2;
@@ -357,7 +364,7 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
         height={bounds.height}
         fill="none"
         stroke={color}
-        strokeWidth={2}
+        strokeWidth={strokeW}
         style={{ pointerEvents: 'none' }}
       />
 
@@ -367,13 +374,13 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
           key={anchor.name}
           x={anchor.x - halfAnchor}
           y={anchor.y - halfAnchor}
-          width={ANCHOR_SIZE}
-          height={ANCHOR_SIZE}
+          width={anchorSize}
+          height={anchorSize}
           fill="white"
           stroke={color}
-          strokeWidth={2}
-          rx={2}
-          ry={2}
+          strokeWidth={strokeW}
+          rx={anchorRadius}
+          ry={anchorRadius}
           style={{ cursor: anchor.cursor }}
           onMouseDown={(e) => handleResizeStart(anchor.name, e)}
         />
@@ -387,29 +394,29 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
             x1={bounds.x + bounds.width / 2}
             y1={bounds.y}
             x2={bounds.x + bounds.width / 2}
-            y2={bounds.y - ROTATION_ANCHOR_OFFSET}
+            y2={bounds.y - rotationOffset}
             stroke={color}
-            strokeWidth={1}
+            strokeWidth={thinStrokeW}
             style={{ pointerEvents: 'none' }}
           />
           {/* Rotation anchor circle */}
           <circle
             cx={bounds.x + bounds.width / 2}
-            cy={bounds.y - ROTATION_ANCHOR_OFFSET}
-            r={ANCHOR_SIZE / 2 + 2}
+            cy={bounds.y - rotationOffset}
+            r={anchorSize / 2 + 2 / zoom}
             fill="white"
             stroke={color}
-            strokeWidth={2}
+            strokeWidth={strokeW}
             style={{ cursor: 'grab' }}
             onMouseDown={handleRotateStart}
           />
           {/* Rotation icon (simple arc) */}
           <path
-            d={`M ${bounds.x + bounds.width / 2 - 4} ${bounds.y - ROTATION_ANCHOR_OFFSET - 2}
-                A 4 4 0 1 1 ${bounds.x + bounds.width / 2 + 4} ${bounds.y - ROTATION_ANCHOR_OFFSET - 2}`}
+            d={`M ${bounds.x + bounds.width / 2 - 4 / zoom} ${bounds.y - rotationOffset - 2 / zoom}
+                A ${4 / zoom} ${4 / zoom} 0 1 1 ${bounds.x + bounds.width / 2 + 4 / zoom} ${bounds.y - rotationOffset - 2 / zoom}`}
             fill="none"
             stroke={color}
-            strokeWidth={1.5}
+            strokeWidth={1.5 / zoom}
             strokeLinecap="round"
             style={{ pointerEvents: 'none' }}
           />

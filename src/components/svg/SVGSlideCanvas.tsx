@@ -856,13 +856,13 @@ export const SVGSlideCanvas: React.FC = () => {
 
         {/* UI layer */}
         <g className="ui-layer">
-          <SVGGridOverlay gridSize={gridSize} visible={showGrid} />
-          <SVGMarginGuides />
-          <SVGAlignmentGuides guides={guides} />
-          <SVGSelectionDrag selectionDrag={selectionDrag} />
-          <SVGDrawingPreview drawState={drawState} tool={tool} />
-          <SVGDragPreview preview={dragPreview} />
-          <SVGDragPreview preview={transformPreview} />
+          <SVGGridOverlay gridSize={gridSize} visible={showGrid} zoom={zoom} />
+          <SVGMarginGuides zoom={zoom} />
+          <SVGAlignmentGuides guides={guides} zoom={zoom} />
+          <SVGSelectionDrag selectionDrag={selectionDrag} zoom={zoom} />
+          <SVGDrawingPreview drawState={drawState} tool={tool} zoom={zoom} />
+          <SVGDragPreview preview={dragPreview} zoom={zoom} />
+          <SVGDragPreview preview={transformPreview} zoom={zoom} />
 
           {/* Selection transformer */}
           {unlockedSelectedIds.length > 0 && !soleSelectedLineElement && (
@@ -908,7 +908,7 @@ export const SVGSlideCanvas: React.FC = () => {
 
           {/* Hover overlay */}
           {hoveredElement && !selectedElementIds.includes(hoveredElement.id) && (
-            <SVGHoverOverlay element={hoveredElement} isVisibleOnSlide={isHoveredVisibleOnSlide} />
+            <SVGHoverOverlay element={hoveredElement} isVisibleOnSlide={isHoveredVisibleOnSlide} zoom={zoom} />
           )}
         </g>
       </svg>

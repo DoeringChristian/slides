@@ -4,10 +4,14 @@ import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 interface Props {
   gridSize: number;
   visible: boolean;
+  zoom?: number;
 }
 
-export const SVGGridOverlay: React.FC<Props> = ({ gridSize, visible }) => {
+export const SVGGridOverlay: React.FC<Props> = ({ gridSize, visible, zoom = 1 }) => {
   if (!visible) return null;
+
+  // Scale stroke width inversely with zoom to keep it constant on screen
+  const strokeW = 0.5 / zoom;
 
   const lines: React.ReactNode[] = [];
 
@@ -21,7 +25,7 @@ export const SVGGridOverlay: React.FC<Props> = ({ gridSize, visible }) => {
         x2={i}
         y2={SLIDE_HEIGHT}
         stroke="#ddd"
-        strokeWidth={0.5}
+        strokeWidth={strokeW}
         style={{ pointerEvents: 'none' }}
       />
     );
@@ -37,7 +41,7 @@ export const SVGGridOverlay: React.FC<Props> = ({ gridSize, visible }) => {
         x2={SLIDE_WIDTH}
         y2={i}
         stroke="#ddd"
-        strokeWidth={0.5}
+        strokeWidth={strokeW}
         style={{ pointerEvents: 'none' }}
       />
     );
