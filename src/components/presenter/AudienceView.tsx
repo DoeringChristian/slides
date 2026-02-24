@@ -59,13 +59,14 @@ export const AudienceView: React.FC = () => {
   if (isAnimating && targetIndex !== slideIndex) {
     const slideA = currentSlide;
     const slideB = slides[slideOrder[targetIndex]] || null;
+    const isForward = targetIndex > slideIndex;
 
     const bgA = getSlideBackground(slideA);
     const bgB = slideB ? getSlideBackground(slideB) : bgA;
     bgColor = lerpColor(bgA, bgB, animProgress);
 
-    // Interpolate each element, preserving target slide's z-order
-    const orderedIds = mergeElementOrders(slideA, slideB);
+    // Interpolate each element, preserving correct z-order based on direction
+    const orderedIds = mergeElementOrders(slideA, slideB, isForward);
     renderedElements = [];
     for (const id of orderedIds) {
       const elA = slideA.elements[id];

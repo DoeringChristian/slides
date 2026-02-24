@@ -8,24 +8,46 @@ export function getSlideBackground(slide: Slide): string {
   return slide.background.type === 'solid' ? slide.background.color : '#ffffff';
 }
 
-// Merge element orders from two slides, preserving the target slide's order
-// Elements only in source slide are placed at the end (they're fading out)
-export function mergeElementOrders(sourceSlide: Slide | null, targetSlide: Slide | null): string[] {
+// Merge element orders from two slides for animation
+// isForward: true = navigating to next slide, false = navigating to previous slide
+//
+// For forward animation: use target's order, fading-out elements at end
+//   - Elements appearing (in target) are at their correct z-position
+//   - Elements disappearing (source-only) fade out on top
+//
+// For backward animation: use source's order, fading-in elements at end
+//   - Elements disappearing (source-only) stay at their original z-position
+//   - Elements appearing (target-only) fade in from below
+export function mergeElementOrders(sourceSlide: Slide | null, targetSlide: Slide | null, isForward: boolean = true): string[] {
   if (!targetSlide && !sourceSlide) return [];
   if (!targetSlide) return sourceSlide!.elementOrder;
   if (!sourceSlide) return targetSlide.elementOrder;
 
-  const targetOrder = [...targetSlide.elementOrder];
-  const targetSet = new Set(targetOrder);
+  if (isForward) {
+    // Use target's order as base, add source-only elements at end
+    const baseOrder = [...targetSlide.elementOrder];
+    const baseSet = new Set(baseOrder);
 
-  // Add elements that are only in source (fading out) at the end
-  for (const id of sourceSlide.elementOrder) {
-    if (!targetSet.has(id)) {
-      targetOrder.push(id);
+    for (const id of sourceSlide.elementOrder) {
+      if (!baseSet.has(id)) {
+        baseOrder.push(id);
+      }
     }
-  }
 
-  return targetOrder;
+    return baseOrder;
+  } else {
+    // Use source's order as base, add target-only elements at end
+    const baseOrder = [...sourceSlide.elementOrder];
+    const baseSet = new Set(baseOrder);
+
+    for (const id of targetSlide.elementOrder) {
+      if (!baseSet.has(id)) {
+        baseOrder.push(id);
+      }
+    }
+
+    return baseOrder;
+  }
 }
 
 // SVG Shape Element renderer
