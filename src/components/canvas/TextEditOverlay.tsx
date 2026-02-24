@@ -215,6 +215,17 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     return () => clearTimeout(timer);
   }, [editingTextId, textElement, renderText, setCursorPosition]);
 
+  // Re-render text when zoom changes during editing
+  useEffect(() => {
+    if (!editingTextId || !textElement || !editorRef.current) return;
+    // Skip initial mount (handled by the editingTextId effect)
+    if (editingTextId !== prevEditingIdRef.current) return;
+
+    const cursorPos = getCursorPosition();
+    renderText(currentTextRef.current, textElement.style);
+    setCursorPosition(cursorPos);
+  }, [zoom, editingTextId, textElement, renderText, getCursorPosition, setCursorPosition]);
+
   // Handle input
   const handleInput = useCallback(() => {
     if (!editorRef.current || !textElement) return;
