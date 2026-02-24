@@ -155,7 +155,7 @@ const StaticShapeElement: React.FC<{ element: ShapeElement }> = ({ element }) =>
   }
 };
 
-const StaticImageElement: React.FC<{ element: ImageElement }> = ({ element }) => {
+const StaticImageElement: React.FC<{ element: ImageElement; slideId: string }> = ({ element, slideId }) => {
   const resource = usePresentationStore((s) =>
     element.resourceId ? s.presentation.resources[element.resourceId] : undefined
   );
@@ -207,7 +207,7 @@ const StaticImageElement: React.FC<{ element: ImageElement }> = ({ element }) =>
   const hasCrop = element.cropWidth > 0 && element.cropHeight > 0;
 
   if (hasCrop) {
-    const clipId = `clip-static-${element.id}`;
+    const clipId = `clip-static-${slideId}-${element.id}`;
     const scaleX = element.width / element.cropWidth;
     const scaleY = element.height / element.cropHeight;
 
@@ -274,7 +274,7 @@ const HighlightRect: React.FC<{ element: SlideElement; scale: number }> = ({ ele
   );
 };
 
-const StaticElement: React.FC<{ element: SlideElement; isSelected?: boolean; scale: number }> = ({ element, isSelected, scale }) => {
+const StaticElement: React.FC<{ element: SlideElement; isSelected?: boolean; scale: number; slideId: string }> = ({ element, isSelected, scale, slideId }) => {
   if (!element.visible) return null;
 
   // Text elements are rendered via HTML overlay
@@ -287,7 +287,7 @@ const StaticElement: React.FC<{ element: SlideElement; isSelected?: boolean; sca
       return <StaticShapeElement element={element as ShapeElement} />;
     }
     if (element.type === 'image') {
-      return <StaticImageElement element={element as ImageElement} />;
+      return <StaticImageElement element={element as ImageElement} slideId={slideId} />;
     }
     return null;
   })();
@@ -332,6 +332,7 @@ export const SVGStaticSlide: React.FC<Props> = ({
           element={el}
           isSelected={showHighlights && selectedSet?.has(el.id)}
           scale={scale}
+          slideId={slide.id}
         />
       ))}
     </svg>
