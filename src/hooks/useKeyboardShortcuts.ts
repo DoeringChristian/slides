@@ -118,13 +118,9 @@ export function useKeyboardShortcuts() {
         const clipboard = editor.getState().clipboard;
         if (clipboard.length > 0) {
           e.preventDefault();
-          const newIds: string[] = [];
-          clipboard.forEach((el) => {
-            const dup = duplicateElement(el);
-            store.getState().addElement(activeSlideId, dup);
-            newIds.push(dup.id);
-          });
-          editor.getState().setSelectedElements(newIds);
+          const duplicates = clipboard.map((el) => duplicateElement(el));
+          store.getState().addElements(activeSlideId, duplicates);
+          editor.getState().setSelectedElements(duplicates.map((el) => el.id));
         }
         return;
       }

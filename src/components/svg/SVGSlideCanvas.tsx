@@ -52,6 +52,7 @@ export const SVGSlideCanvas: React.FC = () => {
   const setHoveredObjectId = useEditorStore((s) => s.setHoveredObjectId);
   // snapToGrid setting is read inside the drag handlers via useEditorStore.getState()
   const updateElement = usePresentationStore((s) => s.updateElement);
+  const updateElements = usePresentationStore((s) => s.updateElements);
   const unhideElement = usePresentationStore((s) => s.unhideElement);
   const addEmptySlide = usePresentationStore((s) => s.addEmptySlide);
   const setActiveSlide = useEditorStore((s) => s.setActiveSlide);
@@ -284,7 +285,8 @@ export const SVGSlideCanvas: React.FC = () => {
     const snappedDeltaX = snappedX - originalPos.x;
     const snappedDeltaY = snappedY - originalPos.y;
 
-    // Update all dragged elements
+    // Collect all updates for batch operation (single undo entry)
+    const updates: Array<{ elementId: string; changes: { x: number; y: number } }> = [];
     for (const [elementId, startPos] of dragStartPositions.current) {
       const element = slide.elements[elementId];
       if (!element) continue;
@@ -292,14 +294,19 @@ export const SVGSlideCanvas: React.FC = () => {
       const newX = startPos.x + snappedDeltaX;
       const newY = startPos.y + snappedDeltaY;
 
-      // Only update if position actually changed (avoids re-render that breaks dblclick)
+      // Only include if position actually changed
       if (newX !== element.x || newY !== element.y) {
-        updateElement(activeSlideId, elementId, { x: newX, y: newY });
+        updates.push({ elementId, changes: { x: newX, y: newY } });
       }
     }
 
+    // Batch update all elements (single undo operation)
+    if (updates.length > 0) {
+      updateElements(activeSlideId, updates);
+    }
+
     dragStartPositions.current.clear();
-  }, [activeSlideId, updateElement, slide, elements, setEditingTextId]);
+  }, [activeSlideId, updateElements, slide, elements, setEditingTextId]);
 
   const { handleMouseDown: handleElementMouseDown } = useSVGDrag({
     zoom,
@@ -319,6 +326,9 @@ export const SVGSlideCanvas: React.FC = () => {
   }, [zoom]);
 
   const handleSelect = useCallback((id: string, e: React.MouseEvent) => {
+    // Ignore middle-click (used for panning)
+    if (e.button === 1) return;
+
     const metaPressed = e.shiftKey || e.ctrlKey || e.metaKey;
 
     const clickedElement = slide?.elements[id];
@@ -666,7 +676,8 @@ export const SVGSlideCanvas: React.FC = () => {
 
       const oldZoom = useEditorStore.getState().zoom;
       // Multiplicative zoom: constant perceptual speed at all zoom levels
-      const factor = Math.pow(1.005, -e.deltaY);
+      // Use smaller base (1.002) for smoother/less sensitive zooming, especially on touchpads
+      const factor = Math.pow(1.002, -e.deltaY);
       const newZoom = Math.max(minZoom, Math.min(3, oldZoom * factor));
       if (newZoom === oldZoom) return;
 

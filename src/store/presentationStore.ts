@@ -71,7 +71,9 @@ interface PresentationStore {
 
   // Element actions
   addElement: (slideId: string, element: SlideElement) => void;
+  addElements: (slideId: string, elements: SlideElement[]) => void;
   updateElement: (slideId: string, elementId: string, changes: Partial<SlideElement>) => void;
+  updateElements: (slideId: string, updates: Array<{ elementId: string; changes: Partial<SlideElement> }>) => void;
   deleteElements: (slideId: string, elementIds: string[]) => void;
   reorderElements: (slideId: string, elementOrder: string[]) => void;
   moveElementForward: (slideId: string, elementId: string) => void;
@@ -396,6 +398,46 @@ export const usePresentationStore = create<PresentationStore>()(
         });
       },
 
+      addElements: (slideId, elements) => {
+        set((state) => {
+          const slide = state.presentation.slides[slideId];
+          if (!slide || elements.length === 0) return state;
+
+          // Register all elements in global objects
+          const objects = { ...state.presentation.objects };
+          const newElements: Record<string, SlideElement> = { ...slide.elements };
+          const newOrder = [...slide.elementOrder];
+
+          for (const element of elements) {
+            if (!objects[element.id]) {
+              objects[element.id] = {
+                id: element.id,
+                name: generateObjectName(getObjectSubtype(element), objects),
+                type: getObjectType(element),
+              };
+            }
+            newElements[element.id] = element;
+            newOrder.push(element.id);
+          }
+
+          return {
+            presentation: {
+              ...state.presentation,
+              objects,
+              slides: {
+                ...state.presentation.slides,
+                [slideId]: {
+                  ...slide,
+                  elements: newElements,
+                  elementOrder: newOrder,
+                },
+              },
+              updatedAt: Date.now(),
+            },
+          };
+        });
+      },
+
       updateElement: (slideId, elementId, changes) => {
         set((state) => {
           const slide = state.presentation.slides[slideId];
@@ -434,6 +476,91 @@ export const usePresentationStore = create<PresentationStore>()(
               }
 
               if (shape.endBinding?.elementId === elementId) {
+                const pt = resolveBindingPoint(shape.endBinding, updatedElements);
+                if (pt) {
+                  newPts = [newPts[0], newPts[1], pt.x - newX, pt.y - newY];
+                  needsUpdate = true;
+                }
+              }
+
+              if (needsUpdate) {
+                updatedElements[elId] = {
+                  ...shape,
+                  x: newX,
+                  y: newY,
+                  points: newPts,
+                  width: Math.abs(newPts[2] - newPts[0]),
+                  height: Math.abs(newPts[3] - newPts[1]),
+                } as SlideElement;
+              }
+            }
+          }
+
+          return {
+            presentation: {
+              ...state.presentation,
+              slides: {
+                ...state.presentation.slides,
+                [slideId]: {
+                  ...slide,
+                  elements: updatedElements,
+                },
+              },
+              updatedAt: Date.now(),
+            },
+          };
+        });
+      },
+
+      updateElements: (slideId, updates) => {
+        set((state) => {
+          const slide = state.presentation.slides[slideId];
+          if (!slide) return state;
+
+          let updatedElements = { ...slide.elements };
+
+          // Apply all updates
+          for (const { elementId, changes } of updates) {
+            if (!updatedElements[elementId]) continue;
+            updatedElements[elementId] = { ...updatedElements[elementId], ...changes } as SlideElement;
+          }
+
+          // Handle connector updates for all moved elements
+          const movedElementIds = new Set(
+            updates
+              .filter(u => u.changes.x !== undefined || u.changes.y !== undefined ||
+                          u.changes.width !== undefined || u.changes.height !== undefined ||
+                          u.changes.rotation !== undefined)
+              .map(u => u.elementId)
+          );
+
+          if (movedElementIds.size > 0) {
+            for (const elId of slide.elementOrder) {
+              if (movedElementIds.has(elId)) continue;
+              const el = updatedElements[elId];
+              if (el.type !== 'shape') continue;
+              const shape = el as ShapeElement;
+              if (shape.shapeType !== 'line' && shape.shapeType !== 'arrow') continue;
+
+              let needsUpdate = false;
+              const pts = shape.points ?? [0, 0, shape.width, 0];
+              let newX = shape.x;
+              let newY = shape.y;
+              let newPts = [...pts];
+
+              if (shape.startBinding && movedElementIds.has(shape.startBinding.elementId)) {
+                const pt = resolveBindingPoint(shape.startBinding, updatedElements);
+                if (pt) {
+                  const endAbsX = shape.x + pts[2];
+                  const endAbsY = shape.y + pts[3];
+                  newX = pt.x;
+                  newY = pt.y;
+                  newPts = [0, 0, endAbsX - pt.x, endAbsY - pt.y];
+                  needsUpdate = true;
+                }
+              }
+
+              if (shape.endBinding && movedElementIds.has(shape.endBinding.elementId)) {
                 const pt = resolveBindingPoint(shape.endBinding, updatedElements);
                 if (pt) {
                   newPts = [newPts[0], newPts[1], pt.x - newX, pt.y - newY];

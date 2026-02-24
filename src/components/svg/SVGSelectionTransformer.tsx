@@ -134,8 +134,6 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
 
   const selectedElements = elements.filter((el) => selectedIds.includes(el.id));
 
-  if (selectedIds.length === 0 || selectedElements.length === 0) return null;
-
   const bounds = getBoundingBox(selectedElements);
   const singleElement = selectedElements.length === 1 ? selectedElements[0] : null;
   const rotation = singleElement?.rotation || 0;
@@ -323,6 +321,9 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
       window.removeEventListener('mouseup', handleMouseUp);
     };
   }, [resizing, rotating, zoom, singleElement, onTransform, onTransformEnd, screenToSVG]);
+
+  // Early return after all hooks are called
+  if (selectedIds.length === 0 || selectedElements.length === 0) return null;
 
   const color = locked ? COLOR_LOCKED : COLOR_DEFAULT;
   const halfAnchor = ANCHOR_SIZE / 2;
