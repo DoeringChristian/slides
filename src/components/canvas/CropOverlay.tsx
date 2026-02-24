@@ -91,12 +91,22 @@ export const CropOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     const dx = e.clientX - dragStart.x;
     const dy = e.clientY - dragStart.y;
 
+    // If element is rotated, apply inverse rotation to screen deltas
+    // so they align with the element's local coordinate system
+    let localDx = dx;
+    let localDy = dy;
+    if (element.rotation) {
+      const angleRad = -element.rotation * (Math.PI / 180);
+      localDx = dx * Math.cos(angleRad) - dy * Math.sin(angleRad);
+      localDy = dx * Math.sin(angleRad) + dy * Math.cos(angleRad);
+    }
+
     // Scale: screen pixels per original image pixel (in canvas coords, not screen)
     const canvasScale = element.width / element.cropWidth;
     const screenScale = canvasScale * zoom;
-    // Convert screen delta to original image pixels
-    const scaledDx = dx / screenScale;
-    const scaledDy = dy / screenScale;
+    // Convert local delta to original image pixels
+    const scaledDx = localDx / screenScale;
+    const scaledDy = localDy / screenScale;
 
     // Use cropStartState (captured at drag start) for absolute positioning
     let { x, y, width, height } = cropStartState;
