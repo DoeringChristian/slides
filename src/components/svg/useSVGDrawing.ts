@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { createTextElement, createShapeElement } from '../../utils/slideFactory';
@@ -23,6 +23,7 @@ export function useSVGDrawing() {
     snappedStartX: 0, snappedStartY: 0, snappedCurrentX: 0, snappedCurrentY: 0,
   });
   const [guides, setGuides] = useState<Guide[]>([]);
+  const justFinishedDrawing = useRef(false);
 
   const tool = useEditorStore((s) => s.tool);
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
@@ -123,11 +124,14 @@ export function useSVGDrawing() {
         startX: 0, startY: 0, currentX: 0, currentY: 0, isDrawing: false,
         snappedStartX: 0, snappedStartY: 0, snappedCurrentX: 0, snappedCurrentY: 0,
       });
+      setTool('select');
       return;
     }
 
-    setTool('select');
+    // Mark that we just finished drawing (to prevent click handler from clearing selection)
+    justFinishedDrawing.current = true;
 
+    // Create element, select it, then switch tool (order matters to preserve selection)
     if (tool === 'text') {
       const el = createTextElement({ x, y, width: Math.max(width, 100), height: Math.max(height, 40) });
       addElement(activeSlideId, el);
@@ -149,11 +153,14 @@ export function useSVGDrawing() {
       setSelectedElements([el.id]);
     }
 
+    // Switch to select tool after element is created and selected
+    setTool('select');
+
     setDrawState({
       startX: 0, startY: 0, currentX: 0, currentY: 0, isDrawing: false,
       snappedStartX: 0, snappedStartY: 0, snappedCurrentX: 0, snappedCurrentY: 0,
     });
   }, [drawState, tool, activeSlideId, addElement, setTool, setSelectedElements, setEditingTextId]);
 
-  return { drawState, guides, handleMouseDown, handleMouseMove, handleMouseUp };
+  return { drawState, guides, handleMouseDown, handleMouseMove, handleMouseUp, justFinishedDrawing };
 }

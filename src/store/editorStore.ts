@@ -84,7 +84,12 @@ export const useEditorStore = create<EditorStore>()((set) => ({
   })),
   clearSelection: () => set({ selectedElementIds: [], editingTextId: null }),
   setZoom: (zoom) => set({ zoom: Math.max(0.25, Math.min(3, zoom)) }),
-  setTool: (tool) => set({ tool, selectedElementIds: [], editingTextId: null }),
+  setTool: (tool) => set((s) => ({
+    tool,
+    // Preserve selection when switching to 'select', clear when switching to drawing tools
+    selectedElementIds: tool === 'select' ? s.selectedElementIds : [],
+    editingTextId: tool === 'select' ? s.editingTextId : null,
+  })),
   setPresenting: (isPresenting) => set({ isPresenting }),
   setPresentingSlideIndex: (index) => set({ presentingSlideIndex: index }),
   setShowGrid: (show) => set({ showGrid: show }),

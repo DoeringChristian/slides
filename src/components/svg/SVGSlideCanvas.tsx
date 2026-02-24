@@ -91,7 +91,7 @@ export const SVGSlideCanvas: React.FC = () => {
   const justFinishedSelectionDrag = useRef(false);
 
   // Drawing hook
-  const { drawState, guides: drawingGuides, handleMouseDown: handleDrawMouseDown, handleMouseMove: handleDrawMouseMove, handleMouseUp: handleDrawMouseUp } = useSVGDrawing();
+  const { drawState, guides: drawingGuides, handleMouseDown: handleDrawMouseDown, handleMouseMove: handleDrawMouseMove, handleMouseUp: handleDrawMouseUp, justFinishedDrawing } = useSVGDrawing();
 
   // Combine drag and drawing guides
   const guides = drawState.isDrawing ? drawingGuides : dragGuides;
@@ -301,11 +301,15 @@ export const SVGSlideCanvas: React.FC = () => {
       justFinishedSelectionDrag.current = false;
       return;
     }
+    if (justFinishedDrawing.current) {
+      justFinishedDrawing.current = false;
+      return;
+    }
     if (e.target === e.currentTarget || (e.target as Element).classList.contains('svg-background')) {
       setSelectedElements([]);
       setEditingTextId(null);
     }
-  }, [setSelectedElements, setEditingTextId]);
+  }, [setSelectedElements, setEditingTextId, justFinishedDrawing]);
 
   // Selection drag handlers
   const handleMouseDown = useCallback((e: React.MouseEvent) => {

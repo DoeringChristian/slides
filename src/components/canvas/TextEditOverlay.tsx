@@ -197,12 +197,18 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
         // Place cursor at click position
         setCursorPosition(cursorPos);
       } else if (text) {
-        // No click position - select all
-        const selection = window.getSelection();
-        const range = document.createRange();
-        range.selectNodeContents(editorRef.current);
-        selection?.removeAllRanges();
-        selection?.addRange(range);
+        // No click position (new element or programmatic edit) - select all
+        // Use a small delay after focus to ensure selection works
+        requestAnimationFrame(() => {
+          if (!editorRef.current) return;
+          const selection = window.getSelection();
+          if (selection) {
+            const range = document.createRange();
+            range.selectNodeContents(editorRef.current);
+            selection.removeAllRanges();
+            selection.addRange(range);
+          }
+        });
       }
     }, 10);
 
