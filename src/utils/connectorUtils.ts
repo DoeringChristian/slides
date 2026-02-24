@@ -1,4 +1,4 @@
-import type { SlideElement, ConnectorBinding, ShapeElement } from '../types/presentation';
+import type { SlideElement, ConnectorBinding } from '../types/presentation';
 
 // Rotate a point around a center by an angle (in degrees)
 function rotatePoint(
@@ -20,19 +20,9 @@ function rotatePoint(
 }
 
 // Get the rotation origin for an element
-// Konva rotates shapes around their (x, y) position
-// For center-based shapes (ellipse, triangle, star), x/y is the center
-// For other shapes (rect, text, image), x/y is the top-left corner
+// SVG rotates all elements around the center of their bounding box
 function getRotationOrigin(el: SlideElement): { x: number; y: number } {
-  if (el.type === 'shape') {
-    const shape = el as ShapeElement;
-    if (['ellipse', 'triangle', 'star'].includes(shape.shapeType)) {
-      // Center-based shapes: rotation origin is at the center
-      return { x: el.x + el.width / 2, y: el.y + el.height / 2 };
-    }
-  }
-  // For rect, text, image, line, arrow: rotation origin is at (x, y) which is top-left
-  return { x: el.x, y: el.y };
+  return { x: el.x + el.width / 2, y: el.y + el.height / 2 };
 }
 
 export function getBindingTarget(
