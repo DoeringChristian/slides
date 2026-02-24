@@ -289,7 +289,14 @@ export const usePresentationStore = create<PresentationStore>()(
                   y: (elA.y + elB.y) / 2,
                   width: (elA.width + elB.width) / 2,
                   height: (elA.height + elB.height) / 2,
-                  rotation: (elA.rotation + elB.rotation) / 2,
+                  rotation: (() => {
+                    let a = ((elA.rotation % 360) + 360) % 360;
+                    let b = ((elB.rotation % 360) + 360) % 360;
+                    let delta = b - a;
+                    if (delta > 180) delta -= 360;
+                    if (delta < -180) delta += 360;
+                    return a + delta * 0.5;
+                  })(),
                   opacity: (elA.opacity + elB.opacity) / 2,
                 } as SlideElement;
               }

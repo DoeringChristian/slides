@@ -25,6 +25,22 @@ function lerpEased(a: number, b: number, t: number, easing: EasingType | undefin
   return lerp(a, b, applyEasing(t, easing));
 }
 
+// Lerp angles via the shortest path (handles wrapping around 360°)
+function lerpAngle(a: number, b: number, t: number): number {
+  // Normalize both to [0, 360)
+  a = ((a % 360) + 360) % 360;
+  b = ((b % 360) + 360) % 360;
+  // Shortest angular distance
+  let delta = b - a;
+  if (delta > 180) delta -= 360;
+  if (delta < -180) delta += 360;
+  return a + delta * t;
+}
+
+function lerpAngleEased(a: number, b: number, t: number, easing: EasingType | undefined): number {
+  return lerpAngle(a, b, applyEasing(t, easing));
+}
+
 // Color lerp with easing applied
 function lerpColorEased(a: string, b: string, t: number, easing: EasingType | undefined): string {
   return lerpColor(a, b, applyEasing(t, easing));
@@ -96,7 +112,7 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number):
     y: lerpEased(a.y, b.y, t, tr.position),
     width: lerpEased(a.width, b.width, t, tr.size),
     height: lerpEased(a.height, b.height, t, tr.size),
-    rotation: lerpEased(a.rotation, b.rotation, t, tr.rotation),
+    rotation: lerpAngleEased(a.rotation, b.rotation, t, tr.rotation),
     opacity: baseOpacity,
     visible: true,
   };
