@@ -1,9 +1,8 @@
 import React from 'react';
 import { X, EyeOff, Eye } from 'lucide-react';
 import { SVGStaticSlide } from '../svg/SVGStaticSlide';
-import { CustomMarkdownRenderer } from '../canvas/CustomMarkdownRenderer';
-import type { Slide, TextElement } from '../../types/presentation';
-import { SLIDE_WIDTH, SLIDE_HEIGHT, TEXT_BOX_PADDING } from '../../utils/constants';
+import type { Slide } from '../../types/presentation';
+import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 
 const THUMB_WIDTH = 192;
 const THUMB_SCALE = THUMB_WIDTH / SLIDE_WIDTH;
@@ -22,8 +21,6 @@ interface Props {
 }
 
 export const SlideThumbnail: React.FC<Props> = ({ slide, index, isActive, isSelected = false, canDelete, selectedElementIds, onClick, onDelete, onToggleHidden }) => {
-  const elements = slide.elementOrder.map((id) => slide.elements[id]).filter(Boolean);
-  const textElements = elements.filter((el): el is TextElement => el.type === 'text' && el.visible);
   const hidden = slide.hidden;
 
   // Background: active = orange-50, selected (not active) = blue-50/50, else hover:gray-50
@@ -46,36 +43,6 @@ export const SlideThumbnail: React.FC<Props> = ({ slide, index, isActive, isSele
             selectedElementIds={selectedElementIds}
             showHighlights={true}
           />
-          {/* Text overlay for markdown rendering */}
-          <div className="absolute inset-0 pointer-events-none overflow-hidden">
-            {textElements.map((element) => (
-              <div
-                key={element.id}
-                style={{
-                  position: 'absolute',
-                  left: `${element.x * THUMB_SCALE}px`,
-                  top: `${element.y * THUMB_SCALE}px`,
-                  width: `${element.width * THUMB_SCALE}px`,
-                  height: `${element.height * THUMB_SCALE}px`,
-                  transform: `rotate(${element.rotation}deg)`,
-                  transformOrigin: 'top left',
-                  opacity: element.opacity,
-                  overflow: 'hidden',
-                  display: 'flex',
-                  alignItems: element.style.verticalAlign === 'middle' ? 'center' :
-                             element.style.verticalAlign === 'bottom' ? 'flex-end' : 'flex-start',
-                }}
-              >
-                <div style={{ width: '100%', padding: `${TEXT_BOX_PADDING * THUMB_SCALE}px` }}>
-                  <CustomMarkdownRenderer
-                    text={element.text}
-                    style={element.style}
-                    zoom={THUMB_SCALE}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
         </div>
         <button
           onClick={(e) => { e.stopPropagation(); onToggleHidden(); }}

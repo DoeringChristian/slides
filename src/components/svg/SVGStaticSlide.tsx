@@ -1,8 +1,9 @@
 import React from 'react';
 import { usePresentationStore } from '../../store/presentationStore';
 import { SVGBackground } from './SVGBackground';
-import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
-import type { Slide, SlideElement, ShapeElement, ImageElement } from '../../types/presentation';
+import { SLIDE_WIDTH, SLIDE_HEIGHT, TEXT_BOX_PADDING } from '../../utils/constants';
+import { CustomMarkdownRenderer } from '../canvas/CustomMarkdownRenderer';
+import type { Slide, SlideElement, ShapeElement, ImageElement, TextElement } from '../../types/presentation';
 
 interface Props {
   slide: Slide;
@@ -254,6 +255,49 @@ const StaticImageElement: React.FC<{ element: ImageElement; slideId: string }> =
   );
 };
 
+const StaticTextElement: React.FC<{ element: TextElement; scale: number }> = ({ element }) => {
+  if (!element.visible) return null;
+
+  // Rotate around the center of the element
+  const cx = element.x + element.width / 2;
+  const cy = element.y + element.height / 2;
+  const transform = element.rotation ? `rotate(${element.rotation}, ${cx}, ${cy})` : undefined;
+
+  const alignItems = element.style.verticalAlign === 'middle' ? 'center' :
+                     element.style.verticalAlign === 'bottom' ? 'flex-end' : 'flex-start';
+
+  return (
+    <g transform={transform}>
+      <foreignObject
+        x={element.x}
+        y={element.y}
+        width={element.width}
+        height={element.height}
+        style={{ pointerEvents: 'none', overflow: 'hidden' }}
+      >
+        <div
+          style={{
+            width: '100%',
+            height: '100%',
+            display: 'flex',
+            alignItems,
+            opacity: element.opacity,
+            overflow: 'hidden',
+          }}
+        >
+          <div style={{ width: '100%', padding: TEXT_BOX_PADDING }}>
+            <CustomMarkdownRenderer
+              text={element.text}
+              style={element.style}
+              zoom={1}
+            />
+          </div>
+        </div>
+      </foreignObject>
+    </g>
+  );
+};
+
 const HighlightRect: React.FC<{ element: SlideElement; scale: number }> = ({ element, scale }) => {
   const pad = 4 / scale;
   // Rotate around the center of the element
@@ -281,12 +325,10 @@ const HighlightRect: React.FC<{ element: SlideElement; scale: number }> = ({ ele
 const StaticElement: React.FC<{ element: SlideElement; isSelected?: boolean; scale: number; slideId: string }> = ({ element, isSelected, scale, slideId }) => {
   if (!element.visible) return null;
 
-  // Text elements are rendered via HTML overlay
-  if (element.type === 'text') {
-    return isSelected ? <HighlightRect element={element} scale={scale} /> : null;
-  }
-
   const rendered = (() => {
+    if (element.type === 'text') {
+      return <StaticTextElement element={element as TextElement} scale={scale} />;
+    }
     if (element.type === 'shape') {
       return <StaticShapeElement element={element as ShapeElement} />;
     }
