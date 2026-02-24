@@ -1,5 +1,4 @@
 import type { TextElement } from '../types/presentation';
-import katex from 'katex';
 import { parseBlocks, getBlockFontMultiplier, parseInlineSegments, type ParsedBlock } from '../components/canvas/CustomMarkdownRenderer';
 import { TEXT_BOX_PADDING } from './constants';
 
@@ -94,8 +93,54 @@ export function isPointOnTextContent(element: TextElement, point: Point): boolea
 }
 
 /**
+ * Word-wrap text and return an array of lines with their character ranges.
+ */
+function wrapText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number
+): { text: string; startIndex: number; endIndex: number }[] {
+  const lines: { text: string; startIndex: number; endIndex: number }[] = [];
+  const words = text.split(/(\s+)/); // Split but keep whitespace
+  let currentLine = '';
+  let currentStartIndex = 0;
+  let currentIndex = 0;
+
+  for (const word of words) {
+    const testLine = currentLine + word;
+    const testWidth = ctx.measureText(testLine).width;
+
+    if (testWidth > maxWidth && currentLine !== '') {
+      // Push current line and start a new one
+      lines.push({
+        text: currentLine,
+        startIndex: currentStartIndex,
+        endIndex: currentIndex,
+      });
+      currentLine = word;
+      currentStartIndex = currentIndex;
+    } else {
+      currentLine = testLine;
+    }
+    currentIndex += word.length;
+  }
+
+  // Push the last line
+  if (currentLine !== '' || lines.length === 0) {
+    lines.push({
+      text: currentLine,
+      startIndex: currentStartIndex,
+      endIndex: currentIndex,
+    });
+  }
+
+  return lines;
+}
+
+/**
  * Calculate cursor position from click coordinates.
  * Maps from rendered (display) position back to source position.
+ * Handles word-wrapped text properly.
  */
 export function calculateCursorFromClick(
   element: TextElement,
@@ -116,67 +161,55 @@ export function calculateCursorFromClick(
   const contentWidth = width - padding * 2;
   const contentHeight = element.height - padding * 2;
 
-  // Helper to measure actual rendered block height (including LaTeX)
-  const measureBlockHeight = (block: ParsedBlock, blockFontSize: number): number => {
-    const baseHeight = blockFontSize * lineHeightMultiplier;
+  // Structure to hold wrapped line info for each block
+  interface WrappedLine {
+    text: string;
+    startIndex: number; // Index within displayContent
+    endIndex: number;
+    height: number;
+    y: number; // Y position of this line
+  }
 
-    // Check if block contains LaTeX
-    const hasLatex = /\$[\s\S]*?\$/.test(block.displayContent);
-    if (!hasLatex) {
-      return baseHeight;
-    }
+  interface BlockInfo {
+    block: ParsedBlock;
+    fontSize: number;
+    isBold: boolean;
+    wrappedLines: WrappedLine[];
+    totalHeight: number;
+  }
 
-    // Measure actual height by rendering
-    const container = document.createElement('div');
-    container.style.visibility = 'hidden';
-    container.style.position = 'absolute';
-    container.style.fontSize = `${blockFontSize}px`;
-    container.style.fontFamily = fontFamily;
-    container.style.lineHeight = String(lineHeightMultiplier);
-    container.style.minHeight = `${baseHeight}px`;
-    document.body.appendChild(container);
-
-    try {
-      // Parse and render inline segments
-      const segments = parseInlineSegments(block.displayContent, 0);
-      for (const segment of segments) {
-        if (segment.type === 'latex') {
-          const span = document.createElement('span');
-          span.innerHTML = katex.renderToString(segment.displayContent, {
-            displayMode: segment.isBlock,
-            throwOnError: false,
-          });
-          container.appendChild(span);
-        } else {
-          container.appendChild(document.createTextNode(segment.displayContent));
-        }
-      }
-      const height = container.getBoundingClientRect().height;
-      return Math.max(baseHeight, height);
-    } catch {
-      return baseHeight;
-    } finally {
-      document.body.removeChild(container);
-    }
-  };
-
-  // Calculate block heights
-  const blockData: { block: ParsedBlock; height: number; fontSize: number; isBold: boolean }[] = [];
+  // Calculate wrapped lines for each block
+  const blockInfos: BlockInfo[] = [];
   let totalHeight = 0;
 
   for (const block of blocks) {
     const multiplier = getBlockFontMultiplier(block.type);
     const blockFontSize = fontSize * multiplier;
     const isHeader = block.type === 'h1' || block.type === 'h2' || block.type === 'h3';
-    const blockHeight = measureBlockHeight(block, blockFontSize);
+    const isBold = isHeader || fontWeight === 'bold';
+    const lineHeight = blockFontSize * lineHeightMultiplier;
 
-    blockData.push({
+    ctx.font = `${isBold ? 'bold ' : ''}${blockFontSize}px ${fontFamily}`;
+
+    // Wrap the text
+    const wrappedLines = wrapText(ctx, block.displayContent, contentWidth);
+    const wrappedLinesWithHeight: WrappedLine[] = wrappedLines.map((line) => ({
+      ...line,
+      height: lineHeight,
+      y: 0, // Will be set later
+    }));
+
+    const blockTotalHeight = wrappedLinesWithHeight.length * lineHeight;
+
+    blockInfos.push({
       block,
-      height: blockHeight,
       fontSize: blockFontSize,
-      isBold: isHeader || fontWeight === 'bold',
+      isBold,
+      wrappedLines: wrappedLinesWithHeight,
+      totalHeight: blockTotalHeight,
     });
-    totalHeight += blockHeight;
+
+    totalHeight += blockTotalHeight;
   }
 
   // Calculate starting Y based on vertical alignment
@@ -187,153 +220,115 @@ export function calculateCursorFromClick(
     startY = padding + contentHeight - totalHeight;
   }
 
-  // Find which block was clicked
+  // Assign Y positions to all wrapped lines
   let currentY = startY;
-  let blockIndex = 0;
-
-  for (let i = 0; i < blockData.length; i++) {
-    if (currentY + blockData[i].height > clickPos.y) {
-      blockIndex = i;
-      break;
+  for (const blockInfo of blockInfos) {
+    for (const line of blockInfo.wrappedLines) {
+      line.y = currentY;
+      currentY += line.height;
     }
-    currentY += blockData[i].height;
-    blockIndex = i;
   }
 
-  blockIndex = Math.max(0, Math.min(blocks.length - 1, blockIndex));
-  const bd = blockData[blockIndex];
-  const block = bd.block;
+  // Find which wrapped line was clicked
+  let clickedBlockInfo: BlockInfo | null = null;
+  let clickedLine: WrappedLine | null = null;
+
+  for (const blockInfo of blockInfos) {
+    for (const line of blockInfo.wrappedLines) {
+      if (clickPos.y >= line.y && clickPos.y < line.y + line.height) {
+        clickedBlockInfo = blockInfo;
+        clickedLine = line;
+        break;
+      }
+    }
+    if (clickedLine) break;
+  }
+
+  // If click is below all lines, use the last line
+  if (!clickedBlockInfo || !clickedLine) {
+    const lastBlockInfo = blockInfos[blockInfos.length - 1];
+    clickedBlockInfo = lastBlockInfo;
+    clickedLine = lastBlockInfo.wrappedLines[lastBlockInfo.wrappedLines.length - 1];
+  }
+
+  const block = clickedBlockInfo.block;
 
   // Set font for measuring
-  ctx.font = `${bd.isBold ? 'bold ' : ''}${bd.fontSize}px ${fontFamily}`;
+  ctx.font = `${clickedBlockInfo.isBold ? 'bold ' : ''}${clickedBlockInfo.fontSize}px ${fontFamily}`;
 
-  // Calculate block X position
-  // Note: bullets and numbered lists now render the full source line (e.g., "- text")
-  // so there's no separate visual prefix
-  const displayWidth = ctx.measureText(block.displayContent).width;
-  const totalRenderedWidth = displayWidth;
-
-  let blockX = padding;
+  // Calculate line X position based on alignment
+  const lineWidth = ctx.measureText(clickedLine.text).width;
+  let lineX = padding;
   if (align === 'center') {
-    blockX = padding + (contentWidth - totalRenderedWidth) / 2;
+    lineX = padding + (contentWidth - lineWidth) / 2;
   } else if (align === 'right') {
-    blockX = padding + contentWidth - totalRenderedWidth;
+    lineX = padding + contentWidth - lineWidth;
   }
 
-  // Find character position in displayContent
-  const clickX = clickPos.x - blockX;
+  // Find character position within the wrapped line
+  const clickX = clickPos.x - lineX;
 
-  // If click is before the text (on the bullet/number), return start of line
+  // If click is before the line, return start of line
   if (clickX < 0) {
-    return block.sourceStart;
+    return block.sourceStart + clickedLine.startIndex;
   }
 
-  // Parse inline segments to handle LaTeX
+  // Find exact character position within the line
+  let charIndex = 0;
+  for (let i = 0; i < clickedLine.text.length; i++) {
+    const widthUpToChar = ctx.measureText(clickedLine.text.slice(0, i)).width;
+    const widthUpToNextChar = ctx.measureText(clickedLine.text.slice(0, i + 1)).width;
+    const charMidpoint = (widthUpToChar + widthUpToNextChar) / 2;
+
+    if (clickX < charMidpoint) {
+      charIndex = i;
+      break;
+    }
+    charIndex = i + 1;
+  }
+
+  // Map back to source position
+  // The wrapped line's startIndex is relative to displayContent
+  // We need to map displayContent index to source position
+  const displayIndex = clickedLine.startIndex + charIndex;
+
+  // For simple text without markdown, displayContent == source content within the block
+  // For blocks with prefixes (headers, bullets), we need to account for that
+  // block.sourceStart is the start of the source line
+  // block.prefixLength is the length of any prefix (e.g., "# " for headers)
+  // displayContent starts after the prefix
+
+  // Parse inline segments to handle formatted text properly
   const inlineSourceOffset = block.sourceStart + block.prefixLength;
   const segments = parseInlineSegments(block.displayContent, inlineSourceOffset);
 
-  // Measure LaTeX widths by rendering to a hidden element
-  const measureLatexWidth = (latex: string, isBlock: boolean): number => {
-    const container = document.createElement('span');
-    container.style.visibility = 'hidden';
-    container.style.position = 'absolute';
-    container.style.whiteSpace = 'nowrap';
-    container.style.fontSize = `${bd.fontSize}px`;
-    document.body.appendChild(container);
-
-    try {
-      container.innerHTML = katex.renderToString(latex, { displayMode: isBlock, throwOnError: false });
-      const width = container.getBoundingClientRect().width;
-      return width;
-    } catch {
-      // Fallback: estimate width
-      return ctx.measureText(latex).width;
-    } finally {
-      document.body.removeChild(container);
-    }
-  };
-
-  // Calculate rendered width of each segment and find which one was clicked
-  let accumulatedWidth = 0;
+  // Find which segment contains the displayIndex
+  let accumulatedDisplayLength = 0;
 
   for (const segment of segments) {
-    let segmentWidth: number;
+    const segmentDisplayLength = segment.displayContent.length;
 
-    if (segment.type === 'latex') {
-      segmentWidth = measureLatexWidth(segment.displayContent, segment.isBlock);
-    } else {
-      segmentWidth = ctx.measureText(segment.displayContent).width;
-    }
-
-    if (clickX < accumulatedWidth + segmentWidth) {
+    if (displayIndex < accumulatedDisplayLength + segmentDisplayLength) {
       // Click is within this segment
+      const indexInSegment = displayIndex - accumulatedDisplayLength;
+
       if (segment.type === 'latex') {
-        // For LaTeX, place cursor just before the closing $ or $$
-        // sourceEnd points to after the closing delimiter, so we go back 1 or 2 chars
+        // For LaTeX, place cursor at the end (before closing delimiter)
         const delimiterLength = segment.isBlock ? 2 : 1;
         return segment.sourceEnd - delimiterLength;
       } else if (segment.type === 'link') {
-        // For links [text](url), map clicks on displayed text to source text position
-        // linkTextStart points to position after '[', so clicking on char i maps to linkTextStart + i
-        const relativeClickX = clickX - accumulatedWidth;
-        let charIndex = 0;
-
-        for (let i = 0; i < segment.displayContent.length; i++) {
-          const widthUpToChar = ctx.measureText(segment.displayContent.slice(0, i)).width;
-          const widthUpToNextChar = ctx.measureText(segment.displayContent.slice(0, i + 1)).width;
-          const charMidpoint = (widthUpToChar + widthUpToNextChar) / 2;
-
-          if (relativeClickX < charMidpoint) {
-            charIndex = i;
-            break;
-          }
-          charIndex = i + 1;
-        }
-
-        // Map to position within the link text (after '[')
-        return (segment.linkTextStart ?? segment.sourceStart + 1) + charIndex;
+        // Map to position within the link text
+        return (segment.linkTextStart ?? segment.sourceStart + 1) + indexInSegment;
       } else if (segment.type === 'formatted') {
-        // For formatted text (**bold**, *italic*, ~~strike~~, ++underline++),
-        // map clicks to positions within the inner content (after opening delimiter)
-        const relativeClickX = clickX - accumulatedWidth;
-        let charIndex = 0;
-
-        for (let i = 0; i < segment.displayContent.length; i++) {
-          const widthUpToChar = ctx.measureText(segment.displayContent.slice(0, i)).width;
-          const widthUpToNextChar = ctx.measureText(segment.displayContent.slice(0, i + 1)).width;
-          const charMidpoint = (widthUpToChar + widthUpToNextChar) / 2;
-
-          if (relativeClickX < charMidpoint) {
-            charIndex = i;
-            break;
-          }
-          charIndex = i + 1;
-        }
-
         // Map to position within the formatted text (after opening delimiter)
-        return (segment.innerSourceStart ?? segment.sourceStart + 2) + charIndex;
+        return (segment.innerSourceStart ?? segment.sourceStart + 2) + indexInSegment;
       } else {
-        // For text, find the exact character position
-        const relativeClickX = clickX - accumulatedWidth;
-        let charIndex = 0;
-
-        for (let i = 0; i < segment.displayContent.length; i++) {
-          const widthUpToChar = ctx.measureText(segment.displayContent.slice(0, i)).width;
-          const widthUpToNextChar = ctx.measureText(segment.displayContent.slice(0, i + 1)).width;
-          const charMidpoint = (widthUpToChar + widthUpToNextChar) / 2;
-
-          if (relativeClickX < charMidpoint) {
-            charIndex = i;
-            break;
-          }
-          charIndex = i + 1;
-        }
-
-        return segment.sourceStart + charIndex;
+        // Plain text
+        return segment.sourceStart + indexInSegment;
       }
     }
 
-    accumulatedWidth += segmentWidth;
+    accumulatedDisplayLength += segmentDisplayLength;
   }
 
   // Click is past the end of content, return end of block
