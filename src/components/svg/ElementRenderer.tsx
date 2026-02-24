@@ -185,8 +185,8 @@ export const RenderImage: React.FC<ImageProps> = memo(({ element, resource, clip
   const cy = y + height / 2;
   const transform = rotation ? `rotate(${rotation}, ${cx}, ${cy})` : undefined;
 
-  // No resource or video - render placeholder
-  if (!resource || resource.type === 'video') {
+  // No resource - render placeholder
+  if (!resource) {
     return (
       <g transform={transform}>
         <rect
@@ -194,13 +194,42 @@ export const RenderImage: React.FC<ImageProps> = memo(({ element, resource, clip
           y={y}
           width={width}
           height={height}
-          fill={resource?.type === 'video' ? '#1f2937' : '#f3f4f6'}
-          stroke={resource?.type === 'video' ? undefined : '#9ca3af'}
-          strokeWidth={resource?.type === 'video' ? undefined : 2}
-          strokeDasharray={resource?.type === 'video' ? undefined : '8 4'}
+          fill="#f3f4f6"
+          stroke="#9ca3af"
+          strokeWidth={2}
+          strokeDasharray="8 4"
           opacity={opacity}
           style={{ pointerEvents: 'none' }}
         />
+      </g>
+    );
+  }
+
+  // Video - show first frame using paused video in foreignObject
+  if (resource.type === 'video') {
+    return (
+      <g transform={transform}>
+        <foreignObject
+          x={x}
+          y={y}
+          width={width}
+          height={height}
+          opacity={opacity}
+          style={{ pointerEvents: 'none' }}
+        >
+          <video
+            src={resource.src}
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              pointerEvents: 'none',
+            }}
+            muted
+            playsInline
+            preload="metadata"
+          />
+        </foreignObject>
       </g>
     );
   }

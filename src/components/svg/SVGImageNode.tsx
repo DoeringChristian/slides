@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useCallback, useState } from 'react';
 import { usePresentationStore } from '../../store/presentationStore';
 import type { ImageElement } from '../../types/presentation';
 
@@ -18,8 +18,9 @@ export const SVGImageNode: React.FC<Props> = ({
   onMouseLeave,
 }) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const [videoReady, setVideoReady] = useState(false);
-  const [, forceUpdate] = useState(0);
+  // Editor preview starts paused - user clicks play button to preview
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
 
   const resource = usePresentationStore((s) =>
     element.resourceId ? s.presentation.resources[element.resourceId] : undefined
@@ -27,80 +28,44 @@ export const SVGImageNode: React.FC<Props> = ({
 
   const isVideo = resource?.type === 'video';
 
-  // Create and manage video element
-  useEffect(() => {
-    if (!isVideo || !resource?.src) {
-      setVideoReady(false);
-      if (videoRef.current) {
-        videoRef.current.pause();
-        videoRef.current.src = '';
-        videoRef.current = null;
-      }
-      return;
-    }
-
-    const video = document.createElement('video');
-    video.src = resource.src;
-    video.loop = element.loop ?? false;
-    video.muted = element.muted ?? false;
-    video.playsInline = true;
-    video.preload = 'auto';
-
-    video.onloadeddata = () => {
+  // Callback ref for video element - handles initial setup only
+  const setVideoRef = useCallback((video: HTMLVideoElement | null) => {
+    if (video) {
       videoRef.current = video;
+
+      // Set initial time if specified
       if ((element.startTime ?? 0) > 0) {
         video.currentTime = element.startTime ?? 0;
       }
-      setVideoReady(true);
-    };
 
-    video.onerror = () => {
-      setVideoReady(false);
-    };
-
-    return () => {
-      video.pause();
-      video.src = '';
-      videoRef.current = null;
-    };
-  }, [isVideo, resource?.src]);
-
-  // Handle loop/muted changes for video
-  useEffect(() => {
-    if (videoRef.current && isVideo) {
-      videoRef.current.loop = element.loop ?? false;
-      videoRef.current.muted = element.muted ?? false;
+      // Reset playing state when video ends (if not looping)
+      video.onended = () => {
+        if (!video.loop) {
+          setIsPlaying(false);
+        }
+      };
     }
-  }, [isVideo, element.loop, element.muted]);
+  }, [element.startTime]);
 
-  // Handle play/pause based on element.playing and visibility
-  useEffect(() => {
+  // Toggle play/pause
+  const handlePlayPause = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+
     const video = videoRef.current;
-    if (!video || !videoReady || !isVideo) return;
+    if (!video) return;
 
-    if ((element.playing ?? true) && element.visible) {
+    if (isPlaying) {
+      video.pause();
+      setIsPlaying(false);
+    } else {
       video.play().catch(() => {
         video.muted = true;
         video.play().catch(() => {});
       });
-    } else {
-      video.pause();
+      setIsPlaying(true);
     }
-  }, [isVideo, element.playing, element.visible, videoReady]);
-
-  // Animation loop for video - trigger re-render to update foreignObject
-  useEffect(() => {
-    if (!isVideo || !videoReady || !videoRef.current) return;
-
-    let animationId: number;
-    const updateFrame = () => {
-      forceUpdate((n) => n + 1);
-      animationId = requestAnimationFrame(updateFrame);
-    };
-    animationId = requestAnimationFrame(updateFrame);
-
-    return () => cancelAnimationFrame(animationId);
-  }, [isVideo, videoReady]);
+  }, [isPlaying]);
 
   // Rotate around the center of the element
   const cx = element.x + element.width / 2;
@@ -138,11 +103,29 @@ export const SVGImageNode: React.FC<Props> = ({
   // Apply crop
   const hasCrop = element.cropWidth > 0 && element.cropHeight > 0;
 
-  // Video resource
-  if (isVideo && videoReady && videoRef.current) {
-    // Use foreignObject to embed video
+  // Video resource - render with play button overlay on hover
+  if (isVideo && resource.src) {
+    // Play button size scales with element but has min/max bounds
+    const buttonSize = Math.max(24, Math.min(48, Math.min(element.width, element.height) * 0.15));
+    const iconSize = buttonSize * 0.5;
+
+    const handleVideoMouseEnter = () => {
+      setIsHovered(true);
+      onMouseEnter?.();
+    };
+
+    const handleVideoMouseLeave = () => {
+      setIsHovered(false);
+      onMouseLeave?.();
+    };
+
     return (
-      <g transform={transform} data-element-id={element.id}>
+      <g
+        transform={transform}
+        data-element-id={element.id}
+        onMouseEnter={disableInteraction ? undefined : handleVideoMouseEnter}
+        onMouseLeave={disableInteraction ? undefined : handleVideoMouseLeave}
+      >
         <foreignObject
           x={element.x}
           y={element.y}
@@ -151,15 +134,9 @@ export const SVGImageNode: React.FC<Props> = ({
           opacity={element.opacity}
           style={commonStyle}
           onMouseDown={disableInteraction ? undefined : onMouseDown}
-          onMouseEnter={disableInteraction ? undefined : onMouseEnter}
-          onMouseLeave={disableInteraction ? undefined : onMouseLeave}
         >
           <video
-            ref={(el) => {
-              if (el && videoRef.current && el !== videoRef.current) {
-                el.srcObject = null;
-              }
-            }}
+            ref={setVideoRef}
             src={resource.src}
             style={{
               width: '100%',
@@ -170,9 +147,54 @@ export const SVGImageNode: React.FC<Props> = ({
             muted={element.muted ?? false}
             loop={element.loop ?? false}
             playsInline
-            autoPlay={element.playing ?? true}
+            preload="metadata"
           />
         </foreignObject>
+        {/* Play/Pause button overlay - only show on hover */}
+        {!disableInteraction && isHovered && (
+          <g
+            onClick={handlePlayPause}
+            style={{ cursor: 'pointer' }}
+          >
+            <circle
+              cx={element.x + element.width / 2}
+              cy={element.y + element.height / 2}
+              r={buttonSize}
+              fill="rgba(0, 0, 0, 0.5)"
+              stroke="white"
+              strokeWidth={2}
+            />
+            {isPlaying ? (
+              // Pause icon (two vertical bars)
+              <>
+                <rect
+                  x={element.x + element.width / 2 - iconSize * 0.5}
+                  y={element.y + element.height / 2 - iconSize * 0.6}
+                  width={iconSize * 0.3}
+                  height={iconSize * 1.2}
+                  fill="white"
+                />
+                <rect
+                  x={element.x + element.width / 2 + iconSize * 0.2}
+                  y={element.y + element.height / 2 - iconSize * 0.6}
+                  width={iconSize * 0.3}
+                  height={iconSize * 1.2}
+                  fill="white"
+                />
+              </>
+            ) : (
+              // Play icon (triangle)
+              <polygon
+                points={`
+                  ${element.x + element.width / 2 - iconSize * 0.4},${element.y + element.height / 2 - iconSize * 0.6}
+                  ${element.x + element.width / 2 - iconSize * 0.4},${element.y + element.height / 2 + iconSize * 0.6}
+                  ${element.x + element.width / 2 + iconSize * 0.6},${element.y + element.height / 2}
+                `}
+                fill="white"
+              />
+            )}
+          </g>
+        )}
       </g>
     );
   }
