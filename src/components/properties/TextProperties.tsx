@@ -3,6 +3,7 @@ import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { ColorPicker } from '../toolbar/ColorPicker';
 import { TransitionButton } from './TransitionButton';
+import { SlideSyncButton } from './SlideSyncButton';
 import { FONT_FAMILIES, FONT_SIZES } from '../../utils/constants';
 import type { TextElement, TextStyle } from '../../types/presentation';
 
@@ -23,7 +24,12 @@ export const TextProperties: React.FC<Props> = ({ element }) => {
   return (
     <div className="space-y-3">
       <div>
-        <label className="text-xs text-gray-500 block mb-1">Font</label>
+        <div className="flex items-center mb-1">
+          <label className="text-xs text-gray-500">Font</label>
+          <div className="flex items-center gap-0.5 ml-auto">
+            <SlideSyncButton elementId={element.id} fields={['style.fontFamily']} />
+          </div>
+        </div>
         <select
           value={element.style.fontFamily}
           onChange={(e) => updateStyle({ fontFamily: e.target.value })}
@@ -37,6 +43,7 @@ export const TextProperties: React.FC<Props> = ({ element }) => {
           <div className="flex items-center mb-1">
             <label className="text-xs text-gray-500">Size</label>
             <div className="flex items-center gap-0.5 ml-auto">
+              <SlideSyncButton elementId={element.id} fields={['style.fontSize']} />
               <TransitionButton elementId={element.id} group="fontSize" direction="in" />
               <TransitionButton elementId={element.id} group="fontSize" direction="out" />
             </div>
@@ -53,6 +60,7 @@ export const TextProperties: React.FC<Props> = ({ element }) => {
           <div className="flex items-center mb-1">
             <label className="text-xs text-gray-500">Color</label>
             <div className="flex items-center gap-0.5 ml-auto">
+              <SlideSyncButton elementId={element.id} fields={['style.color']} />
               <TransitionButton elementId={element.id} group="color" direction="in" />
               <TransitionButton elementId={element.id} group="color" direction="out" />
             </div>
@@ -64,6 +72,7 @@ export const TextProperties: React.FC<Props> = ({ element }) => {
         <div className="flex items-center mb-1">
           <label className="text-xs text-gray-500">Line Height</label>
           <div className="flex items-center gap-0.5 ml-auto">
+            <SlideSyncButton elementId={element.id} fields={['style.lineHeight']} />
             <TransitionButton elementId={element.id} group="lineHeight" direction="in" />
             <TransitionButton elementId={element.id} group="lineHeight" direction="out" />
           </div>
@@ -80,6 +89,7 @@ export const TextProperties: React.FC<Props> = ({ element }) => {
         <div className="flex items-center mb-1">
           <label className="text-xs text-gray-500">Opacity</label>
           <div className="flex items-center gap-0.5 ml-auto">
+            <SlideSyncButton elementId={element.id} fields={['opacity']} />
             <TransitionButton elementId={element.id} group="opacity" direction="in" />
             <TransitionButton elementId={element.id} group="opacity" direction="out" />
           </div>

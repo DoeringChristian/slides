@@ -1,9 +1,10 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { usePrevKeyframeElement, useNextKeyframeElement } from '../../store/selectors';
-import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, ChevronsUp, ChevronsDown, Lock, Unlock, Eye, EyeOff, Copy } from 'lucide-react';
+import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, ChevronsUp, ChevronsDown, Lock, Unlock, Eye, EyeOff } from 'lucide-react';
 import { TransitionButton } from './TransitionButton';
+import { SlideSyncButton } from './SlideSyncButton';
 import type { SlideElement } from '../../types/presentation';
 
 interface Props {
@@ -51,55 +52,6 @@ function KeyframeButtons({ element, prev, next, fields, update }: {
         </button>
       )}
     </div>
-  );
-}
-
-// Button to sync properties from active slide to all selected slides
-function SlideSyncButton({ elementId, fields }: {
-  elementId: string;
-  fields: (keyof SlideElement)[];
-}) {
-  const activeSlideId = useEditorStore((s) => s.activeSlideId);
-  const selectedSlideIds = useEditorStore((s) => s.selectedSlideIds);
-  const slides = usePresentationStore((s) => s.presentation.slides);
-  const syncElementToSlides = usePresentationStore((s) => s.syncElementToSlides);
-
-  // Check if any selected slide has different values for these fields
-  const hasDifference = useMemo(() => {
-    if (selectedSlideIds.length <= 1) return false;
-
-    const activeElement = slides[activeSlideId]?.elements[elementId];
-    if (!activeElement) return false;
-
-    for (const slideId of selectedSlideIds) {
-      if (slideId === activeSlideId) continue;
-      const element = slides[slideId]?.elements[elementId];
-      if (!element) continue;
-
-      for (const field of fields) {
-        const activeVal = activeElement[field];
-        const otherVal = element[field];
-        // Compare with rounding for numeric values
-        if (typeof activeVal === 'number' && typeof otherVal === 'number') {
-          if (Math.round(activeVal) !== Math.round(otherVal)) return true;
-        } else if (activeVal !== otherVal) {
-          return true;
-        }
-      }
-    }
-    return false;
-  }, [selectedSlideIds, activeSlideId, slides, elementId, fields]);
-
-  if (!hasDifference) return null;
-
-  return (
-    <button
-      onClick={() => syncElementToSlides(activeSlideId, elementId, selectedSlideIds, fields)}
-      className="p-0.5 rounded hover:bg-blue-100 text-blue-500 hover:text-blue-600"
-      title="Sync to all selected slides"
-    >
-      <Copy size={12} />
-    </button>
   );
 }
 
@@ -207,7 +159,6 @@ export const ArrangePanel: React.FC<Props> = ({ element }) => {
           {element.locked ? <Lock size={12} /> : <Unlock size={12} />}
           {element.locked ? 'Locked' : 'Unlocked'}
         </button>
-        <SlideSyncButton elementId={element.id} fields={['locked']} />
       </div>
 
       <div className="flex items-center">
@@ -219,7 +170,6 @@ export const ArrangePanel: React.FC<Props> = ({ element }) => {
           {element.visible ? 'Visible' : 'Hidden'}
         </button>
         <div className="flex items-center gap-0.5 ml-auto">
-          <SlideSyncButton elementId={element.id} fields={['visible']} />
           <TransitionButton elementId={element.id} group="visibility" direction="in" />
           <TransitionButton elementId={element.id} group="visibility" direction="out" />
         </div>

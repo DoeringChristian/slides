@@ -3,6 +3,7 @@ import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { ColorPicker } from '../toolbar/ColorPicker';
 import { TransitionButton } from './TransitionButton';
+import { SlideSyncButton } from './SlideSyncButton';
 import type { ShapeElement } from '../../types/presentation';
 
 interface Props {
@@ -23,6 +24,7 @@ export const ShapeProperties: React.FC<Props> = ({ element }) => {
         <div className="flex items-center mb-1">
           <label className="text-xs text-gray-500">Fill</label>
           <div className="flex items-center gap-0.5 ml-auto">
+            <SlideSyncButton elementId={element.id} fields={['fill']} />
             <TransitionButton elementId={element.id} group="fill" direction="in" />
             <TransitionButton elementId={element.id} group="fill" direction="out" />
           </div>
@@ -33,6 +35,7 @@ export const ShapeProperties: React.FC<Props> = ({ element }) => {
         <div className="flex items-center mb-1">
           <label className="text-xs text-gray-500">Stroke</label>
           <div className="flex items-center gap-0.5 ml-auto">
+            <SlideSyncButton elementId={element.id} fields={['stroke']} />
             <TransitionButton elementId={element.id} group="stroke" direction="in" />
             <TransitionButton elementId={element.id} group="stroke" direction="out" />
           </div>
@@ -43,6 +46,7 @@ export const ShapeProperties: React.FC<Props> = ({ element }) => {
         <div className="flex items-center mb-1">
           <label className="text-xs text-gray-500">Stroke Width</label>
           <div className="flex items-center gap-0.5 ml-auto">
+            <SlideSyncButton elementId={element.id} fields={['strokeWidth']} />
             <TransitionButton elementId={element.id} group="strokeWidth" direction="in" />
             <TransitionButton elementId={element.id} group="strokeWidth" direction="out" />
           </div>
@@ -60,6 +64,7 @@ export const ShapeProperties: React.FC<Props> = ({ element }) => {
           <div className="flex items-center mb-1">
             <label className="text-xs text-gray-500">Corner Radius</label>
             <div className="flex items-center gap-0.5 ml-auto">
+              <SlideSyncButton elementId={element.id} fields={['cornerRadius']} />
               <TransitionButton elementId={element.id} group="cornerRadius" direction="in" />
               <TransitionButton elementId={element.id} group="cornerRadius" direction="out" />
             </div>
@@ -77,6 +82,7 @@ export const ShapeProperties: React.FC<Props> = ({ element }) => {
         <div className="flex items-center mb-1">
           <label className="text-xs text-gray-500">Opacity</label>
           <div className="flex items-center gap-0.5 ml-auto">
+            <SlideSyncButton elementId={element.id} fields={['opacity']} />
             <TransitionButton elementId={element.id} group="opacity" direction="in" />
             <TransitionButton elementId={element.id} group="opacity" direction="out" />
           </div>

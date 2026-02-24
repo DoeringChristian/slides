@@ -4,6 +4,7 @@ import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { ResourcePicker } from './ResourcePicker';
 import { TransitionButton } from './TransitionButton';
+import { SlideSyncButton } from './SlideSyncButton';
 import { computeResourceUpdate } from '../../utils/imageUtils';
 import type { ImageElement } from '../../types/presentation';
 
@@ -44,6 +45,7 @@ export const ImageProperties: React.FC<Props> = ({ element }) => {
         <div className="flex items-center mb-1">
           <label className="text-xs text-gray-500">Opacity</label>
           <div className="flex items-center gap-0.5 ml-auto">
+            <SlideSyncButton elementId={element.id} fields={['opacity']} />
             <TransitionButton elementId={element.id} group="opacity" direction="in" />
             <TransitionButton elementId={element.id} group="opacity" direction="out" />
           </div>
@@ -61,6 +63,7 @@ export const ImageProperties: React.FC<Props> = ({ element }) => {
         <div className="flex items-center mb-1">
           <label className="text-xs text-gray-500">Resource</label>
           <div className="flex items-center gap-0.5 ml-auto">
+            <SlideSyncButton elementId={element.id} fields={['resourceId']} />
             <TransitionButton elementId={element.id} group="resource" direction="in" availableTypes={['const', 'crossfade']} />
             <TransitionButton elementId={element.id} group="resource" direction="out" availableTypes={['const', 'crossfade']} />
           </div>
