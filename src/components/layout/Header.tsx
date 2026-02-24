@@ -3,7 +3,8 @@ import { usePresentationStore } from '../../store/presentationStore';
 import { useEditorStore } from '../../store/editorStore';
 import { useVaultStore } from '../../store/vaultStore';
 import { usePresenterMode } from '../../hooks/usePresenterMode';
-import { Play, Download, Upload, FilePlus, Undo2, Redo2, Monitor, ChevronDown } from 'lucide-react';
+import { Play, Download, Upload, FilePlus, Undo2, Redo2, Monitor, ChevronDown, FileDown } from 'lucide-react';
+import { ExportDialog } from '../dialogs/ExportDialog';
 
 export const Header: React.FC = () => {
   const title = usePresentationStore((s) => s.presentation.title);
@@ -22,6 +23,7 @@ export const Header: React.FC = () => {
 
   const [isEditing, setIsEditing] = useState(false);
   const [showPresentMenu, setShowPresentMenu] = useState(false);
+  const [showExportDialog, setShowExportDialog] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -138,6 +140,9 @@ export const Header: React.FC = () => {
         <button onClick={handleLoad} className="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Open">
           <Upload size={18} />
         </button>
+        <button onClick={() => setShowExportDialog(true)} className="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Export to PDF">
+          <FileDown size={18} />
+        </button>
         <div className="w-px h-6 bg-gray-300 mx-1" />
         <button onClick={handleUndo} className="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Undo (Ctrl+Z)">
           <Undo2 size={18} />
@@ -190,6 +195,8 @@ export const Header: React.FC = () => {
           </div>
         )}
       </div>
+
+      <ExportDialog isOpen={showExportDialog} onClose={() => setShowExportDialog(false)} />
     </div>
   );
 };

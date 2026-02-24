@@ -10,12 +10,14 @@ interface Props {
 export const ExportDialog: React.FC<Props> = ({ isOpen, onClose }) => {
   const [format, setFormat] = useState<'pdf' | 'png'>('pdf');
   const [exporting, setExporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const presentation = usePresentationStore((s) => s.presentation);
 
   if (!isOpen) return null;
 
   const handleExport = async () => {
     setExporting(true);
+    setError(null);
     try {
       const { exportPdf } = await import('../../utils/exportPdf');
       const { exportImage } = await import('../../utils/exportImage');
@@ -25,11 +27,12 @@ export const ExportDialog: React.FC<Props> = ({ isOpen, onClose }) => {
       } else {
         await exportImage(presentation);
       }
+      onClose();
     } catch (err) {
       console.error('Export failed:', err);
+      setError(err instanceof Error ? err.message : 'Export failed');
     }
     setExporting(false);
-    onClose();
   };
 
   return (
@@ -58,6 +61,12 @@ export const ExportDialog: React.FC<Props> = ({ isOpen, onClose }) => {
             </div>
           </label>
         </div>
+
+        {error && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+            {error}
+          </div>
+        )}
 
         <div className="flex gap-2 justify-end">
           <button onClick={onClose} className="px-4 py-2 text-sm rounded-md border border-gray-300 hover:bg-gray-50">
