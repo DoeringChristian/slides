@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useMemo, useState, useEffect, type DragEvent } from 'react';
+import React, { useRef, useCallback, useMemo, useState, useEffect, useLayoutEffect, type DragEvent } from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useActiveSlide, useObjectElements } from '../../store/selectors';
@@ -64,6 +64,28 @@ export const SVGSlideCanvas: React.FC = () => {
   const [connectorHighlightId, setConnectorHighlightId] = useState<string | null>(null);
   const [dragPreview, setDragPreview] = useState<DragPreviewState | null>(null);
   const [transformPreview, setTransformPreview] = useState<DragPreviewState | null>(null);
+
+  // Pending scroll adjustment after zoom (applied in useLayoutEffect)
+  const pendingScrollRef = useRef<{ left: number; top: number } | null>(null);
+
+  // Track viewport (scroll parent) dimensions for padding-based centering
+  const [viewport, setViewport] = useState({ w: 0, h: 0 });
+  const initialScrollDone = useRef(false);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const scrollParent = el.closest('.canvas-scroll-parent') as HTMLElement | null;
+    if (!scrollParent) return;
+
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setViewport({ w: entry.contentRect.width, h: entry.contentRect.height });
+      }
+    });
+    ro.observe(scrollParent);
+    return () => ro.disconnect();
+  }, []);
 
   // Selection drag state
   const [selectionDrag, setSelectionDrag] = useState<{
@@ -503,43 +525,136 @@ export const SVGSlideCanvas: React.FC = () => {
     });
   }, [activeSlideId, screenToSVG, unhideElement, setSelectedElements, addElement, addEmptySlide, setActiveSlide, addResource]);
 
-  // Zoom with wheel
+  // Apply pending scroll adjustment synchronously after React renders new zoom
+  useLayoutEffect(() => {
+    if (!pendingScrollRef.current) return;
+    const scrollParent = containerRef.current?.closest('.canvas-scroll-parent') as HTMLElement | null;
+    if (scrollParent) {
+      scrollParent.scrollLeft = pendingScrollRef.current.left;
+      scrollParent.scrollTop = pendingScrollRef.current.top;
+    }
+    pendingScrollRef.current = null;
+  }, [zoom]);
+
+  // Center canvas on initial load and when viewport becomes available
+  useLayoutEffect(() => {
+    if (initialScrollDone.current) return;
+    if (viewport.w === 0 || viewport.h === 0) return;
+    const scrollParent = containerRef.current?.closest('.canvas-scroll-parent') as HTMLElement | null;
+    if (!scrollParent) return;
+
+    // Padding = half viewport on each side; centering scroll = canvasW / 2
+    const totalW = SLIDE_WIDTH + 2 * CANVAS_PADDING;
+    const totalH = SLIDE_HEIGHT + 2 * CANVAS_PADDING;
+    const canvasW = totalW * zoom;
+    const canvasH = totalH * zoom;
+    scrollParent.scrollLeft = canvasW / 2;
+    scrollParent.scrollTop = canvasH / 2;
+    initialScrollDone.current = true;
+  }, [viewport, zoom]);
+
+  // Zoom with wheel toward cursor position
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+    const scrollParent = el.closest('.canvas-scroll-parent') as HTMLElement | null;
+    const target = scrollParent || el;
 
-    let pendingZoom: number | null = null;
-    let rafId: number | null = null;
-
-    const applyZoom = () => {
-      if (pendingZoom !== null) {
-        setZoom(pendingZoom);
-        pendingZoom = null;
-      }
-      rafId = null;
-    };
+    const totalW = SLIDE_WIDTH + 2 * CANVAS_PADDING;
+    const totalH = SLIDE_HEIGHT + 2 * CANVAS_PADDING;
 
     const handleWheel = (e: WheelEvent) => {
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
 
-      const currentZoom = pendingZoom ?? useEditorStore.getState().zoom;
-      const delta = -e.deltaY * 0.01;
-      pendingZoom = currentZoom + delta;
+      if (!scrollParent) return;
+      const viewportW = scrollParent.clientWidth;
+      const viewportH = scrollParent.clientHeight;
 
-      if (rafId === null) {
-        rafId = requestAnimationFrame(applyZoom);
-      }
+      // Padding = half viewport on each side (canvas always scrollable)
+      const padX = viewportW / 2;
+      const padY = viewportH / 2;
+
+      // Min zoom: canvas fills at least half the viewport (shows ~2x canvas area)
+      const minZoom = Math.min(viewportW / (2 * totalW), viewportH / (2 * totalH));
+
+      const oldZoom = useEditorStore.getState().zoom;
+      // Multiplicative zoom: constant perceptual speed at all zoom levels
+      const factor = Math.pow(1.005, -e.deltaY);
+      const newZoom = Math.max(minZoom, Math.min(3, oldZoom * factor));
+      if (newZoom === oldZoom) return;
+
+      // Cursor position relative to scroll parent viewport
+      const spRect = scrollParent.getBoundingClientRect();
+      const cursorVpX = e.clientX - spRect.left;
+      const cursorVpY = e.clientY - spRect.top;
+
+      // SVG-space point under the cursor (padding is constant, doesn't change with zoom)
+      const svgX = (scrollParent.scrollLeft + cursorVpX - padX) / oldZoom;
+      const svgY = (scrollParent.scrollTop + cursorVpY - padY) / oldZoom;
+
+      // Target scroll: place the same SVG point under the cursor
+      pendingScrollRef.current = {
+        left: padX + svgX * newZoom - cursorVpX,
+        top: padY + svgY * newZoom - cursorVpY,
+      };
+
+      setZoom(newZoom);
     };
 
-    el.addEventListener('wheel', handleWheel, { passive: false });
+    target.addEventListener('wheel', handleWheel, { passive: false });
     return () => {
-      el.removeEventListener('wheel', handleWheel);
-      if (rafId !== null) {
-        cancelAnimationFrame(rafId);
-      }
+      target.removeEventListener('wheel', handleWheel);
     };
   }, [setZoom]);
+
+  // Middle-click panning
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const scrollParent = el.closest('.canvas-scroll-parent') as HTMLElement | null;
+    if (!scrollParent) return;
+
+    let isPanning = false;
+    let startX = 0;
+    let startY = 0;
+    let startScrollLeft = 0;
+    let startScrollTop = 0;
+
+    const handleMouseDown = (e: MouseEvent) => {
+      // Middle mouse button (button === 1)
+      if (e.button !== 1) return;
+      e.preventDefault();
+      isPanning = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      startScrollLeft = scrollParent.scrollLeft;
+      startScrollTop = scrollParent.scrollTop;
+      scrollParent.style.cursor = 'grabbing';
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isPanning) return;
+      e.preventDefault();
+      scrollParent.scrollLeft = startScrollLeft - (e.clientX - startX);
+      scrollParent.scrollTop = startScrollTop - (e.clientY - startY);
+    };
+
+    const handleMouseUp = () => {
+      if (!isPanning) return;
+      isPanning = false;
+      scrollParent.style.cursor = '';
+    };
+
+    scrollParent.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      scrollParent.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
 
   // Hovered element
   const hoveredElement = useMemo(() => {
@@ -573,11 +688,21 @@ export const SVGSlideCanvas: React.FC = () => {
 
   const cursor = tool === 'select' ? 'default' : 'crosshair';
 
+  // Padding = half viewport on each side so the canvas is always scrollable
+  // This replaces CSS flex centering and makes zoom-to-cursor work at all zoom levels
+  const padX = viewport.w / 2;
+  const padY = viewport.h / 2;
+
   return (
     <div
       ref={containerRef}
       className="relative"
-      style={{ width: containerWidth, height: containerHeight, cursor }}
+      style={{
+        width: containerWidth,
+        height: containerHeight,
+        margin: `${padY}px ${padX}px`,
+        cursor,
+      }}
       onDragOver={handleDragOver}
       onDrop={handleDrop}
     >
