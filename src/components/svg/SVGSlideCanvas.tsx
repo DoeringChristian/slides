@@ -263,6 +263,7 @@ export const SVGSlideCanvas: React.FC = () => {
     } else {
       setSelectedElements([id]);
 
+      let enteredEditMode = false;
       if (isTextElement && clickedElement && !wasDragging) {
         const pos = screenToSVG(e.clientX, e.clientY);
 
@@ -291,13 +292,14 @@ export const SVGSlideCanvas: React.FC = () => {
 
         if (isPointOnTextContent(clickedElement as TextElement, { x: localX, y: localY })) {
           setEditingTextId(id, { x: localX, y: localY });
+          enteredEditMode = true;
         }
       }
-    }
 
-    // Start drag
-    if (!clickedElement?.locked) {
-      handleElementMouseDown(id, clickedElement?.x || 0, clickedElement?.y || 0, e);
+      // Start drag (but not when entering text edit mode - that would cause snapping on mouseup)
+      if (!clickedElement?.locked && !enteredEditMode) {
+        handleElementMouseDown(id, clickedElement?.x || 0, clickedElement?.y || 0, e);
+      }
     }
   }, [selectedElementIds, setSelectedElements, editingTextId, setEditingTextId, slide, screenToSVG, handleElementMouseDown]);
 
