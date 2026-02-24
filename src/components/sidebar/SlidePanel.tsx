@@ -92,6 +92,10 @@ export const SlidePanel: React.FC = () => {
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const selectedElementIds = useEditorStore((s) => s.selectedElementIds);
   const setActiveSlide = useEditorStore((s) => s.setActiveSlide);
+  const selectedSlideIds = useEditorStore((s) => s.selectedSlideIds);
+  const setSelectedSlides = useEditorStore((s) => s.setSelectedSlides);
+
+  const [lastClickedSlideId, setLastClickedSlideId] = useState<string | null>(null);
 
   const [pickerState, setPickerState] = useState<PickerState | null>(null);
 
@@ -127,6 +131,36 @@ export const SlidePanel: React.FC = () => {
     deleteSlide(slideId);
     if (slideId === activeSlideId) setActiveSlide(nextActive);
   }, [slideOrder, deleteSlide, activeSlideId, setActiveSlide]);
+
+  const handleSlideClick = useCallback((slideId: string, e: React.MouseEvent) => {
+    if (e.shiftKey && lastClickedSlideId) {
+      // Shift-click: select range from last clicked to current
+      const lastIdx = slideOrder.indexOf(lastClickedSlideId);
+      const currentIdx = slideOrder.indexOf(slideId);
+      const startIdx = Math.min(lastIdx, currentIdx);
+      const endIdx = Math.max(lastIdx, currentIdx);
+      const rangeIds = slideOrder.slice(startIdx, endIdx + 1);
+      setSelectedSlides(rangeIds);
+      // Don't change active slide on shift-click, just the selection
+    } else if (e.ctrlKey || e.metaKey) {
+      // Ctrl/Cmd-click: toggle selection
+      const newSelection = selectedSlideIds.includes(slideId)
+        ? selectedSlideIds.filter((id) => id !== slideId)
+        : [...selectedSlideIds, slideId];
+      // Ensure at least the active slide remains selected
+      if (newSelection.length === 0 || !newSelection.includes(activeSlideId)) {
+        setSelectedSlides([...newSelection, activeSlideId]);
+      } else {
+        setSelectedSlides(newSelection);
+      }
+      setLastClickedSlideId(slideId);
+    } else {
+      // Normal click: set as active and reset selection to just this slide
+      setActiveSlide(slideId);
+      setSelectedSlides([slideId]);
+      setLastClickedSlideId(slideId);
+    }
+  }, [slideOrder, lastClickedSlideId, selectedSlideIds, activeSlideId, setActiveSlide, setSelectedSlides]);
 
   const handleOpenTemplatePicker = useCallback((insertIndex: number, anchorRect: DOMRect) => {
     setPickerState((prev) => {
@@ -183,6 +217,13 @@ export const SlidePanel: React.FC = () => {
     setTimeout(() => document.addEventListener('click', remove), 0);
   }, [slideOrder, addSlide, deleteSlide, duplicateSlide, setActiveSlide]);
 
+  const handleEmptySpaceClick = useCallback((e: React.MouseEvent) => {
+    // Only reset if clicking directly on the container (empty space), not on children
+    if (e.target === e.currentTarget) {
+      setSelectedSlides([activeSlideId]);
+    }
+  }, [activeSlideId, setSelectedSlides]);
+
   return (
     <div className="w-60 bg-white border-r border-gray-200 flex flex-col shrink-0">
       <div className="p-2 border-b border-gray-200 flex items-center justify-between">
@@ -205,7 +246,7 @@ export const SlidePanel: React.FC = () => {
           </button>
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto pt-6">
+      <div className="flex-1 overflow-y-auto pt-6" onClick={handleEmptySpaceClick}>
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={slideOrder} strategy={verticalListSortingStrategy}>
             {slides.map((slide, index) => (
@@ -226,9 +267,10 @@ export const SlidePanel: React.FC = () => {
                     slide={slide}
                     index={index}
                     isActive={slide.id === activeSlideId}
+                    isSelected={selectedSlideIds.includes(slide.id)}
                     canDelete={slides.length > 1}
                     selectedElementIds={selectedElementIds}
-                    onClick={() => setActiveSlide(slide.id)}
+                    onClick={(e) => handleSlideClick(slide.id, e)}
                     onDelete={() => handleDeleteSlide(slide.id)}
                     onToggleHidden={() => toggleSlideHidden(slide.id)}
                   />

@@ -8,14 +8,15 @@ interface Props {
   slide: Slide;
   index: number;
   isActive: boolean;
+  isSelected: boolean;
   canDelete: boolean;
   selectedElementIds: string[];
-  onClick: () => void;
+  onClick: (e: React.MouseEvent) => void;
   onDelete: () => void;
   onToggleHidden: () => void;
 }
 
-export const SlideSortable: React.FC<Props> = ({ slide, index, isActive, canDelete, selectedElementIds, onClick, onDelete, onToggleHidden }) => {
+export const SlideSortable: React.FC<Props> = ({ slide, index, isActive, isSelected, canDelete, selectedElementIds, onClick, onDelete, onToggleHidden }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: slide.id });
 
   const style: React.CSSProperties = {
@@ -28,7 +29,7 @@ export const SlideSortable: React.FC<Props> = ({ slide, index, isActive, canDele
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <SlideThumbnail slide={slide} index={index} isActive={isActive} canDelete={canDelete} selectedElementIds={selectedElementIds} onClick={onClick} onDelete={onDelete} onToggleHidden={onToggleHidden} />
+      <SlideThumbnail slide={slide} index={index} isActive={isActive} isSelected={isSelected} canDelete={canDelete} selectedElementIds={selectedElementIds} onClick={onClick} onDelete={onDelete} onToggleHidden={onToggleHidden} />
     </div>
   );
 };

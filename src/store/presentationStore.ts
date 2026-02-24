@@ -91,6 +91,9 @@ interface PresentationStore {
   renameObject: (objectId: string, name: string) => void;
   removeObject: (objectId: string) => void;
 
+  // Multi-slide sync actions
+  syncElementToSlides: (sourceSlideId: string, elementId: string, targetSlideIds: string[], properties: (keyof SlideElement)[]) => void;
+
   // Template actions
   saveAsTemplate: (slideId: string, name: string) => string;
   addSlideFromTemplate: (templateId: string, index?: number) => string;
@@ -892,6 +895,46 @@ export const usePresentationStore = create<PresentationStore>()(
               objects: remainingObjects,
               slides: updatedSlides,
               resources,
+              updatedAt: Date.now(),
+            },
+          };
+        });
+      },
+
+      syncElementToSlides: (sourceSlideId: string, elementId: string, targetSlideIds: string[], properties: (keyof SlideElement)[]) => {
+        set((state) => {
+          const sourceSlide = state.presentation.slides[sourceSlideId];
+          if (!sourceSlide) return state;
+
+          const sourceElement = sourceSlide.elements[elementId];
+          if (!sourceElement) return state;
+
+          // Build the changes object from the source element
+          const changes: Partial<SlideElement> = {};
+          for (const prop of properties) {
+            (changes as any)[prop] = sourceElement[prop];
+          }
+
+          // Apply to all target slides
+          const updatedSlides = { ...state.presentation.slides };
+          for (const targetSlideId of targetSlideIds) {
+            if (targetSlideId === sourceSlideId) continue;
+            const targetSlide = updatedSlides[targetSlideId];
+            if (!targetSlide || !targetSlide.elements[elementId]) continue;
+
+            updatedSlides[targetSlideId] = {
+              ...targetSlide,
+              elements: {
+                ...targetSlide.elements,
+                [elementId]: { ...targetSlide.elements[elementId], ...changes } as SlideElement,
+              },
+            };
+          }
+
+          return {
+            presentation: {
+              ...state.presentation,
+              slides: updatedSlides,
               updatedAt: Date.now(),
             },
           };

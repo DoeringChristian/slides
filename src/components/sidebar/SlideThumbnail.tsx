@@ -13,26 +13,32 @@ interface Props {
   slide: Slide;
   index: number;
   isActive: boolean;
+  isSelected?: boolean;
   canDelete: boolean;
   selectedElementIds?: string[];
-  onClick: () => void;
+  onClick: (e: React.MouseEvent) => void;
   onDelete: () => void;
   onToggleHidden: () => void;
 }
 
-export const SlideThumbnail: React.FC<Props> = ({ slide, index, isActive, canDelete, selectedElementIds, onClick, onDelete, onToggleHidden }) => {
+export const SlideThumbnail: React.FC<Props> = ({ slide, index, isActive, isSelected = false, canDelete, selectedElementIds, onClick, onDelete, onToggleHidden }) => {
   const elements = slide.elementOrder.map((id) => slide.elements[id]).filter(Boolean);
   const textElements = elements.filter((el): el is TextElement => el.type === 'text' && el.visible);
   const hidden = slide.hidden;
 
+  // Background: active = orange-50, selected (not active) = blue-50/50, else hover:gray-50
+  const bgClass = isActive ? 'bg-orange-50' : isSelected ? 'bg-blue-50/50' : 'hover:bg-gray-50';
+  // Border: active = orange-500, selected = blue-400, else gray-200
+  const borderClass = isActive ? 'border-orange-500' : isSelected ? 'border-blue-400' : 'border-gray-200 group-hover:border-gray-300';
+
   return (
     <div
       onClick={onClick}
-      className={`flex items-center gap-2 px-2 py-1.5 cursor-pointer group ${isActive ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+      className={`flex items-center gap-2 px-2 py-1.5 cursor-pointer group ${bgClass}`}
     >
       <span className="text-xs text-gray-400 w-5 text-right shrink-0">{index + 1}</span>
       <div className="relative">
-        <div className={`relative rounded border-2 overflow-hidden ${hidden ? 'opacity-40' : ''} ${isActive ? 'border-blue-500' : 'border-gray-200 group-hover:border-gray-300'}`}>
+        <div className={`relative rounded border-2 overflow-hidden ${hidden ? 'opacity-40' : ''} ${borderClass}`}>
           <SVGStaticSlide
             slide={slide}
             width={THUMB_WIDTH}

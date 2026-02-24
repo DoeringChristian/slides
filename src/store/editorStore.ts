@@ -20,6 +20,7 @@ interface EditorStore extends EditorState {
   isPresenterMode: boolean;
   presenterStartTime: number;
   textEditClickPosition: { x: number; y: number } | null;
+  selectedSlideIds: string[];
   setObjectDrawerOpen: (open: boolean) => void;
   setHoveredObjectId: (id: string | null) => void;
   setActiveSlide: (slideId: string) => void;
@@ -42,6 +43,8 @@ interface EditorStore extends EditorState {
   setShowMarginGuides: (show: boolean) => void;
   setPresenterMode: (mode: boolean) => void;
   resetPresenterTimer: () => void;
+  setSelectedSlides: (ids: string[]) => void;
+  toggleSlideSelection: (slideId: string) => void;
 }
 
 export const useEditorStore = create<EditorStore>()((set) => ({
@@ -65,6 +68,7 @@ export const useEditorStore = create<EditorStore>()((set) => ({
   isPresenterMode: false,
   presenterStartTime: 0,
   textEditClickPosition: null,
+  selectedSlideIds: [],
 
   setObjectDrawerOpen: (open) => set({ objectDrawerOpen: open }),
   setHoveredObjectId: (id) => set({ hoveredObjectId: id }),
@@ -73,7 +77,13 @@ export const useEditorStore = create<EditorStore>()((set) => ({
     const kept = slide
       ? s.selectedElementIds.filter((id) => id in slide.elements)
       : [];
-    return { activeSlideId: slideId, selectedElementIds: kept, editingTextId: null };
+    // Don't modify selectedSlideIds here - let the caller (SlidePanel) handle it
+    // This allows proper multi-select behavior
+    return {
+      activeSlideId: slideId,
+      selectedElementIds: kept,
+      editingTextId: null,
+    };
   }),
   setSelectedElements: (ids) => set({ selectedElementIds: ids }),
   addToSelection: (id) => set((s) => ({
@@ -103,4 +113,10 @@ export const useEditorStore = create<EditorStore>()((set) => ({
   setShowMarginGuides: (show) => set({ showMarginGuides: show }),
   setPresenterMode: (mode) => set({ isPresenterMode: mode, presenterStartTime: mode ? Date.now() : 0 }),
   resetPresenterTimer: () => set({ presenterStartTime: Date.now() }),
+  setSelectedSlides: (ids) => set({ selectedSlideIds: ids }),
+  toggleSlideSelection: (slideId) => set((s) => ({
+    selectedSlideIds: s.selectedSlideIds.includes(slideId)
+      ? s.selectedSlideIds.filter((id) => id !== slideId)
+      : [...s.selectedSlideIds, slideId],
+  })),
 }));
