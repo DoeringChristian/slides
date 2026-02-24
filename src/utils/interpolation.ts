@@ -291,13 +291,15 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
     if (resourceChanges) {
       switch (resourceEasing) {
         case 'dissolve':
-          // True dissolve: render both images with complementary opacities
-          // Target fades in (opacity: 0 -> baseOpacity)
-          // Source fades out (opacity: baseOpacity -> 0) via _dissolveSource
-          result.opacity = baseOpacity * t;
+          // True dissolve: both images blend with curves that minimize lightening
+          // Using sqrt curves: combined alpha stays above 0.9 throughout
+          // sqrt(t) + sqrt(1-t) * (1 - sqrt(t)) ≈ 0.91 at midpoint
+          const sqrtT = Math.sqrt(t);
+          const sqrtOneMinusT = Math.sqrt(1 - t);
+          result.opacity = baseOpacity * sqrtT;
           result._dissolveSource = {
             resourceId: ia.resourceId,
-            opacity: baseOpacity * (1 - t),
+            opacity: baseOpacity * sqrtOneMinusT,
             cropX: ia.cropX,
             cropY: ia.cropY,
             cropWidth: ia.cropWidth,
