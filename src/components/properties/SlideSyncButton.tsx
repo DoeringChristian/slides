@@ -22,7 +22,7 @@ function buildNestedUpdate(element: SlideElement, paths: string[]): Partial<Slid
   for (const path of paths) {
     const parts = path.split('.');
     if (parts.length === 1) {
-      changes[parts[0]] = (element as Record<string, unknown>)[parts[0]];
+      changes[parts[0]] = (element as unknown as Record<string, unknown>)[parts[0]];
     } else if (parts.length === 2 && parts[0] === 'style') {
       // Merge into existing style changes
       const textEl = element as TextElement;
