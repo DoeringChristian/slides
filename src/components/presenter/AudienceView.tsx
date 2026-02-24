@@ -225,11 +225,24 @@ function getSlideBackground(slide: Slide): string {
   return slide.background.type === 'solid' ? slide.background.color : '#ffffff';
 }
 
-function collectElementIds(slideA: Slide | null, slideB: Slide | null): string[] {
-  const ids = new Set<string>();
-  if (slideA) slideA.elementOrder.forEach((id) => ids.add(id));
-  if (slideB) slideB.elementOrder.forEach((id) => ids.add(id));
-  return Array.from(ids);
+// Merge element orders from two slides, preserving the target slide's order
+// Elements only in source slide are placed at the end (they're fading out)
+function mergeElementOrders(sourceSlide: Slide | null, targetSlide: Slide | null): string[] {
+  if (!targetSlide && !sourceSlide) return [];
+  if (!targetSlide) return sourceSlide!.elementOrder;
+  if (!sourceSlide) return targetSlide.elementOrder;
+
+  const targetOrder = [...targetSlide.elementOrder];
+  const targetSet = new Set(targetOrder);
+
+  // Add elements that are only in source (fading out) at the end
+  for (const id of sourceSlide.elementOrder) {
+    if (!targetSet.has(id)) {
+      targetOrder.push(id);
+    }
+  }
+
+  return targetOrder;
 }
 
 export const AudienceView: React.FC = () => {
@@ -290,9 +303,10 @@ export const AudienceView: React.FC = () => {
     const bgB = slideB ? getSlideBackground(slideB) : bgA;
     bgColor = lerpColor(bgA, bgB, animProgress);
 
-    const allIds = collectElementIds(slideA, slideB);
+    // Interpolate each element, preserving target slide's z-order
+    const orderedIds = mergeElementOrders(slideA, slideB);
     renderedElements = [];
-    for (const id of allIds) {
+    for (const id of orderedIds) {
       const elA = slideA.elements[id];
       const elB = slideB?.elements[id];
       const interpolated = interpolateWithVisibility(elA, elB, animProgress);
@@ -307,102 +321,56 @@ export const AudienceView: React.FC = () => {
       .filter(Boolean);
   }
 
-  const textElements = renderedElements.filter(
-    (el): el is TextElement => el.type === 'text' && el.visible
-  );
+  // Render a single element with correct positioning
+  const renderElement = (element: SlideElement, index: number) => {
+    if (!element.visible) return null;
 
-  const videoElements = renderedElements.filter((el): el is ImageElement => {
-    if (el.type !== 'image' || !el.visible) return false;
-    const resource = (el as ImageElement).resourceId ? resources[(el as ImageElement).resourceId!] : undefined;
-    return resource?.type === 'video';
-  });
-
-  return (
-    <div ref={containerRef} className="fixed inset-0 bg-black flex items-center justify-center cursor-none">
-      <div className="relative" style={{ width: stageW, height: stageH }}>
-        <svg
-          width={stageW}
-          height={stageH}
-          viewBox={`0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}`}
-          style={{ display: 'block' }}
+    // Text elements use HTML for markdown support
+    if (element.type === 'text') {
+      const textEl = element as TextElement;
+      return (
+        <div
+          key={element.id}
+          style={{
+            position: 'absolute',
+            left: `${element.x * scale}px`,
+            top: `${element.y * scale}px`,
+            width: `${element.width * scale}px`,
+            height: `${element.height * scale}px`,
+            transform: `rotate(${element.rotation}deg)`,
+            transformOrigin: 'top left',
+            opacity: element.opacity,
+            overflow: 'hidden',
+            display: 'flex',
+            alignItems: textEl.style.verticalAlign === 'middle' ? 'center' :
+                       textEl.style.verticalAlign === 'bottom' ? 'flex-end' : 'flex-start',
+            zIndex: index,
+          }}
         >
-          <rect x={0} y={0} width={SLIDE_WIDTH} height={SLIDE_HEIGHT} fill={bgColor} />
-          {renderedElements.map((el) => (
-            <AudienceSlideElement key={el.id} element={el} resources={resources} />
-          ))}
-        </svg>
-
-        {/* Video overlay */}
-        <div className="absolute inset-0 pointer-events-none overflow-hidden">
-          {videoElements.map((element) => {
-            const resource = element.resourceId ? resources[element.resourceId] : undefined;
-            if (!resource) return null;
-
-            const hasCrop = element.cropWidth > 0 && element.cropHeight > 0;
-
-            if (hasCrop) {
-              const scaleX = resource.originalWidth / element.cropWidth;
-              const scaleY = resource.originalHeight / element.cropHeight;
-
-              return (
-                <div
-                  key={element.id}
-                  style={{
-                    position: 'absolute',
-                    left: `${element.x * scale}px`,
-                    top: `${element.y * scale}px`,
-                    width: `${element.width * scale}px`,
-                    height: `${element.height * scale}px`,
-                    transform: `rotate(${element.rotation}deg)`,
-                    transformOrigin: 'top left',
-                    opacity: element.opacity,
-                    overflow: 'hidden',
-                  }}
-                >
-                  <video
-                    src={resource.src}
-                    autoPlay={element.playing ?? true}
-                    loop={element.loop ?? false}
-                    muted={element.muted ?? false}
-                    playsInline
-                    style={{
-                      width: `${element.width * scale * scaleX}px`,
-                      height: `${element.height * scale * scaleY}px`,
-                      marginLeft: `${-element.cropX * (element.width / element.cropWidth) * scale}px`,
-                      marginTop: `${-element.cropY * (element.height / element.cropHeight) * scale}px`,
-                    }}
-                  />
-                </div>
-              );
-            }
-
-            return (
-              <video
-                key={element.id}
-                src={resource.src}
-                autoPlay={element.playing ?? true}
-                loop={element.loop ?? false}
-                muted={element.muted ?? false}
-                playsInline
-                style={{
-                  position: 'absolute',
-                  left: `${element.x * scale}px`,
-                  top: `${element.y * scale}px`,
-                  width: `${element.width * scale}px`,
-                  height: `${element.height * scale}px`,
-                  transform: `rotate(${element.rotation}deg)`,
-                  transformOrigin: 'top left',
-                  opacity: element.opacity,
-                  objectFit: 'cover',
-                }}
-              />
-            );
-          })}
+          <div style={{ width: '100%', padding: `${TEXT_BOX_PADDING * scale}px` }}>
+            <CustomMarkdownRenderer
+              text={textEl.text}
+              style={textEl.style}
+              zoom={scale}
+            />
+          </div>
         </div>
+      );
+    }
 
-        {/* Markdown text overlay */}
-        <div className="absolute inset-0 pointer-events-none overflow-hidden">
-          {textElements.map((element) => (
+    // Video elements use HTML video
+    if (element.type === 'image') {
+      const imgEl = element as ImageElement;
+      const resource = imgEl.resourceId ? resources[imgEl.resourceId] : undefined;
+
+      if (resource?.type === 'video') {
+        const hasCrop = imgEl.cropWidth > 0 && imgEl.cropHeight > 0;
+
+        if (hasCrop) {
+          const scaleX = resource.originalWidth / imgEl.cropWidth;
+          const scaleY = resource.originalHeight / imgEl.cropHeight;
+
+          return (
             <div
               key={element.id}
               style={{
@@ -415,21 +383,76 @@ export const AudienceView: React.FC = () => {
                 transformOrigin: 'top left',
                 opacity: element.opacity,
                 overflow: 'hidden',
-                display: 'flex',
-                alignItems: element.style.verticalAlign === 'middle' ? 'center' :
-                           element.style.verticalAlign === 'bottom' ? 'flex-end' : 'flex-start',
+                zIndex: index,
               }}
             >
-              <div style={{ width: '100%', padding: `${TEXT_BOX_PADDING * scale}px` }}>
-                <CustomMarkdownRenderer
-                  text={element.text}
-                  style={element.style}
-                  zoom={scale}
-                />
-              </div>
+              <video
+                src={resource.src}
+                autoPlay={imgEl.playing ?? true}
+                loop={imgEl.loop ?? false}
+                muted={imgEl.muted ?? false}
+                playsInline
+                style={{
+                  width: `${element.width * scale * scaleX}px`,
+                  height: `${element.height * scale * scaleY}px`,
+                  marginLeft: `${-imgEl.cropX * (element.width / imgEl.cropWidth) * scale}px`,
+                  marginTop: `${-imgEl.cropY * (element.height / imgEl.cropHeight) * scale}px`,
+                }}
+              />
             </div>
-          ))}
-        </div>
+          );
+        }
+
+        return (
+          <video
+            key={element.id}
+            src={resource.src}
+            autoPlay={imgEl.playing ?? true}
+            loop={imgEl.loop ?? false}
+            muted={imgEl.muted ?? false}
+            playsInline
+            style={{
+              position: 'absolute',
+              left: `${element.x * scale}px`,
+              top: `${element.y * scale}px`,
+              width: `${element.width * scale}px`,
+              height: `${element.height * scale}px`,
+              transform: `rotate(${element.rotation}deg)`,
+              transformOrigin: 'top left',
+              opacity: element.opacity,
+              objectFit: 'cover',
+              zIndex: index,
+            }}
+          />
+        );
+      }
+    }
+
+    // Shapes and images use inline SVG
+    return (
+      <svg
+        key={element.id}
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          width: stageW,
+          height: stageH,
+          pointerEvents: 'none',
+          zIndex: index,
+        }}
+        viewBox={`0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}`}
+      >
+        <AudienceSlideElement element={element} resources={resources} />
+      </svg>
+    );
+  };
+
+  return (
+    <div ref={containerRef} className="fixed inset-0 bg-black flex items-center justify-center cursor-none">
+      <div className="relative" style={{ width: stageW, height: stageH, background: bgColor }}>
+        {/* Render all elements in z-order */}
+        {renderedElements.map((el, index) => renderElement(el, index))}
       </div>
 
       {/* Slide counter */}
