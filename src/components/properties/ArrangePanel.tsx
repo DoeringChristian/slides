@@ -1,7 +1,7 @@
 import React from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
-import { usePrevKeyframeElement, useNextKeyframeElement } from '../../store/selectors';
+import { usePrevKeyframeElement, useNextKeyframeElement, useMultiSlideUpdate } from '../../store/selectors';
 import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, ChevronsUp, ChevronsDown, Lock, Unlock, Eye, EyeOff } from 'lucide-react';
 import { TransitionButton } from './TransitionButton';
 import { SlideSyncButton } from './SlideSyncButton';
@@ -57,17 +57,13 @@ function KeyframeButtons({ element, prev, next, fields, update }: {
 
 export const ArrangePanel: React.FC<Props> = ({ element }) => {
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
-  const updateElement = usePresentationStore((s) => s.updateElement);
   const moveForward = usePresentationStore((s) => s.moveElementForward);
   const moveBackward = usePresentationStore((s) => s.moveElementBackward);
   const moveToFront = usePresentationStore((s) => s.moveElementToFront);
   const moveToBack = usePresentationStore((s) => s.moveElementToBack);
   const prev = usePrevKeyframeElement(element.id);
   const next = useNextKeyframeElement(element.id);
-
-  const update = (changes: Partial<SlideElement>) => {
-    updateElement(activeSlideId, element.id, changes);
-  };
+  const update = useMultiSlideUpdate(element.id);
 
   return (
     <div className="space-y-3 border-t border-gray-200 pt-3">

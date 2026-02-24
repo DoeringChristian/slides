@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useCallback } from 'react';
 import { usePresentationStore } from './presentationStore';
 import { useEditorStore } from './editorStore';
 import type { Slide, SlideElement, ObjectMeta, Resource } from '../types/presentation';
@@ -118,4 +118,21 @@ export function useResource(resourceId: string | null | undefined): Resource | u
 export function useAllResources(): Resource[] {
   const resources = usePresentationStore((s) => s.presentation.resources);
   return useMemo(() => Object.values(resources), [resources]);
+}
+
+// Update an element on the active slide AND all other selected slides that contain it
+export function useMultiSlideUpdate(elementId: string) {
+  const activeSlideId = useEditorStore((s) => s.activeSlideId);
+  const selectedSlideIds = useEditorStore((s) => s.selectedSlideIds);
+  const updateElement = usePresentationStore((s) => s.updateElement);
+  const slides = usePresentationStore((s) => s.presentation.slides);
+
+  return useCallback((changes: Partial<SlideElement>) => {
+    updateElement(activeSlideId, elementId, changes);
+    for (const slideId of selectedSlideIds) {
+      if (slideId === activeSlideId) continue;
+      if (!slides[slideId]?.elements[elementId]) continue;
+      updateElement(slideId, elementId, changes);
+    }
+  }, [activeSlideId, selectedSlideIds, slides, elementId, updateElement]);
 }

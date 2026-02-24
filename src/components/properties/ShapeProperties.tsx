@@ -1,6 +1,5 @@
 import React from 'react';
-import { useEditorStore } from '../../store/editorStore';
-import { usePresentationStore } from '../../store/presentationStore';
+import { useMultiSlideUpdate } from '../../store/selectors';
 import { ColorPicker } from '../toolbar/ColorPicker';
 import { TransitionButton } from './TransitionButton';
 import { SlideSyncButton } from './SlideSyncButton';
@@ -11,12 +10,7 @@ interface Props {
 }
 
 export const ShapeProperties: React.FC<Props> = ({ element }) => {
-  const activeSlideId = useEditorStore((s) => s.activeSlideId);
-  const updateElement = usePresentationStore((s) => s.updateElement);
-
-  const update = (changes: Partial<ShapeElement>) => {
-    updateElement(activeSlideId, element.id, changes);
-  };
+  const update = useMultiSlideUpdate(element.id);
 
   return (
     <div className="space-y-3">

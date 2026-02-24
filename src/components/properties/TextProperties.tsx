@@ -1,6 +1,5 @@
 import React from 'react';
-import { useEditorStore } from '../../store/editorStore';
-import { usePresentationStore } from '../../store/presentationStore';
+import { useMultiSlideUpdate } from '../../store/selectors';
 import { ColorPicker } from '../toolbar/ColorPicker';
 import { TransitionButton } from './TransitionButton';
 import { SlideSyncButton } from './SlideSyncButton';
@@ -12,11 +11,10 @@ interface Props {
 }
 
 export const TextProperties: React.FC<Props> = ({ element }) => {
-  const activeSlideId = useEditorStore((s) => s.activeSlideId);
-  const updateElement = usePresentationStore((s) => s.updateElement);
+  const update = useMultiSlideUpdate(element.id);
 
   const updateStyle = (changes: Partial<TextStyle>) => {
-    updateElement(activeSlideId, element.id, {
+    update({
       style: { ...element.style, ...changes },
     } as Partial<TextElement>);
   };
@@ -97,7 +95,7 @@ export const TextProperties: React.FC<Props> = ({ element }) => {
         <input
           type="range"
           value={element.opacity * 100}
-          onChange={(e) => updateElement(activeSlideId, element.id, { opacity: Number(e.target.value) / 100 })}
+          onChange={(e) => update({ opacity: Number(e.target.value) / 100 })}
           min={0} max={100}
           className="w-full accent-blue-500"
         />

@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Play, Pause, Repeat, VolumeX, Volume2 } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
+import { useMultiSlideUpdate } from '../../store/selectors';
 import { ResourcePicker } from './ResourcePicker';
 import { TransitionButton } from './TransitionButton';
 import { SlideSyncButton } from './SlideSyncButton';
@@ -15,6 +16,7 @@ interface Props {
 export const ImageProperties: React.FC<Props> = ({ element }) => {
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const updateElement = usePresentationStore((s) => s.updateElement);
+  const update = useMultiSlideUpdate(element.id);
   const resources = usePresentationStore((s) => s.presentation.resources);
   const resource = element.resourceId ? resources[element.resourceId] : undefined;
 
@@ -53,7 +55,7 @@ export const ImageProperties: React.FC<Props> = ({ element }) => {
         <input
           type="range"
           value={element.opacity * 100}
-          onChange={(e) => updateElement(activeSlideId, element.id, { opacity: Number(e.target.value) / 100 })}
+          onChange={(e) => update({ opacity: Number(e.target.value) / 100 })}
           min={0} max={100}
           className="w-full accent-blue-500"
         />
@@ -84,7 +86,7 @@ export const ImageProperties: React.FC<Props> = ({ element }) => {
           <label className="text-xs text-gray-500 block">Video Playback</label>
           <div className="flex gap-2">
             <button
-              onClick={() => updateElement(activeSlideId, element.id, { playing: !(element.playing ?? true) })}
+              onClick={() => update({ playing: !(element.playing ?? true) })}
               className={`flex items-center gap-1 px-2 py-1 rounded text-xs border ${
                 (element.playing ?? true)
                   ? 'bg-blue-50 border-blue-300 text-blue-700'
@@ -97,7 +99,7 @@ export const ImageProperties: React.FC<Props> = ({ element }) => {
             </button>
 
             <button
-              onClick={() => updateElement(activeSlideId, element.id, { loop: !element.loop })}
+              onClick={() => update({ loop: !element.loop })}
               className={`flex items-center gap-1 px-2 py-1 rounded text-xs border ${
                 element.loop
                   ? 'bg-blue-50 border-blue-300 text-blue-700'
@@ -110,7 +112,7 @@ export const ImageProperties: React.FC<Props> = ({ element }) => {
             </button>
 
             <button
-              onClick={() => updateElement(activeSlideId, element.id, { muted: !element.muted })}
+              onClick={() => update({ muted: !element.muted })}
               className={`flex items-center gap-1 px-2 py-1 rounded text-xs border ${
                 element.muted
                   ? 'bg-orange-50 border-orange-300 text-orange-700'
