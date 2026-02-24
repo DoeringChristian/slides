@@ -63,7 +63,7 @@ export const SVGSlideCanvas: React.FC = () => {
 
   const [dragGuides, setDragGuides] = useState<Guide[]>([]);
   const [connectorHighlightId, setConnectorHighlightId] = useState<string | null>(null);
-  const [dragPreview, setDragPreview] = useState<DragPreviewState | null>(null);
+  const [dragPreview, setDragPreview] = useState<DragPreviewState[] | null>(null);
   const [transformPreview, setTransformPreview] = useState<DragPreviewState | null>(null);
 
   // Pending scroll adjustment after zoom (applied in useLayoutEffect)
@@ -118,6 +118,8 @@ export const SVGSlideCanvas: React.FC = () => {
   const justFinishedSelectionDrag = useRef(false);
   const draggingElementId = useRef<string | null>(null);
   const pendingTextEdit = useRef<{ id: string; localX: number; localY: number } | null>(null);
+  // Track initial positions of all selected elements for multi-element drag
+  const dragStartPositions = useRef<Map<string, { x: number; y: number }>>(new Map());
 
   // Drawing hook
   const { drawState, guides: drawingGuides, handleMouseDown: handleDrawMouseDown, handleMouseMove: handleDrawMouseMove, handleMouseUp: handleDrawMouseUp, justFinishedDrawing } = useSVGDrawing();
@@ -130,10 +132,23 @@ export const SVGSlideCanvas: React.FC = () => {
     // Don't set isElementDragging here - we only want to set it when actual movement happens
     // This allows single-click on text to enter edit mode
     draggingElementId.current = id;
+
+    // Capture initial positions of all selected elements for multi-element drag
+    dragStartPositions.current.clear();
+    const idsToTrack = selectedElementIds.includes(id) ? selectedElementIds : [id];
+    if (slide) {
+      for (const elementId of idsToTrack) {
+        const el = slide.elements[elementId];
+        if (el && !el.locked) {
+          dragStartPositions.current.set(elementId, { x: el.x, y: el.y });
+        }
+      }
+    }
+
     if (!selectedElementIds.includes(id)) {
       setSelectedElements([id]);
     }
-  }, [selectedElementIds, setSelectedElements]);
+  }, [selectedElementIds, setSelectedElements, slide]);
 
   const handleDragMove = useCallback((id: string, x: number, y: number) => {
     // Mark that an actual drag is happening (mouse moved while button down)
@@ -143,16 +158,24 @@ export const SVGSlideCanvas: React.FC = () => {
     const el = slide.elements[id];
     if (!el) return;
 
+    // Get the original position of the dragged element for delta calculation
+    const originalPos = dragStartPositions.current.get(id);
+    if (!originalPos) return;
+
     const { snapToGrid: snappingEnabled, showGrid: isGridVisible, gridSize: grid, marginLayoutId: currentMarginLayoutId } = useEditorStore.getState();
     // Shift key disables snapping for precise placement
     const effectiveSnapping = snappingEnabled && !isShiftHeld();
     const marginLayout = getMarginLayout(currentMarginLayoutId);
     const marginBounds = marginLayout ? getMarginBounds(marginLayout) : null;
 
-    const dragged = { x, y, width: el.width, height: el.height };
+    // Filter out all elements being dragged for guide computation
+    const draggedIds = new Set(dragStartPositions.current.keys());
     const others = elements
-      .filter((e) => e.id !== id && e.visible)
+      .filter((e) => !draggedIds.has(e.id) && e.visible)
       .map((e) => ({ x: e.x, y: e.y, width: e.width, height: e.height }));
+
+    // Compute guides based on the dragged element
+    const dragged = { x, y, width: el.width, height: el.height };
     const result = computeGuides(dragged, others, 5, marginBounds);
     setDragGuides(effectiveSnapping ? result.guides : []);
 
@@ -168,18 +191,33 @@ export const SVGSlideCanvas: React.FC = () => {
       if (result.snapY !== null) snappedY = result.snapY;
     }
 
-    // Show preview instead of updating element directly (better performance)
-    const isLine = el.type === 'shape' && ((el as ShapeElement).shapeType === 'line' || (el as ShapeElement).shapeType === 'arrow');
-    setDragPreview({
-      isDragging: true,
-      elementType: isLine ? 'line' : 'rect',
-      x: snappedX,
-      y: snappedY,
-      width: el.width,
-      height: el.height,
-      rotation: el.rotation,
-      points: isLine ? (el as ShapeElement).points : undefined,
-    });
+    // Calculate snapped delta
+    const snappedDeltaX = snappedX - originalPos.x;
+    const snappedDeltaY = snappedY - originalPos.y;
+
+    // Create previews for all dragged elements
+    const previews: DragPreviewState[] = [];
+    for (const [elementId, startPos] of dragStartPositions.current) {
+      const element = slide.elements[elementId];
+      if (!element) continue;
+
+      const newX = startPos.x + snappedDeltaX;
+      const newY = startPos.y + snappedDeltaY;
+      const isLine = element.type === 'shape' && ((element as ShapeElement).shapeType === 'line' || (element as ShapeElement).shapeType === 'arrow');
+
+      previews.push({
+        isDragging: true,
+        elementType: isLine ? 'line' : 'rect',
+        x: newX,
+        y: newY,
+        width: element.width,
+        height: element.height,
+        rotation: element.rotation,
+        points: isLine ? (element as ShapeElement).points : undefined,
+      });
+    }
+
+    setDragPreview(previews.length > 0 ? previews : null);
   }, [slide, elements]);
 
   const justFinishedElementDrag = useRef(false);
@@ -197,11 +235,22 @@ export const SVGSlideCanvas: React.FC = () => {
       const { id: textId, localX, localY } = pendingTextEdit.current;
       pendingTextEdit.current = null;
       setEditingTextId(textId, { x: localX, y: localY });
+      dragStartPositions.current.clear();
       return;
     }
     pendingTextEdit.current = null;
 
-    if (!activeSlideId || !slide) return;
+    if (!activeSlideId || !slide) {
+      dragStartPositions.current.clear();
+      return;
+    }
+
+    // Calculate the delta from the dragged element's original position
+    const originalPos = dragStartPositions.current.get(id);
+    if (!originalPos) {
+      dragStartPositions.current.clear();
+      return;
+    }
 
     const { snapToGrid: snappingEnabled, showGrid: isGridVisible, gridSize: grid, marginLayoutId: currentMarginLayoutId } = useEditorStore.getState();
     // Shift key disables snapping for precise placement
@@ -214,9 +263,11 @@ export const SVGSlideCanvas: React.FC = () => {
     let snappedY = y;
 
     if (effectiveSnapping && el) {
+      // Filter out all elements being dragged for guide computation
+      const draggedIds = new Set(dragStartPositions.current.keys());
       const dragged = { x, y, width: el.width, height: el.height };
       const others = elements
-        .filter((e) => e.id !== id && e.visible)
+        .filter((e) => !draggedIds.has(e.id) && e.visible)
         .map((e) => ({ x: e.x, y: e.y, width: e.width, height: e.height }));
       const result = computeGuides(dragged, others, 5, marginBounds);
 
@@ -229,11 +280,26 @@ export const SVGSlideCanvas: React.FC = () => {
       if (result.snapY !== null) snappedY = result.snapY;
     }
 
-    // Only update if position actually changed (avoids re-render that breaks dblclick)
-    if (el && (snappedX !== el.x || snappedY !== el.y)) {
-      updateElement(activeSlideId, id, { x: snappedX, y: snappedY });
+    // Calculate snapped delta
+    const snappedDeltaX = snappedX - originalPos.x;
+    const snappedDeltaY = snappedY - originalPos.y;
+
+    // Update all dragged elements
+    for (const [elementId, startPos] of dragStartPositions.current) {
+      const element = slide.elements[elementId];
+      if (!element) continue;
+
+      const newX = startPos.x + snappedDeltaX;
+      const newY = startPos.y + snappedDeltaY;
+
+      // Only update if position actually changed (avoids re-render that breaks dblclick)
+      if (newX !== element.x || newY !== element.y) {
+        updateElement(activeSlideId, elementId, { x: newX, y: newY });
+      }
     }
-  }, [activeSlideId, updateElement, slide, elements]);
+
+    dragStartPositions.current.clear();
+  }, [activeSlideId, updateElement, slide, elements, setEditingTextId]);
 
   const { handleMouseDown: handleElementMouseDown } = useSVGDrag({
     zoom,
@@ -301,7 +367,12 @@ export const SVGSlideCanvas: React.FC = () => {
         : [...selectedElementIds, id];
       setSelectedElements(ids);
     } else {
-      setSelectedElements([id]);
+      // Only reset selection if clicking on an unselected element
+      // This preserves multi-selection when dragging one of the selected elements
+      const isAlreadySelected = selectedElementIds.includes(id);
+      if (!isAlreadySelected) {
+        setSelectedElements([id]);
+      }
 
       // Store click info for potential edit-mode entry on mouseup (no drag)
       if (isTextElement && clickedElement) {

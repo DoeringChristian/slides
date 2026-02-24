@@ -14,15 +14,13 @@ export interface DragPreviewState {
 }
 
 interface Props {
-  preview: DragPreviewState | null;
+  preview: DragPreviewState | DragPreviewState[] | null;
 }
 
 const STROKE_COLOR = 'rgba(100, 100, 100, 0.8)';
 const FILL_COLOR = 'rgba(128, 128, 128, 0.15)';
 
-export const SVGDragPreview: React.FC<Props> = memo(({ preview }) => {
-  if (!preview || !preview.isDragging) return null;
-
+const SinglePreview: React.FC<{ preview: DragPreviewState }> = memo(({ preview }) => {
   const { elementType, x, y, width, height, rotation, points } = preview;
 
   // Line/arrow preview
@@ -65,4 +63,25 @@ export const SVGDragPreview: React.FC<Props> = memo(({ preview }) => {
       style={{ pointerEvents: 'none' }}
     />
   );
+});
+
+export const SVGDragPreview: React.FC<Props> = memo(({ preview }) => {
+  if (!preview) return null;
+
+  // Handle array of previews
+  if (Array.isArray(preview)) {
+    const activePreviews = preview.filter(p => p.isDragging);
+    if (activePreviews.length === 0) return null;
+    return (
+      <g>
+        {activePreviews.map((p, i) => (
+          <SinglePreview key={i} preview={p} />
+        ))}
+      </g>
+    );
+  }
+
+  // Single preview (backwards compatible)
+  if (!preview.isDragging) return null;
+  return <SinglePreview preview={preview} />;
 });
