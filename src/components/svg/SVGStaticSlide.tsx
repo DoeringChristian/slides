@@ -121,6 +121,10 @@ const StaticShapeElement: React.FC<{ element: ShapeElement }> = ({ element }) =>
       const headLength = 10;
       const headWidth = 10;
       const tip = { x: element.x + pts[2], y: element.y + pts[3] };
+      const lineEnd = {
+        x: tip.x - headLength * Math.cos(angle),
+        y: tip.y - headLength * Math.sin(angle),
+      };
       const left = {
         x: tip.x - headLength * Math.cos(angle) + headWidth / 2 * Math.sin(angle),
         y: tip.y - headLength * Math.sin(angle) - headWidth / 2 * Math.cos(angle),
@@ -134,8 +138,8 @@ const StaticShapeElement: React.FC<{ element: ShapeElement }> = ({ element }) =>
           <line
             x1={element.x + pts[0]}
             y1={element.y + pts[1]}
-            x2={element.x + pts[2]}
-            y2={element.y + pts[3]}
+            x2={lineEnd.x}
+            y2={lineEnd.y}
             stroke={strokeColor}
             strokeWidth={strokeW}
             strokeLinecap="round"

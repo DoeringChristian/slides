@@ -178,75 +178,98 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
     const handleMouseMove = (e: MouseEvent) => {
       e.preventDefault(); // Prevent text selection during transform
       if (resizing && singleElement) {
-        const dx = (e.clientX - resizing.startX) / zoom;
-        const dy = (e.clientY - resizing.startY) / zoom;
+        const screenDx = (e.clientX - resizing.startX) / zoom;
+        const screenDy = (e.clientY - resizing.startY) / zoom;
         const { anchor, startBounds } = resizing;
+        const rot = singleElement.rotation || 0;
+        const isRotated = rot !== 0;
 
-        // Get snapping settings - shift key disables snapping
-        const { snapToGrid: snappingEnabled, marginLayoutId } = useEditorStore.getState();
-        const effectiveSnapping = snappingEnabled && !isShiftHeld();
+        // Project screen delta onto element's local (rotated) axes
+        const rad = rot * Math.PI / 180;
+        const cosR = Math.cos(rad);
+        const sinR = Math.sin(rad);
+        const localDx = isRotated ? screenDx * cosR + screenDy * sinR : screenDx;
+        const localDy = isRotated ? -screenDx * sinR + screenDy * cosR : screenDy;
 
-        let newX = startBounds.x;
-        let newY = startBounds.y;
-        let newWidth = startBounds.width;
-        let newHeight = startBounds.height;
+        // Compute edge deltas in local space
+        let dLeft = 0, dRight = 0, dTop = 0, dBottom = 0;
+        if (anchor.includes('left')) dLeft = localDx;
+        if (anchor.includes('right')) dRight = localDx;
+        if (anchor.includes('top')) dTop = localDy;
+        if (anchor.includes('bottom')) dBottom = localDy;
 
-        if (anchor.includes('left')) {
-          newX = startBounds.x + dx;
-          newWidth = startBounds.width - dx;
-        }
-        if (anchor.includes('right')) {
-          newWidth = startBounds.width + dx;
-        }
-        if (anchor.includes('top')) {
-          newY = startBounds.y + dy;
-          newHeight = startBounds.height - dy;
-        }
-        if (anchor.includes('bottom')) {
-          newHeight = startBounds.height + dy;
-        }
-
-        // Snap to alignment guides if enabled
-        if (effectiveSnapping) {
-          const marginLayout = getMarginLayout(marginLayoutId);
-          const marginBounds = marginLayout ? getMarginBounds(marginLayout) : null;
-          const others = elements
-            .filter((el) => el.id !== singleElement.id && el.visible)
-            .map((el) => ({ x: el.x, y: el.y, width: el.width, height: el.height }));
-
-          const currentBounds = { x: newX, y: newY, width: newWidth, height: newHeight };
-          const snapResult = computeResizeSnap(currentBounds, others, 5, marginBounds);
-
-          onGuidesChange?.(snapResult.guides);
-
-          if (anchor.includes('left') && snapResult.leftSnap !== null) {
-            const snapDelta = snapResult.leftSnap - newX;
-            newX = snapResult.leftSnap;
-            newWidth = newWidth - snapDelta;
-          }
-          if (anchor.includes('right') && snapResult.rightSnap !== null) {
-            newWidth = snapResult.rightSnap - newX;
-          }
-          if (anchor.includes('top') && snapResult.topSnap !== null) {
-            const snapDelta = snapResult.topSnap - newY;
-            newY = snapResult.topSnap;
-            newHeight = newHeight - snapDelta;
-          }
-          if (anchor.includes('bottom') && snapResult.bottomSnap !== null) {
-            newHeight = snapResult.bottomSnap - newY;
-          }
-        } else {
-          onGuidesChange?.([]);
-        }
+        let newWidth = startBounds.width - dLeft + dRight;
+        let newHeight = startBounds.height - dTop + dBottom;
 
         // Minimum size
         if (newWidth < 10) {
-          if (anchor.includes('left')) newX = startBounds.x + startBounds.width - 10;
+          if (anchor.includes('left')) dLeft = startBounds.width - 10;
+          else dRight = 10 - startBounds.width;
           newWidth = 10;
         }
         if (newHeight < 10) {
-          if (anchor.includes('top')) newY = startBounds.y + startBounds.height - 10;
+          if (anchor.includes('top')) dTop = startBounds.height - 10;
+          else dBottom = 10 - startBounds.height;
           newHeight = 10;
+        }
+
+        let newX: number, newY: number;
+
+        if (isRotated) {
+          // For rotated elements: compute new center so the opposite anchor stays fixed
+          const oldCx = startBounds.x + startBounds.width / 2;
+          const oldCy = startBounds.y + startBounds.height / 2;
+
+          // Center shift in local space
+          const dCenterLocalX = (dLeft + dRight) / 2;
+          const dCenterLocalY = (dTop + dBottom) / 2;
+
+          // Transform center shift to world space
+          const dCenterWorldX = dCenterLocalX * cosR - dCenterLocalY * sinR;
+          const dCenterWorldY = dCenterLocalX * sinR + dCenterLocalY * cosR;
+
+          newX = oldCx + dCenterWorldX - newWidth / 2;
+          newY = oldCy + dCenterWorldY - newHeight / 2;
+        } else {
+          // Non-rotated: simple axis-aligned resize
+          newX = startBounds.x + dLeft;
+          newY = startBounds.y + dTop;
+
+          // Snap to alignment guides if enabled (only for non-rotated)
+          const { snapToGrid: snappingEnabled, marginLayoutId } = useEditorStore.getState();
+          const effectiveSnapping = snappingEnabled && !isShiftHeld();
+
+          if (effectiveSnapping) {
+            const marginLayout = getMarginLayout(marginLayoutId);
+            const marginBounds = marginLayout ? getMarginBounds(marginLayout) : null;
+            const others = elements
+              .filter((el) => el.id !== singleElement.id && el.visible)
+              .map((el) => ({ x: el.x, y: el.y, width: el.width, height: el.height }));
+
+            const currentBounds = { x: newX, y: newY, width: newWidth, height: newHeight };
+            const snapResult = computeResizeSnap(currentBounds, others, 5, marginBounds);
+
+            onGuidesChange?.(snapResult.guides);
+
+            if (anchor.includes('left') && snapResult.leftSnap !== null) {
+              const snapDelta = snapResult.leftSnap - newX;
+              newX = snapResult.leftSnap;
+              newWidth = newWidth - snapDelta;
+            }
+            if (anchor.includes('right') && snapResult.rightSnap !== null) {
+              newWidth = snapResult.rightSnap - newX;
+            }
+            if (anchor.includes('top') && snapResult.topSnap !== null) {
+              const snapDelta = snapResult.topSnap - newY;
+              newY = snapResult.topSnap;
+              newHeight = newHeight - snapDelta;
+            }
+            if (anchor.includes('bottom') && snapResult.bottomSnap !== null) {
+              newHeight = snapResult.bottomSnap - newY;
+            }
+          } else {
+            onGuidesChange?.([]);
+          }
         }
 
         const attrs = { x: newX, y: newY, width: newWidth, height: newHeight };

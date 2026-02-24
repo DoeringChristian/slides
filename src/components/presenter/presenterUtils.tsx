@@ -164,6 +164,11 @@ export const PresenterShapeElement: React.FC<{ element: ShapeElement }> = ({ ele
       const headLength = 10;
       const headWidth = 10;
       const tip = { x: x + pts[2], y: y + pts[3] };
+      // Line should stop at the base of the arrowhead (not poke through)
+      const lineEnd = {
+        x: tip.x - headLength * Math.cos(angle),
+        y: tip.y - headLength * Math.sin(angle),
+      };
       const left = {
         x: tip.x - headLength * Math.cos(angle) + headWidth / 2 * Math.sin(angle),
         y: tip.y - headLength * Math.sin(angle) - headWidth / 2 * Math.cos(angle),
@@ -177,8 +182,8 @@ export const PresenterShapeElement: React.FC<{ element: ShapeElement }> = ({ ele
           <line
             x1={x + pts[0]}
             y1={y + pts[1]}
-            x2={x + pts[2]}
-            y2={y + pts[3]}
+            x2={lineEnd.x}
+            y2={lineEnd.y}
             stroke={arrowStroke}
             strokeWidth={arrowWidth}
             strokeLinecap="round"
