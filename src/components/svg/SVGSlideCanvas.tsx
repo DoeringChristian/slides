@@ -10,6 +10,7 @@ import { SVGMarginGuides } from './SVGMarginGuides';
 import { SVGHoverOverlay } from './SVGHoverOverlay';
 import { SVGConnectorHighlight } from './SVGConnectorHighlight';
 import { SVGDrawingPreview } from './SVGDrawingPreview';
+import { SVGDragPreview, type DragPreviewState } from './SVGDragPreview';
 import { SVGSelectionDrag } from './SVGSelectionDrag';
 import { SVGSelectionTransformer } from './SVGSelectionTransformer';
 import { SVGLineEndpointHandles } from './SVGLineEndpointHandles';
@@ -61,6 +62,8 @@ export const SVGSlideCanvas: React.FC = () => {
 
   const [dragGuides, setDragGuides] = useState<Guide[]>([]);
   const [connectorHighlightId, setConnectorHighlightId] = useState<string | null>(null);
+  const [dragPreview, setDragPreview] = useState<DragPreviewState | null>(null);
+  const [transformPreview, setTransformPreview] = useState<DragPreviewState | null>(null);
 
   // Selection drag state
   const [selectionDrag, setSelectionDrag] = useState<{
@@ -90,6 +93,7 @@ export const SVGSlideCanvas: React.FC = () => {
   // Track element dragging to prevent entering edit mode after drag
   const isElementDragging = useRef(false);
   const justFinishedSelectionDrag = useRef(false);
+  const draggingElementId = useRef<string | null>(null);
 
   // Drawing hook
   const { drawState, guides: drawingGuides, handleMouseDown: handleDrawMouseDown, handleMouseMove: handleDrawMouseMove, handleMouseUp: handleDrawMouseUp, justFinishedDrawing } = useSVGDrawing();
@@ -101,6 +105,7 @@ export const SVGSlideCanvas: React.FC = () => {
   const handleDragStart = useCallback((id: string) => {
     // Don't set isElementDragging here - we only want to set it when actual movement happens
     // This allows single-click on text to enter edit mode
+    draggingElementId.current = id;
     if (!selectedElementIds.includes(id)) {
       setSelectedElements([id]);
     }
@@ -139,14 +144,25 @@ export const SVGSlideCanvas: React.FC = () => {
       if (result.snapY !== null) snappedY = result.snapY;
     }
 
-    if (activeSlideId) {
-      updateElement(activeSlideId, id, { x: snappedX, y: snappedY });
-    }
-  }, [slide, elements, activeSlideId, updateElement]);
+    // Show preview instead of updating element directly (better performance)
+    const isLine = el.type === 'shape' && ((el as ShapeElement).shapeType === 'line' || (el as ShapeElement).shapeType === 'arrow');
+    setDragPreview({
+      isDragging: true,
+      elementType: isLine ? 'line' : 'rect',
+      x: snappedX,
+      y: snappedY,
+      width: el.width,
+      height: el.height,
+      rotation: el.rotation,
+      points: isLine ? (el as ShapeElement).points : undefined,
+    });
+  }, [slide, elements]);
 
   const handleDragEnd = useCallback((id: string, x: number, y: number) => {
     setDragGuides([]);
+    setDragPreview(null);
     isElementDragging.current = false;
+    draggingElementId.current = null;
     if (!activeSlideId || !slide) return;
 
     const { snapToGrid: snappingEnabled, showGrid: isGridVisible, gridSize: grid, marginLayoutId: currentMarginLayoutId } = useEditorStore.getState();
@@ -388,12 +404,25 @@ export const SVGSlideCanvas: React.FC = () => {
   }, [editingTextId, setEditingTextId]);
 
   const handleTransform = useCallback((id: string, attrs: Record<string, number>) => {
-    if (activeSlideId) {
-      updateElement(activeSlideId, id, attrs);
-    }
-  }, [activeSlideId, updateElement]);
+    // Show preview instead of updating element directly (better performance)
+    const el = slide?.elements[id];
+    if (!el) return;
+
+    const isLine = el.type === 'shape' && ((el as ShapeElement).shapeType === 'line' || (el as ShapeElement).shapeType === 'arrow');
+    setTransformPreview({
+      isDragging: true,
+      elementType: isLine ? 'line' : 'rect',
+      x: attrs.x ?? el.x,
+      y: attrs.y ?? el.y,
+      width: attrs.width ?? el.width,
+      height: attrs.height ?? el.height,
+      rotation: attrs.rotation ?? el.rotation,
+      points: isLine ? (el as ShapeElement).points : undefined,
+    });
+  }, [slide]);
 
   const handleTransformEnd = useCallback((id: string, attrs: Record<string, number>) => {
+    setTransformPreview(null);
     if (activeSlideId) {
       updateElement(activeSlideId, id, attrs);
     }
@@ -608,6 +637,8 @@ export const SVGSlideCanvas: React.FC = () => {
           <SVGAlignmentGuides guides={guides} />
           <SVGSelectionDrag selectionDrag={selectionDrag} />
           <SVGDrawingPreview drawState={drawState} tool={tool} />
+          <SVGDragPreview preview={dragPreview} />
+          <SVGDragPreview preview={transformPreview} />
 
           {/* Selection transformer */}
           {unlockedSelectedIds.length > 0 && !soleSelectedLineElement && (

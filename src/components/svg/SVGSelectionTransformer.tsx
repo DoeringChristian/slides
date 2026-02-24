@@ -109,6 +109,9 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
     centerY: number;
   } | null>(null);
 
+  // Track last transform values for onTransformEnd (since we use preview, element isn't updated during drag)
+  const lastTransformAttrs = useRef<{ x?: number; y?: number; width?: number; height?: number; rotation?: number }>({});
+
   const ctrlHeld = useRef(false);
 
   useEffect(() => {
@@ -246,7 +249,9 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
           newHeight = 10;
         }
 
-        onTransform?.(singleElement.id, { x: newX, y: newY, width: newWidth, height: newHeight });
+        const attrs = { x: newX, y: newY, width: newWidth, height: newHeight };
+        lastTransformAttrs.current = attrs;
+        onTransform?.(singleElement.id, attrs);
       }
 
       if (rotating && singleElement) {
@@ -267,18 +272,22 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
         while (finalRotation < 0) finalRotation += 360;
         while (finalRotation >= 360) finalRotation -= 360;
 
-        onTransform?.(singleElement.id, { rotation: finalRotation });
+        const attrs = { rotation: finalRotation };
+        lastTransformAttrs.current = attrs;
+        onTransform?.(singleElement.id, attrs);
       }
     };
 
     const handleMouseUp = () => {
       if (resizing && singleElement) {
-        // Final values already applied via onTransform during drag
-        onTransformEnd?.(singleElement.id, {});
+        // Pass the final transform values that were stored during drag
+        onTransformEnd?.(singleElement.id, lastTransformAttrs.current);
         onGuidesChange?.([]);
+        lastTransformAttrs.current = {};
       }
       if (rotating && singleElement) {
-        onTransformEnd?.(singleElement.id, {});
+        onTransformEnd?.(singleElement.id, lastTransformAttrs.current);
+        lastTransformAttrs.current = {};
       }
       setResizing(null);
       setRotating(null);
