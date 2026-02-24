@@ -71,7 +71,7 @@ export const AudienceView: React.FC = () => {
     for (const id of orderedIds) {
       const elA = slideA.elements[id];
       const elB = slideB?.elements[id];
-      const interpolated = interpolateWithVisibility(elA, elB, animProgress);
+      const interpolated = interpolateWithVisibility(elA, elB, animProgress, isForward);
       if (interpolated) {
         renderedElements.push(interpolated);
       }

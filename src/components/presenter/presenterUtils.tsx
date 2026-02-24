@@ -3,6 +3,10 @@ import { CustomMarkdownRenderer } from '../canvas/CustomMarkdownRenderer';
 import { RenderShape, RenderImage } from '../svg/ElementRenderer';
 import { SLIDE_WIDTH, SLIDE_HEIGHT, TEXT_BOX_PADDING } from '../../utils/constants';
 import type { SlideElement, TextElement, ShapeElement, ImageElement, Slide, Resource } from '../../types/presentation';
+import type { CrossfadeSource } from '../../utils/interpolation';
+
+// Extended ImageElement type that may include dissolve source during transitions
+type ImageElementWithDissolve = ImageElement & { _dissolveSource?: CrossfadeSource };
 
 // Get slide background color
 export function getSlideBackground(slide: Slide): string {
@@ -183,6 +187,63 @@ export function renderPresenterElement(
             zIndex: index,
           }}
         />
+      );
+    }
+  }
+
+  // Check for dissolve source on image elements (for blending two images)
+  if (element.type === 'image') {
+    const imgEl = element as ImageElementWithDissolve;
+    const dissolveSource = imgEl._dissolveSource;
+
+    if (dissolveSource && dissolveSource.resourceId) {
+      // Create a temporary element for the dissolve source
+      const sourceElement: ImageElement = {
+        ...imgEl,
+        id: `${imgEl.id}-dissolve-source`,
+        resourceId: dissolveSource.resourceId,
+        opacity: dissolveSource.opacity,
+        cropX: dissolveSource.cropX,
+        cropY: dissolveSource.cropY,
+        cropWidth: dissolveSource.cropWidth,
+        cropHeight: dissolveSource.cropHeight,
+      };
+
+      const sourceResource = dissolveSource.resourceId ? resources[dissolveSource.resourceId] : undefined;
+      const targetResource = imgEl.resourceId ? resources[imgEl.resourceId] : undefined;
+
+      // Render both source (underneath) and target (on top)
+      return (
+        <React.Fragment key={element.id}>
+          <svg
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              width: stageW,
+              height: stageH,
+              pointerEvents: 'none',
+              zIndex: index,
+            }}
+            viewBox={`0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}`}
+          >
+            <RenderImage element={sourceElement} resource={sourceResource} clipIdPrefix={`presenter-${element.id}-src`} />
+          </svg>
+          <svg
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              width: stageW,
+              height: stageH,
+              pointerEvents: 'none',
+              zIndex: index + 0.5,
+            }}
+            viewBox={`0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}`}
+          >
+            <RenderImage element={imgEl} resource={targetResource} clipIdPrefix={`presenter-${element.id}-tgt`} />
+          </svg>
+        </React.Fragment>
       );
     }
   }

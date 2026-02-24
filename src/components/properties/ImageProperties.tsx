@@ -66,8 +66,8 @@ export const ImageProperties: React.FC<Props> = ({ element }) => {
           <label className="text-xs text-gray-500">Resource</label>
           <div className="flex items-center gap-0.5 ml-auto">
             <SlideSyncButton elementId={element.id} fields={['resourceId']} />
-            <TransitionButton elementId={element.id} group="resource" direction="in" availableTypes={['const', 'crossfade']} />
-            <TransitionButton elementId={element.id} group="resource" direction="out" availableTypes={['const', 'crossfade']} />
+            <TransitionButton elementId={element.id} group="resource" direction="in" />
+            <TransitionButton elementId={element.id} group="resource" direction="out" />
           </div>
         </div>
         {resource && (

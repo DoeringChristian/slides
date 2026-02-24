@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Minus, TrendingUp, Spline, Layers } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Minus, TrendingUp, Spline, Layers, Type, ArrowRightLeft } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import type { EasingType, PropertyTransitions, SlideElement, TextElement, ShapeElement, ImageElement } from '../../types/presentation';
@@ -17,15 +17,24 @@ const EASING_ICONS: Record<EasingType, React.ReactNode> = {
   const: <Minus size={ICON_SIZE} />,
   linear: <TrendingUp size={ICON_SIZE} />,
   ease: <Spline size={ICON_SIZE} />,
-  crossfade: <Layers size={ICON_SIZE} />,
+  dissolve: <Layers size={ICON_SIZE} />,
+  fadeinout: <ArrowRightLeft size={ICON_SIZE} />,
+  typewriter: <Type size={ICON_SIZE} />,
 };
 
 const EASING_LABELS: Record<EasingType, string> = {
   const: 'Constant (snap)',
   linear: 'Linear',
   ease: 'Ease (smooth)',
-  crossfade: 'Crossfade',
+  dissolve: 'Dissolve (blend)',
+  fadeinout: 'Fade In/Out',
+  typewriter: 'Typewriter',
 };
+
+// Default available types per property group
+const DEFAULT_TYPES: EasingType[] = ['const', 'linear', 'ease'];
+const CONTENT_TYPES: EasingType[] = ['const', 'dissolve', 'typewriter'];
+const RESOURCE_TYPES: EasingType[] = ['const', 'dissolve', 'fadeinout'];
 
 // Map property groups to the actual element fields to compare
 function getPropertyValues(element: SlideElement, group: keyof PropertyTransitions): (number | string | boolean | null | undefined)[] {
@@ -86,8 +95,14 @@ export const TransitionButton: React.FC<Props> = ({
   elementId,
   group,
   direction,
-  availableTypes = ['const', 'linear', 'ease'],
+  availableTypes,
 }) => {
+  // Determine available types based on property group
+  const types = availableTypes ?? (
+    group === 'content' ? CONTENT_TYPES :
+    group === 'resource' ? RESOURCE_TYPES :
+    DEFAULT_TYPES
+  );
   const [isOpen, setIsOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -176,7 +191,7 @@ export const TransitionButton: React.FC<Props> = ({
           ref={menuRef}
           className="absolute z-[9999] top-full mt-1 right-0 bg-white border border-gray-200 rounded shadow-lg py-1 min-w-[140px]"
         >
-          {availableTypes.map((type) => (
+          {types.map((type) => (
             <button
               key={type}
               onClick={() => handleSelect(type)}

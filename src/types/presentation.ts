@@ -68,7 +68,7 @@ export interface SlideTransition {
 }
 
 // Animation easing types for property transitions
-export type EasingType = 'const' | 'linear' | 'ease' | 'crossfade';
+export type EasingType = 'const' | 'linear' | 'ease' | 'dissolve' | 'fadeinout' | 'typewriter';
 
 // Per-property-group transition settings
 export interface PropertyTransitions {
@@ -84,7 +84,7 @@ export interface PropertyTransitions {
   color?: EasingType;         // text color
   lineHeight?: EasingType;
   crop?: EasingType;          // cropX, cropY, cropWidth, cropHeight
-  resource?: EasingType;      // resourceId (supports crossfade)
+  resource?: EasingType;      // resourceId (supports dissolve)
   visibility?: EasingType;    // fade-in/fade-out animation
   content?: EasingType;       // text content (typewriter effect)
 }
