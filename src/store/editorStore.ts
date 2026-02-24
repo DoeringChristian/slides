@@ -85,14 +85,27 @@ export const useEditorStore = create<EditorStore>()((set) => ({
       editingTextId: null,
     };
   }),
-  setSelectedElements: (ids) => set({ selectedElementIds: ids }),
+  setSelectedElements: (ids) => set((s) => {
+    // Reset slide selection when switching objects or deselecting all
+    const hadSelection = s.selectedElementIds.length > 0;
+    const changed = hadSelection &&
+      (ids.length !== s.selectedElementIds.length || ids.some((id, i) => id !== s.selectedElementIds[i]));
+    return {
+      selectedElementIds: ids,
+      ...(changed && s.selectedSlideIds.length > 1 ? { selectedSlideIds: [s.activeSlideId] } : {}),
+    };
+  }),
   addToSelection: (id) => set((s) => ({
     selectedElementIds: s.selectedElementIds.includes(id) ? s.selectedElementIds : [...s.selectedElementIds, id]
   })),
   removeFromSelection: (id) => set((s) => ({
     selectedElementIds: s.selectedElementIds.filter((eid) => eid !== id)
   })),
-  clearSelection: () => set({ selectedElementIds: [], editingTextId: null }),
+  clearSelection: () => set((s) => ({
+    selectedElementIds: [],
+    editingTextId: null,
+    ...(s.selectedSlideIds.length > 1 ? { selectedSlideIds: [s.activeSlideId] } : {}),
+  })),
   setZoom: (zoom) => set({ zoom: Math.max(0.25, Math.min(3, zoom)) }),
   setTool: (tool) => set((s) => ({
     tool,

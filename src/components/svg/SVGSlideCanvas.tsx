@@ -42,6 +42,7 @@ export const SVGSlideCanvas: React.FC = () => {
   const tool = useEditorStore((s) => s.tool);
   const selectedElementIds = useEditorStore((s) => s.selectedElementIds);
   const setSelectedElements = useEditorStore((s) => s.setSelectedElements);
+  const clearSelection = useEditorStore((s) => s.clearSelection);
   const setEditingTextId = useEditorStore((s) => s.setEditingTextId);
   const editingTextId = useEditorStore((s) => s.editingTextId);
     const activeSlideId = useEditorStore((s) => s.activeSlideId);
@@ -351,10 +352,9 @@ export const SVGSlideCanvas: React.FC = () => {
       return;
     }
     if (e.target === e.currentTarget || (e.target as Element).classList.contains('svg-background')) {
-      setSelectedElements([]);
-      setEditingTextId(null);
+      clearSelection();
     }
-  }, [setSelectedElements, setEditingTextId, justFinishedDrawing]);
+  }, [clearSelection, justFinishedDrawing]);
 
   // Selection drag handlers
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
