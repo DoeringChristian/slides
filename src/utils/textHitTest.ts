@@ -93,48 +93,36 @@ export function isPointOnTextContent(element: TextElement, point: Point): boolea
 }
 
 /**
- * Word-wrap text and return an array of lines with their character ranges.
+ * Measure the actual rendered height of a block using DOM measurement.
+ * This matches the browser's word-wrapping exactly.
  */
-function wrapText(
-  ctx: CanvasRenderingContext2D,
+function measureBlockHeight(
   text: string,
+  fontSize: number,
+  fontFamily: string,
+  fontWeight: string,
+  lineHeight: number,
   maxWidth: number
-): { text: string; startIndex: number; endIndex: number }[] {
-  const lines: { text: string; startIndex: number; endIndex: number }[] = [];
-  const words = text.split(/(\s+)/); // Split but keep whitespace
-  let currentLine = '';
-  let currentStartIndex = 0;
-  let currentIndex = 0;
-
-  for (const word of words) {
-    const testLine = currentLine + word;
-    const testWidth = ctx.measureText(testLine).width;
-
-    if (testWidth > maxWidth && currentLine !== '') {
-      // Push current line and start a new one
-      lines.push({
-        text: currentLine,
-        startIndex: currentStartIndex,
-        endIndex: currentIndex,
-      });
-      currentLine = word;
-      currentStartIndex = currentIndex;
-    } else {
-      currentLine = testLine;
-    }
-    currentIndex += word.length;
-  }
-
-  // Push the last line
-  if (currentLine !== '' || lines.length === 0) {
-    lines.push({
-      text: currentLine,
-      startIndex: currentStartIndex,
-      endIndex: currentIndex,
-    });
-  }
-
-  return lines;
+): number {
+  const container = document.createElement('div');
+  container.style.cssText = `
+    position: absolute;
+    visibility: hidden;
+    width: ${maxWidth}px;
+    font-size: ${fontSize}px;
+    font-family: ${fontFamily};
+    font-weight: ${fontWeight};
+    line-height: ${lineHeight};
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 0;
+    padding: 0;
+  `;
+  container.textContent = text || '\u00A0'; // Use non-breaking space for empty lines
+  document.body.appendChild(container);
+  const height = container.getBoundingClientRect().height;
+  document.body.removeChild(container);
+  return Math.max(height, fontSize * lineHeight); // Ensure minimum height
 }
 
 /**
@@ -152,10 +140,6 @@ export function calculateCursorFromClick(
   const lineHeightMultiplier = lineHeight || 1.2;
 
   if (!text) return 0;
-
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return 0;
 
   const blocks = parseBlocks(text);
   const contentWidth = width - padding * 2;
@@ -178,7 +162,7 @@ export function calculateCursorFromClick(
     totalHeight: number;
   }
 
-  // Calculate wrapped lines for each block
+  // Calculate block heights using actual DOM measurement
   const blockInfos: BlockInfo[] = [];
   let totalHeight = 0;
 
@@ -187,19 +171,26 @@ export function calculateCursorFromClick(
     const blockFontSize = fontSize * multiplier;
     const isHeader = block.type === 'h1' || block.type === 'h2' || block.type === 'h3';
     const isBold = isHeader || fontWeight === 'bold';
-    const lineHeight = blockFontSize * lineHeightMultiplier;
 
-    ctx.font = `${isBold ? 'bold ' : ''}${blockFontSize}px ${fontFamily}`;
+    // Measure actual rendered height (accounts for word wrapping)
+    const blockTotalHeight = measureBlockHeight(
+      block.displayContent,
+      blockFontSize,
+      fontFamily,
+      isBold ? 'bold' : (fontWeight || 'normal'),
+      lineHeightMultiplier,
+      contentWidth
+    );
 
-    // Wrap the text
-    const wrappedLines = wrapText(ctx, block.displayContent, contentWidth);
-    const wrappedLinesWithHeight: WrappedLine[] = wrappedLines.map((line) => ({
-      ...line,
-      height: lineHeight,
-      y: 0, // Will be set later
-    }));
-
-    const blockTotalHeight = wrappedLinesWithHeight.length * lineHeight;
+    // For click detection, we treat the whole block as one area
+    // (we'll refine X position within the block later)
+    const wrappedLinesWithHeight: WrappedLine[] = [{
+      text: block.displayContent,
+      startIndex: 0,
+      endIndex: block.displayContent.length,
+      height: blockTotalHeight,
+      y: 0,
+    }];
 
     blockInfos.push({
       block,
@@ -253,44 +244,68 @@ export function calculateCursorFromClick(
 
   const block = clickedBlockInfo.block;
 
-  // Set font for measuring
-  ctx.font = `${clickedBlockInfo.isBold ? 'bold ' : ''}${clickedBlockInfo.fontSize}px ${fontFamily}`;
+  // For wrapped text blocks, we need to find which character was clicked
+  // Use DOM-based measurement for accurate character positioning
+  const clickX = clickPos.x - padding;
+  const clickYInBlock = clickPos.y - clickedLine.y;
 
-  // Calculate line X position based on alignment
-  const lineWidth = ctx.measureText(clickedLine.text).width;
-  let lineX = padding;
-  if (align === 'center') {
-    lineX = padding + (contentWidth - lineWidth) / 2;
-  } else if (align === 'right') {
-    lineX = padding + contentWidth - lineWidth;
-  }
+  // Create a temporary element to measure character positions
+  const measureContainer = document.createElement('div');
+  measureContainer.style.cssText = `
+    position: absolute;
+    visibility: hidden;
+    width: ${contentWidth}px;
+    font-size: ${clickedBlockInfo.fontSize}px;
+    font-family: ${fontFamily};
+    font-weight: ${clickedBlockInfo.isBold ? 'bold' : (fontWeight || 'normal')};
+    line-height: ${lineHeightMultiplier};
+    white-space: pre-wrap;
+    word-break: break-word;
+    text-align: ${align};
+    margin: 0;
+    padding: 0;
+  `;
+  document.body.appendChild(measureContainer);
 
-  // Find character position within the wrapped line
-  const clickX = clickPos.x - lineX;
+  // Find character index by binary search using Range API
+  const textNode = document.createTextNode(block.displayContent || ' ');
+  measureContainer.appendChild(textNode);
 
-  // If click is before the line, return start of line
-  if (clickX < 0) {
-    return block.sourceStart + clickedLine.startIndex;
-  }
-
-  // Find exact character position within the line
   let charIndex = 0;
-  for (let i = 0; i < clickedLine.text.length; i++) {
-    const widthUpToChar = ctx.measureText(clickedLine.text.slice(0, i)).width;
-    const widthUpToNextChar = ctx.measureText(clickedLine.text.slice(0, i + 1)).width;
-    const charMidpoint = (widthUpToChar + widthUpToNextChar) / 2;
+  const textLength = block.displayContent.length;
 
-    if (clickX < charMidpoint) {
-      charIndex = i;
-      break;
+  if (textLength > 0) {
+    const range = document.createRange();
+
+    // Binary search for the closest character
+    let low = 0;
+    let high = textLength;
+
+    while (low < high) {
+      const mid = Math.floor((low + high) / 2);
+      range.setStart(textNode, mid);
+      range.setEnd(textNode, mid + 1);
+      const rect = range.getBoundingClientRect();
+      const containerRect = measureContainer.getBoundingClientRect();
+
+      const charX = rect.left - containerRect.left;
+      const charY = rect.top - containerRect.top;
+
+      // Check if click is before this character (in reading order)
+      if (clickYInBlock < charY || (Math.abs(clickYInBlock - charY) < rect.height && clickX < charX + rect.width / 2)) {
+        high = mid;
+      } else {
+        low = mid + 1;
+      }
     }
-    charIndex = i + 1;
+
+    charIndex = low;
   }
+
+  document.body.removeChild(measureContainer);
 
   // Map back to source position
-  // The wrapped line's startIndex is relative to displayContent
-  // We need to map displayContent index to source position
-  const displayIndex = clickedLine.startIndex + charIndex;
+  const displayIndex = charIndex;
 
   // For simple text without markdown, displayContent == source content within the block
   // For blocks with prefixes (headers, bullets), we need to account for that

@@ -49,6 +49,7 @@ function getPropertyValues(element: SlideElement, group: keyof PropertyTransitio
     ] : [];
     case 'resource': return element.type === 'image' ? [(element as ImageElement).resourceId] : [];
     case 'visibility': return [element.visible];
+    case 'content': return element.type === 'text' ? [(element as TextElement).text] : [];
     default: return [];
   }
 }

@@ -86,6 +86,7 @@ export interface PropertyTransitions {
   crop?: EasingType;          // cropX, cropY, cropWidth, cropHeight
   resource?: EasingType;      // resourceId (supports crossfade)
   visibility?: EasingType;    // fade-in/fade-out animation
+  content?: EasingType;       // text content (typewriter effect)
 }
 
 export type SlideElement = TextElement | ShapeElement | ImageElement | GroupElement;
