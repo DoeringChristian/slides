@@ -121,21 +121,75 @@ export function renderPresenterElement(
     );
   }
 
-  // Video elements use HTML video
+  // Check for dissolve source on image elements (for blending two images/videos)
   if (element.type === 'image') {
-    const imgEl = element as ImageElement;
-    const resource = imgEl.resourceId ? resources[imgEl.resourceId] : undefined;
+    const imgEl = element as ImageElementWithDissolve;
+    const dissolveSource = imgEl._dissolveSource;
+    const targetResource = imgEl.resourceId ? resources[imgEl.resourceId] : undefined;
+    const sourceResource = dissolveSource?.resourceId ? resources[dissolveSource.resourceId] : undefined;
 
-    if (resource?.type === 'video') {
-      const hasCrop = imgEl.cropWidth > 0 && imgEl.cropHeight > 0;
+    // Helper to render an image/video element
+    const renderMedia = (
+      resourceToRender: typeof targetResource,
+      opacity: number,
+      cropX: number,
+      cropY: number,
+      cropWidth: number,
+      cropHeight: number,
+      zIdx: number,
+      keySuffix: string,
+      autoPlay: boolean = true
+    ) => {
+      if (!resourceToRender) return null;
 
-      if (hasCrop) {
-        const scaleX = resource.originalWidth / imgEl.cropWidth;
-        const scaleY = resource.originalHeight / imgEl.cropHeight;
+      const hasCrop = cropWidth > 0 && cropHeight > 0;
 
+      if (resourceToRender.type === 'video') {
+        if (hasCrop) {
+          const scaleX = resourceToRender.originalWidth / cropWidth;
+          const scaleY = resourceToRender.originalHeight / cropHeight;
+          return (
+            <div
+              key={`${element.id}${keySuffix}`}
+              style={{
+                position: 'absolute',
+                left: `${element.x * scale}px`,
+                top: `${element.y * scale}px`,
+                width: `${element.width * scale}px`,
+                height: `${element.height * scale}px`,
+                transform: `rotate(${element.rotation}deg)`,
+                transformOrigin: 'center center',
+                opacity,
+                overflow: 'hidden',
+                zIndex: zIdx,
+              }}
+            >
+              <video
+                src={resourceToRender.src}
+                autoPlay={autoPlay && (imgEl.playing ?? true)}
+                loop={imgEl.loop ?? false}
+                muted={imgEl.muted ?? false}
+                playsInline
+                preload="metadata"
+                style={{
+                  width: `${element.width * scale * scaleX}px`,
+                  height: `${element.height * scale * scaleY}px`,
+                  marginLeft: `${-cropX * (element.width / cropWidth) * scale}px`,
+                  marginTop: `${-cropY * (element.height / cropHeight) * scale}px`,
+                }}
+              />
+            </div>
+          );
+        }
         return (
-          <div
-            key={element.id}
+          <video
+            key={`${element.id}${keySuffix}`}
+            src={resourceToRender.src}
+            autoPlay={autoPlay && (imgEl.playing ?? true)}
+            loop={imgEl.loop ?? false}
+            muted={imgEl.muted ?? false}
+            playsInline
+            preload="metadata"
             style={{
               position: 'absolute',
               left: `${element.x * scale}px`,
@@ -144,107 +198,56 @@ export function renderPresenterElement(
               height: `${element.height * scale}px`,
               transform: `rotate(${element.rotation}deg)`,
               transformOrigin: 'center center',
-              opacity: element.opacity,
-              overflow: 'hidden',
-              zIndex: index,
+              opacity,
+              objectFit: 'cover',
+              zIndex: zIdx,
             }}
-          >
-            <video
-              src={resource.src}
-              autoPlay={imgEl.playing ?? true}
-              loop={imgEl.loop ?? false}
-              muted={imgEl.muted ?? false}
-              playsInline
-              style={{
-                width: `${element.width * scale * scaleX}px`,
-                height: `${element.height * scale * scaleY}px`,
-                marginLeft: `${-imgEl.cropX * (element.width / imgEl.cropWidth) * scale}px`,
-                marginTop: `${-imgEl.cropY * (element.height / imgEl.cropHeight) * scale}px`,
-              }}
-            />
-          </div>
+          />
         );
       }
 
+      // Image
+      const imgElement: ImageElement = {
+        ...imgEl,
+        resourceId: resourceToRender.id,
+        opacity,
+        cropX,
+        cropY,
+        cropWidth,
+        cropHeight,
+      };
       return (
-        <video
-          key={element.id}
-          src={resource.src}
-          autoPlay={imgEl.playing ?? true}
-          loop={imgEl.loop ?? false}
-          muted={imgEl.muted ?? false}
-          playsInline
+        <svg
+          key={`${element.id}${keySuffix}`}
           style={{
             position: 'absolute',
-            left: `${element.x * scale}px`,
-            top: `${element.y * scale}px`,
-            width: `${element.width * scale}px`,
-            height: `${element.height * scale}px`,
-            transform: `rotate(${element.rotation}deg)`,
-            transformOrigin: 'center center',
-            opacity: element.opacity,
-            objectFit: 'cover',
-            zIndex: index,
+            left: 0,
+            top: 0,
+            width: stageW,
+            height: stageH,
+            pointerEvents: 'none',
+            zIndex: zIdx,
           }}
-        />
+          viewBox={`0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}`}
+        >
+          <RenderImage element={imgElement} resource={resourceToRender} clipIdPrefix={`presenter-${element.id}${keySuffix}`} />
+        </svg>
       );
-    }
-  }
+    };
 
-  // Check for dissolve source on image elements (for blending two images)
-  if (element.type === 'image') {
-    const imgEl = element as ImageElementWithDissolve;
-    const dissolveSource = imgEl._dissolveSource;
-
-    if (dissolveSource && dissolveSource.resourceId) {
-      // Create a temporary element for the dissolve source
-      const sourceElement: ImageElement = {
-        ...imgEl,
-        id: `${imgEl.id}-dissolve-source`,
-        resourceId: dissolveSource.resourceId,
-        opacity: dissolveSource.opacity,
-        cropX: dissolveSource.cropX,
-        cropY: dissolveSource.cropY,
-        cropWidth: dissolveSource.cropWidth,
-        cropHeight: dissolveSource.cropHeight,
-      };
-
-      const sourceResource = dissolveSource.resourceId ? resources[dissolveSource.resourceId] : undefined;
-      const targetResource = imgEl.resourceId ? resources[imgEl.resourceId] : undefined;
-
-      // Render both source (underneath) and target (on top)
+    // If we have a dissolve source, render both (videos paused during transition)
+    if (dissolveSource && sourceResource) {
       return (
         <React.Fragment key={element.id}>
-          <svg
-            style={{
-              position: 'absolute',
-              left: 0,
-              top: 0,
-              width: stageW,
-              height: stageH,
-              pointerEvents: 'none',
-              zIndex: index,
-            }}
-            viewBox={`0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}`}
-          >
-            <RenderImage element={sourceElement} resource={sourceResource} clipIdPrefix={`presenter-${element.id}-src`} />
-          </svg>
-          <svg
-            style={{
-              position: 'absolute',
-              left: 0,
-              top: 0,
-              width: stageW,
-              height: stageH,
-              pointerEvents: 'none',
-              zIndex: index + 0.5,
-            }}
-            viewBox={`0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}`}
-          >
-            <RenderImage element={imgEl} resource={targetResource} clipIdPrefix={`presenter-${element.id}-tgt`} />
-          </svg>
+          {renderMedia(sourceResource, dissolveSource.opacity, dissolveSource.cropX, dissolveSource.cropY, dissolveSource.cropWidth, dissolveSource.cropHeight, index, '-src', false)}
+          {renderMedia(targetResource, element.opacity, imgEl.cropX, imgEl.cropY, imgEl.cropWidth, imgEl.cropHeight, index + 0.5, '-tgt', false)}
         </React.Fragment>
       );
+    }
+
+    // Single image/video - no dissolve
+    if (targetResource?.type === 'video') {
+      return renderMedia(targetResource, element.opacity, imgEl.cropX, imgEl.cropY, imgEl.cropWidth, imgEl.cropHeight, index, '');
     }
   }
 
