@@ -23,7 +23,7 @@ function renderLatex(latex: string, displayMode: boolean = false): string {
 }
 
 // Render text block as HTML for foreignObject
-function renderBlockAsHtml(block: ParsedBlock, segments: InlineSegment[]): string {
+function renderBlockAsHtml(_block: ParsedBlock, segments: InlineSegment[]): string {
   return segments.map((segment) => {
     if (segment.type === 'latex') {
       return renderLatex(segment.displayContent, segment.isBlock);

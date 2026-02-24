@@ -1,6 +1,4 @@
-import React, { useEffect, useCallback, useRef, useState } from 'react';
-import { Stage, Layer, Rect, Ellipse, Image as KonvaImage, Line, Arrow, Star, RegularPolygon } from 'react-konva';
-import useImage from 'use-image';
+import React, { useEffect, useCallback, useRef, useState, useMemo } from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { CustomMarkdownRenderer } from '../canvas/CustomMarkdownRenderer';
@@ -8,62 +6,253 @@ import { SLIDE_WIDTH, SLIDE_HEIGHT, TEXT_BOX_PADDING } from '../../utils/constan
 import { interpolateWithVisibility, lerpColor } from '../../utils/interpolation';
 import type { SlideElement, TextElement, ShapeElement, ImageElement, Slide, Resource } from '../../types/presentation';
 
-const PresentationImageElement: React.FC<{ element: ImageElement; resources: Record<string, Resource> }> = ({ element, resources }) => {
+// SVG Shape Element renderer
+const SVGShapeElement: React.FC<{ element: ShapeElement }> = ({ element }) => {
+  if (!element.visible) return null;
+
+  const { x, y, width, height, rotation, opacity, fill, stroke, strokeWidth, shapeType, cornerRadius, points } = element;
+
+  const cx = x + width / 2;
+  const cy = y + height / 2;
+  const transform = rotation ? `rotate(${rotation}, ${cx}, ${cy})` : undefined;
+
+  const fillAttr = fill || 'transparent';
+  const strokeAttr = stroke || 'none';
+  const strokeWidthAttr = strokeWidth || 0;
+
+  switch (shapeType) {
+    case 'rect':
+      return (
+        <g transform={transform}>
+          <rect
+            x={x}
+            y={y}
+            width={width}
+            height={height}
+            rx={cornerRadius || 0}
+            ry={cornerRadius || 0}
+            fill={fillAttr}
+            stroke={strokeAttr}
+            strokeWidth={strokeWidthAttr}
+            opacity={opacity}
+          />
+        </g>
+      );
+
+    case 'ellipse':
+      return (
+        <g transform={transform}>
+          <ellipse
+            cx={x + width / 2}
+            cy={y + height / 2}
+            rx={width / 2}
+            ry={height / 2}
+            fill={fillAttr}
+            stroke={strokeAttr}
+            strokeWidth={strokeWidthAttr}
+            opacity={opacity}
+          />
+        </g>
+      );
+
+    case 'triangle': {
+      const tcx = x + width / 2;
+      const tcy = y + height / 2;
+      const r = Math.min(width, height) / 2;
+      const pts = [
+        [tcx, tcy - r],
+        [tcx - r * Math.cos(Math.PI / 6), tcy + r * Math.sin(Math.PI / 6)],
+        [tcx + r * Math.cos(Math.PI / 6), tcy + r * Math.sin(Math.PI / 6)],
+      ];
+      const d = `M ${pts[0][0]} ${pts[0][1]} L ${pts[1][0]} ${pts[1][1]} L ${pts[2][0]} ${pts[2][1]} Z`;
+      return (
+        <g transform={transform}>
+          <path d={d} fill={fillAttr} stroke={strokeAttr} strokeWidth={strokeWidthAttr} opacity={opacity} />
+        </g>
+      );
+    }
+
+    case 'star': {
+      const scx = x + width / 2;
+      const scy = y + height / 2;
+      const outerR = Math.min(width, height) / 2;
+      const innerR = outerR / 2;
+      const starPoints: string[] = [];
+      for (let i = 0; i < 10; i++) {
+        const r = i % 2 === 0 ? outerR : innerR;
+        const angle = (i * Math.PI) / 5 - Math.PI / 2;
+        starPoints.push(`${scx + r * Math.cos(angle)},${scy + r * Math.sin(angle)}`);
+      }
+      return (
+        <g transform={transform}>
+          <polygon points={starPoints.join(' ')} fill={fillAttr} stroke={strokeAttr} strokeWidth={strokeWidthAttr} opacity={opacity} />
+        </g>
+      );
+    }
+
+    case 'line': {
+      const pts = points ?? [0, 0, width, 0];
+      const lineStroke = stroke || fill || '#000';
+      const lineWidth = strokeWidth || 3;
+      return (
+        <g transform={transform}>
+          <line
+            x1={x + pts[0]}
+            y1={y + pts[1]}
+            x2={x + pts[2]}
+            y2={y + pts[3]}
+            stroke={lineStroke}
+            strokeWidth={lineWidth}
+            strokeLinecap="round"
+            opacity={opacity}
+          />
+        </g>
+      );
+    }
+
+    case 'arrow': {
+      const pts = points ?? [0, 0, width, 0];
+      const arrowStroke = stroke || fill || '#000';
+      const arrowWidth = strokeWidth || 3;
+      const dx = pts[2] - pts[0];
+      const dy = pts[3] - pts[1];
+      const angle = Math.atan2(dy, dx);
+      const headLength = 10;
+      const headWidth = 10;
+      const tip = { x: x + pts[2], y: y + pts[3] };
+      const left = {
+        x: tip.x - headLength * Math.cos(angle) + headWidth / 2 * Math.sin(angle),
+        y: tip.y - headLength * Math.sin(angle) - headWidth / 2 * Math.cos(angle),
+      };
+      const right = {
+        x: tip.x - headLength * Math.cos(angle) - headWidth / 2 * Math.sin(angle),
+        y: tip.y - headLength * Math.sin(angle) + headWidth / 2 * Math.cos(angle),
+      };
+      return (
+        <g transform={transform}>
+          <line
+            x1={x + pts[0]}
+            y1={y + pts[1]}
+            x2={x + pts[2]}
+            y2={y + pts[3]}
+            stroke={arrowStroke}
+            strokeWidth={arrowWidth}
+            strokeLinecap="round"
+            opacity={opacity}
+          />
+          <polygon
+            points={`${tip.x},${tip.y} ${left.x},${left.y} ${right.x},${right.y}`}
+            fill={arrowStroke}
+            opacity={opacity}
+          />
+        </g>
+      );
+    }
+
+    default:
+      return (
+        <g transform={transform}>
+          <rect x={x} y={y} width={width} height={height} fill={fillAttr} stroke={strokeAttr} strokeWidth={strokeWidthAttr} opacity={opacity} />
+        </g>
+      );
+  }
+};
+
+// SVG Image Element renderer
+const SVGImageElement: React.FC<{ element: ImageElement; resources: Record<string, Resource> }> = ({ element, resources }) => {
   const resource = element.resourceId ? resources[element.resourceId] : undefined;
-  const [image] = useImage(resource?.type === 'image' ? (resource?.src || '') : '');
 
-  // Return null if no resource (invisible in presentation)
-  if (!resource) return null;
+  if (!element.visible) return null;
 
-  // Video resources are rendered as HTML overlay
-  if (resource.type === 'video') return null;
+  // Skip videos - they're rendered as HTML overlay
+  if (resource?.type === 'video') return null;
 
-  const crop = {
-    x: element.cropX,
-    y: element.cropY,
-    width: element.cropWidth,
-    height: element.cropHeight,
-  };
+  // No resource - render placeholder
+  if (!resource) {
+    const cx = element.x + element.width / 2;
+    const cy = element.y + element.height / 2;
+    const transform = element.rotation ? `rotate(${element.rotation}, ${cx}, ${cy})` : undefined;
+
+    return (
+      <g transform={transform}>
+        <rect
+          x={element.x}
+          y={element.y}
+          width={element.width}
+          height={element.height}
+          fill="#f3f4f6"
+          stroke="#9ca3af"
+          strokeWidth={2}
+          strokeDasharray="8 4"
+          opacity={element.opacity}
+        />
+      </g>
+    );
+  }
+
+  const { x, y, width, height, rotation, opacity, cropX, cropY, cropWidth, cropHeight } = element;
+
+  const cx = x + width / 2;
+  const cy = y + height / 2;
+  const transform = rotation ? `rotate(${rotation}, ${cx}, ${cy})` : undefined;
+
+  const hasCrop = cropWidth > 0 && cropHeight > 0;
+
+  if (hasCrop) {
+    const clipId = `clip-presenter-${element.id}`;
+    const scaleX = width / cropWidth;
+    const scaleY = height / cropHeight;
+
+    return (
+      <g transform={transform}>
+        <defs>
+          <clipPath id={clipId}>
+            <rect x={x} y={y} width={width} height={height} />
+          </clipPath>
+        </defs>
+        <g clipPath={`url(#${clipId})`}>
+          <image
+            href={resource.src}
+            x={x - cropX * scaleX}
+            y={y - cropY * scaleY}
+            width={resource.originalWidth * scaleX}
+            height={resource.originalHeight * scaleY}
+            opacity={opacity}
+            preserveAspectRatio="none"
+          />
+        </g>
+      </g>
+    );
+  }
 
   return (
-    <KonvaImage
-      image={image}
-      x={element.x}
-      y={element.y}
-      width={element.width}
-      height={element.height}
-      rotation={element.rotation}
-      opacity={element.opacity}
-      crop={crop}
-      listening={false}
-    />
+    <g transform={transform}>
+      <image
+        href={resource.src}
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        opacity={opacity}
+        preserveAspectRatio="none"
+      />
+    </g>
   );
 };
 
+// Element renderer
 const PresentationSlideElement: React.FC<{ element: SlideElement; resources: Record<string, Resource> }> = ({ element, resources }) => {
   if (!element.visible) return null;
 
-  if (element.type === 'text') {
-    // Text is rendered as HTML overlay for markdown support
-    return null;
-  }
+  // Text is rendered as HTML overlay for markdown support
+  if (element.type === 'text') return null;
 
   if (element.type === 'shape') {
-    const el = element as ShapeElement;
-    const common = { x: el.x, y: el.y, rotation: el.rotation, opacity: el.opacity, fill: el.fill, stroke: el.stroke, strokeWidth: el.strokeWidth, listening: false };
-    switch (el.shapeType) {
-      case 'rect': return <Rect {...common} width={el.width} height={el.height} cornerRadius={el.cornerRadius} />;
-      case 'ellipse': return <Ellipse {...common} x={el.x + el.width/2} y={el.y + el.height/2} radiusX={el.width/2} radiusY={el.height/2} />;
-      case 'triangle': return <RegularPolygon {...common} x={el.x + el.width/2} y={el.y + el.height/2} sides={3} radius={Math.min(el.width, el.height)/2} />;
-      case 'star': return <Star {...common} x={el.x + el.width/2} y={el.y + el.height/2} numPoints={5} innerRadius={Math.min(el.width, el.height)/4} outerRadius={Math.min(el.width, el.height)/2} />;
-      case 'line': return <Line {...common} points={el.points ?? [0, 0, el.width, 0]} stroke={el.stroke || el.fill} strokeWidth={el.strokeWidth || 3} fill="" />;
-      case 'arrow': return <Arrow {...common} points={el.points ?? [0, 0, el.width, 0]} stroke={el.stroke || el.fill} strokeWidth={el.strokeWidth || 3} fill={el.stroke || el.fill} pointerLength={10} pointerWidth={10} />;
-      default: return null;
-    }
+    return <SVGShapeElement element={element as ShapeElement} />;
   }
 
   if (element.type === 'image') {
-    return <PresentationImageElement element={element as ImageElement} resources={resources} />;
+    return <SVGImageElement element={element as ImageElement} resources={resources} />;
   }
 
   return null;
@@ -102,7 +291,7 @@ export const PresenterView: React.FC = () => {
   const totalSlides = slideOrder.length;
 
   // Indices of non-hidden slides for navigation
-  const visibleIndices = React.useMemo(
+  const visibleIndices = useMemo(
     () => slideOrder.map((id, i) => ({ id, i })).filter(({ id }) => !slides[id]?.hidden).map(({ i }) => i),
     [slideOrder, slides],
   );
@@ -336,12 +525,17 @@ export const PresenterView: React.FC = () => {
       }}
     >
       <div className="relative" style={{ width: stageW, height: stageH }}>
-        <Stage width={stageW} height={stageH} scaleX={scale} scaleY={scale} listening={false}>
-          <Layer listening={false}>
-            <Rect x={0} y={0} width={SLIDE_WIDTH} height={SLIDE_HEIGHT} fill={bgColor} listening={false} />
-            {renderedElements.map((el) => <PresentationSlideElement key={el.id} element={el} resources={resources} />)}
-          </Layer>
-        </Stage>
+        <svg
+          width={stageW}
+          height={stageH}
+          viewBox={`0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}`}
+          style={{ display: 'block' }}
+        >
+          <rect x={0} y={0} width={SLIDE_WIDTH} height={SLIDE_HEIGHT} fill={bgColor} />
+          {renderedElements.map((el) => (
+            <PresentationSlideElement key={el.id} element={el} resources={resources} />
+          ))}
+        </svg>
 
         {/* Video overlay */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden">

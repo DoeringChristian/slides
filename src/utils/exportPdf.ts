@@ -1,63 +1,28 @@
 import jsPDF from 'jspdf';
-import Konva from 'konva';
-import type { Presentation, Slide, TextElement, ShapeElement } from '../types/presentation';
+import type { Presentation } from '../types/presentation';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from './constants';
+import { renderSlideToSVG, svgToDataURL } from './svgRenderer';
 
-function renderSlideToDataURL(slide: Slide, width: number, height: number): Promise<string> {
-  return new Promise((resolve) => {
-    const container = document.createElement('div');
-    container.style.position = 'absolute';
-    container.style.left = '-9999px';
-    document.body.appendChild(container);
+async function renderSlideToDataURL(slide: Parameters<typeof renderSlideToSVG>[0], resources: Parameters<typeof renderSlideToSVG>[1]): Promise<string> {
+  const svgString = renderSlideToSVG(slide, resources);
 
-    const stage = new Konva.Stage({ container, width, height });
-    const layer = new Konva.Layer();
-    stage.add(layer);
-
-    // Background
-    const bgColor = slide.background.type === 'solid' ? slide.background.color : '#ffffff';
-    layer.add(new Konva.Rect({ x: 0, y: 0, width, height, fill: bgColor }));
-
-    // Elements
-    const elements = slide.elementOrder.map((id) => slide.elements[id]).filter(Boolean);
-    for (const el of elements) {
-      if (!el.visible) continue;
-      if (el.type === 'text') {
-        const t = el as TextElement;
-        layer.add(new Konva.Text({
-          x: t.x, y: t.y, width: t.width, height: t.height,
-          text: t.text, fontSize: t.style.fontSize, fontFamily: t.style.fontFamily,
-          fill: t.style.color, align: t.style.align, rotation: t.rotation, opacity: t.opacity,
-          fontStyle: `${t.style.fontWeight === 'bold' ? 'bold' : ''} ${t.style.fontStyle === 'italic' ? 'italic' : ''}`.trim() || 'normal',
-          lineHeight: t.style.lineHeight,
-        }));
-      } else if (el.type === 'shape') {
-        const s = el as ShapeElement;
-        const common = { rotation: s.rotation, opacity: s.opacity };
-        switch (s.shapeType) {
-          case 'rect':
-            layer.add(new Konva.Rect({ x: s.x, y: s.y, width: s.width, height: s.height, fill: s.fill, stroke: s.stroke, strokeWidth: s.strokeWidth, cornerRadius: s.cornerRadius, ...common }));
-            break;
-          case 'ellipse':
-            layer.add(new Konva.Ellipse({ x: s.x + s.width/2, y: s.y + s.height/2, radiusX: s.width/2, radiusY: s.height/2, fill: s.fill, stroke: s.stroke, strokeWidth: s.strokeWidth, ...common }));
-            break;
-          case 'line':
-            layer.add(new Konva.Line({ x: s.x, y: s.y, points: s.points ?? [0, 0, s.width, 0], stroke: s.stroke || s.fill, strokeWidth: s.strokeWidth || 3, ...common }));
-            break;
-          case 'arrow':
-            layer.add(new Konva.Arrow({ x: s.x, y: s.y, points: s.points ?? [0, 0, s.width, 0], stroke: s.stroke || s.fill, strokeWidth: s.strokeWidth || 3, fill: s.stroke || s.fill, pointerLength: 10, pointerWidth: 10, ...common }));
-            break;
-          default:
-            layer.add(new Konva.Rect({ x: s.x, y: s.y, width: s.width, height: s.height, fill: s.fill, stroke: s.stroke, strokeWidth: s.strokeWidth, ...common }));
-        }
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = SLIDE_WIDTH * 2;
+      canvas.height = SLIDE_HEIGHT * 2;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        reject(new Error('Failed to get canvas context'));
+        return;
       }
-    }
-
-    layer.draw();
-    const dataUrl = stage.toDataURL({ pixelRatio: 2 });
-    stage.destroy();
-    container.remove();
-    resolve(dataUrl);
+      ctx.scale(2, 2);
+      ctx.drawImage(img, 0, 0, SLIDE_WIDTH, SLIDE_HEIGHT);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => reject(new Error('Failed to load SVG'));
+    img.src = svgToDataURL(svgString);
   });
 }
 
@@ -71,7 +36,7 @@ export async function exportPdf(presentation: Presentation): Promise<void> {
 
     if (i > 0) pdf.addPage();
 
-    const dataUrl = await renderSlideToDataURL(slide, SLIDE_WIDTH, SLIDE_HEIGHT);
+    const dataUrl = await renderSlideToDataURL(slide, presentation.resources);
     pdf.addImage(dataUrl, 'PNG', 0, 0, SLIDE_WIDTH, SLIDE_HEIGHT);
   }
 
