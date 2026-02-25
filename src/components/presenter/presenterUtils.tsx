@@ -4,7 +4,7 @@ import { CustomMarkdownRenderer } from '../canvas/CustomMarkdownRenderer';
 import { RenderShape, RenderImage } from '../svg/ElementRenderer';
 import { SLIDE_WIDTH, SLIDE_HEIGHT, TEXT_BOX_PADDING } from '../../utils/constants';
 import type { SlideElement, TextElement, ShapeElement, ImageElement, Slide, Resource } from '../../types/presentation';
-import type { CrossfadeSource } from '../../utils/interpolation';
+import type { CrossfadeSource, TextDissolveSource } from '../../utils/interpolation';
 
 // Extended ImageElement type that may include dissolve source during transitions
 type ImageElementWithDissolve = ImageElement & { _dissolveSource?: CrossfadeSource };
@@ -91,26 +91,56 @@ export function renderPresenterElement(
 
   // Text elements use HTML for markdown support
   if (element.type === 'text') {
-    const textEl = element as TextElement;
+    const textEl = element as (TextElement & { _dissolveText?: TextDissolveSource });
+    const dissolveText = textEl._dissolveText;
+
+    const textContainerStyle = (opacity: number): React.CSSProperties => ({
+      position: 'absolute',
+      left: `${element.x * scale}px`,
+      top: `${element.y * scale}px`,
+      width: `${element.width * scale}px`,
+      height: `${element.height * scale}px`,
+      transform: `rotate(${element.rotation}deg)`,
+      transformOrigin: 'center center',
+      opacity,
+      overflow: 'visible',
+      display: 'flex',
+      alignItems: textEl.style.verticalAlign === 'middle' ? 'center' :
+                 textEl.style.verticalAlign === 'bottom' ? 'flex-end' : 'flex-start',
+      zIndex: index,
+      userSelect: 'none',
+    });
+
+    if (dissolveText) {
+      // Crossfade: render old text fading out underneath new text fading in
+      return (
+        <React.Fragment key={element.id}>
+          <div style={textContainerStyle(dissolveText.opacity)}>
+            <div style={{ width: '100%', padding: `${TEXT_BOX_PADDING * scale}px` }}>
+              <CustomMarkdownRenderer
+                text={dissolveText.text}
+                style={textEl.style}
+                zoom={scale}
+              />
+            </div>
+          </div>
+          <div style={textContainerStyle(element.opacity)}>
+            <div style={{ width: '100%', padding: `${TEXT_BOX_PADDING * scale}px` }}>
+              <CustomMarkdownRenderer
+                text={textEl.text}
+                style={textEl.style}
+                zoom={scale}
+              />
+            </div>
+          </div>
+        </React.Fragment>
+      );
+    }
+
     return (
       <div
         key={element.id}
-        style={{
-          position: 'absolute',
-          left: `${element.x * scale}px`,
-          top: `${element.y * scale}px`,
-          width: `${element.width * scale}px`,
-          height: `${element.height * scale}px`,
-          transform: `rotate(${element.rotation}deg)`,
-          transformOrigin: 'center center',
-          opacity: element.opacity,
-          overflow: 'hidden',
-          display: 'flex',
-          alignItems: textEl.style.verticalAlign === 'middle' ? 'center' :
-                     textEl.style.verticalAlign === 'bottom' ? 'flex-end' : 'flex-start',
-          zIndex: index,
-          userSelect: 'none',
-        }}
+        style={textContainerStyle(element.opacity)}
       >
         <div style={{ width: '100%', padding: `${TEXT_BOX_PADDING * scale}px` }}>
           <CustomMarkdownRenderer
@@ -493,7 +523,7 @@ export const SlideRenderer: React.FC<SlideRendererProps> = ({
                 transform: `rotate(${element.rotation}deg)`,
                 transformOrigin: 'center center',
                 opacity: element.opacity,
-                overflow: 'hidden',
+                overflow: 'visible',
                 display: 'flex',
                 alignItems: textEl.style.verticalAlign === 'middle' ? 'center' :
                            textEl.style.verticalAlign === 'bottom' ? 'flex-end' : 'flex-start',

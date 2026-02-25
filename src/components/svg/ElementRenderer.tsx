@@ -373,32 +373,47 @@ export const RenderText: React.FC<TextProps> = memo(({ element, isEditing = fals
 
   const padding = TEXT_BOX_PADDING;
 
+  const bottomOverflow = 500;
+  const clipId = `text-clip-static-${element.id}`;
+
   return (
     <g transform={transform} style={{ pointerEvents: 'none' }}>
-      <foreignObject
-        x={elementX + padding}
-        y={elementY + padding}
-        width={width - padding * 2}
-        height={height - padding * 2}
-      >
-        <div
-          style={{
-            width: '100%',
-            height: '100%',
-            fontFamily: style.fontFamily,
-            fontStyle: style.fontStyle,
-            color: style.color,
-            textAlign: style.align,
-            wordWrap: 'break-word',
-            overflowWrap: 'break-word',
-            whiteSpace: 'pre-wrap',
-            overflow: 'hidden',
-            opacity,
-            ...verticalAlignStyle,
-          }}
-          dangerouslySetInnerHTML={{ __html: htmlContent }}
-        />
-      </foreignObject>
+      <defs>
+        <clipPath id={clipId}>
+          <rect
+            x={elementX + padding}
+            y={elementY + padding}
+            width={width - padding * 2}
+            height={height - padding * 2 + bottomOverflow}
+          />
+        </clipPath>
+      </defs>
+      <g clipPath={`url(#${clipId})`}>
+        <foreignObject
+          x={elementX + padding}
+          y={elementY + padding}
+          width={width - padding * 2}
+          height={height - padding * 2 + bottomOverflow}
+        >
+          <div
+            style={{
+              width: '100%',
+              height: height - padding * 2,
+              fontFamily: style.fontFamily,
+              fontStyle: style.fontStyle,
+              color: style.color,
+              textAlign: style.align,
+              wordWrap: 'break-word',
+              overflowWrap: 'break-word',
+              whiteSpace: 'pre-wrap',
+              overflow: 'visible',
+              opacity,
+              ...verticalAlignStyle,
+            }}
+            dangerouslySetInnerHTML={{ __html: htmlContent }}
+          />
+        </foreignObject>
+      </g>
     </g>
   );
 }, (prevProps, nextProps) => {

@@ -145,6 +145,7 @@ function interpolateTextTypewriter(a: string, b: string, t: number): string {
 interface TextInterpolation {
   text: string;
   opacityMultiplier: number; // 1 = normal, <1 = fading
+  dissolveSource?: { text: string; opacityMultiplier: number }; // For crossfade dissolve
 }
 
 // Interpolate text based on easing type
@@ -159,12 +160,13 @@ function interpolateText(a: string, b: string, t: number, easing: EasingType | u
     case 'dissolve':
     case 'linear':
     case 'ease':
-      // Dissolve: fade out old text in first half, fade in new in second half
-      if (t < 0.5) {
-        return { text: a, opacityMultiplier: 1 - t * 2 };
-      } else {
-        return { text: b, opacityMultiplier: (t - 0.5) * 2 };
-      }
+      // Crossfade dissolve: render both old and new text simultaneously
+      // Using sqrt curves like image dissolve for smooth blending
+      return {
+        text: b,
+        opacityMultiplier: Math.sqrt(t),
+        dissolveSource: { text: a, opacityMultiplier: Math.sqrt(1 - t) },
+      };
 
     case 'const':
     default:
@@ -183,6 +185,12 @@ function fadeinoutOpacity(baseOpacity: number, t: number): number {
     // Fade in: opacity goes from 0 to baseOpacity as t goes from 0.5 to 1
     return baseOpacity * ((t - 0.5) * 2);
   }
+}
+
+// Dissolve source info for text crossfade
+export interface TextDissolveSource {
+  text: string;
+  opacity: number;
 }
 
 // Crossfade source info for rendering both source and target
@@ -219,7 +227,7 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
     const ta = a as TextElement;
     const tb = b as TextElement;
     const textResult = interpolateText(ta.text, tb.text, t, tr.content ?? 'dissolve');
-    return {
+    const result: TextElement & { _dissolveText?: TextDissolveSource } = {
       ...base,
       type: 'text',
       text: textResult.text,
@@ -235,7 +243,14 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
         verticalAlign: t < 0.5 ? ta.style.verticalAlign : tb.style.verticalAlign,
         lineHeight: lerpEased(ta.style.lineHeight, tb.style.lineHeight, t, tr.lineHeight),
       },
-    } as TextElement;
+    };
+    if (textResult.dissolveSource) {
+      result._dissolveText = {
+        text: textResult.dissolveSource.text,
+        opacity: baseOpacity * textResult.dissolveSource.opacityMultiplier,
+      };
+    }
+    return result;
   }
 
   // Shape elements
