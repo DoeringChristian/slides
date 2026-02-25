@@ -103,9 +103,9 @@ function createTextElementHtml(element: TextElement): HTMLDivElement {
     width: ${width}px;
     height: ${height}px;
     transform: rotate(${rotation}deg);
-    transform-origin: top left;
+    transform-origin: center center;
     opacity: ${opacity};
-    overflow: hidden;
+    overflow: visible;
     display: flex;
     align-items: ${alignItems};
   `;
