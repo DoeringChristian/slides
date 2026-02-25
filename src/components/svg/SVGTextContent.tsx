@@ -129,6 +129,7 @@ export const SVGTextContent: React.FC<Props> = memo(({
             overflowWrap: 'break-word',
             whiteSpace: 'pre-wrap',
             overflow: 'hidden',
+            userSelect: 'none',
             ...verticalAlignStyle,
           }}
           dangerouslySetInnerHTML={{ __html: htmlContent }}
