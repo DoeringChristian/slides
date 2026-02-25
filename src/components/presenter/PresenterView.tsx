@@ -40,8 +40,11 @@ export const PresenterView: React.FC = () => {
 
   const startAnimation = useCallback((targetIdx: number) => {
     if (isAnimating) return;
-    const targetSlide = slides[slideOrder[targetIdx]];
-    const duration = targetSlide?.transition.duration || 300;
+    // When going forward, use the target slide's transition duration.
+    // When going backward, use the current slide's duration (we're reversing its entry).
+    const goingForward = targetIdx > currentIndex;
+    const transitionSlide = goingForward ? slides[slideOrder[targetIdx]] : slides[slideOrder[currentIndex]];
+    const duration = transitionSlide?.transition.duration || 300;
 
     targetIndexRef.current = targetIdx;
     setIsAnimating(true);
