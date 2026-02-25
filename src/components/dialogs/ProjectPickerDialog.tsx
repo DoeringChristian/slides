@@ -125,7 +125,11 @@ export const ProjectPickerDialog: React.FC = () => {
       const firstSlide = presentation.slides[presentation.slideOrder[0]];
       let thumbnail: string | undefined;
       if (firstSlide) {
-        thumbnail = await generateThumbnail(firstSlide, presentation.resources || {});
+        try {
+          thumbnail = await generateThumbnail(firstSlide, presentation.resources || {});
+        } catch {
+          // Thumbnail generation can fail (e.g. foreignObject in SVG); continue without it
+        }
       }
       await client.saveProject(presentation, thumbnail);
 
