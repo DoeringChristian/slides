@@ -1,26 +1,19 @@
 import { useEffect } from 'react';
 import { useEditorStore } from '../store/editorStore';
 import { usePresentationStore } from '../store/presentationStore';
-import { duplicateElement, loadImageFile, loadPdfFile, loadVideoFile } from '../utils/slideFactory';
+import { duplicateElement, loadImageFile } from '../utils/slideFactory';
 
 export function useKeyboardShortcuts() {
   const store = usePresentationStore;
   const editor = useEditorStore;
 
   useEffect(() => {
-    // Hidden contenteditable element that ensures paste events fire on Ctrl+V
-    // even when no input/textarea has focus (e.g., when the canvas is active).
-    const clipboardProxy = document.createElement('div');
-    clipboardProxy.contentEditable = 'true';
-    clipboardProxy.setAttribute('aria-hidden', 'true');
-    clipboardProxy.tabIndex = -1;
-    clipboardProxy.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;';
-    document.body.appendChild(clipboardProxy);
+    const INTERNAL_MARKER = 'slides-internal-copy';
 
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' ||
-        (target.isContentEditable && target !== clipboardProxy);
+        target.isContentEditable;
 
       // Don't intercept keyboard shortcuts when typing in inputs
       if (isInput && !e.ctrlKey && !e.metaKey) return;
@@ -101,20 +94,22 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      // Copy — intercept the 'copy' event to write our marker to the system clipboard
+      // Copy
       if (ctrl && e.key === 'c' && selectedIds.length > 0) {
+        e.preventDefault();
         const slide = store.getState().presentation.slides[activeSlideId];
         if (slide) {
           const elements = selectedIds.map((id) => slide.elements[id]).filter(Boolean);
           editor.getState().setClipboard(elements.map((e) => JSON.parse(JSON.stringify(e))));
+          // Write marker to system clipboard so paste knows it's internal
+          navigator.clipboard.writeText(INTERNAL_MARKER).catch(() => {});
         }
-        // Don't preventDefault — let the browser fire the 'copy' event,
-        // which copyHandler will intercept to write our marker
         return;
       }
 
       // Cut
       if (ctrl && e.key === 'x' && selectedIds.length > 0) {
+        e.preventDefault();
         const slide = store.getState().presentation.slides[activeSlideId];
         if (slide) {
           const elements = selectedIds.map((id) => slide.elements[id]).filter(Boolean);
@@ -123,15 +118,73 @@ export function useKeyboardShortcuts() {
             store.getState().hideElement(activeSlideId, id);
           }
           editor.getState().setSelectedElements([]);
+          navigator.clipboard.writeText(INTERNAL_MARKER).catch(() => {});
         }
-        // Don't preventDefault — let the browser fire the 'cut' event
         return;
       }
 
-      // Paste — don't preventDefault, let the browser fire the 'paste' event
-      // which handlePaste will process (system clipboard content takes priority
-      // over internal element clipboard)
+      // Paste
       if (ctrl && e.key === 'v') {
+        e.preventDefault();
+
+        // Read clipboard via the paste event by manually triggering
+        // document.execCommand('paste') on the proxy — but that's deprecated.
+        // Instead, handle paste logic directly here using navigator.clipboard.
+        const activeId = editor.getState().activeSlideId;
+
+        // Try to read files from clipboard (images)
+        if (navigator.clipboard && navigator.clipboard.read) {
+          navigator.clipboard.read().then(async (clipboardItems) => {
+            const existingResources = store.getState().presentation.resources;
+            for (const item of clipboardItems) {
+              // Check for images
+              const imageType = item.types.find(t => t.startsWith('image/'));
+              if (imageType) {
+                const blob = await item.getType(imageType);
+                const file = new File([blob], 'pasted-image.png', { type: imageType });
+                const { resource, element, isExisting } = await loadImageFile(file, undefined, existingResources);
+                if (!isExisting) {
+                  store.getState().addResource(resource);
+                }
+                store.getState().addElement(activeId, element);
+                editor.getState().setSelectedElements([element.id]);
+                return;
+              }
+            }
+
+            // No image — check for our internal marker
+            for (const item of clipboardItems) {
+              if (item.types.includes('text/plain')) {
+                const blob = await item.getType('text/plain');
+                const text = await blob.text();
+                if (text === INTERNAL_MARKER) {
+                  const internalClipboard = editor.getState().clipboard;
+                  if (internalClipboard.length > 0) {
+                    const duplicates = internalClipboard.map((el) => duplicateElement(el));
+                    store.getState().addElements(activeId, duplicates);
+                    editor.getState().setSelectedElements(duplicates.map((el) => el.id));
+                  }
+                }
+              }
+            }
+          }).catch(() => {
+            // Permission denied or not supported — fall back to internal clipboard
+            const internalClipboard = editor.getState().clipboard;
+            if (internalClipboard.length > 0) {
+              const duplicates = internalClipboard.map((el) => duplicateElement(el));
+              store.getState().addElements(activeId, duplicates);
+              editor.getState().setSelectedElements(duplicates.map((el) => el.id));
+            }
+          });
+        } else {
+          // Fallback for browsers without clipboard API
+          const internalClipboard = editor.getState().clipboard;
+          if (internalClipboard.length > 0) {
+            const duplicates = internalClipboard.map((el) => duplicateElement(el));
+            store.getState().addElements(activeId, duplicates);
+            editor.getState().setSelectedElements(duplicates.map((el) => el.id));
+          }
+        }
         return;
       }
 
@@ -199,150 +252,10 @@ export function useKeyboardShortcuts() {
       }
     };
 
-    const INTERNAL_MARKER = 'slides-internal-copy';
-
-    // When the browser fires the copy/cut event (because we didn't preventDefault
-    // in keydown), write our marker to the system clipboard. This replaces any
-    // previous clipboard content (e.g., an old screenshot), so on paste we can
-    // tell whether the clipboard is ours or from an external source.
-    const handleCopy = (e: ClipboardEvent) => {
-      const target = e.target as HTMLElement;
-      const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' ||
-        (target.isContentEditable && target !== clipboardProxy);
-      if (isInput) return;
-      if (editor.getState().isPresenting) return;
-
-      // Only write marker if we actually have an internal clipboard
-      if (editor.getState().clipboard.length > 0) {
-        e.preventDefault();
-        e.clipboardData?.setData('text/plain', INTERNAL_MARKER);
-      }
-    };
-
-    const handlePaste = (e: ClipboardEvent) => {
-      const target = e.target as HTMLElement;
-      const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' ||
-        (target.isContentEditable && target !== clipboardProxy);
-      if (isInput) return;
-      if (editor.getState().isPresenting) return;
-
-      const items = e.clipboardData?.items;
-      if (!items) return;
-
-      // Check if this paste is from our own internal copy
-      const plainText = e.clipboardData?.getData('text/plain');
-      const isInternalCopy = plainText === INTERNAL_MARKER;
-
-      // If it's our internal copy, use the internal element clipboard directly
-      if (isInternalCopy) {
-        const internalClipboard = editor.getState().clipboard;
-        if (internalClipboard.length > 0) {
-          e.preventDefault();
-          e.stopPropagation();
-          const activeSlideId = editor.getState().activeSlideId;
-          const duplicates = internalClipboard.map((el) => duplicateElement(el));
-          store.getState().addElements(activeSlideId, duplicates);
-          editor.getState().setSelectedElements(duplicates.map((el) => el.id));
-        }
-        return;
-      }
-
-      // External clipboard content — check for files/images
-      const activeSlideId = editor.getState().activeSlideId;
-      const existingResources = store.getState().presentation.resources;
-      for (const item of Array.from(items)) {
-        if (item.type === 'application/pdf') {
-          const file = item.getAsFile();
-          if (!file) continue;
-          e.preventDefault();
-          loadPdfFile(file, existingResources).then(({ resources, elements, isExisting }) => {
-            if (!isExisting) {
-              resources.forEach((r) => store.getState().addResource(r));
-            }
-            if (elements.length === 1) {
-              store.getState().addElement(activeSlideId, elements[0]);
-              editor.getState().setSelectedElements([elements[0].id]);
-            } else {
-              const { slideOrder } = store.getState().presentation;
-              let insertIdx = slideOrder.indexOf(activeSlideId) + 1;
-              let lastSlideId = '';
-              for (const pageEl of elements) {
-                const newSlideId = store.getState().addEmptySlide(insertIdx);
-                store.getState().addElement(newSlideId, pageEl);
-                lastSlideId = newSlideId;
-                insertIdx++;
-              }
-              if (lastSlideId) editor.getState().setActiveSlide(lastSlideId);
-            }
-          });
-          return;
-        }
-        if (item.type.startsWith('image/')) {
-          const file = item.getAsFile();
-          if (!file) continue;
-          e.preventDefault();
-          loadImageFile(file, undefined, existingResources).then(({ resource, element, isExisting }) => {
-            if (!isExisting) {
-              store.getState().addResource(resource);
-            }
-            store.getState().addElement(activeSlideId, element);
-            editor.getState().setSelectedElements([element.id]);
-          });
-          return;
-        }
-        if (item.type.startsWith('video/')) {
-          const file = item.getAsFile();
-          if (!file) continue;
-          e.preventDefault();
-          loadVideoFile(file, undefined, existingResources).then(({ resource, element, isExisting }) => {
-            if (!isExisting) {
-              store.getState().addResource(resource);
-            }
-            store.getState().addElement(activeSlideId, element);
-            editor.getState().setSelectedElements([element.id]);
-          });
-          return;
-        }
-      }
-    };
-
-    // Keep the proxy focused when no other input has focus
-    const maintainFocus = () => {
-      const active = document.activeElement;
-      if (!active || active === document.body || active === clipboardProxy) {
-        clipboardProxy.focus({ preventScroll: true });
-      }
-    };
-
-    // Re-focus proxy when other elements blur
-    const handleFocusOut = (e: FocusEvent) => {
-      // If focus is leaving to body (nothing focused), grab it
-      if (!e.relatedTarget || e.relatedTarget === document.body) {
-        // Slight delay to let browser settle focus
-        requestAnimationFrame(maintainFocus);
-      }
-    };
-
-    // Initial focus
-    maintainFocus();
-
-    const handleMouseDown = () => requestAnimationFrame(maintainFocus);
-
     window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('paste', handlePaste, true); // capture phase — runs before clipboardProxy
-    window.addEventListener('copy', handleCopy, true);
-    window.addEventListener('cut', handleCopy, true);
-    document.addEventListener('focusout', handleFocusOut);
-    document.addEventListener('mousedown', handleMouseDown);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('paste', handlePaste, true);
-      window.removeEventListener('copy', handleCopy, true);
-      window.removeEventListener('cut', handleCopy, true);
-      document.removeEventListener('focusout', handleFocusOut);
-      document.removeEventListener('mousedown', handleMouseDown);
-      document.body.removeChild(clipboardProxy);
     };
   }, []);
 }

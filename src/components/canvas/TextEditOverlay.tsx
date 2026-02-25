@@ -309,8 +309,16 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     e.stopPropagation();
   }, [activeSlideId, editingTextId, updateElement, setEditingTextId, getCursorPosition, renderText, setCursorPosition, textElement]);
 
-  // Handle paste — insert plain text only
+  // Handle paste — insert plain text only; let images/files bubble to global handler
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    // Check if clipboard has files (images, PDFs, videos) — let the global handler deal with those
+    const items = e.clipboardData?.items;
+    if (items) {
+      for (const item of Array.from(items)) {
+        if (item.kind === 'file') return;
+      }
+    }
+
     e.preventDefault();
     const pastedText = e.clipboardData.getData('text/plain');
     if (!pastedText || !textElement) return;
