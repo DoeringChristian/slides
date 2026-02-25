@@ -10,7 +10,7 @@ import { ObjectListDrawer } from '../objectlist/ObjectListDrawer';
 
 export const AppLayout: React.FC = () => {
   return (
-    <div className="flex flex-col h-screen bg-gray-100">
+    <div className="flex flex-col h-screen bg-gray-100 select-none">
       <Header />
       <Toolbar />
       <div className="flex flex-1 overflow-hidden">
