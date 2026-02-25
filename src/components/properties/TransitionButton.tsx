@@ -143,7 +143,8 @@ export const TransitionButton: React.FC<Props> = ({
   const transitionSlideId = isFadeOut ? sourceSlideId : targetSlideId;
 
   // Get current easing value from the appropriate element
-  const currentEasing: EasingType = transitionElement?.transitions?.[group] || 'linear';
+  const defaultEasing: EasingType = (group === 'content' || group === 'resource') ? 'dissolve' : 'linear';
+  const currentEasing: EasingType = transitionElement?.transitions?.[group] || defaultEasing;
 
   // Can edit if we have an element to store transitions on and property differs
   const canEdit = !!transitionElement && differs;
