@@ -25,6 +25,9 @@ export function useKeyboardShortcuts() {
       // Don't intercept keyboard shortcuts when typing in inputs
       if (isInput && !e.ctrlKey && !e.metaKey) return;
 
+      // Let native copy/cut/paste work in inputs (text editing)
+      if (isInput && (e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'x' || e.key === 'v')) return;
+
       // Don't intercept during presentation
       if (editor.getState().isPresenting) return;
 
@@ -235,6 +238,7 @@ export function useKeyboardShortcuts() {
         const internalClipboard = editor.getState().clipboard;
         if (internalClipboard.length > 0) {
           e.preventDefault();
+          e.stopPropagation();
           const activeSlideId = editor.getState().activeSlideId;
           const duplicates = internalClipboard.map((el) => duplicateElement(el));
           store.getState().addElements(activeSlideId, duplicates);
@@ -325,17 +329,17 @@ export function useKeyboardShortcuts() {
     const handleMouseDown = () => requestAnimationFrame(maintainFocus);
 
     window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('paste', handlePaste);
-    window.addEventListener('copy', handleCopy);
-    window.addEventListener('cut', handleCopy);
+    window.addEventListener('paste', handlePaste, true); // capture phase — runs before clipboardProxy
+    window.addEventListener('copy', handleCopy, true);
+    window.addEventListener('cut', handleCopy, true);
     document.addEventListener('focusout', handleFocusOut);
     document.addEventListener('mousedown', handleMouseDown);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('paste', handlePaste);
-      window.removeEventListener('copy', handleCopy);
-      window.removeEventListener('cut', handleCopy);
+      window.removeEventListener('paste', handlePaste, true);
+      window.removeEventListener('copy', handleCopy, true);
+      window.removeEventListener('cut', handleCopy, true);
       document.removeEventListener('focusout', handleFocusOut);
       document.removeEventListener('mousedown', handleMouseDown);
       document.body.removeChild(clipboardProxy);

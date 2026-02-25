@@ -309,6 +309,20 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     e.stopPropagation();
   }, [activeSlideId, editingTextId, updateElement, setEditingTextId, getCursorPosition, renderText, setCursorPosition, textElement]);
 
+  // Handle paste — insert plain text only
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+    e.preventDefault();
+    const pastedText = e.clipboardData.getData('text/plain');
+    if (!pastedText || !textElement) return;
+
+    const cursorPos = getCursorPosition();
+    const currentText = currentTextRef.current;
+    const newText = currentText.slice(0, cursorPos) + pastedText + currentText.slice(cursorPos);
+    currentTextRef.current = newText;
+    renderText(newText, textElement.style);
+    setCursorPosition(cursorPos + pastedText.length);
+  }, [getCursorPosition, renderText, setCursorPosition, textElement]);
+
   // Handle blur
   const handleBlur = useCallback(() => {
     // Ignore blur within 200ms of mount
@@ -375,6 +389,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
         onInput={handleInput}
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
+        onPaste={handlePaste}
         style={{
           position: 'absolute',
           left: padding,
