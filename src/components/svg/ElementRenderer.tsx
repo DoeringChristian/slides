@@ -1,7 +1,5 @@
-import React, { memo, useMemo } from 'react';
-import katex from 'katex';
-import { TEXT_BOX_PADDING } from '../../utils/constants';
-import { parseBlocks, parseInlineSegments, getBlockFontMultiplier, type ParsedBlock, type InlineSegment } from '../canvas/CustomMarkdownRenderer';
+import React, { memo } from 'react';
+import { SVGTextContent } from './SVGTextContent';
 import type { SlideElement, TextElement, ShapeElement, ImageElement, Resource } from '../../types/presentation';
 
 // ============================================================================
@@ -101,8 +99,12 @@ export const RenderShape: React.FC<ShapeProps> = memo(({ element }) => {
       const pts = points ?? [0, 0, width, 0];
       const lineStroke = stroke || fill || '#000';
       const lineWidth = strokeWidth || 3;
+      // Rotate around line center, not bounding box center
+      const lineCx = x + (pts[0] + pts[2]) / 2;
+      const lineCy = y + (pts[1] + pts[3]) / 2;
+      const lineTransform = rotation ? `rotate(${rotation}, ${lineCx}, ${lineCy})` : undefined;
       return (
-        <g transform={transform}>
+        <g transform={lineTransform}>
           <line
             x1={x + pts[0]}
             y1={y + pts[1]}
@@ -140,8 +142,12 @@ export const RenderShape: React.FC<ShapeProps> = memo(({ element }) => {
         x: tip.x - headLength * Math.cos(angle) - headWidth / 2 * Math.sin(angle),
         y: tip.y - headLength * Math.sin(angle) + headWidth / 2 * Math.cos(angle),
       };
+      // Rotate around line center, not bounding box center
+      const arrowCx = x + (pts[0] + pts[2]) / 2;
+      const arrowCy = y + (pts[1] + pts[3]) / 2;
+      const arrowTransform = rotation ? `rotate(${rotation}, ${arrowCx}, ${arrowCy})` : undefined;
       return (
-        <g transform={transform} style={{ pointerEvents: 'none' }}>
+        <g transform={arrowTransform} style={{ pointerEvents: 'none' }}>
           <line
             x1={x + pts[0]}
             y1={y + pts[1]}
@@ -281,167 +287,6 @@ export const RenderImage: React.FC<ImageProps> = memo(({ element, resource, clip
 });
 
 // ============================================================================
-// Text Renderer (using foreignObject for markdown support)
-// ============================================================================
-
-// Render LaTeX to HTML string
-function renderLatex(latex: string, displayMode: boolean = false): string {
-  try {
-    return katex.renderToString(latex, {
-      displayMode,
-      throwOnError: false,
-      output: 'html',
-    });
-  } catch {
-    return latex;
-  }
-}
-
-// Render text block as HTML
-function renderBlockAsHtml(_block: ParsedBlock, segments: InlineSegment[]): string {
-  return segments.map((segment) => {
-    if (segment.type === 'latex') {
-      return renderLatex(segment.displayContent, segment.isBlock);
-    }
-    if (segment.type === 'link') {
-      const escaped = segment.displayContent
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-      return `<span style="color:#2563eb;text-decoration:underline">${escaped}</span>`;
-    }
-    if (segment.type === 'formatted') {
-      let style = '';
-      if (segment.bold) style += 'font-weight:bold;';
-      if (segment.italic) style += 'font-style:italic;';
-      if (segment.strikethrough) style += 'text-decoration:line-through;';
-      if (segment.underline) style += 'text-decoration:underline;';
-      const escaped = segment.displayContent
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-      return `<span style="${style}">${escaped}</span>`;
-    }
-    return segment.displayContent
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-  }).join('');
-}
-
-interface TextProps {
-  element: TextElement;
-  isEditing?: boolean;
-}
-
-export const RenderText: React.FC<TextProps> = memo(({ element, isEditing = false }) => {
-  if (!element.visible || isEditing) return null;
-
-  const { text, style, x: elementX, y: elementY, width, height, rotation, opacity } = element;
-
-  // Parse and render text
-  const htmlContent = useMemo(() => {
-    const blocks = parseBlocks(text || '');
-    const lineHeight = style.lineHeight || 1.2;
-
-    return blocks.map(block => {
-      const segments = parseInlineSegments(block.displayContent, block.sourceStart + block.prefixLength);
-      const html = renderBlockAsHtml(block, segments);
-      const multiplier = getBlockFontMultiplier(block.type);
-      const fontSize = style.fontSize * multiplier;
-      const isHeader = block.type === 'h1' || block.type === 'h2' || block.type === 'h3';
-      const fontWeight = isHeader ? 'bold' : style.fontWeight;
-
-      return `<div style="font-size:${fontSize}px;font-weight:${fontWeight};line-height:${lineHeight};min-height:${fontSize * lineHeight}px;margin:0;padding:0;">${html || '&nbsp;'}</div>`;
-    }).join('');
-  }, [text, style.fontSize, style.fontWeight, style.lineHeight]);
-
-  const verticalAlignStyle = useMemo(() => {
-    switch (style.verticalAlign) {
-      case 'middle':
-        return { display: 'flex', flexDirection: 'column' as const, justifyContent: 'center' };
-      case 'bottom':
-        return { display: 'flex', flexDirection: 'column' as const, justifyContent: 'flex-end' };
-      default:
-        return {};
-    }
-  }, [style.verticalAlign]);
-
-  const cx = elementX + width / 2;
-  const cy = elementY + height / 2;
-  const transform = rotation ? `rotate(${rotation}, ${cx}, ${cy})` : undefined;
-
-  const padding = TEXT_BOX_PADDING;
-
-  const bottomOverflow = 500;
-  const clipId = `text-clip-static-${element.id}`;
-
-  return (
-    <g transform={transform} style={{ pointerEvents: 'none' }}>
-      <defs>
-        <clipPath id={clipId}>
-          <rect
-            x={elementX + padding}
-            y={elementY + padding}
-            width={width - padding * 2}
-            height={height - padding * 2 + bottomOverflow}
-          />
-        </clipPath>
-      </defs>
-      <g clipPath={`url(#${clipId})`}>
-        <foreignObject
-          x={elementX + padding}
-          y={elementY + padding}
-          width={width - padding * 2}
-          height={height - padding * 2 + bottomOverflow}
-        >
-          <div
-            style={{
-              width: '100%',
-              height: height - padding * 2,
-              fontFamily: style.fontFamily,
-              fontStyle: style.fontStyle,
-              color: style.color,
-              textAlign: style.align,
-              wordWrap: 'break-word',
-              overflowWrap: 'break-word',
-              whiteSpace: 'pre-wrap',
-              overflow: 'visible',
-              opacity,
-              ...verticalAlignStyle,
-            }}
-            dangerouslySetInnerHTML={{ __html: htmlContent }}
-          />
-        </foreignObject>
-      </g>
-    </g>
-  );
-}, (prevProps, nextProps) => {
-  const prev = prevProps.element;
-  const next = nextProps.element;
-
-  return (
-    prevProps.isEditing === nextProps.isEditing &&
-    prev.visible === next.visible &&
-    prev.text === next.text &&
-    prev.width === next.width &&
-    prev.height === next.height &&
-    prev.x === next.x &&
-    prev.y === next.y &&
-    prev.rotation === next.rotation &&
-    prev.opacity === next.opacity &&
-    prev.style.fontSize === next.style.fontSize &&
-    prev.style.fontFamily === next.style.fontFamily &&
-    prev.style.fontWeight === next.style.fontWeight &&
-    prev.style.fontStyle === next.style.fontStyle &&
-    prev.style.color === next.style.color &&
-    prev.style.align === next.style.align &&
-    prev.style.verticalAlign === next.style.verticalAlign &&
-    prev.style.lineHeight === next.style.lineHeight
-  );
-});
-
-// ============================================================================
 // Unified Element Renderer
 // ============================================================================
 
@@ -457,7 +302,7 @@ export const RenderElement: React.FC<ElementProps> = memo(({ element, resource, 
 
   switch (element.type) {
     case 'text':
-      return <RenderText element={element as TextElement} isEditing={isEditing} />;
+      return <SVGTextContent element={element as TextElement} isEditing={isEditing} opacity={element.opacity} clipIdPrefix={clipIdPrefix ? `text-clip-${clipIdPrefix}` : 'text-clip'} />;
     case 'shape':
       return <RenderShape element={element as ShapeElement} />;
     case 'image':

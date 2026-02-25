@@ -56,6 +56,73 @@ export function mergeElementOrders(sourceSlide: Slide | null, targetSlide: Slide
   }
 }
 
+// ============================================================================
+// PresenterTextElement - Shared text renderer for presenter views and control panel
+// ============================================================================
+
+interface PresenterTextElementProps {
+  element: TextElement;
+  scale: number;
+  zIndex: number;
+  dissolveText?: TextDissolveSource;
+}
+
+export const PresenterTextElement: React.FC<PresenterTextElementProps> = ({ element, scale, zIndex, dissolveText }) => {
+  const textContainerStyle = (opacity: number): React.CSSProperties => ({
+    position: 'absolute',
+    left: `${element.x * scale}px`,
+    top: `${element.y * scale}px`,
+    width: `${element.width * scale}px`,
+    height: `${element.height * scale}px`,
+    transform: `rotate(${element.rotation}deg)`,
+    transformOrigin: 'center center',
+    opacity,
+    overflow: 'visible',
+    display: 'flex',
+    alignItems: element.style.verticalAlign === 'middle' ? 'center' :
+               element.style.verticalAlign === 'bottom' ? 'flex-end' : 'flex-start',
+    zIndex,
+    userSelect: 'none',
+  });
+
+  if (dissolveText) {
+    return (
+      <React.Fragment>
+        <div style={textContainerStyle(dissolveText.opacity)}>
+          <div style={{ width: '100%', padding: `${TEXT_BOX_PADDING * scale}px` }}>
+            <CustomMarkdownRenderer
+              text={dissolveText.text}
+              style={element.style}
+              zoom={scale}
+            />
+          </div>
+        </div>
+        <div style={textContainerStyle(element.opacity)}>
+          <div style={{ width: '100%', padding: `${TEXT_BOX_PADDING * scale}px` }}>
+            <CustomMarkdownRenderer
+              text={element.text}
+              style={element.style}
+              zoom={scale}
+            />
+          </div>
+        </div>
+      </React.Fragment>
+    );
+  }
+
+  return (
+    <div style={textContainerStyle(element.opacity)}>
+      <div style={{ width: '100%', padding: `${TEXT_BOX_PADDING * scale}px` }}>
+        <CustomMarkdownRenderer
+          text={element.text}
+          style={element.style}
+          zoom={scale}
+        />
+      </div>
+    </div>
+  );
+};
+
 // SVG Element renderer (dispatches to shared shape/image renderers)
 const PresenterSlideElement: React.FC<{ element: SlideElement; resources: Record<string, Resource> }> = ({ element, resources }) => {
   if (!element.visible) return null;
@@ -92,64 +159,14 @@ export function renderPresenterElement(
   // Text elements use HTML for markdown support
   if (element.type === 'text') {
     const textEl = element as (TextElement & { _dissolveText?: TextDissolveSource });
-    const dissolveText = textEl._dissolveText;
-
-    const textContainerStyle = (opacity: number): React.CSSProperties => ({
-      position: 'absolute',
-      left: `${element.x * scale}px`,
-      top: `${element.y * scale}px`,
-      width: `${element.width * scale}px`,
-      height: `${element.height * scale}px`,
-      transform: `rotate(${element.rotation}deg)`,
-      transformOrigin: 'center center',
-      opacity,
-      overflow: 'visible',
-      display: 'flex',
-      alignItems: textEl.style.verticalAlign === 'middle' ? 'center' :
-                 textEl.style.verticalAlign === 'bottom' ? 'flex-end' : 'flex-start',
-      zIndex: index,
-      userSelect: 'none',
-    });
-
-    if (dissolveText) {
-      // Crossfade: render old text fading out underneath new text fading in
-      return (
-        <React.Fragment key={element.id}>
-          <div style={textContainerStyle(dissolveText.opacity)}>
-            <div style={{ width: '100%', padding: `${TEXT_BOX_PADDING * scale}px` }}>
-              <CustomMarkdownRenderer
-                text={dissolveText.text}
-                style={textEl.style}
-                zoom={scale}
-              />
-            </div>
-          </div>
-          <div style={textContainerStyle(element.opacity)}>
-            <div style={{ width: '100%', padding: `${TEXT_BOX_PADDING * scale}px` }}>
-              <CustomMarkdownRenderer
-                text={textEl.text}
-                style={textEl.style}
-                zoom={scale}
-              />
-            </div>
-          </div>
-        </React.Fragment>
-      );
-    }
-
     return (
-      <div
+      <PresenterTextElement
         key={element.id}
-        style={textContainerStyle(element.opacity)}
-      >
-        <div style={{ width: '100%', padding: `${TEXT_BOX_PADDING * scale}px` }}>
-          <CustomMarkdownRenderer
-            text={textEl.text}
-            style={textEl.style}
-            zoom={scale}
-          />
-        </div>
-      </div>
+        element={textEl}
+        scale={scale}
+        zIndex={index}
+        dissolveText={textEl._dissolveText}
+      />
     );
   }
 
@@ -510,35 +527,13 @@ export const SlideRenderer: React.FC<SlideRendererProps> = ({
 
         // Text elements
         if (element.type === 'text') {
-          const textEl = element as TextElement;
           return (
-            <div
+            <PresenterTextElement
               key={element.id}
-              style={{
-                position: 'absolute',
-                left: `${element.x * scale}px`,
-                top: `${element.y * scale}px`,
-                width: `${element.width * scale}px`,
-                height: `${element.height * scale}px`,
-                transform: `rotate(${element.rotation}deg)`,
-                transformOrigin: 'center center',
-                opacity: element.opacity,
-                overflow: 'visible',
-                display: 'flex',
-                alignItems: textEl.style.verticalAlign === 'middle' ? 'center' :
-                           textEl.style.verticalAlign === 'bottom' ? 'flex-end' : 'flex-start',
-                zIndex: index,
-                userSelect: 'none',
-              }}
-            >
-              <div style={{ width: '100%', padding: `${TEXT_BOX_PADDING * scale}px` }}>
-                <CustomMarkdownRenderer
-                  text={textEl.text}
-                  style={textEl.style}
-                  zoom={scale}
-                />
-              </div>
-            </div>
+              element={element as TextElement}
+              scale={scale}
+              zIndex={index}
+            />
           );
         }
 

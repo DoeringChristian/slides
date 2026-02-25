@@ -7,6 +7,8 @@ import { TEXT_BOX_PADDING } from '../../utils/constants';
 interface Props {
   element: TextElement;
   isEditing?: boolean;
+  opacity?: number;
+  clipIdPrefix?: string;
 }
 
 // Render LaTeX to HTML string
@@ -58,6 +60,8 @@ function renderBlockAsHtml(_block: ParsedBlock, segments: InlineSegment[]): stri
 export const SVGTextContent: React.FC<Props> = memo(({
   element,
   isEditing = false,
+  opacity = 1,
+  clipIdPrefix = 'text-clip',
 }) => {
   // Don't render SVG text when editing - the HTML editor overlay handles it
   if (isEditing) return null;
@@ -111,7 +115,7 @@ export const SVGTextContent: React.FC<Props> = memo(({
 
   // Allow text to overflow the bottom edge by extending foreignObject
   const bottomOverflow = 500;
-  const clipId = `text-clip-${element.id}`;
+  const clipId = `${clipIdPrefix}-${element.id}`;
 
   return (
     <g transform={transform} style={{ pointerEvents: 'none' }}>
@@ -144,6 +148,7 @@ export const SVGTextContent: React.FC<Props> = memo(({
               overflowWrap: 'break-word',
               whiteSpace: 'pre-wrap',
               overflow: 'visible',
+              opacity,
               userSelect: 'none',
               ...verticalAlignStyle,
             }}
@@ -160,6 +165,8 @@ export const SVGTextContent: React.FC<Props> = memo(({
 
   return (
     prevProps.isEditing === nextProps.isEditing &&
+    prevProps.opacity === nextProps.opacity &&
+    prevProps.clipIdPrefix === nextProps.clipIdPrefix &&
     prev.text === next.text &&
     prev.width === next.width &&
     prev.height === next.height &&

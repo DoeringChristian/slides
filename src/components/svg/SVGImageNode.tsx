@@ -1,5 +1,6 @@
 import React, { useRef, useCallback, useState } from 'react';
 import { usePresentationStore } from '../../store/presentationStore';
+import { RenderImage } from './ElementRenderer';
 import type { ImageElement } from '../../types/presentation';
 
 interface Props {
@@ -72,38 +73,12 @@ export const SVGImageNode: React.FC<Props> = ({
   const cy = element.y + element.height / 2;
   const transform = element.rotation ? `rotate(${element.rotation}, ${cx}, ${cy})` : undefined;
 
-  const commonStyle: React.CSSProperties = {
+  const interactionStyle: React.CSSProperties = {
     cursor: disableInteraction ? 'default' : (element.locked ? 'default' : 'move'),
     pointerEvents: disableInteraction ? 'none' : 'auto',
   };
 
-  // No resource: render placeholder
-  if (!resource) {
-    return (
-      <g transform={transform} data-element-id={element.id}>
-        <rect
-          x={element.x}
-          y={element.y}
-          width={element.width}
-          height={element.height}
-          fill="#f3f4f6"
-          stroke="#9ca3af"
-          strokeWidth={2}
-          strokeDasharray="8 4"
-          opacity={element.opacity}
-          style={commonStyle}
-          onMouseDown={disableInteraction ? undefined : onMouseDown}
-          onMouseEnter={disableInteraction ? undefined : onMouseEnter}
-          onMouseLeave={disableInteraction ? undefined : onMouseLeave}
-        />
-      </g>
-    );
-  }
-
-  // Apply crop
-  const hasCrop = element.cropWidth > 0 && element.cropHeight > 0;
-
-  // Video resource - render with play button overlay on hover
+  // Video resource - keep editor-specific video with play/pause overlay
   if (isVideo && resource.src) {
     // Play button size scales with element but has min/max bounds
     const buttonSize = Math.max(24, Math.min(48, Math.min(element.width, element.height) * 0.15));
@@ -132,7 +107,7 @@ export const SVGImageNode: React.FC<Props> = ({
           width={element.width}
           height={element.height}
           opacity={element.opacity}
-          style={commonStyle}
+          style={interactionStyle}
           onMouseDown={disableInteraction ? undefined : onMouseDown}
         >
           <video
@@ -199,77 +174,26 @@ export const SVGImageNode: React.FC<Props> = ({
     );
   }
 
-  // Image resource
-  if (resource.type === 'image' && resource.src) {
-    if (hasCrop) {
-      // Use clipPath for cropping
-      const clipId = `clip-${element.id}`;
-      const scaleX = element.width / element.cropWidth;
-      const scaleY = element.height / element.cropHeight;
-
-      return (
-        <g transform={transform} data-element-id={element.id}>
-          <defs>
-            <clipPath id={clipId}>
-              <rect x={element.x} y={element.y} width={element.width} height={element.height} />
-            </clipPath>
-          </defs>
-          <g clipPath={`url(#${clipId})`}>
-            <image
-              href={resource.src}
-              x={element.x - element.cropX * scaleX}
-              y={element.y - element.cropY * scaleY}
-              width={resource.originalWidth * scaleX}
-              height={resource.originalHeight * scaleY}
-              opacity={element.opacity}
-              preserveAspectRatio="none"
-              style={commonStyle}
-              onMouseDown={disableInteraction ? undefined : onMouseDown}
-              onMouseEnter={disableInteraction ? undefined : onMouseEnter}
-              onMouseLeave={disableInteraction ? undefined : onMouseLeave}
-            />
-          </g>
-        </g>
-      );
-    }
-
-    return (
-      <g transform={transform} data-element-id={element.id}>
-        <image
-          href={resource.src}
+  // Image (or no resource / loading state) - use RenderImage for visual, add hit area on top
+  return (
+    <g data-element-id={element.id}>
+      <RenderImage element={element} resource={resource} clipIdPrefix="editor" />
+      {/* Transparent hit area for interaction */}
+      <g transform={transform}>
+        <rect
           x={element.x}
           y={element.y}
           width={element.width}
           height={element.height}
-          opacity={element.opacity}
-          preserveAspectRatio="none"
-          style={commonStyle}
-          onMouseDown={disableInteraction ? undefined : onMouseDown}
-          onMouseEnter={disableInteraction ? undefined : onMouseEnter}
-          onMouseLeave={disableInteraction ? undefined : onMouseLeave}
+          fill="transparent"
+          style={interactionStyle}
+          {...(disableInteraction ? {} : {
+            onMouseDown,
+            onMouseEnter,
+            onMouseLeave,
+          })}
         />
       </g>
-    );
-  }
-
-  // Loading/error state
-  return (
-    <g transform={transform} data-element-id={element.id}>
-      <rect
-        x={element.x}
-        y={element.y}
-        width={element.width}
-        height={element.height}
-        fill="#1f2937"
-        stroke="#6b7280"
-        strokeWidth={2}
-        strokeDasharray="8 4"
-        opacity={element.opacity}
-        style={commonStyle}
-        onMouseDown={disableInteraction ? undefined : onMouseDown}
-        onMouseEnter={disableInteraction ? undefined : onMouseEnter}
-        onMouseLeave={disableInteraction ? undefined : onMouseLeave}
-      />
     </g>
   );
 };
