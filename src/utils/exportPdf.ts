@@ -448,25 +448,22 @@ export async function exportPdf(presentation: Presentation): Promise<void> {
     .map(id => presentation.slides[id])
     .filter(slide => slide && !slide.hidden);
 
-  for (let i = 0; i < visibleSlides.length; i++) {
-    const slide = visibleSlides[i];
-    if (!slide) continue;
-
-    if (i > 0) pdf.addPage();
-
-    // Create slide container and add to DOM
+  // Build all slide DOMs and append to document in one batch
+  const containers = visibleSlides.map(slide => {
     const container = createSlideContainer(slide, presentation.resources);
     document.body.appendChild(container);
+    return container;
+  });
 
-    try {
-      // Wait for images to load
-      await waitForImages(container);
+  try {
+    // Wait for all images across all slides to load in parallel
+    await Promise.all(containers.map(c => waitForImages(c)));
 
-      // Small delay to ensure rendering is complete
-      await new Promise(resolve => setTimeout(resolve, 50));
+    // Capture all slides with html2canvas
+    for (let i = 0; i < containers.length; i++) {
+      if (i > 0) pdf.addPage();
 
-      // Capture with html2canvas
-      const canvas = await html2canvas(container, {
+      const canvas = await html2canvas(containers[i], {
         width: SLIDE_WIDTH,
         height: SLIDE_HEIGHT,
         scale: 2,
@@ -476,11 +473,12 @@ export async function exportPdf(presentation: Presentation): Promise<void> {
         logging: false,
       });
 
-      // Add to PDF
-      const imgData = canvas.toDataURL('image/png');
-      pdf.addImage(imgData, 'PNG', 0, 0, SLIDE_WIDTH, SLIDE_HEIGHT);
-    } finally {
-      // Clean up
+      // Pass canvas directly — avoids expensive toDataURL base64 encoding
+      pdf.addImage(canvas, 'JPEG', 0, 0, SLIDE_WIDTH, SLIDE_HEIGHT, undefined, 'FAST');
+    }
+  } finally {
+    // Clean up all containers
+    for (const container of containers) {
       document.body.removeChild(container);
     }
   }

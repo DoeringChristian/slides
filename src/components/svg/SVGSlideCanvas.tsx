@@ -399,6 +399,11 @@ export const SVGSlideCanvas: React.FC = () => {
         const localY = relCenterX * sin + relCenterY * cos + clickedElement.height / 2;
 
         if (isPointOnTextContent(clickedElement as TextElement, { x: localX, y: localY })) {
+          if (clickedElement.locked) {
+            // Locked text can't drag, so enter edit mode immediately
+            setEditingTextId(id, { x: localX, y: localY });
+            return;
+          }
           pendingTextEdit.current = { id, localX, localY };
         }
       }

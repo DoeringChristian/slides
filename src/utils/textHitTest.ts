@@ -22,37 +22,32 @@ export function isPointOnTextContent(element: TextElement, point: Point): boolea
   const { fontSize, fontFamily, fontWeight, lineHeight, align, verticalAlign } = style;
   const lineHeightMultiplier = lineHeight || 1.2;
 
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return false;
-
   const blocks = parseBlocks(text);
 
-  // Calculate total height and max width accounting for markdown
+  const contentWidth = width - padding * 2;
+  const contentHeight = height - padding * 2;
+
+  // Calculate total height using DOM measurement (accounts for word wrapping)
   let totalHeight = 0;
-  let maxWidth = 0;
 
   for (const block of blocks) {
     const multiplier = getBlockFontMultiplier(block.type);
     const blockFontSize = fontSize * multiplier;
     const isHeader = block.type === 'h1' || block.type === 'h2' || block.type === 'h3';
-    const blockFontWeight = isHeader ? 'bold ' : (fontWeight === 'bold' ? 'bold ' : '');
+    const blockFontWeight = isHeader ? 'bold' : (fontWeight || 'normal');
 
-    ctx.font = `${blockFontWeight}${blockFontSize}px ${fontFamily}`;
-
-    // Note: bullets and numbered lists now include the prefix in displayContent
-    const blockWidth = ctx.measureText(block.displayContent).width;
-    const blockHeight = blockFontSize * lineHeightMultiplier;
-
-    totalHeight += blockHeight;
-    maxWidth = Math.max(maxWidth, blockWidth);
+    totalHeight += measureBlockHeight(
+      block.displayContent,
+      blockFontSize,
+      fontFamily,
+      blockFontWeight,
+      lineHeightMultiplier,
+      contentWidth
+    );
   }
 
-  const contentWidth = width - padding * 2;
-  const contentHeight = height - padding * 2;
-
-  // With word wrapping, text fills up to the content width
-  const effectiveTextWidth = Math.min(maxWidth, contentWidth);
+  // Text always fills the content width (word wrapping)
+  const effectiveTextWidth = contentWidth;
 
   // Calculate text position based on alignment
   let textX = padding;
