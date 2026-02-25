@@ -11,6 +11,7 @@ interface Props {
 export const ColorPicker: React.FC<Props> = ({ color, onChange, label = 'Color', allowTransparent = true }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [hexInput, setHexInput] = useState(color);
+  const [alignRight, setAlignRight] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -32,7 +33,13 @@ export const ColorPicker: React.FC<Props> = ({ color, onChange, label = 'Color',
   return (
     <div className="relative" ref={ref}>
       <button
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => {
+          if (!isOpen && ref.current) {
+            const rect = ref.current.getBoundingClientRect();
+            setAlignRight(rect.left + 224 > window.innerWidth);
+          }
+          setIsOpen(!isOpen);
+        }}
         className="flex items-center gap-1 p-1 rounded hover:bg-gray-100"
         title={label}
       >
@@ -52,7 +59,7 @@ export const ColorPicker: React.FC<Props> = ({ color, onChange, label = 'Color',
       </button>
 
       {isOpen && (
-        <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 p-3 z-50 w-56">
+        <div className={`absolute top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 p-3 z-50 w-56 ${alignRight ? 'right-0' : 'left-0'}`}>
           {allowTransparent && (
             <button
               onClick={() => { onChange('transparent'); setIsOpen(false); }}
