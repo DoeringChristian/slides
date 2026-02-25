@@ -199,6 +199,25 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
         let newWidth = startBounds.width - dLeft + dRight;
         let newHeight = startBounds.height - dTop + dBottom;
 
+        // Lock aspect ratio for image elements on diagonal resize
+        const isDiagonal = (anchor.includes('left') || anchor.includes('right')) &&
+                           (anchor.includes('top') || anchor.includes('bottom'));
+        if (isDiagonal && singleElement.type === 'image' && startBounds.width > 0 && startBounds.height > 0) {
+          const aspect = startBounds.width / startBounds.height;
+          // Use the axis with the larger proportional change to drive the other
+          const wRatio = Math.abs(newWidth) / startBounds.width;
+          const hRatio = Math.abs(newHeight) / startBounds.height;
+          if (wRatio > hRatio) {
+            newHeight = newWidth / aspect;
+            if (anchor.includes('top')) dTop = startBounds.height - newHeight;
+            else dBottom = newHeight - startBounds.height;
+          } else {
+            newWidth = newHeight * aspect;
+            if (anchor.includes('left')) dLeft = startBounds.width - newWidth;
+            else dRight = newWidth - startBounds.width;
+          }
+        }
+
         // Minimum size
         if (newWidth < 10) {
           if (anchor.includes('left')) dLeft = startBounds.width - 10;
