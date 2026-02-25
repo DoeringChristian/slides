@@ -397,7 +397,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
           outline: 'none',
           whiteSpace: 'pre-wrap',
           wordBreak: 'break-word',
-          overflow: 'hidden',
+          overflow: 'visible',
           cursor: 'text',
           // Enable pointer events on the contentEditable (parent has pointerEvents: none)
           pointerEvents: 'auto',

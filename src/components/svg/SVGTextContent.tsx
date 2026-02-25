@@ -109,32 +109,48 @@ export const SVGTextContent: React.FC<Props> = memo(({
 
   const padding = TEXT_BOX_PADDING;
 
+  // Allow text to overflow the bottom edge by extending foreignObject
+  const bottomOverflow = 500;
+  const clipId = `text-clip-${element.id}`;
+
   return (
     <g transform={transform} style={{ pointerEvents: 'none' }}>
-      <foreignObject
-        x={elementX + padding}
-        y={elementY + padding}
-        width={width - padding * 2}
-        height={height - padding * 2}
-      >
-        <div
-          style={{
-            width: '100%',
-            height: '100%',
-            fontFamily: style.fontFamily,
-            fontStyle: style.fontStyle,
-            color: style.color,
-            textAlign: style.align,
-            wordWrap: 'break-word',
-            overflowWrap: 'break-word',
-            whiteSpace: 'pre-wrap',
-            overflow: 'hidden',
-            userSelect: 'none',
-            ...verticalAlignStyle,
-          }}
-          dangerouslySetInnerHTML={{ __html: htmlContent }}
-        />
-      </foreignObject>
+      <defs>
+        <clipPath id={clipId}>
+          <rect
+            x={elementX + padding}
+            y={elementY + padding}
+            width={width - padding * 2}
+            height={height - padding * 2 + bottomOverflow}
+          />
+        </clipPath>
+      </defs>
+      <g clipPath={`url(#${clipId})`}>
+        <foreignObject
+          x={elementX + padding}
+          y={elementY + padding}
+          width={width - padding * 2}
+          height={height - padding * 2 + bottomOverflow}
+        >
+          <div
+            style={{
+              width: '100%',
+              height: height - padding * 2,
+              fontFamily: style.fontFamily,
+              fontStyle: style.fontStyle,
+              color: style.color,
+              textAlign: style.align,
+              wordWrap: 'break-word',
+              overflowWrap: 'break-word',
+              whiteSpace: 'pre-wrap',
+              overflow: 'visible',
+              userSelect: 'none',
+              ...verticalAlignStyle,
+            }}
+            dangerouslySetInnerHTML={{ __html: htmlContent }}
+          />
+        </foreignObject>
+      </g>
     </g>
   );
 }, (prevProps, nextProps) => {

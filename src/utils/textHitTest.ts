@@ -70,9 +70,10 @@ export function isPointOnTextContent(element: TextElement, point: Point): boolea
   }
 
   // Border margin: clicks near box edges always start a drag, not edit mode
+  // Only apply border margin within the original element bounds (not overflow area)
   const borderMargin = 8;
   if (point.x < borderMargin || point.x > width - borderMargin ||
-      point.y < borderMargin || point.y > height - borderMargin) {
+      (point.y < height && (point.y < borderMargin || point.y > height - borderMargin))) {
     return false;
   }
 
@@ -81,7 +82,7 @@ export function isPointOnTextContent(element: TextElement, point: Point): boolea
     left: Math.max(0, textX - tolerance),
     top: Math.max(0, textY - tolerance),
     right: Math.min(width, textX + effectiveTextWidth + tolerance),
-    bottom: Math.min(height, textY + totalHeight + tolerance),
+    bottom: textY + totalHeight + tolerance,
   };
 
   return (

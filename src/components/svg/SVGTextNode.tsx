@@ -36,13 +36,13 @@ export const SVGTextNode: React.FC<Props> = ({
         isEditing={isEditing}
       />
 
-      {/* Transparent hit area for interaction (on top of text) */}
+      {/* Transparent hit area for interaction (on top of text, extends below for overflow) */}
       <g transform={transform}>
         <rect
           x={element.x}
           y={element.y}
           width={element.width}
-          height={element.height}
+          height={element.height + 500}
           fill="transparent"
           opacity={element.opacity}
           style={{
