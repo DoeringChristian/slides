@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { temporal } from 'zundo';
-import type { Presentation, Slide, SlideElement, ShapeElement, ObjectMeta, SlideTemplate, Resource } from '../types/presentation';
+import type { Presentation, Slide, SlideElement, ShapeElement, ImageElement, ObjectMeta, SlideTemplate, Resource } from '../types/presentation';
 import { generateId } from '../utils/idGenerator';
 import { createPresentation, createSlide, copySlideAsKeyframe, generateObjectName } from '../utils/slideFactory';
 import { resolveBindingPoint } from '../utils/connectorUtils';
@@ -41,6 +41,18 @@ function getObjectType(el: SlideElement): ObjectMeta['type'] {
 function getObjectSubtype(el: SlideElement): string {
   if (el.type === 'shape') return (el as ShapeElement).shapeType;
   return el.type;
+}
+
+// Check if a resource is still referenced by any element in any slide
+function isResourceReferencedInSlides(slides: Record<string, Slide>, resourceId: string): boolean {
+  for (const slide of Object.values(slides)) {
+    for (const element of Object.values(slide.elements)) {
+      if (element.type === 'image' && 'resourceId' in element && (element as ImageElement).resourceId === resourceId) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 // Check if an object is visible in any slide
@@ -627,13 +639,14 @@ export const usePresentationStore = create<PresentationStore>()(
               const { [elementId]: _removedObject, ...remainingObjects } = objects;
               objects = remainingObjects;
 
+              // Track resource before removing element
+              let resourceIdToCheck: string | null = null;
               // Remove from all slides
-              let resourceIdToRemove: string | null = null;
               for (const [sid, s] of Object.entries(slides)) {
                 const element = s.elements[elementId];
                 if (element) {
                   if (element.type === 'image' && 'resourceId' in element && element.resourceId) {
-                    resourceIdToRemove = element.resourceId;
+                    resourceIdToCheck = element.resourceId;
                   }
                   const { [elementId]: _removed, ...remainingElements } = s.elements;
                   slides[sid] = {
@@ -644,8 +657,9 @@ export const usePresentationStore = create<PresentationStore>()(
                 }
               }
 
-              if (resourceIdToRemove) {
-                const { [resourceIdToRemove]: _removedResource, ...remainingResources } = resources;
+              // Only remove resource if no other element still references it
+              if (resourceIdToCheck && !isResourceReferencedInSlides(slides, resourceIdToCheck)) {
+                const { [resourceIdToCheck]: _removedResource, ...remainingResources } = resources;
                 resources = remainingResources;
               }
             }
@@ -796,13 +810,13 @@ export const usePresentationStore = create<PresentationStore>()(
 
             // Remove from all slides
             const cleanedSlides: Record<string, Slide> = {};
-            let resourceIdToRemove: string | null = null;
+            let resourceIdToCheck: string | null = null;
 
             for (const [sid, s] of Object.entries(slides)) {
               const element = s.elements[elementId];
               if (element) {
                 if (element.type === 'image' && 'resourceId' in element && element.resourceId) {
-                  resourceIdToRemove = element.resourceId;
+                  resourceIdToCheck = element.resourceId;
                 }
                 const { [elementId]: _removed, ...remainingElements } = s.elements;
                 cleanedSlides[sid] = {
@@ -815,9 +829,10 @@ export const usePresentationStore = create<PresentationStore>()(
               }
             }
 
+            // Only remove resource if no other element still references it
             let resources = state.presentation.resources;
-            if (resourceIdToRemove) {
-              const { [resourceIdToRemove]: _removedResource, ...remainingResources } = resources;
+            if (resourceIdToCheck && !isResourceReferencedInSlides(cleanedSlides, resourceIdToCheck)) {
+              const { [resourceIdToCheck]: _removedResource, ...remainingResources } = resources;
               resources = remainingResources;
             }
 
@@ -995,14 +1010,14 @@ export const usePresentationStore = create<PresentationStore>()(
 
           // Remove from all slides
           const updatedSlides: Record<string, Slide> = {};
-          let resourceIdToRemove: string | null = null;
+          let resourceIdToCheck: string | null = null;
 
           for (const [slideId, slide] of Object.entries(state.presentation.slides)) {
             const element = slide.elements[objectId];
             if (element) {
               // Track resource ID if this is an image element
               if (element.type === 'image' && 'resourceId' in element && element.resourceId) {
-                resourceIdToRemove = element.resourceId;
+                resourceIdToCheck = element.resourceId;
               }
               // Remove element from this slide
               const { [objectId]: _removed, ...remainingElements } = slide.elements;
@@ -1016,10 +1031,10 @@ export const usePresentationStore = create<PresentationStore>()(
             }
           }
 
-          // Remove associated resource if it's an image
+          // Only remove resource if no other element still references it
           let resources = state.presentation.resources;
-          if (resourceIdToRemove) {
-            const { [resourceIdToRemove]: _removedResource, ...remainingResources } = resources;
+          if (resourceIdToCheck && !isResourceReferencedInSlides(updatedSlides, resourceIdToCheck)) {
+            const { [resourceIdToCheck]: _removedResource, ...remainingResources } = resources;
             resources = remainingResources;
           }
 
