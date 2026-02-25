@@ -23,10 +23,11 @@ interface SlidePreviewProps {
   label: string;
   resources: Record<string, Resource>;
   autoPlayVideos?: boolean;
+  onVideoCommand?: (action: 'play' | 'pause' | 'seek', currentTime?: number) => void;
   onClick?: () => void;
 }
 
-const SlidePreview: React.FC<SlidePreviewProps> = ({ slide, scale, label, resources, autoPlayVideos, onClick }) => {
+const SlidePreview: React.FC<SlidePreviewProps> = ({ slide, scale, label, resources, autoPlayVideos, onVideoCommand, onClick }) => {
   if (!slide) {
     return (
       <div className="flex flex-col">
@@ -54,6 +55,7 @@ const SlidePreview: React.FC<SlidePreviewProps> = ({ slide, scale, label, resour
           height={SLIDE_HEIGHT * scale}
           resources={resources}
           autoPlayVideos={autoPlayVideos}
+          onVideoCommand={onVideoCommand}
         />
       </div>
     </div>
@@ -66,6 +68,7 @@ export const PresenterControlPanel: React.FC = () => {
     exitPresenterMode,
     goToSlide,
     sendAnimationState,
+    sendVideoCommand,
     resetTimer,
   } = usePresenterMode();
 
@@ -233,11 +236,30 @@ export const PresenterControlPanel: React.FC = () => {
     };
   }, []);
 
+  // Compute scales based on available space
+  const slidesAreaRef = useRef<HTMLDivElement>(null);
+  const [areaSize, setAreaSize] = useState({ w: 0, h: 0 });
+
+  useEffect(() => {
+    if (!isPresenterMode || !slidesAreaRef.current) return;
+    const ro = new ResizeObserver((entries) => {
+      const { width, height } = entries[0].contentRect;
+      setAreaSize({ w: width, h: height });
+    });
+    ro.observe(slidesAreaRef.current);
+    return () => ro.disconnect();
+  }, [isPresenterMode]);
+
   if (!isPresenterMode) return null;
 
-  // Calculate preview scales - make them fit better
-  const currentScale = 0.65;
-  const nextScale = 0.3;
+  // 80/20 split with ~1cm (38px) gap between slides
+  const GAP = 38;
+  const innerW = areaSize.w > 0 ? areaSize.w : 800;
+  const innerH = areaSize.h > 0 ? areaSize.h : 500;
+  const currentW = (innerW - GAP) * 0.8;
+  const nextW = (innerW - GAP) * 0.2;
+  const currentScale = Math.min(currentW / SLIDE_WIDTH, innerH / SLIDE_HEIGHT);
+  const nextScale = Math.min(nextW / SLIDE_WIDTH, innerH / SLIDE_HEIGHT);
 
   return (
     <div className="fixed inset-0 bg-gray-900 z-[9998] flex flex-col">
@@ -294,21 +316,22 @@ export const PresenterControlPanel: React.FC = () => {
 
       {/* Main content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Slides area - Current and Next side by side */}
-        <div className="flex-1 flex p-4 gap-6 overflow-auto">
-          {/* Current slide - larger */}
-          <div className="flex-[2] flex flex-col items-center justify-center">
+        {/* Slides area - 80/20 split */}
+        <div ref={slidesAreaRef} className="flex-1 flex items-center justify-center p-4 overflow-hidden" style={{ gap: GAP }}>
+          {/* Current slide - 80% */}
+          <div className="flex flex-col items-center">
             <SlidePreview
               slide={currentSlide}
               scale={currentScale}
               label="Current Slide"
               resources={resources}
               autoPlayVideos
+              onVideoCommand={sendVideoCommand}
             />
           </div>
 
-          {/* Next slide - smaller */}
-          <div className="flex-1 flex flex-col items-center justify-center">
+          {/* Next slide - 20% */}
+          <div className="flex flex-col items-center">
             <SlidePreview
               slide={nextSlide}
               scale={nextScale}

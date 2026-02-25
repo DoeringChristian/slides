@@ -3,11 +3,12 @@ import { useEditorStore } from '../store/editorStore';
 import { usePresentationStore } from '../store/presentationStore';
 
 export interface PresenterMessage {
-  type: 'slide-change' | 'animation-state' | 'exit' | 'sync-request' | 'sync-response';
+  type: 'slide-change' | 'animation-state' | 'exit' | 'sync-request' | 'sync-response' | 'video-command';
   slideIndex?: number;
   isAnimating?: boolean;
   animProgress?: number;
   targetIndex?: number;
+  videoCommand?: { action: 'play' | 'pause' | 'seek'; currentTime?: number };
 }
 
 const CHANNEL_NAME = 'slides-presenter';
@@ -113,6 +114,14 @@ export function usePresenterMode() {
     } as PresenterMessage);
   }, []);
 
+  // Send video command to audience
+  const sendVideoCommand = useCallback((action: 'play' | 'pause' | 'seek', currentTime?: number) => {
+    getChannel().postMessage({
+      type: 'video-command',
+      videoCommand: { action, currentTime },
+    } as PresenterMessage);
+  }, []);
+
   // Check if audience window is still open
   useEffect(() => {
     if (!isPresenterMode) {
@@ -157,11 +166,17 @@ export function usePresenterMode() {
     exitPresenterMode,
     goToSlide,
     sendAnimationState,
+    sendVideoCommand,
     resetTimer: resetPresenterTimer,
   };
 }
 
 // Hook for audience window to receive messages
+export interface VideoCommand {
+  action: 'play' | 'pause' | 'seek';
+  currentTime?: number;
+}
+
 export function useAudienceReceiver() {
   const [state, setState] = useState({
     slideIndex: 0,
@@ -170,6 +185,7 @@ export function useAudienceReceiver() {
     targetIndex: 0,
     shouldExit: false,
   });
+  const [videoCommand, setVideoCommand] = useState<VideoCommand | null>(null);
 
   useEffect(() => {
     const ch = new BroadcastChannel(CHANNEL_NAME);
@@ -199,6 +215,11 @@ export function useAudienceReceiver() {
             setState(s => ({ ...s, slideIndex: msg.slideIndex! }));
           }
           break;
+        case 'video-command':
+          if (msg.videoCommand) {
+            setVideoCommand({ ...msg.videoCommand });
+          }
+          break;
         case 'exit':
           setState(s => ({ ...s, shouldExit: true }));
           break;
@@ -210,5 +231,5 @@ export function useAudienceReceiver() {
     };
   }, []);
 
-  return state;
+  return { ...state, videoCommand };
 }

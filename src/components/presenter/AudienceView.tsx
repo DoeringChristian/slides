@@ -7,7 +7,7 @@ import { getSlideBackground, mergeElementOrders, renderPresenterElement } from '
 import type { SlideElement } from '../../types/presentation';
 
 export const AudienceView: React.FC = () => {
-  const { slideIndex, isAnimating, animProgress, targetIndex, shouldExit } = useAudienceReceiver();
+  const { slideIndex, isAnimating, animProgress, targetIndex, shouldExit, videoCommand } = useAudienceReceiver();
   const slideOrder = usePresentationStore((s) => s.presentation.slideOrder);
   const slides = usePresentationStore((s) => s.presentation.slides);
   const resources = usePresentationStore((s) => s.presentation.resources);
@@ -36,6 +36,33 @@ export const AudienceView: React.FC = () => {
       window.close();
     }
   }, [shouldExit]);
+
+  // Handle video commands from presenter
+  useEffect(() => {
+    if (!videoCommand || !containerRef.current) return;
+    const videos = containerRef.current.querySelectorAll('video');
+    videos.forEach((v) => {
+      switch (videoCommand.action) {
+        case 'play':
+          if (videoCommand.currentTime !== undefined) {
+            v.currentTime = videoCommand.currentTime;
+          }
+          v.play().catch(() => {});
+          break;
+        case 'pause':
+          v.pause();
+          if (videoCommand.currentTime !== undefined) {
+            v.currentTime = videoCommand.currentTime;
+          }
+          break;
+        case 'seek':
+          if (videoCommand.currentTime !== undefined) {
+            v.currentTime = videoCommand.currentTime;
+          }
+          break;
+      }
+    });
+  }, [videoCommand]);
 
   const totalSlides = slideOrder.length;
   const currentSlide = slides[slideOrder[slideIndex]] || null;

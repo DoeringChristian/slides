@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useRef, useState, useCallback, useEffect } from 'react';
+import { Play, Pause } from 'lucide-react';
 import { CustomMarkdownRenderer } from '../canvas/CustomMarkdownRenderer';
 import { RenderShape, RenderImage } from '../svg/ElementRenderer';
 import { SLIDE_WIDTH, SLIDE_HEIGHT, TEXT_BOX_PADDING } from '../../utils/constants';
@@ -108,6 +109,7 @@ export function renderPresenterElement(
           alignItems: textEl.style.verticalAlign === 'middle' ? 'center' :
                      textEl.style.verticalAlign === 'bottom' ? 'flex-end' : 'flex-start',
           zIndex: index,
+          userSelect: 'none',
         }}
       >
         <div style={{ width: '100%', padding: `${TEXT_BOX_PADDING * scale}px` }}>
@@ -272,6 +274,178 @@ export function renderPresenterElement(
 }
 
 // ============================================================================
+// VideoWithControls - Video element with play/pause button and progress bar
+// ============================================================================
+
+interface VideoWithControlsProps {
+  src: string;
+  autoPlay: boolean;
+  loop: boolean;
+  muted: boolean;
+  videoStyle: React.CSSProperties;
+  containerStyle?: React.CSSProperties;
+  /** If true, wrap video in a container div (for cropped videos) */
+  cropped?: boolean;
+  /** Callback to send video commands to audience view */
+  onVideoCommand?: (action: 'play' | 'pause' | 'seek', currentTime?: number) => void;
+}
+
+const VideoWithControls: React.FC<VideoWithControlsProps> = ({
+  src,
+  autoPlay,
+  loop,
+  muted,
+  videoStyle,
+  containerStyle,
+  cropped,
+  onVideoCommand,
+}) => {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [isPlaying, setIsPlaying] = useState(autoPlay);
+  const [progress, setProgress] = useState(0);
+  const [isHovered, setIsHovered] = useState(false);
+  const rafRef = useRef<number>(0);
+
+  // Update progress via rAF
+  useEffect(() => {
+    const update = () => {
+      const v = videoRef.current;
+      if (v && v.duration) {
+        setProgress(v.currentTime / v.duration);
+      }
+      rafRef.current = requestAnimationFrame(update);
+    };
+    rafRef.current = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, []);
+
+  // Sync play state with video events
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const onPlay = () => setIsPlaying(true);
+    const onPause = () => setIsPlaying(false);
+    const onEnded = () => { if (!loop) setIsPlaying(false); };
+    v.addEventListener('play', onPlay);
+    v.addEventListener('pause', onPause);
+    v.addEventListener('ended', onEnded);
+    return () => {
+      v.removeEventListener('play', onPlay);
+      v.removeEventListener('pause', onPause);
+      v.removeEventListener('ended', onEnded);
+    };
+  }, [loop]);
+
+  const togglePlayPause = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.paused || v.ended) {
+      v.play().catch(() => {
+        v.muted = true;
+        v.play().catch(() => {});
+      });
+      onVideoCommand?.('play', v.currentTime);
+    } else {
+      v.pause();
+      onVideoCommand?.('pause', v.currentTime);
+    }
+  }, [onVideoCommand]);
+
+  const handleSeek = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    const v = videoRef.current;
+    if (!v || !v.duration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    v.currentTime = ratio * v.duration;
+    setProgress(ratio);
+    onVideoCommand?.('seek', v.currentTime);
+  }, [onVideoCommand]);
+
+  // Outer wrapper uses containerStyle positioning (absolute pos, z-index, etc.)
+  const outerStyle: React.CSSProperties = containerStyle || videoStyle;
+
+  return (
+    <div
+      style={{
+        ...outerStyle,
+        position: outerStyle.position || 'absolute',
+      }}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      <video
+        ref={videoRef}
+        src={src}
+        autoPlay={autoPlay}
+        loop={loop}
+        muted={muted}
+        playsInline
+        preload="metadata"
+        style={cropped ? videoStyle : {
+          width: '100%',
+          height: '100%',
+          objectFit: (videoStyle.objectFit as React.CSSProperties['objectFit']) || 'cover',
+        }}
+      />
+
+      {/* Controls overlay */}
+      {isHovered && (
+        <>
+          {/* Play/Pause button */}
+          <button
+            onClick={togglePlayPause}
+            style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              background: 'rgba(0,0,0,0.5)',
+              border: 'none',
+              borderRadius: '50%',
+              width: 32,
+              height: 32,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              color: 'white',
+              zIndex: 10,
+            }}
+          >
+            {isPlaying ? <Pause size={16} /> : <Play size={16} />}
+          </button>
+
+          {/* Progress bar */}
+          <div
+            onClick={handleSeek}
+            style={{
+              position: 'absolute',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              height: 6,
+              background: 'rgba(255,255,255,0.3)',
+              cursor: 'pointer',
+              zIndex: 10,
+            }}
+          >
+            <div
+              style={{
+                height: '100%',
+                width: `${progress * 100}%`,
+                background: 'rgba(59,130,246,0.9)',
+              }}
+            />
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+
+// ============================================================================
 // SlideRenderer - Reusable component for rendering slides with video support
 // ============================================================================
 
@@ -281,6 +455,7 @@ interface SlideRendererProps {
   height: number;
   resources: Record<string, Resource>;
   autoPlayVideos?: boolean;
+  onVideoCommand?: (action: 'play' | 'pause' | 'seek', currentTime?: number) => void;
 }
 
 export const SlideRenderer: React.FC<SlideRendererProps> = ({
@@ -289,6 +464,7 @@ export const SlideRenderer: React.FC<SlideRendererProps> = ({
   height,
   resources,
   autoPlayVideos = false,
+  onVideoCommand,
 }) => {
   const scale = width / SLIDE_WIDTH;
   const bgColor = getSlideBackground(slide);
@@ -322,6 +498,7 @@ export const SlideRenderer: React.FC<SlideRendererProps> = ({
                 alignItems: textEl.style.verticalAlign === 'middle' ? 'center' :
                            textEl.style.verticalAlign === 'bottom' ? 'flex-end' : 'flex-start',
                 zIndex: index,
+                userSelect: 'none',
               }}
             >
               <div style={{ width: '100%', padding: `${TEXT_BOX_PADDING * scale}px` }}>
@@ -342,14 +519,21 @@ export const SlideRenderer: React.FC<SlideRendererProps> = ({
 
           if (resource?.type === 'video') {
             const hasCrop = imgEl.cropWidth > 0 && imgEl.cropHeight > 0;
+            const shouldAutoPlay = autoPlayVideos && (imgEl.playing ?? true);
 
             if (hasCrop) {
               const scaleX = resource.originalWidth / imgEl.cropWidth;
               const scaleY = resource.originalHeight / imgEl.cropHeight;
               return (
-                <div
+                <VideoWithControls
                   key={element.id}
-                  style={{
+                  src={resource.src}
+                  autoPlay={shouldAutoPlay}
+                  loop={imgEl.loop ?? false}
+                  muted={imgEl.muted ?? true}
+                  cropped
+                  onVideoCommand={onVideoCommand}
+                  containerStyle={{
                     position: 'absolute',
                     left: `${element.x * scale}px`,
                     top: `${element.y * scale}px`,
@@ -361,35 +545,25 @@ export const SlideRenderer: React.FC<SlideRendererProps> = ({
                     overflow: 'hidden',
                     zIndex: index,
                   }}
-                >
-                  <video
-                    src={resource.src}
-                    autoPlay={autoPlayVideos && (imgEl.playing ?? true)}
-                    loop={imgEl.loop ?? false}
-                    muted={imgEl.muted ?? true}
-                    playsInline
-                    preload="metadata"
-                    style={{
-                      width: `${element.width * scale * scaleX}px`,
-                      height: `${element.height * scale * scaleY}px`,
-                      marginLeft: `${-imgEl.cropX * (element.width / imgEl.cropWidth) * scale}px`,
-                      marginTop: `${-imgEl.cropY * (element.height / imgEl.cropHeight) * scale}px`,
-                    }}
-                  />
-                </div>
+                  videoStyle={{
+                    width: `${element.width * scale * scaleX}px`,
+                    height: `${element.height * scale * scaleY}px`,
+                    marginLeft: `${-imgEl.cropX * (element.width / imgEl.cropWidth) * scale}px`,
+                    marginTop: `${-imgEl.cropY * (element.height / imgEl.cropHeight) * scale}px`,
+                  }}
+                />
               );
             }
 
             return (
-              <video
+              <VideoWithControls
                 key={element.id}
                 src={resource.src}
-                autoPlay={autoPlayVideos && (imgEl.playing ?? true)}
+                autoPlay={shouldAutoPlay}
                 loop={imgEl.loop ?? false}
                 muted={imgEl.muted ?? true}
-                playsInline
-                preload="metadata"
-                style={{
+                onVideoCommand={onVideoCommand}
+                videoStyle={{
                   position: 'absolute',
                   left: `${element.x * scale}px`,
                   top: `${element.y * scale}px`,
