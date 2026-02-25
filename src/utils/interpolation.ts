@@ -226,7 +226,7 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
   if (a.type === 'text' && b.type === 'text') {
     const ta = a as TextElement;
     const tb = b as TextElement;
-    const textResult = interpolateText(ta.text, tb.text, t, tr.content ?? 'dissolve');
+    const textResult = interpolateText(ta.text, tb.text, t, tr.content ?? 'const');
     const result: TextElement & { _dissolveText?: TextDissolveSource } = {
       ...base,
       type: 'text',
