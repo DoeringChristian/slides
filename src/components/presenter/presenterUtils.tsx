@@ -270,3 +270,161 @@ export function renderPresenterElement(
     </svg>
   );
 }
+
+// ============================================================================
+// SlideRenderer - Reusable component for rendering slides with video support
+// ============================================================================
+
+interface SlideRendererProps {
+  slide: Slide;
+  width: number;
+  height: number;
+  resources: Record<string, Resource>;
+  autoPlayVideos?: boolean;
+}
+
+export const SlideRenderer: React.FC<SlideRendererProps> = ({
+  slide,
+  width,
+  height,
+  resources,
+  autoPlayVideos = false,
+}) => {
+  const scale = width / SLIDE_WIDTH;
+  const bgColor = getSlideBackground(slide);
+  const elements = slide.elementOrder.map((id) => slide.elements[id]).filter(Boolean);
+
+  return (
+    <div
+      className="relative overflow-hidden"
+      style={{ width, height, background: bgColor }}
+    >
+      {elements.map((element, index) => {
+        if (!element.visible) return null;
+
+        // Text elements
+        if (element.type === 'text') {
+          const textEl = element as TextElement;
+          return (
+            <div
+              key={element.id}
+              style={{
+                position: 'absolute',
+                left: `${element.x * scale}px`,
+                top: `${element.y * scale}px`,
+                width: `${element.width * scale}px`,
+                height: `${element.height * scale}px`,
+                transform: `rotate(${element.rotation}deg)`,
+                transformOrigin: 'center center',
+                opacity: element.opacity,
+                overflow: 'hidden',
+                display: 'flex',
+                alignItems: textEl.style.verticalAlign === 'middle' ? 'center' :
+                           textEl.style.verticalAlign === 'bottom' ? 'flex-end' : 'flex-start',
+                zIndex: index,
+              }}
+            >
+              <div style={{ width: '100%', padding: `${TEXT_BOX_PADDING * scale}px` }}>
+                <CustomMarkdownRenderer
+                  text={textEl.text}
+                  style={textEl.style}
+                  zoom={scale}
+                />
+              </div>
+            </div>
+          );
+        }
+
+        // Image/Video elements
+        if (element.type === 'image') {
+          const imgEl = element as ImageElement;
+          const resource = imgEl.resourceId ? resources[imgEl.resourceId] : undefined;
+
+          if (resource?.type === 'video') {
+            const hasCrop = imgEl.cropWidth > 0 && imgEl.cropHeight > 0;
+
+            if (hasCrop) {
+              const scaleX = resource.originalWidth / imgEl.cropWidth;
+              const scaleY = resource.originalHeight / imgEl.cropHeight;
+              return (
+                <div
+                  key={element.id}
+                  style={{
+                    position: 'absolute',
+                    left: `${element.x * scale}px`,
+                    top: `${element.y * scale}px`,
+                    width: `${element.width * scale}px`,
+                    height: `${element.height * scale}px`,
+                    transform: `rotate(${element.rotation}deg)`,
+                    transformOrigin: 'center center',
+                    opacity: element.opacity,
+                    overflow: 'hidden',
+                    zIndex: index,
+                  }}
+                >
+                  <video
+                    src={resource.src}
+                    autoPlay={autoPlayVideos && (imgEl.playing ?? true)}
+                    loop={imgEl.loop ?? false}
+                    muted={imgEl.muted ?? true}
+                    playsInline
+                    preload="metadata"
+                    style={{
+                      width: `${element.width * scale * scaleX}px`,
+                      height: `${element.height * scale * scaleY}px`,
+                      marginLeft: `${-imgEl.cropX * (element.width / imgEl.cropWidth) * scale}px`,
+                      marginTop: `${-imgEl.cropY * (element.height / imgEl.cropHeight) * scale}px`,
+                    }}
+                  />
+                </div>
+              );
+            }
+
+            return (
+              <video
+                key={element.id}
+                src={resource.src}
+                autoPlay={autoPlayVideos && (imgEl.playing ?? true)}
+                loop={imgEl.loop ?? false}
+                muted={imgEl.muted ?? true}
+                playsInline
+                preload="metadata"
+                style={{
+                  position: 'absolute',
+                  left: `${element.x * scale}px`,
+                  top: `${element.y * scale}px`,
+                  width: `${element.width * scale}px`,
+                  height: `${element.height * scale}px`,
+                  transform: `rotate(${element.rotation}deg)`,
+                  transformOrigin: 'center center',
+                  opacity: element.opacity,
+                  objectFit: 'cover',
+                  zIndex: index,
+                }}
+              />
+            );
+          }
+        }
+
+        // Shapes and images use inline SVG
+        return (
+          <svg
+            key={element.id}
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              width,
+              height,
+              pointerEvents: 'none',
+              zIndex: index,
+            }}
+            viewBox={`0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}`}
+          >
+            <PresenterSlideElement element={element} resources={resources} />
+          </svg>
+        );
+      })}
+    </div>
+  );
+};

@@ -3,10 +3,9 @@ import { X, ChevronLeft, ChevronRight, RotateCcw, Monitor } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { usePresenterMode } from '../../hooks/usePresenterMode';
-import { SVGStaticSlide } from '../svg/SVGStaticSlide';
-import { CustomMarkdownRenderer } from '../canvas/CustomMarkdownRenderer';
-import { SLIDE_WIDTH, SLIDE_HEIGHT, TEXT_BOX_PADDING } from '../../utils/constants';
-import type { Slide, TextElement } from '../../types/presentation';
+import { SlideRenderer } from './presenterUtils';
+import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
+import type { Slide, Resource } from '../../types/presentation';
 
 function formatTime(seconds: number): string {
   const hrs = Math.floor(seconds / 3600);
@@ -22,10 +21,12 @@ interface SlidePreviewProps {
   slide: Slide | null;
   scale: number;
   label: string;
+  resources: Record<string, Resource>;
+  autoPlayVideos?: boolean;
   onClick?: () => void;
 }
 
-const SlidePreview: React.FC<SlidePreviewProps> = ({ slide, scale, label, onClick }) => {
+const SlidePreview: React.FC<SlidePreviewProps> = ({ slide, scale, label, resources, autoPlayVideos, onClick }) => {
   if (!slide) {
     return (
       <div className="flex flex-col">
@@ -40,51 +41,20 @@ const SlidePreview: React.FC<SlidePreviewProps> = ({ slide, scale, label, onClic
     );
   }
 
-  const elements = slide.elementOrder.map((id) => slide.elements[id]).filter(Boolean);
-  const textElements = elements.filter((el): el is TextElement => el.type === 'text' && el.visible);
-
   return (
     <div className="flex flex-col">
       <span className="text-xs text-gray-400 mb-1">{label}</span>
       <div
-        className={`relative rounded overflow-hidden border-2 border-gray-700 ${onClick ? 'cursor-pointer hover:border-gray-500' : ''}`}
+        className={`rounded overflow-hidden border-2 border-gray-700 ${onClick ? 'cursor-pointer hover:border-gray-500' : ''}`}
         onClick={onClick}
       >
-        <SVGStaticSlide
+        <SlideRenderer
           slide={slide}
           width={SLIDE_WIDTH * scale}
           height={SLIDE_HEIGHT * scale}
+          resources={resources}
+          autoPlayVideos={autoPlayVideos}
         />
-        {/* Text overlay for markdown rendering */}
-        <div className="absolute inset-0 pointer-events-none overflow-hidden">
-          {textElements.map((element) => (
-            <div
-              key={element.id}
-              style={{
-                position: 'absolute',
-                left: `${element.x * scale}px`,
-                top: `${element.y * scale}px`,
-                width: `${element.width * scale}px`,
-                height: `${element.height * scale}px`,
-                transform: `rotate(${element.rotation}deg)`,
-                transformOrigin: 'top left',
-                opacity: element.opacity,
-                overflow: 'hidden',
-                display: 'flex',
-                alignItems: element.style.verticalAlign === 'middle' ? 'center' :
-                           element.style.verticalAlign === 'bottom' ? 'flex-end' : 'flex-start',
-              }}
-            >
-              <div style={{ width: '100%', padding: `${TEXT_BOX_PADDING * scale}px` }}>
-                <CustomMarkdownRenderer
-                  text={element.text}
-                  style={element.style}
-                  zoom={scale}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
       </div>
     </div>
   );
@@ -103,6 +73,7 @@ export const PresenterControlPanel: React.FC = () => {
   const presenterStartTime = useEditorStore((s) => s.presenterStartTime);
   const slideOrder = usePresentationStore((s) => s.presentation.slideOrder);
   const slides = usePresentationStore((s) => s.presentation.slides);
+  const resources = usePresentationStore((s) => s.presentation.resources);
 
   const [isAnimating, setIsAnimating] = useState(false);
   const [autoAdvanceEnabled, setAutoAdvanceEnabled] = useState(true);
@@ -331,6 +302,8 @@ export const PresenterControlPanel: React.FC = () => {
               slide={currentSlide}
               scale={currentScale}
               label="Current Slide"
+              resources={resources}
+              autoPlayVideos
             />
           </div>
 
@@ -340,6 +313,7 @@ export const PresenterControlPanel: React.FC = () => {
               slide={nextSlide}
               scale={nextScale}
               label="Next Slide"
+              resources={resources}
               onClick={nextSlide ? goNext : undefined}
             />
           </div>
@@ -369,52 +343,21 @@ export const PresenterControlPanel: React.FC = () => {
           if (!slide || slide.hidden) return null;
           const isActive = index === presentingSlideIndex;
           const thumbScale = 0.08;
-          const elements = slide.elementOrder.map((id) => slide.elements[id]).filter(Boolean);
-          const textEls = elements.filter((el): el is TextElement => el.type === 'text' && el.visible);
 
           return (
             <div
               key={slideId}
               onClick={() => !isAnimating && goToSlide(index)}
-              className={`relative shrink-0 cursor-pointer rounded overflow-hidden border-2 transition-colors ${
+              className={`shrink-0 cursor-pointer rounded overflow-hidden border-2 transition-colors ${
                 isActive ? 'border-blue-500' : 'border-gray-600 hover:border-gray-400'
               }`}
             >
-              <SVGStaticSlide
+              <SlideRenderer
                 slide={slide}
                 width={SLIDE_WIDTH * thumbScale}
                 height={SLIDE_HEIGHT * thumbScale}
+                resources={resources}
               />
-              {/* Text overlay */}
-              <div className="absolute inset-0 pointer-events-none overflow-hidden">
-                {textEls.map((element) => (
-                  <div
-                    key={element.id}
-                    style={{
-                      position: 'absolute',
-                      left: `${element.x * thumbScale}px`,
-                      top: `${element.y * thumbScale}px`,
-                      width: `${element.width * thumbScale}px`,
-                      height: `${element.height * thumbScale}px`,
-                      transform: `rotate(${element.rotation}deg)`,
-                      transformOrigin: 'top left',
-                      opacity: element.opacity,
-                      overflow: 'hidden',
-                      display: 'flex',
-                      alignItems: element.style.verticalAlign === 'middle' ? 'center' :
-                                 element.style.verticalAlign === 'bottom' ? 'flex-end' : 'flex-start',
-                    }}
-                  >
-                    <div style={{ width: '100%', padding: `${TEXT_BOX_PADDING * thumbScale}px` }}>
-                      <CustomMarkdownRenderer
-                        text={element.text}
-                        style={element.style}
-                        zoom={thumbScale}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
             </div>
           );
         })}
