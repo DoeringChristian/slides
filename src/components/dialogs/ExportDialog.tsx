@@ -8,7 +8,7 @@ interface Props {
 }
 
 export const ExportDialog: React.FC<Props> = ({ isOpen, onClose }) => {
-  const [format, setFormat] = useState<'pdf' | 'png'>('pdf');
+  const [format, setFormat] = useState<'pdf' | 'png' | 'pptx' | 'odp'>('pdf');
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const presentation = usePresentationStore((s) => s.presentation);
@@ -19,13 +19,18 @@ export const ExportDialog: React.FC<Props> = ({ isOpen, onClose }) => {
     setExporting(true);
     setError(null);
     try {
-      const { exportPdf } = await import('../../utils/exportPdf');
-      const { exportImage } = await import('../../utils/exportImage');
-
       if (format === 'pdf') {
+        const { exportPdf } = await import('../../utils/exportPdf');
         await exportPdf(presentation);
-      } else {
+      } else if (format === 'png') {
+        const { exportImage } = await import('../../utils/exportImage');
         await exportImage(presentation);
+      } else if (format === 'pptx') {
+        const { exportPptx } = await import('../../utils/exportPptx');
+        await exportPptx(presentation);
+      } else if (format === 'odp') {
+        const { exportOdp } = await import('../../utils/exportOdp');
+        await exportOdp(presentation);
       }
       onClose();
     } catch (err) {
@@ -58,6 +63,20 @@ export const ExportDialog: React.FC<Props> = ({ isOpen, onClose }) => {
             <div>
               <div className="text-sm font-medium">PNG Images</div>
               <div className="text-xs text-gray-500">Export current slide as PNG image</div>
+            </div>
+          </label>
+          <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
+            <input type="radio" checked={format === 'pptx'} onChange={() => setFormat('pptx')} className="accent-blue-500" />
+            <div>
+              <div className="text-sm font-medium">PowerPoint (.pptx)</div>
+              <div className="text-xs text-gray-500">Export as PowerPoint presentation</div>
+            </div>
+          </label>
+          <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
+            <input type="radio" checked={format === 'odp'} onChange={() => setFormat('odp')} className="accent-blue-500" />
+            <div>
+              <div className="text-sm font-medium">OpenDocument (.odp)</div>
+              <div className="text-xs text-gray-500">Export as LibreOffice/OpenOffice presentation</div>
             </div>
           </label>
         </div>

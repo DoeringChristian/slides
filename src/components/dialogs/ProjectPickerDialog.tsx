@@ -97,20 +97,30 @@ export const ProjectPickerDialog: React.FC = () => {
     if (!file) return;
 
     try {
-      const text = await file.text();
-      const data = JSON.parse(text);
+      let presentation;
+      const ext = file.name.split('.').pop()?.toLowerCase();
 
-      // Validate it's a presentation
-      if (!data.slideOrder || !data.slides) {
-        throw new Error('Invalid presentation file');
+      if (ext === 'pptx') {
+        const { importPptx } = await import('../../utils/importPptx');
+        presentation = await importPptx(file);
+      } else if (ext === 'odp') {
+        const { importOdp } = await import('../../utils/importOdp');
+        presentation = await importOdp(file);
+      } else {
+        // JSON import (existing logic)
+        const text = await file.text();
+        const data = JSON.parse(text);
+
+        if (!data.slideOrder || !data.slides) {
+          throw new Error('Invalid presentation file');
+        }
+
+        presentation = {
+          ...data,
+          id: data.id || crypto.randomUUID(),
+          updatedAt: Date.now(),
+        };
       }
-
-      // Generate a new ID if needed to avoid conflicts
-      const presentation = {
-        ...data,
-        id: data.id || crypto.randomUUID(),
-        updatedAt: Date.now(),
-      };
 
       // Load the presentation and open it
       loadPresentation(presentation);
@@ -191,7 +201,7 @@ export const ProjectPickerDialog: React.FC = () => {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".json"
+            accept=".json,.pptx,.odp"
             onChange={handleFileChange}
             className="hidden"
           />
