@@ -1,6 +1,9 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import type { TextElement } from '../../types/presentation';
 import { SVGTextContent } from './SVGTextContent';
+import { parseBlocks, getBlockFontMultiplier } from '../canvas/CustomMarkdownRenderer';
+import { measureBlockHeight } from '../../utils/textHitTest';
+import { TEXT_BOX_PADDING } from '../../utils/constants';
 
 interface Props {
   element: TextElement;
@@ -23,6 +26,32 @@ export const SVGTextNode: React.FC<Props> = ({
   onMouseLeave,
   onDoubleClick,
 }) => {
+  // Compute actual rendered text height to size hit rect dynamically
+  const hitRectHeight = useMemo(() => {
+    const { text, width, style } = element;
+    if (!text || text.trim() === '') return element.height;
+
+    const { fontSize, fontFamily, fontWeight, lineHeight } = style;
+    const lineHeightMultiplier = lineHeight || 1.2;
+    const contentWidth = width - TEXT_BOX_PADDING * 2;
+    const blocks = parseBlocks(text);
+
+    let totalHeight = 0;
+    for (const block of blocks) {
+      const multiplier = getBlockFontMultiplier(block.type);
+      const blockFontSize = fontSize * multiplier;
+      const isHeader = block.type === 'h1' || block.type === 'h2' || block.type === 'h3';
+      const blockFontWeight = isHeader ? 'bold' : (fontWeight || 'normal');
+      totalHeight += measureBlockHeight(
+        block.displayContent, blockFontSize, fontFamily, blockFontWeight,
+        lineHeightMultiplier, contentWidth
+      );
+    }
+
+    const renderedContentHeight = totalHeight + TEXT_BOX_PADDING * 2;
+    return Math.max(element.height, renderedContentHeight);
+  }, [element]);
+
   // Rotate around the center of the element
   const cx = element.x + element.width / 2;
   const cy = element.y + element.height / 2;
@@ -42,7 +71,7 @@ export const SVGTextNode: React.FC<Props> = ({
           x={element.x}
           y={element.y}
           width={element.width}
-          height={element.height + 500}
+          height={hitRectHeight}
           fill="transparent"
           opacity={element.opacity}
           style={{

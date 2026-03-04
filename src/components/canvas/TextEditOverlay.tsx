@@ -21,6 +21,12 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
   const editorRef = useRef<HTMLDivElement>(null);
   const currentTextRef = useRef('');
   const mountTimeRef = useRef(Date.now());
+  const editingTextIdRef = useRef<string | null>(null);
+  const activeSlideIdRef = useRef<string>(activeSlideId);
+
+  // Keep refs in sync for blur handler
+  editingTextIdRef.current = editingTextId;
+  activeSlideIdRef.current = activeSlideId;
 
   // Get the editing element
   const element = editingTextId ? slide?.elements[editingTextId] : null;
@@ -331,17 +337,19 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     setCursorPosition(cursorPos + pastedText.length);
   }, [getCursorPosition, renderText, setCursorPosition, textElement]);
 
-  // Handle blur
+  // Handle blur — use refs to avoid stale closure when editingTextId is cleared before blur fires
   const handleBlur = useCallback(() => {
     // Ignore blur within 200ms of mount
     if (Date.now() - mountTimeRef.current < 200) return;
 
-    if (activeSlideId && editingTextId) {
+    const slideId = activeSlideIdRef.current;
+    const textId = editingTextIdRef.current;
+    if (slideId && textId) {
       const finalText = getTextFromEditor();
-      updateElement(activeSlideId, editingTextId, { text: finalText });
+      updateElement(slideId, textId, { text: finalText });
     }
     setEditingTextId(null);
-  }, [activeSlideId, editingTextId, updateElement, setEditingTextId, getTextFromEditor]);
+  }, [updateElement, setEditingTextId, getTextFromEditor]);
 
   if (!textElement || !stageRef.current) return null;
 

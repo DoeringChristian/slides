@@ -399,6 +399,12 @@ export const SVGSlideCanvas: React.FC = () => {
         const localY = relCenterX * sin + relCenterY * cos + clickedElement.height / 2;
 
         if (isPointOnTextContent(clickedElement as TextElement, { x: localX, y: localY })) {
+          // Click is in the overflow region (below element bounds) — enter edit mode directly
+          // Dragging overflowed text makes no sense, so skip drag tracking
+          if (localY > clickedElement.height) {
+            setEditingTextId(id, { x: localX, y: localY });
+            return;
+          }
           if (clickedElement.locked) {
             // Locked text can't drag, so enter edit mode immediately
             setEditingTextId(id, { x: localX, y: localY });

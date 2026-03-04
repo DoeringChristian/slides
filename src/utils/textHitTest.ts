@@ -92,7 +92,7 @@ export function isPointOnTextContent(element: TextElement, point: Point): boolea
  * Measure the actual rendered height of a block using DOM measurement.
  * This matches the browser's word-wrapping exactly.
  */
-function measureBlockHeight(
+export function measureBlockHeight(
   text: string,
   fontSize: number,
   fontFamily: string,
