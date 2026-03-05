@@ -24,9 +24,26 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
   const editingTextIdRef = useRef<string | null>(null);
   const activeSlideIdRef = useRef<string>(activeSlideId);
 
-  // Keep refs in sync for blur handler
-  editingTextIdRef.current = editingTextId;
+  // Keep activeSlideId ref in sync
   activeSlideIdRef.current = activeSlideId;
+
+  // Save text whenever editingTextId changes away from a value.
+  // This fires before the component unmounts or re-renders with a new ID,
+  // so currentTextRef and editingTextIdRef still hold the previous values.
+  useEffect(() => {
+    // Update the ref to the current editing ID
+    editingTextIdRef.current = editingTextId;
+
+    return () => {
+      // Cleanup: save text for the element we were editing
+      const prevId = editingTextIdRef.current;
+      const slideId = activeSlideIdRef.current;
+      if (prevId && slideId) {
+        const text = currentTextRef.current;
+        usePresentationStore.getState().updateElement(slideId, prevId, { text });
+      }
+    };
+  }, [editingTextId]);
 
   // Get the editing element
   const element = editingTextId ? slide?.elements[editingTextId] : null;
