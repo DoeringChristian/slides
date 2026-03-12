@@ -17,7 +17,7 @@ interface Props {
 
 // SVGTextNode renders text elements as actual SVG text
 // with a transparent hit area rect on top for interaction
-export const SVGTextNode: React.FC<Props> = ({
+export const SVGTextNode: React.FC<Props> = React.memo(({
   element,
   disableInteraction,
   isEditing = false,
@@ -86,4 +86,4 @@ export const SVGTextNode: React.FC<Props> = ({
       </g>
     </g>
   );
-};
+});

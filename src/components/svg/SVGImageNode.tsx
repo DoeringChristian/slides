@@ -11,7 +11,7 @@ interface Props {
   onMouseLeave?: () => void;
 }
 
-export const SVGImageNode: React.FC<Props> = ({
+export const SVGImageNode: React.FC<Props> = React.memo(({
   element,
   disableInteraction,
   onMouseDown,
@@ -196,4 +196,4 @@ export const SVGImageNode: React.FC<Props> = ({
       </g>
     </g>
   );
-};
+});

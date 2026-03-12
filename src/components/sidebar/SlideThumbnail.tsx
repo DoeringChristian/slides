@@ -14,13 +14,12 @@ interface Props {
   isActive: boolean;
   isSelected?: boolean;
   canDelete: boolean;
-  selectedElementIds?: string[];
   onClick: (e: React.MouseEvent) => void;
   onDelete: () => void;
   onToggleHidden: () => void;
 }
 
-export const SlideThumbnail: React.FC<Props> = ({ slide, index, isActive, isSelected = false, canDelete, selectedElementIds, onClick, onDelete, onToggleHidden }) => {
+export const SlideThumbnail: React.FC<Props> = React.memo(({ slide, index, isActive, isSelected = false, canDelete, onClick, onDelete, onToggleHidden }) => {
   const hidden = slide.hidden;
 
   // Background: active = orange-50, selected (not active) = blue-50/50, else hover:gray-50
@@ -40,7 +39,6 @@ export const SlideThumbnail: React.FC<Props> = ({ slide, index, isActive, isSele
             slide={slide}
             width={THUMB_WIDTH}
             height={THUMB_HEIGHT}
-            selectedElementIds={selectedElementIds}
             showHighlights={true}
           />
         </div>
@@ -63,4 +61,4 @@ export const SlideThumbnail: React.FC<Props> = ({ slide, index, isActive, isSele
       </div>
     </div>
   );
-};
+});

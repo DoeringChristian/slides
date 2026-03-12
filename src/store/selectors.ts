@@ -11,7 +11,7 @@ export function useActiveSlide(): Slide | undefined {
 export function useOrderedSlides(): Slide[] {
   const slides = usePresentationStore((s) => s.presentation.slides);
   const order = usePresentationStore((s) => s.presentation.slideOrder);
-  return order.map((id) => slides[id]).filter(Boolean);
+  return useMemo(() => order.map((id) => slides[id]).filter(Boolean), [slides, order]);
 }
 
 export function useSelectedElements(): SlideElement[] {

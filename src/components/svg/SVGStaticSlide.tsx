@@ -1,5 +1,6 @@
 import React from 'react';
 import { usePresentationStore } from '../../store/presentationStore';
+import { useEditorStore } from '../../store/editorStore';
 import { SVGBackground } from './SVGBackground';
 import { RenderElement } from './ElementRenderer';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
@@ -63,13 +64,17 @@ const StaticElement: React.FC<{
   );
 };
 
-export const SVGStaticSlide: React.FC<Props> = ({
+export const SVGStaticSlide: React.FC<Props> = React.memo(({
   slide,
   width,
   height,
-  selectedElementIds,
+  selectedElementIds: selectedElementIdsProp,
   showHighlights = false,
 }) => {
+  // Read selectedElementIds from the editor store if not provided via props
+  const storeSelectedElementIds = useEditorStore((s) => s.selectedElementIds);
+  const selectedElementIds = selectedElementIdsProp ?? storeSelectedElementIds;
+
   const scale = width / SLIDE_WIDTH;
   const selectedSet = selectedElementIds && selectedElementIds.length > 0 ? new Set(selectedElementIds) : null;
 
@@ -98,4 +103,4 @@ export const SVGStaticSlide: React.FC<Props> = ({
       ))}
     </svg>
   );
-};
+});

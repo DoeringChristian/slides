@@ -1204,7 +1204,7 @@ export const usePresentationStore = create<PresentationStore>()(
     {
       limit: 50,
       equality: (pastState, currentState) =>
-        JSON.stringify(pastState.presentation) === JSON.stringify(currentState.presentation),
+        pastState.presentation === currentState.presentation,
     }
   )
 );

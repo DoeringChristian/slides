@@ -11,7 +11,7 @@ interface Props {
   onDoubleClick?: () => void;
 }
 
-export const SVGShapeNode: React.FC<Props> = ({
+export const SVGShapeNode: React.FC<Props> = React.memo(({
   element,
   disableInteraction,
   onMouseDown,
@@ -87,4 +87,4 @@ export const SVGShapeNode: React.FC<Props> = ({
       </g>
     </g>
   );
-};
+});

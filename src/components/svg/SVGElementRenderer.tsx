@@ -14,7 +14,7 @@ interface Props {
   onDoubleClick?: (id: string) => void;
 }
 
-export const SVGElementRenderer: React.FC<Props> = ({
+export const SVGElementRenderer: React.FC<Props> = React.memo(({
   element,
   disableInteraction,
   editingTextId,
@@ -67,4 +67,8 @@ export const SVGElementRenderer: React.FC<Props> = ({
     default:
       return null;
   }
-};
+}, (prev, next) => {
+  return prev.element === next.element
+    && prev.disableInteraction === next.disableInteraction
+    && prev.editingTextId === next.editingTextId;
+});
