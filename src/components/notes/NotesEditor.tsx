@@ -1,11 +1,16 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useActiveSlide } from '../../store/selectors';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 
+const MIN_HEIGHT = 64;
+const DEFAULT_HEIGHT = 96;
+const MAX_HEIGHT = 400;
+
 export const NotesEditor: React.FC = () => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [height, setHeight] = useState(DEFAULT_HEIGHT);
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const updateSlideNotes = usePresentationStore((s) => s.updateSlideNotes);
   const slide = useActiveSlide();
@@ -32,10 +37,34 @@ export const NotesEditor: React.FC = () => {
     };
   }, [activeSlideId]);
 
+  // Drag-to-resize handle (drag upward to grow)
+  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startHeight = height;
+
+    const onMove = (ev: PointerEvent) => {
+      const delta = startY - ev.clientY;
+      setHeight(Math.min(MAX_HEIGHT, Math.max(MIN_HEIGHT, startHeight + delta)));
+    };
+    const onUp = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+    };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  }, [height]);
+
   if (!slide) return null;
 
   return (
     <div className="border-t border-gray-200 bg-white shrink-0">
+      {isExpanded && (
+        <div
+          onPointerDown={handlePointerDown}
+          className="h-1.5 cursor-ns-resize hover:bg-blue-100 active:bg-blue-200 transition-colors"
+        />
+      )}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
         className="flex items-center gap-2 w-full px-4 py-1.5 text-xs text-gray-500 hover:bg-gray-50"
@@ -49,7 +78,8 @@ export const NotesEditor: React.FC = () => {
           onChange={(e) => setLocalNotes(e.target.value)}
           onBlur={() => updateSlideNotes(activeSlideId, localNotes)}
           placeholder="Click to add speaker notes..."
-          className="w-full h-24 px-4 py-2 text-sm text-gray-700 resize-none outline-none border-none"
+          className="w-full px-4 py-2 text-sm text-gray-700 resize-none outline-none border-none"
+          style={{ height }}
         />
       )}
     </div>
