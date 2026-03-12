@@ -134,22 +134,26 @@ export const SVGSlideCanvas: React.FC = () => {
     // This allows single-click on text to enter edit mode
     draggingElementId.current = id;
 
+    // Read fresh state to avoid stale closures from React.memo'd children
+    const currentSelectedIds = useEditorStore.getState().selectedElementIds;
+    const currentSlide = usePresentationStore.getState().presentation.slides[activeSlideId];
+
     // Capture initial positions of all selected elements for multi-element drag
     dragStartPositions.current.clear();
-    const idsToTrack = selectedElementIds.includes(id) ? selectedElementIds : [id];
-    if (slide) {
+    const idsToTrack = currentSelectedIds.includes(id) ? currentSelectedIds : [id];
+    if (currentSlide) {
       for (const elementId of idsToTrack) {
-        const el = slide.elements[elementId];
+        const el = currentSlide.elements[elementId];
         if (el && !el.locked) {
           dragStartPositions.current.set(elementId, { x: el.x, y: el.y });
         }
       }
     }
 
-    if (!selectedElementIds.includes(id)) {
+    if (!currentSelectedIds.includes(id)) {
       setSelectedElements([id]);
     }
-  }, [selectedElementIds, setSelectedElements, slide]);
+  }, [activeSlideId, setSelectedElements]);
 
   const handleDragMove = useCallback((id: string, x: number, y: number) => {
     // Mark that an actual drag is happening (mouse moved while button down)
@@ -329,12 +333,19 @@ export const SVGSlideCanvas: React.FC = () => {
     // Ignore middle-click (used for panning)
     if (e.button === 1) return;
 
+    // Read fresh state from stores to avoid stale closures (SVGElementRenderer's
+    // React.memo comparator skips callback comparison for performance, so this
+    // callback may be called with outdated closure values after deselection etc.)
+    const currentSelectedIds = useEditorStore.getState().selectedElementIds;
+    const currentEditingTextId = useEditorStore.getState().editingTextId;
+    const currentSlide = usePresentationStore.getState().presentation.slides[activeSlideId];
+
     const metaPressed = e.shiftKey || e.ctrlKey || e.metaKey;
 
-    const clickedElement = slide?.elements[id];
+    const clickedElement = currentSlide?.elements[id];
     const isTextElement = clickedElement?.type === 'text';
 
-    if (editingTextId === id) {
+    if (currentEditingTextId === id) {
       // We're editing this text element - check if click is on border (not text content)
       // If on border, exit edit mode and allow drag to start
       if (isTextElement && clickedElement) {
@@ -365,21 +376,21 @@ export const SVGSlideCanvas: React.FC = () => {
       return;
     }
 
-    if (editingTextId && editingTextId !== id) {
+    if (currentEditingTextId && currentEditingTextId !== id) {
       setEditingTextId(null);
     }
 
     isElementDragging.current = false;
 
     if (metaPressed) {
-      const ids = selectedElementIds.includes(id)
-        ? selectedElementIds.filter((sid) => sid !== id)
-        : [...selectedElementIds, id];
+      const ids = currentSelectedIds.includes(id)
+        ? currentSelectedIds.filter((sid) => sid !== id)
+        : [...currentSelectedIds, id];
       setSelectedElements(ids);
     } else {
       // Only reset selection if clicking on an unselected element
       // This preserves multi-selection when dragging one of the selected elements
-      const isAlreadySelected = selectedElementIds.includes(id);
+      const isAlreadySelected = currentSelectedIds.includes(id);
       if (!isAlreadySelected) {
         setSelectedElements([id]);
       }
@@ -419,7 +430,7 @@ export const SVGSlideCanvas: React.FC = () => {
         handleElementMouseDown(id, clickedElement?.x || 0, clickedElement?.y || 0, e);
       }
     }
-  }, [selectedElementIds, setSelectedElements, editingTextId, setEditingTextId, slide, screenToSVG, handleElementMouseDown]);
+  }, [activeSlideId, setSelectedElements, setEditingTextId, screenToSVG, handleElementMouseDown]);
 
   const handleDoubleClick = useCallback((id: string) => {
     if (!slide) return;
