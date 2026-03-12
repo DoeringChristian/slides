@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useActiveSlide } from '../../store/selectors';
@@ -9,6 +9,28 @@ export const NotesEditor: React.FC = () => {
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const updateSlideNotes = usePresentationStore((s) => s.updateSlideNotes);
   const slide = useActiveSlide();
+
+  // Local state for the textarea to avoid updating the store on every keystroke
+  const [localNotes, setLocalNotes] = useState(slide?.notes ?? '');
+  const activeSlideIdRef = useRef(activeSlideId);
+  const localNotesRef = useRef(localNotes);
+  localNotesRef.current = localNotes;
+
+  // Sync local state when the slide changes
+  useEffect(() => {
+    setLocalNotes(slide?.notes ?? '');
+  }, [activeSlideId, slide?.notes]);
+
+  // Save to store on slide change or unmount
+  useEffect(() => {
+    activeSlideIdRef.current = activeSlideId;
+    return () => {
+      const prevSlideId = activeSlideIdRef.current;
+      if (prevSlideId) {
+        usePresentationStore.getState().updateSlideNotes(prevSlideId, localNotesRef.current);
+      }
+    };
+  }, [activeSlideId]);
 
   if (!slide) return null;
 
@@ -23,8 +45,9 @@ export const NotesEditor: React.FC = () => {
       </button>
       {isExpanded && (
         <textarea
-          value={slide.notes}
-          onChange={(e) => updateSlideNotes(activeSlideId, e.target.value)}
+          value={localNotes}
+          onChange={(e) => setLocalNotes(e.target.value)}
+          onBlur={() => updateSlideNotes(activeSlideId, localNotes)}
           placeholder="Click to add speaker notes..."
           className="w-full h-24 px-4 py-2 text-sm text-gray-700 resize-none outline-none border-none"
         />
