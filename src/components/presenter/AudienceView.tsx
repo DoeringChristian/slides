@@ -7,7 +7,7 @@ import { getSlideBackground, mergeElementOrders, renderPresenterElement } from '
 import type { SlideElement } from '../../types/presentation';
 
 export const AudienceView: React.FC = () => {
-  const { slideIndex, isAnimating, animProgress, targetIndex, shouldExit, videoCommand } = useAudienceReceiver();
+  const { slideIndex, isAnimating, animProgress, targetIndex, shouldExit, videoCommand, showSlideNumbers } = useAudienceReceiver();
   const slideOrder = usePresentationStore((s) => s.presentation.slideOrder);
   const slides = usePresentationStore((s) => s.presentation.slides);
   const resources = usePresentationStore((s) => s.presentation.resources);
@@ -115,6 +115,25 @@ export const AudienceView: React.FC = () => {
       <div className="relative" style={{ width: stageW, height: stageH, background: bgColor }}>
         {/* Render all elements in z-order */}
         {renderedElements.map((el, index) => renderPresenterElement(el, index, scale, stageW, stageH, resources))}
+
+        {/* Slide number overlay on the slide */}
+        {showSlideNumbers && (
+          <div
+            style={{
+              position: 'absolute',
+              bottom: 12 * scale,
+              right: 16 * scale,
+              fontSize: 16 * scale,
+              color: 'rgba(100, 100, 100, 0.8)',
+              textShadow: '0 0 4px rgba(255,255,255,0.9), 0 0 2px rgba(255,255,255,1)',
+              zIndex: 9999,
+              pointerEvents: 'none',
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {(isAnimating && targetIndex !== slideIndex ? targetIndex : slideIndex) + 1}
+          </div>
+        )}
       </div>
 
       {/* Slide counter */}

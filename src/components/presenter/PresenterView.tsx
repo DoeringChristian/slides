@@ -9,6 +9,8 @@ import type { SlideElement } from '../../types/presentation';
 export const PresenterView: React.FC = () => {
   const isPresenting = useEditorStore((s) => s.isPresenting);
   const isPresenterMode = useEditorStore((s) => s.isPresenterMode);
+  const showSlideNumbers = useEditorStore((s) => s.showSlideNumbers);
+  const setShowSlideNumbers = useEditorStore((s) => s.setShowSlideNumbers);
   const presentingSlideIndex = useEditorStore((s) => s.presentingSlideIndex);
   const setPresentingSlideIndex = useEditorStore((s) => s.setPresentingSlideIndex);
   const setPresenting = useEditorStore((s) => s.setPresenting);
@@ -182,6 +184,10 @@ export const PresenterView: React.FC = () => {
             setPresentingSlideIndex(totalSlides - 1);
           }
           break;
+        case 'n':
+        case 'N':
+          setShowSlideNumbers(!showSlideNumbers);
+          break;
       }
     };
 
@@ -197,7 +203,7 @@ export const PresenterView: React.FC = () => {
       window.removeEventListener('keydown', handleKey);
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
-  }, [isPresenting, goNext, goPrev, exitPresentation, setPresentingSlideIndex, totalSlides, setPresenting, isAnimating]);
+  }, [isPresenting, goNext, goPrev, exitPresentation, setPresentingSlideIndex, totalSlides, setPresenting, isAnimating, showSlideNumbers, setShowSlideNumbers]);
 
   // Don't render when in presenter mode (PresenterControlPanel handles that)
   // This view is only for simple fullscreen presentation
@@ -256,6 +262,25 @@ export const PresenterView: React.FC = () => {
       <div className="relative" style={{ width: stageW, height: stageH, background: bgColor }}>
         {/* Render all elements in z-order */}
         {renderedElements.map((el, index) => renderPresenterElement(el, index, scale, stageW, stageH, resources))}
+
+        {/* Slide number overlay on the slide */}
+        {showSlideNumbers && (
+          <div
+            style={{
+              position: 'absolute',
+              bottom: 12 * scale,
+              right: 16 * scale,
+              fontSize: 16 * scale,
+              color: 'rgba(100, 100, 100, 0.8)',
+              textShadow: '0 0 4px rgba(255,255,255,0.9), 0 0 2px rgba(255,255,255,1)',
+              zIndex: 9999,
+              pointerEvents: 'none',
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {(isAnimating ? targetIndexRef.current : currentIndex) + 1}
+          </div>
+        )}
       </div>
 
       {/* Slide counter */}

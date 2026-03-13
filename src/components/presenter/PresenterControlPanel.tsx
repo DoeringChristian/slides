@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { X, ChevronLeft, ChevronRight, RotateCcw, Monitor } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, RotateCcw, Monitor, Hash } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { usePresenterMode } from '../../hooks/usePresenterMode';
@@ -69,11 +69,14 @@ export const PresenterControlPanel: React.FC = () => {
     goToSlide,
     sendAnimationState,
     sendVideoCommand,
+    sendSettings,
     resetTimer,
   } = usePresenterMode();
 
   const presentingSlideIndex = useEditorStore((s) => s.presentingSlideIndex);
   const presenterStartTime = useEditorStore((s) => s.presenterStartTime);
+  const showSlideNumbers = useEditorStore((s) => s.showSlideNumbers);
+  const setShowSlideNumbers = useEditorStore((s) => s.setShowSlideNumbers);
   const slideOrder = usePresentationStore((s) => s.presentation.slideOrder);
   const slides = usePresentationStore((s) => s.presentation.slides);
   const resources = usePresentationStore((s) => s.presentation.resources);
@@ -222,6 +225,13 @@ export const PresenterControlPanel: React.FC = () => {
             goToSlide(visibleIndices[visibleIndices.length - 1]);
           }
           break;
+        case 'n':
+        case 'N': {
+          const next = !useEditorStore.getState().showSlideNumbers;
+          setShowSlideNumbers(next);
+          sendSettings({ showSlideNumbers: next });
+          break;
+        }
       }
     };
 
@@ -304,6 +314,18 @@ export const PresenterControlPanel: React.FC = () => {
               <RotateCcw size={16} />
             </button>
           </div>
+          <div className="w-px h-6 bg-gray-600" />
+          <button
+            onClick={() => {
+              const next = !showSlideNumbers;
+              setShowSlideNumbers(next);
+              sendSettings({ showSlideNumbers: next });
+            }}
+            className={`p-1.5 rounded hover:bg-gray-700 ${showSlideNumbers ? 'text-blue-400' : 'text-gray-400'} hover:text-white`}
+            title="Show slide numbers"
+          >
+            <Hash size={16} />
+          </button>
           <button
             onClick={exitPresenterMode}
             className="p-1.5 rounded hover:bg-gray-700 text-gray-400 hover:text-white"

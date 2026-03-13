@@ -3,12 +3,13 @@ import { useEditorStore } from '../store/editorStore';
 import { usePresentationStore } from '../store/presentationStore';
 
 export interface PresenterMessage {
-  type: 'slide-change' | 'animation-state' | 'exit' | 'sync-request' | 'sync-response' | 'video-command';
+  type: 'slide-change' | 'animation-state' | 'exit' | 'sync-request' | 'sync-response' | 'video-command' | 'settings';
   slideIndex?: number;
   isAnimating?: boolean;
   animProgress?: number;
   targetIndex?: number;
   videoCommand?: { action: 'play' | 'pause' | 'seek'; currentTime?: number };
+  showSlideNumbers?: boolean;
 }
 
 const CHANNEL_NAME = 'slides-presenter';
@@ -58,9 +59,11 @@ export function usePresenterMode() {
 
       // Send initial sync after window loads
       setTimeout(() => {
+        const editorState = useEditorStore.getState();
         getChannel().postMessage({
           type: 'sync-response',
-          slideIndex: useEditorStore.getState().presentingSlideIndex,
+          slideIndex: editorState.presentingSlideIndex,
+          showSlideNumbers: editorState.showSlideNumbers,
         } as PresenterMessage);
       }, 1000);
     }
@@ -122,6 +125,14 @@ export function usePresenterMode() {
     } as PresenterMessage);
   }, []);
 
+  // Send settings update to audience
+  const sendSettings = useCallback((settings: { showSlideNumbers: boolean }) => {
+    getChannel().postMessage({
+      type: 'settings',
+      showSlideNumbers: settings.showSlideNumbers,
+    } as PresenterMessage);
+  }, []);
+
   // Check if audience window is still open
   useEffect(() => {
     if (!isPresenterMode) {
@@ -150,9 +161,11 @@ export function usePresenterMode() {
     const ch = getChannel();
     const handler = (event: MessageEvent<PresenterMessage>) => {
       if (event.data.type === 'sync-request') {
+        const editorState = useEditorStore.getState();
         ch.postMessage({
           type: 'sync-response',
-          slideIndex: useEditorStore.getState().presentingSlideIndex,
+          slideIndex: editorState.presentingSlideIndex,
+          showSlideNumbers: editorState.showSlideNumbers,
         } as PresenterMessage);
       }
     };
@@ -167,6 +180,7 @@ export function usePresenterMode() {
     goToSlide,
     sendAnimationState,
     sendVideoCommand,
+    sendSettings,
     resetTimer: resetPresenterTimer,
   };
 }
@@ -184,6 +198,7 @@ export function useAudienceReceiver() {
     animProgress: 0,
     targetIndex: 0,
     shouldExit: false,
+    showSlideNumbers: false,
   });
   const [videoCommand, setVideoCommand] = useState<VideoCommand | null>(null);
 
@@ -212,8 +227,18 @@ export function useAudienceReceiver() {
           break;
         case 'sync-response':
           if (msg.slideIndex !== undefined) {
-            setState(s => ({ ...s, slideIndex: msg.slideIndex! }));
+            setState(s => ({
+              ...s,
+              slideIndex: msg.slideIndex!,
+              ...(msg.showSlideNumbers !== undefined ? { showSlideNumbers: msg.showSlideNumbers } : {}),
+            }));
           }
+          break;
+        case 'settings':
+          setState(s => ({
+            ...s,
+            ...(msg.showSlideNumbers !== undefined ? { showSlideNumbers: msg.showSlideNumbers } : {}),
+          }));
           break;
         case 'video-command':
           if (msg.videoCommand) {

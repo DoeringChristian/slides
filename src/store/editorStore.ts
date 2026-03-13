@@ -43,6 +43,8 @@ interface EditorStore extends EditorState {
   setShowMarginGuides: (show: boolean) => void;
   setPresenterMode: (mode: boolean) => void;
   resetPresenterTimer: () => void;
+  showSlideNumbers: boolean;
+  setShowSlideNumbers: (show: boolean) => void;
   setSelectedSlides: (ids: string[]) => void;
   toggleSlideSelection: (slideId: string) => void;
 }
@@ -69,6 +71,7 @@ export const useEditorStore = create<EditorStore>()((set) => ({
   presenterStartTime: 0,
   textEditClickPosition: null,
   selectedSlideIds: [],
+  showSlideNumbers: false,
 
   setObjectDrawerOpen: (open) => set({ objectDrawerOpen: open }),
   setHoveredObjectId: (id) => set({ hoveredObjectId: id }),
@@ -126,6 +129,7 @@ export const useEditorStore = create<EditorStore>()((set) => ({
   setShowMarginGuides: (show) => set({ showMarginGuides: show }),
   setPresenterMode: (mode) => set({ isPresenterMode: mode, presenterStartTime: mode ? Date.now() : 0 }),
   resetPresenterTimer: () => set({ presenterStartTime: Date.now() }),
+  setShowSlideNumbers: (show) => set({ showSlideNumbers: show }),
   setSelectedSlides: (ids) => set({ selectedSlideIds: ids }),
   toggleSlideSelection: (slideId) => set((s) => ({
     selectedSlideIds: s.selectedSlideIds.includes(slideId)
