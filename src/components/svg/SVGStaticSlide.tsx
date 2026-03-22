@@ -4,6 +4,7 @@ import { useEditorStore } from '../../store/editorStore';
 import { SVGBackground } from './SVGBackground';
 import { RenderElement } from './ElementRenderer';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
+import { getElementBounds, getElementCenter } from '../../utils/geometry';
 import type { Slide, SlideElement } from '../../types/presentation';
 
 interface Props {
@@ -16,17 +17,17 @@ interface Props {
 
 const HighlightRect: React.FC<{ element: SlideElement; scale: number }> = ({ element, scale }) => {
   const pad = 4 / scale;
-  const cx = element.x + element.width / 2;
-  const cy = element.y + element.height / 2;
-  const transform = element.rotation ? `rotate(${element.rotation}, ${cx}, ${cy})` : undefined;
+  const bounds = getElementBounds(element);
+  const center = getElementCenter(element);
+  const transform = element.rotation ? `rotate(${element.rotation}, ${center.x}, ${center.y})` : undefined;
 
   return (
     <g transform={transform}>
       <rect
-        x={element.x - pad}
-        y={element.y - pad}
-        width={element.width + pad * 2}
-        height={element.height + pad * 2}
+        x={bounds.x - pad}
+        y={bounds.y - pad}
+        width={bounds.width + pad * 2}
+        height={bounds.height + pad * 2}
         fill="rgba(59, 130, 246, 0.08)"
         stroke="#3b82f6"
         strokeWidth={3 / scale}

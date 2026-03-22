@@ -1,27 +1,14 @@
 import React, { useMemo, memo } from 'react';
-import katex from 'katex';
 import type { TextElement } from '../../types/presentation';
 import { parseBlocks, parseInlineSegments, getBlockFontMultiplier, type ParsedBlock, type InlineSegment } from '../canvas/CustomMarkdownRenderer';
 import { TEXT_BOX_PADDING } from '../../utils/constants';
+import { renderLatex } from '../../utils/latexUtils';
 
 interface Props {
   element: TextElement;
   isEditing?: boolean;
   opacity?: number;
   clipIdPrefix?: string;
-}
-
-// Render LaTeX to HTML string
-function renderLatex(latex: string, displayMode: boolean = false): string {
-  try {
-    return katex.renderToString(latex, {
-      displayMode,
-      throwOnError: false,
-      output: 'html',
-    });
-  } catch {
-    return latex;
-  }
 }
 
 // Render text block as HTML for foreignObject

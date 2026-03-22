@@ -1,20 +1,8 @@
 import type { Slide, SlideElement, TextElement, ShapeElement, ImageElement, Resource } from '../types/presentation';
 import { SLIDE_WIDTH, SLIDE_HEIGHT, TEXT_BOX_PADDING } from './constants';
 import { parseBlocks, parseInlineSegments, getBlockFontMultiplier } from '../components/canvas/CustomMarkdownRenderer';
-import katex from 'katex';
-
-// Render LaTeX to HTML string
-function renderLatex(latex: string, displayMode: boolean = false): string {
-  try {
-    return katex.renderToString(latex, {
-      displayMode,
-      throwOnError: false,
-      output: 'html',
-    });
-  } catch {
-    return latex;
-  }
-}
+import { renderLatex } from './latexUtils';
+import { getElementCenter } from './geometry';
 
 // Render text block as HTML
 function renderBlockAsHtml(displayContent: string, sourceStart: number): string {
@@ -154,8 +142,11 @@ function renderShapeElement(element: ShapeElement): string {
       const pts = points ?? [0, 0, width, 0];
       const lineStroke = stroke || fill || '#000';
       const lineWidth = strokeWidth || 3;
+      // Use line center for rotation, not bounding box center
+      const lineCenter = getElementCenter(element);
+      const lineTransform = rotation ? `rotate(${rotation}, ${lineCenter.x}, ${lineCenter.y})` : '';
       return `
-        <g transform="${transform}">
+        <g transform="${lineTransform}">
           <line x1="${x + pts[0]}" y1="${y + pts[1]}" x2="${x + pts[2]}" y2="${y + pts[3]}" stroke="${lineStroke}" stroke-width="${lineWidth}" stroke-linecap="round" opacity="${opacity}" />
         </g>
       `;
@@ -179,8 +170,11 @@ function renderShapeElement(element: ShapeElement): string {
         x: tip.x - headLength * Math.cos(angle) - headWidth / 2 * Math.sin(angle),
         y: tip.y - headLength * Math.sin(angle) + headWidth / 2 * Math.cos(angle),
       };
+      // Use line center for rotation, not bounding box center
+      const arrowCenter = getElementCenter(element);
+      const arrowTransform = rotation ? `rotate(${rotation}, ${arrowCenter.x}, ${arrowCenter.y})` : '';
       return `
-        <g transform="${transform}">
+        <g transform="${arrowTransform}">
           <line x1="${x + pts[0]}" y1="${y + pts[1]}" x2="${x + pts[2]}" y2="${y + pts[3]}" stroke="${arrowStroke}" stroke-width="${arrowWidth}" stroke-linecap="round" opacity="${opacity}" />
           <polygon points="${tip.x},${tip.y} ${left.x},${left.y} ${right.x},${right.y}" fill="${arrowStroke}" opacity="${opacity}" />
         </g>

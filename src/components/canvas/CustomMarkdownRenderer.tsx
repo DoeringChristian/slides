@@ -1,7 +1,7 @@
 import React, { useMemo, memo } from 'react';
-import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import type { TextStyle } from '../../types/presentation';
+import { renderLatex } from '../../utils/latexUtils';
 
 interface Props {
   text: string;
@@ -192,19 +192,6 @@ export function parseInlineSegments(content: string, sourceOffset: number): Inli
   return segments;
 }
 
-// Render LaTeX to HTML string
-function renderLatex(latex: string, displayMode: boolean = false): string {
-  try {
-    return katex.renderToString(latex, {
-      displayMode,
-      throwOnError: false,
-      output: 'html',
-    });
-  } catch {
-    return latex;
-  }
-}
-
 // Parse text into blocks with source position tracking
 export function parseBlocks(text: string): ParsedBlock[] {
   const lines = text.split('\n');
@@ -364,7 +351,14 @@ export const CustomMarkdownRenderer: React.FC<Props> = memo(({ text, style, zoom
   }), [style.fontFamily, style.fontWeight, style.fontStyle, style.color, style.align, lineHeight, style.textDecoration]);
 
   return (
-    <div className="custom-markdown-content">
+    <div
+      className="custom-markdown-content"
+      style={{
+        wordBreak: 'break-word',
+        overflowWrap: 'break-word',
+        whiteSpace: 'pre-wrap',
+      }}
+    >
       {blocks.map((block, index) => (
         <BlockRenderer
           key={index}

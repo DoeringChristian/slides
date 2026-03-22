@@ -5,6 +5,7 @@ import { useEditorStore } from '../../store/editorStore';
 import { ResourcePicker } from '../properties/ResourcePicker';
 import { computeResourceUpdate } from '../../utils/imageUtils';
 import { CANVAS_PADDING } from '../../utils/constants';
+import { getElementBounds, getElementCenter } from '../../utils/geometry';
 import type { SlideElement, ImageElement } from '../../types/presentation';
 
 interface Props {
@@ -24,12 +25,14 @@ export const SelectionActionBar: React.FC<Props> = ({ element, zoom, isSelected 
   const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
 
-  // Calculate position based on element position and zoom
-  // For center-based rotation, we position the container at the element's center
-  const centerX = (element.x + element.width / 2 + CANVAS_PADDING) * zoom;
-  const centerY = (element.y + element.height / 2 + CANVAS_PADDING) * zoom;
-  const width = element.width * zoom;
-  const height = element.height * zoom;
+  // Calculate position based on element bounds and zoom
+  // For lines/arrows, use actual line bounds; for other elements, use element dimensions
+  const bounds = getElementBounds(element);
+  const center = getElementCenter(element);
+  const centerX = (center.x + CANVAS_PADDING) * zoom;
+  const centerY = (center.y + CANVAS_PADDING) * zoom;
+  const width = bounds.width * zoom;
+  const height = bounds.height * zoom;
 
   // Only show when selected
   if (!isSelected) return null;

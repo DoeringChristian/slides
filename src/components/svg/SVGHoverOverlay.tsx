@@ -1,5 +1,6 @@
 import React from 'react';
 import { usePresentationStore } from '../../store/presentationStore';
+import { getLineCenter, getElementBounds, getElementCenter } from '../../utils/geometry';
 import type { SlideElement, ShapeElement, ImageElement } from '../../types/presentation';
 
 interface Props {
@@ -10,30 +11,6 @@ interface Props {
 
 const HIGHLIGHT_COLOR = '#f59e0b';
 const GHOST_OPACITY = 0.35;
-
-// Calculate bounding box for lines/arrows from their points (in absolute coordinates)
-function getLineBoundingBox(element: ShapeElement): { x: number; y: number; width: number; height: number } {
-  const points = element.points ?? [0, 0, element.width, 0];
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-
-  for (let i = 0; i < points.length; i += 2) {
-    minX = Math.min(minX, points[i]);
-    maxX = Math.max(maxX, points[i]);
-    minY = Math.min(minY, points[i + 1]);
-    maxY = Math.max(maxY, points[i + 1]);
-  }
-
-  return { x: element.x + minX, y: element.y + minY, width: maxX - minX, height: maxY - minY };
-}
-
-// Get the center of a line/arrow for rotation
-function getLineCenter(element: ShapeElement): { x: number; y: number } {
-  const points = element.points ?? [0, 0, element.width, 0];
-  return {
-    x: element.x + (points[0] + points[2]) / 2,
-    y: element.y + (points[1] + points[3]) / 2,
-  };
-}
 
 const GhostImage: React.FC<{ element: ImageElement }> = ({ element }) => {
   const resource = usePresentationStore((s) =>
@@ -248,24 +225,9 @@ const GhostElement: React.FC<{ element: SlideElement }> = ({ element }) => {
 };
 
 const HighlightRect: React.FC<{ element: SlideElement; zoom: number }> = ({ element, zoom }) => {
-  const isLine = element.type === 'shape' &&
-    ((element as ShapeElement).shapeType === 'line' || (element as ShapeElement).shapeType === 'arrow');
-
-  const bounds = isLine
-    ? getLineBoundingBox(element as ShapeElement)
-    : { x: element.x, y: element.y, width: element.width, height: element.height };
-
-  // Rotate around the center of the element (use line center for lines/arrows)
-  let cx: number, cy: number;
-  if (isLine) {
-    const center = getLineCenter(element as ShapeElement);
-    cx = center.x;
-    cy = center.y;
-  } else {
-    cx = element.x + element.width / 2;
-    cy = element.y + element.height / 2;
-  }
-  const transform = element.rotation ? `rotate(${element.rotation}, ${cx}, ${cy})` : undefined;
+  const bounds = getElementBounds(element);
+  const center = getElementCenter(element);
+  const transform = element.rotation ? `rotate(${element.rotation}, ${center.x}, ${center.y})` : undefined;
 
   // Scale sizes inversely with zoom to keep them constant on screen
   const padding = 3 / zoom;
