@@ -429,14 +429,33 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
             style={{ cursor: 'grab' }}
             onMouseDown={handleRotateStart}
           />
-          {/* Rotation icon (simple arc) */}
+          {/* Rotation icon (270° arc with arrowhead) */}
           <path
-            d={`M ${bounds.x + bounds.width / 2 - 4 / zoom} ${bounds.y - rotationOffset - 2 / zoom}
-                A ${4 / zoom} ${4 / zoom} 0 1 1 ${bounds.x + bounds.width / 2 + 4 / zoom} ${bounds.y - rotationOffset - 2 / zoom}`}
+            d={(() => {
+              const cx = bounds.x + bounds.width / 2;
+              const cy = bounds.y - rotationOffset;
+              const r = 4 / zoom;
+              const a = 2 / zoom;
+              // Arc: 12 o'clock → 9 o'clock, 270° clockwise (large-arc=1, sweep=1)
+              const sx = cx;
+              const sy = cy - r;
+              const ex = cx - r;
+              const ey = cy;
+              // Arrowhead: tip is ABOVE the arc endpoint (into the gap)
+              // Wings are at the arc endpoint, splayed left/right
+              const tipX = ex;
+              const tipY = ey - a;
+              const w1x = ex - a * 0.6;
+              const w1y = ey;
+              const w2x = ex + a * 0.6;
+              const w2y = ey;
+              return `M ${sx} ${sy} A ${r} ${r} 0 1 1 ${ex} ${ey} M ${w1x} ${w1y} L ${tipX} ${tipY} L ${w2x} ${w2y}`;
+            })()}
             fill="none"
             stroke={color}
             strokeWidth={1.5 / zoom}
             strokeLinecap="round"
+            strokeLinejoin="round"
             style={{ pointerEvents: 'none' }}
           />
         </>
