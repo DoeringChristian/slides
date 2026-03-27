@@ -13,7 +13,7 @@ interface Props {
   zoom: number;
   svgRef?: React.RefObject<SVGSVGElement | null>;
   onTransformStart?: () => void;
-  onTransform?: (id: string, attrs: { x?: number; y?: number; width?: number; height?: number; rotation?: number }) => void;
+  onTransform?: (id: string, attrs: { x?: number; y?: number; width?: number; height?: number; rotation?: number; cursorX?: number; cursorY?: number }) => void;
   onTransformEnd?: (id: string, attrs: { x?: number; y?: number; width?: number; height?: number; rotation?: number }) => void;
   onGuidesChange?: (guides: Guide[]) => void;
 }
@@ -312,7 +312,7 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
         while (finalRotation < 0) finalRotation += 360;
         while (finalRotation >= 360) finalRotation -= 360;
 
-        const attrs = { rotation: finalRotation };
+        const attrs = { rotation: finalRotation, cursorX: pos.x, cursorY: pos.y };
         lastTransformAttrs.current = attrs;
         onTransform?.(singleElement.id, attrs);
       }

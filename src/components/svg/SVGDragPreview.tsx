@@ -9,6 +9,9 @@ export interface DragPreviewState {
   width: number;
   height: number;
   rotation?: number;
+  // Cursor position in SVG coords (for rotation label)
+  cursorX?: number;
+  cursorY?: number;
   // For line/arrow elements
   points?: number[]; // [x1, y1, x2, y2] relative to x, y
 }
@@ -54,20 +57,36 @@ const SinglePreview: React.FC<{ preview: DragPreviewState; zoom: number }> = mem
   const cx = x + width / 2;
   const cy = y + height / 2;
   const transform = rotation ? `rotate(${rotation}, ${cx}, ${cy})` : undefined;
+  const fontSize = 12 / zoom;
 
   return (
-    <rect
-      x={x}
-      y={y}
-      width={width}
-      height={height}
-      transform={transform}
-      fill={FILL_COLOR}
-      stroke={STROKE_COLOR}
-      strokeWidth={strokeW}
-      strokeDasharray={dashArray}
-      style={{ pointerEvents: 'none' }}
-    />
+    <g style={{ pointerEvents: 'none' }}>
+      <rect
+        x={x}
+        y={y}
+        width={width}
+        height={height}
+        transform={transform}
+        fill={FILL_COLOR}
+        stroke={STROKE_COLOR}
+        strokeWidth={strokeW}
+        strokeDasharray={dashArray}
+      />
+      {rotation !== undefined && rotation !== 0 && preview.cursorX !== undefined && preview.cursorY !== undefined && (
+        <text
+          x={preview.cursorX + 16 / zoom}
+          y={preview.cursorY - 16 / zoom}
+          textAnchor="start"
+          dominantBaseline="auto"
+          fill={STROKE_COLOR}
+          fontSize={fontSize}
+          fontFamily="system-ui, sans-serif"
+          style={{ userSelect: 'none' }}
+        >
+          {`${Math.round(rotation)}°`}
+        </text>
+      )}
+    </g>
   );
 });
 

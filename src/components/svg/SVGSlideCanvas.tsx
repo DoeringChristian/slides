@@ -556,6 +556,8 @@ export const SVGSlideCanvas: React.FC = () => {
       width: attrs.width ?? el.width,
       height: attrs.height ?? el.height,
       rotation: attrs.rotation ?? el.rotation,
+      cursorX: attrs.cursorX,
+      cursorY: attrs.cursorY,
       points: isLine ? (el as ShapeElement).points : undefined,
     });
   }, [slide]);
