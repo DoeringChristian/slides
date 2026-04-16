@@ -1,47 +1,13 @@
 import React, { useMemo, memo } from 'react';
 import type { TextElement } from '../../types/presentation';
-import { parseBlocks, parseInlineSegments, getBlockFontMultiplier, type ParsedBlock, type InlineSegment } from '../canvas/CustomMarkdownRenderer';
+import { renderMarkdownToHtml, containerStyleForMarkdown } from '../canvas/CustomMarkdownRenderer';
 import { TEXT_BOX_PADDING } from '../../utils/constants';
-import { renderLatex } from '../../utils/latexUtils';
 
 interface Props {
   element: TextElement;
   isEditing?: boolean;
   opacity?: number;
   clipIdPrefix?: string;
-}
-
-// Render text block as HTML for foreignObject
-function renderBlockAsHtml(_block: ParsedBlock, segments: InlineSegment[]): string {
-  return segments.map((segment) => {
-    if (segment.type === 'latex') {
-      return renderLatex(segment.displayContent, segment.isBlock);
-    }
-    if (segment.type === 'link') {
-      const escaped = segment.displayContent
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-      return `<span style="color:#2563eb;text-decoration:underline">${escaped}</span>`;
-    }
-    if (segment.type === 'formatted') {
-      let style = '';
-      if (segment.bold) style += 'font-weight:bold;';
-      if (segment.italic) style += 'font-style:italic;';
-      if (segment.strikethrough) style += 'text-decoration:line-through;';
-      if (segment.underline) style += 'text-decoration:underline;';
-      const escaped = segment.displayContent
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-      return `<span style="${style}">${escaped}</span>`;
-    }
-    // Plain text - escape HTML
-    return segment.displayContent
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-  }).join('');
 }
 
 export const SVGTextContent: React.FC<Props> = memo(({
@@ -55,31 +21,9 @@ export const SVGTextContent: React.FC<Props> = memo(({
 
   const { text, style, x: elementX, y: elementY, width, height, rotation } = element;
 
-  // Parse text into blocks and segments - memoized to only update when text changes
-  const blocksWithHtml = useMemo(() => {
-    const blocks = parseBlocks(text || '');
-    return blocks.map(block => {
-      const segments = parseInlineSegments(block.displayContent, block.sourceStart + block.prefixLength);
-      return {
-        block,
-        html: renderBlockAsHtml(block, segments),
-      };
-    });
-  }, [text]);
-
-  // Build complete HTML content - memoized based on text and style
-  const htmlContent = useMemo(() => {
-    const lineHeight = style.lineHeight || 1.2;
-
-    return blocksWithHtml.map(({ block, html }) => {
-      const multiplier = getBlockFontMultiplier(block.type);
-      const fontSize = style.fontSize * multiplier;
-      const isHeader = block.type === 'h1' || block.type === 'h2' || block.type === 'h3';
-      const fontWeight = isHeader ? 'bold' : style.fontWeight;
-
-      return `<div style="font-size:${fontSize}px;font-weight:${fontWeight};line-height:${lineHeight};min-height:${fontSize * lineHeight}px;margin:0;padding:0;">${html || '&nbsp;'}</div>`;
-    }).join('');
-  }, [blocksWithHtml, style.fontSize, style.fontWeight, style.lineHeight]);
+  // Build complete HTML content using the shared renderer (zoom=1: SVG handles scaling)
+  const htmlContent = useMemo(() => renderMarkdownToHtml(text || '', style, 1), [text, style]);
+  const sharedContainerStyle = useMemo(() => containerStyleForMarkdown(style), [style]);
 
   // Calculate vertical alignment offset
   const verticalAlignStyle = useMemo(() => {
@@ -127,13 +71,7 @@ export const SVGTextContent: React.FC<Props> = memo(({
             style={{
               width: '100%',
               height: height - padding * 2,
-              fontFamily: style.fontFamily,
-              fontStyle: style.fontStyle,
-              color: style.color,
-              textAlign: style.align,
-              wordWrap: 'break-word',
-              overflowWrap: 'break-word',
-              whiteSpace: 'pre-wrap',
+              ...sharedContainerStyle,
               overflow: 'visible',
               opacity,
               userSelect: 'none',

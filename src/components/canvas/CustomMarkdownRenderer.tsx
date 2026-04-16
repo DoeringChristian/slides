@@ -237,137 +237,82 @@ export function getBlockFontMultiplier(type: ParsedBlock['type']): number {
   }
 }
 
-// Render inline content with LaTeX, link, and formatting support
-const InlineContent = memo(({ content, sourceOffset }: { content: string; sourceOffset: number }) => {
-  const segments = useMemo(() => parseInlineSegments(content, sourceOffset), [content, sourceOffset]);
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 
-  return (
-    <>
-      {segments.map((segment, i) => {
-        if (segment.type === 'latex') {
-          return (
-            <span
-              key={i}
-              dangerouslySetInnerHTML={{ __html: renderLatex(segment.displayContent, segment.isBlock) }}
-            />
-          );
-        }
-        if (segment.type === 'link') {
-          return (
-            <span
-              key={i}
-              style={{
-                color: '#2563eb',
-                textDecoration: 'underline',
-                cursor: 'pointer',
-              }}
-            >
-              {segment.displayContent}
-            </span>
-          );
-        }
-        if (segment.type === 'formatted') {
-          const style: React.CSSProperties = {};
-          if (segment.bold) style.fontWeight = 'bold';
-          if (segment.italic) style.fontStyle = 'italic';
-          if (segment.strikethrough) style.textDecoration = 'line-through';
-          if (segment.underline) style.textDecoration = 'underline';
-          return (
-            <span key={i} style={style}>
-              {segment.displayContent}
-            </span>
-          );
-        }
-        return <span key={i}>{segment.displayContent}</span>;
-      })}
-    </>
-  );
-});
+// Render inline segments as an HTML string. Single source of truth shared by
+// SVGTextContent (foreignObject), CustomMarkdownRenderer (presenter), and the
+// static SVG export renderer.
+function renderInlineSegmentsAsHtml(content: string, sourceOffset: number): string {
+  const segments = parseInlineSegments(content, sourceOffset);
+  return segments.map((segment) => {
+    if (segment.type === 'latex') {
+      return renderLatex(segment.displayContent, segment.isBlock);
+    }
+    if (segment.type === 'link') {
+      return `<span style="color:#2563eb;text-decoration:underline">${escapeHtml(segment.displayContent)}</span>`;
+    }
+    if (segment.type === 'formatted') {
+      let style = '';
+      if (segment.bold) style += 'font-weight:bold;';
+      if (segment.italic) style += 'font-style:italic;';
+      if (segment.strikethrough) style += 'text-decoration:line-through;';
+      if (segment.underline) style += 'text-decoration:underline;';
+      return `<span style="${style}">${escapeHtml(segment.displayContent)}</span>`;
+    }
+    return escapeHtml(segment.displayContent);
+  }).join('');
+}
 
-// Memoized block renderer
-const BlockRenderer = memo(({
-  block,
-  baseFontSize,
-  baseStyle,
-  lineHeight
-}: {
-  block: ParsedBlock;
-  baseFontSize: number;
-  baseStyle: React.CSSProperties;
-  lineHeight: number;
-}) => {
+// Render a parsed block as an HTML string (the per-block <div>).
+function renderBlockAsHtml(block: ParsedBlock, baseFontSize: number, baseFontWeight: string | number, lineHeight: number): string {
   const multiplier = getBlockFontMultiplier(block.type);
   const fontSize = baseFontSize * multiplier;
   const isHeader = block.type === 'h1' || block.type === 'h2' || block.type === 'h3';
-  const isList = block.type === 'bullet' || block.type === 'numbered';
+  const fontWeight = isHeader ? 'bold' : baseFontWeight;
 
-  const style: React.CSSProperties = {
-    ...baseStyle,
-    fontSize: `${fontSize}px`,
-    fontWeight: isHeader ? 'bold' : baseStyle.fontWeight,
-    minHeight: `${fontSize * lineHeight}px`,
-    display: isList ? 'flex' : undefined,
-  };
-
-  // Calculate the source offset for inline content (after the prefix)
   const inlineSourceOffset = block.sourceStart + block.prefixLength;
+  const inner = renderInlineSegmentsAsHtml(block.displayContent, inlineSourceOffset) || '&nbsp;';
 
-  // Bullet and numbered lists are now rendered with the full line (including prefix)
-  // to match the editor exactly
-  if (block.type === 'bullet' || block.type === 'numbered') {
-    return (
-      <div style={style}>
-        <InlineContent content={block.displayContent} sourceOffset={inlineSourceOffset} />
-      </div>
-    );
-  }
+  return `<div style="font-size:${fontSize}px;font-weight:${fontWeight};line-height:${lineHeight};min-height:${fontSize * lineHeight}px;margin:0;padding:0;">${inner}</div>`;
+}
 
-  // Headers and paragraphs
-  return (
-    <div style={style}>
-      {block.displayContent ? (
-        <InlineContent content={block.displayContent} sourceOffset={inlineSourceOffset} />
-      ) : (
-        <br />
-      )}
-    </div>
-  );
-});
-
-export const CustomMarkdownRenderer: React.FC<Props> = memo(({ text, style, zoom }) => {
-  const blocks = useMemo(() => parseBlocks(text), [text]);
-
+// Render the full text as an inner-HTML string for the markdown container.
+// Pass this through dangerouslySetInnerHTML on the container described by
+// containerStyleForMarkdown().
+export function renderMarkdownToHtml(text: string, style: TextStyle, zoom: number): string {
+  const blocks = parseBlocks(text || '');
   const baseFontSize = style.fontSize * zoom;
   const lineHeight = style.lineHeight || 1.2;
+  const baseFontWeight = style.fontWeight;
+  return blocks.map((block) => renderBlockAsHtml(block, baseFontSize, baseFontWeight, lineHeight)).join('');
+}
 
-  const baseStyle = useMemo((): React.CSSProperties => ({
+// Container style shared by all markdown renderers. The block <div>s already
+// carry font-size/weight/line-height, so the container only carries the
+// element-level style (font family, color, alignment, decoration, etc.).
+export function containerStyleForMarkdown(style: TextStyle): React.CSSProperties {
+  return {
     fontFamily: style.fontFamily,
-    fontWeight: style.fontWeight,
     fontStyle: style.fontStyle,
     color: style.color,
     textAlign: style.align,
-    lineHeight: lineHeight,
-    textDecoration: style.textDecoration === 'none' ? undefined : style.textDecoration,
-  }), [style.fontFamily, style.fontWeight, style.fontStyle, style.color, style.align, lineHeight, style.textDecoration]);
+    wordWrap: 'break-word',
+    overflowWrap: 'break-word',
+    whiteSpace: 'pre-wrap',
+  };
+}
+
+export const CustomMarkdownRenderer: React.FC<Props> = memo(({ text, style, zoom }) => {
+  const html = useMemo(() => renderMarkdownToHtml(text, style, zoom), [text, style, zoom]);
+  const containerStyle = useMemo(() => containerStyleForMarkdown(style), [style]);
 
   return (
     <div
       className="custom-markdown-content"
-      style={{
-        wordBreak: 'break-word',
-        overflowWrap: 'break-word',
-        whiteSpace: 'pre-wrap',
-      }}
-    >
-      {blocks.map((block, index) => (
-        <BlockRenderer
-          key={index}
-          block={block}
-          baseFontSize={baseFontSize}
-          baseStyle={baseStyle}
-          lineHeight={lineHeight}
-        />
-      ))}
-    </div>
+      style={containerStyle}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
   );
 });

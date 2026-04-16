@@ -1,58 +1,14 @@
 import type { Slide, SlideElement, TextElement, ShapeElement, ImageElement, Resource } from '../types/presentation';
 import { SLIDE_WIDTH, SLIDE_HEIGHT, TEXT_BOX_PADDING } from './constants';
-import { parseBlocks, parseInlineSegments, getBlockFontMultiplier } from '../components/canvas/CustomMarkdownRenderer';
-import { renderLatex } from './latexUtils';
+import { renderMarkdownToHtml } from '../components/canvas/CustomMarkdownRenderer';
 import { getElementCenter } from './geometry';
-
-// Render text block as HTML
-function renderBlockAsHtml(displayContent: string, sourceStart: number): string {
-  const segments = parseInlineSegments(displayContent, sourceStart);
-  return segments.map((segment) => {
-    if (segment.type === 'latex') {
-      return renderLatex(segment.displayContent, segment.isBlock);
-    }
-    if (segment.type === 'link') {
-      const escaped = segment.displayContent
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-      return `<span style="color:#2563eb;text-decoration:underline">${escaped}</span>`;
-    }
-    if (segment.type === 'formatted') {
-      let style = '';
-      if (segment.bold) style += 'font-weight:bold;';
-      if (segment.italic) style += 'font-style:italic;';
-      if (segment.strikethrough) style += 'text-decoration:line-through;';
-      if (segment.underline) style += 'text-decoration:underline;';
-      const escaped = segment.displayContent
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-      return `<span style="${style}">${escaped}</span>`;
-    }
-    return segment.displayContent
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
-  }).join('');
-}
 
 // Render text element to SVG string
 function renderTextElement(element: TextElement): string {
   const { text, style, x, y, width, height, rotation, opacity } = element;
   const padding = TEXT_BOX_PADDING;
 
-  const blocks = parseBlocks(text || '');
-  const lineHeight = style.lineHeight || 1.2;
-
-  const htmlContent = blocks.map(block => {
-    const multiplier = getBlockFontMultiplier(block.type);
-    const fontSize = style.fontSize * multiplier;
-    const isHeader = block.type === 'h1' || block.type === 'h2' || block.type === 'h3';
-    const fontWeight = isHeader ? 'bold' : style.fontWeight;
-    const html = renderBlockAsHtml(block.displayContent, block.sourceStart + block.prefixLength);
-    return `<div style="font-size:${fontSize}px;font-weight:${fontWeight};line-height:${lineHeight};min-height:${fontSize * lineHeight}px;margin:0;padding:0;">${html || '&nbsp;'}</div>`;
-  }).join('');
+  const htmlContent = renderMarkdownToHtml(text || '', style, 1);
 
   let verticalAlignStyle = '';
   if (style.verticalAlign === 'middle') {
@@ -61,6 +17,9 @@ function renderTextElement(element: TextElement): string {
     verticalAlignStyle = 'display:flex;flex-direction:column;justify-content:flex-end;';
   }
 
+  const textDecoration = style.textDecoration && style.textDecoration !== 'none'
+    ? `text-decoration:${style.textDecoration};` : '';
+
   const cx = x + width / 2;
   const cy = y + height / 2;
   const transform = rotation ? `rotate(${rotation}, ${cx}, ${cy})` : '';
@@ -68,7 +27,7 @@ function renderTextElement(element: TextElement): string {
   return `
     <g transform="${transform}" opacity="${opacity}">
       <foreignObject x="${x + padding}" y="${y + padding}" width="${width - padding * 2}" height="${height - padding * 2}">
-        <div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;font-family:${style.fontFamily};font-style:${style.fontStyle};color:${style.color};text-align:${style.align};word-wrap:break-word;overflow-wrap:break-word;white-space:pre-wrap;overflow:hidden;${verticalAlignStyle}">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;font-family:${style.fontFamily};font-style:${style.fontStyle};color:${style.color};text-align:${style.align};${textDecoration}word-wrap:break-word;overflow-wrap:break-word;white-space:pre-wrap;overflow:hidden;${verticalAlignStyle}">
           ${htmlContent}
         </div>
       </foreignObject>
