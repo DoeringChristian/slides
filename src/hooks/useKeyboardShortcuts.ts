@@ -26,18 +26,15 @@ export function useKeyboardShortcuts() {
 
       const ctrl = e.ctrlKey || e.metaKey;
 
-      // Save
+      // Save — download a standalone viewer HTML (same mechanism as the Save button).
       if (ctrl && e.key === 's') {
         e.preventDefault();
-        const presentation = store.getState().presentation;
-        const data = JSON.stringify(presentation);
-        const blob = new Blob([data], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${presentation.title.replace(/\s+/g, '_')}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
+        import('../utils/exportStandaloneHtml').then(({ exportStandaloneHtml }) =>
+          exportStandaloneHtml(store.getState().presentation, { mode: 'viewer' }).catch((err) => {
+            console.error(err);
+            alert(err.message);
+          }),
+        );
         return;
       }
 

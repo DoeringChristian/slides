@@ -3,14 +3,13 @@ import { usePresentationStore } from '../../store/presentationStore';
 import { useEditorStore } from '../../store/editorStore';
 import { useVaultStore } from '../../store/vaultStore';
 import { usePresenterMode } from '../../hooks/usePresenterMode';
-import { Play, Download, Upload, FilePlus, Undo2, Redo2, Monitor, ChevronDown, FileDown } from 'lucide-react';
+import { Play, Download, FilePlus, Undo2, Redo2, Monitor, ChevronDown, FileDown } from 'lucide-react';
 import { ExportDialog } from '../dialogs/ExportDialog';
 
 export const Header: React.FC = () => {
   const title = usePresentationStore((s) => s.presentation.title);
   const updateTitle = usePresentationStore((s) => s.updateTitle);
   const resetPresentation = usePresentationStore((s) => s.resetPresentation);
-  const loadPresentation = usePresentationStore((s) => s.loadPresentation);
   const setPresenting = useEditorStore((s) => s.setPresenting);
   const setPresentingSlideIndex = useEditorStore((s) => s.setPresentingSlideIndex);
   const slideOrder = usePresentationStore((s) => s.presentation.slideOrder);
@@ -52,38 +51,14 @@ export const Header: React.FC = () => {
     setPresenting(true);
   };
 
-  const handleSave = () => {
-    const data = JSON.stringify(usePresentationStore.getState().presentation);
-    const blob = new Blob([data], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${title.replace(/\s+/g, '_')}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleLoad = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
-    input.onchange = (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (ev) => {
-        try {
-          const data = JSON.parse(ev.target?.result as string);
-          loadPresentation(data);
-          const firstSlideId = data.slideOrder?.[0];
-          if (firstSlideId) {
-            useEditorStore.getState().setActiveSlide(firstSlideId);
-          }
-        } catch { /* ignore invalid json */ }
-      };
-      reader.readAsText(file);
-    };
-    input.click();
+  const handleSave = async () => {
+    const { exportStandaloneHtml } = await import('../../utils/exportStandaloneHtml');
+    try {
+      await exportStandaloneHtml(usePresentationStore.getState().presentation, { mode: 'viewer' });
+    } catch (err) {
+      console.error(err);
+      alert((err as Error).message);
+    }
   };
 
   const handleUndo = () => {
@@ -134,13 +109,10 @@ export const Header: React.FC = () => {
           className="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="New">
           <FilePlus size={18} />
         </button>
-        <button onClick={handleSave} className="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Save">
+        <button onClick={handleSave} className="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Save as standalone viewer HTML (⌘S)">
           <Download size={18} />
         </button>
-        <button onClick={handleLoad} className="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Open">
-          <Upload size={18} />
-        </button>
-        <button onClick={() => setShowExportDialog(true)} className="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Export to PDF">
+        <button onClick={() => setShowExportDialog(true)} className="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Export">
           <FileDown size={18} />
         </button>
         <div className="w-px h-6 bg-gray-300 mx-1" />

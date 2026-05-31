@@ -14,6 +14,8 @@ export const PresenterView: React.FC = () => {
   const presentingSlideIndex = useEditorStore((s) => s.presentingSlideIndex);
   const setPresentingSlideIndex = useEditorStore((s) => s.setPresentingSlideIndex);
   const setPresenting = useEditorStore((s) => s.setPresenting);
+  const standaloneMode = useEditorStore((s) => s.standaloneMode);
+  const standaloneEditorOrigin = useEditorStore((s) => s.standaloneEditorOrigin);
   const slideOrder = usePresentationStore((s) => s.presentation.slideOrder);
   const slides = usePresentationStore((s) => s.presentation.slides);
   const resources = usePresentationStore((s) => s.presentation.resources);
@@ -23,6 +25,10 @@ export const PresenterView: React.FC = () => {
   const [isAnimating, setIsAnimating] = useState(false);
   const [animProgress, setAnimProgress] = useState(0);
   const [autoAdvanceEnabled, setAutoAdvanceEnabled] = useState(true);
+  // Standalone modes auto-play on page load, but browsers refuse requestFullscreen
+  // without a user gesture. Until the user's first interaction, swallow advance
+  // keys/clicks and use that gesture to enter fullscreen instead.
+  const [hasBootstrapped, setHasBootstrapped] = useState(standaloneMode === 'off');
   const targetIndexRef = useRef(0);
   const rafRef = useRef<number>(0);
   const startTimeRef = useRef(0);
@@ -140,11 +146,16 @@ export const PresenterView: React.FC = () => {
   const exitPresentation = useCallback(() => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     setIsAnimating(false);
-    setPresenting(false);
     if (document.fullscreenElement) {
       document.exitFullscreen().catch(() => {});
     }
-  }, [setPresenting]);
+    // Viewer-only standalone: no editor to fall back into. Send the user to the editor link.
+    if (standaloneMode === 'viewer' && standaloneEditorOrigin) {
+      window.open(standaloneEditorOrigin, '_blank', 'noopener');
+      return;
+    }
+    setPresenting(false);
+  }, [setPresenting, standaloneMode, standaloneEditorOrigin]);
 
   useEffect(() => {
     if (isPresenting && containerRef.current) {
@@ -155,7 +166,22 @@ export const PresenterView: React.FC = () => {
   useEffect(() => {
     if (!isPresenting) return;
 
+    const requestFs = () =>
+      (containerRef.current ?? document.documentElement).requestFullscreen?.().catch(() => {});
+
+    const isAdvanceKey = (key: string) =>
+      key === 'Enter' || key === ' ' || key === 'ArrowRight' || key === 'ArrowDown';
+
     const handleKey = (e: KeyboardEvent) => {
+      // Bootstrap: in standalone modes, the first advance key is consumed to
+      // enter fullscreen (it's a valid user gesture). Subsequent presses advance
+      // slides normally. Esc and other keys behave as usual.
+      if (!hasBootstrapped && isAdvanceKey(e.key)) {
+        e.preventDefault();
+        requestFs();
+        setHasBootstrapped(true);
+        return;
+      }
       switch (e.key) {
         case 'ArrowRight':
         case 'ArrowDown':
@@ -192,7 +218,15 @@ export const PresenterView: React.FC = () => {
     };
 
     const handleFullscreenChange = () => {
-      if (!document.fullscreenElement && isPresenting) {
+      // First fullscreen entry counts as bootstrapping (e.g. user pressed F).
+      if (document.fullscreenElement) {
+        setHasBootstrapped(true);
+        return;
+      }
+      // In the regular editor flow, exiting fullscreen also exits present mode.
+      // In standalone modes there's nowhere to fall back to (viewer has no
+      // editor UI; editor-standalone uses Esc explicitly), so leave isPresenting alone.
+      if (isPresenting && standaloneMode === 'off') {
         setPresenting(false);
       }
     };
@@ -203,7 +237,7 @@ export const PresenterView: React.FC = () => {
       window.removeEventListener('keydown', handleKey);
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
-  }, [isPresenting, goNext, goPrev, exitPresentation, setPresentingSlideIndex, totalSlides, setPresenting, isAnimating, showSlideNumbers, setShowSlideNumbers]);
+  }, [isPresenting, goNext, goPrev, exitPresentation, setPresentingSlideIndex, totalSlides, setPresenting, isAnimating, showSlideNumbers, setShowSlideNumbers, hasBootstrapped, standaloneMode]);
 
   // Don't render when in presenter mode (PresenterControlPanel handles that)
   // This view is only for simple fullscreen presentation
@@ -254,6 +288,12 @@ export const PresenterView: React.FC = () => {
   return (
     <div ref={containerRef} className="fixed inset-0 bg-black z-[9999] flex items-center justify-center cursor-none"
       onClick={(e) => {
+        // First click in standalone mode bootstraps fullscreen rather than advancing.
+        if (!hasBootstrapped) {
+          (containerRef.current ?? document.documentElement).requestFullscreen?.().catch(() => {});
+          setHasBootstrapped(true);
+          return;
+        }
         const rect = (e.target as HTMLElement).getBoundingClientRect();
         if (e.clientX > rect.width / 2) goNext();
         else goPrev();
@@ -287,6 +327,19 @@ export const PresenterView: React.FC = () => {
       <div className="absolute bottom-4 right-4 text-white text-sm opacity-50">
         {(isAnimating ? targetIndexRef.current : currentIndex) + 1} / {totalSlides}
       </div>
+
+      {/* Bootstrap overlay: only shown until the user's first interaction triggers
+          fullscreen. Identical in viewer-only and editor-included flavors. */}
+      {!hasBootstrapped && (
+        <div className="absolute inset-x-0 bottom-12 flex flex-col items-center gap-2 pointer-events-none">
+          <div className="text-white/85 bg-black/40 backdrop-blur px-4 py-2 rounded text-sm">
+            Press <kbd className="font-mono">Enter</kbd> to start the presentation in fullscreen
+          </div>
+          <div className="text-white/70 bg-black/40 backdrop-blur px-4 py-1.5 rounded text-xs">
+            Press <kbd className="font-mono">Esc</kbd> to edit
+          </div>
+        </div>
+      )}
     </div>
   );
 };

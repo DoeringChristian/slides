@@ -7,8 +7,11 @@ interface Props {
   onClose: () => void;
 }
 
+type ExportFormat = 'html' | 'pdf' | 'png' | 'pptx' | 'odp';
+
 export const ExportDialog: React.FC<Props> = ({ isOpen, onClose }) => {
-  const [format, setFormat] = useState<'pdf' | 'png' | 'pptx' | 'odp'>('pdf');
+  const [format, setFormat] = useState<ExportFormat>('html');
+  const [includeEditor, setIncludeEditor] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const presentation = usePresentationStore((s) => s.presentation);
@@ -19,7 +22,12 @@ export const ExportDialog: React.FC<Props> = ({ isOpen, onClose }) => {
     setExporting(true);
     setError(null);
     try {
-      if (format === 'pdf') {
+      if (format === 'html') {
+        const { exportStandaloneHtml } = await import('../../utils/exportStandaloneHtml');
+        await exportStandaloneHtml(presentation, {
+          mode: includeEditor ? 'editor' : 'viewer',
+        });
+      } else if (format === 'pdf') {
         const { exportPdf } = await import('../../utils/exportPdf');
         await exportPdf(presentation);
       } else if (format === 'png') {
@@ -51,6 +59,27 @@ export const ExportDialog: React.FC<Props> = ({ isOpen, onClose }) => {
         </div>
 
         <div className="space-y-3 mb-6">
+          <label className="flex flex-col gap-2 p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
+            <div className="flex items-center gap-3">
+              <input type="radio" checked={format === 'html'} onChange={() => setFormat('html')} className="accent-blue-500" />
+              <div>
+                <div className="text-sm font-medium">HTML (single file)</div>
+                <div className="text-xs text-gray-500">Opens straight into present mode. Esc returns to the editor.</div>
+              </div>
+            </div>
+            {format === 'html' && (
+              <label className="flex items-center gap-2 ml-7 text-xs text-gray-600 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeEditor}
+                  onChange={(e) => setIncludeEditor(e.target.checked)}
+                  onClick={(e) => e.stopPropagation()}
+                  className="accent-blue-500"
+                />
+                <span>Include editor code (recipient can edit; larger file)</span>
+              </label>
+            )}
+          </label>
           <label className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
             <input type="radio" checked={format === 'pdf'} onChange={() => setFormat('pdf')} className="accent-blue-500" />
             <div>

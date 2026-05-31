@@ -27,6 +27,17 @@ import { createPresentation } from '../utils/slideFactory';
 
 const supportsFileSystem = isFileSystemAccessSupported();
 
+const UNTITLED_BASE = 'Untitled Presentation';
+
+function generateUntitledName(projects: ProjectMeta[]): string {
+  const taken = new Set(projects.map((p) => p.title));
+  if (!taken.has(UNTITLED_BASE)) return UNTITLED_BASE;
+  for (let n = 2; ; n++) {
+    const candidate = `${UNTITLED_BASE} ${n}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+}
+
 // Storage modes
 export type StorageMode = 'local' | 'server' | 'filesystem';
 
@@ -55,7 +66,7 @@ interface VaultStore {
 
   // Project management
   loadProjects: () => Promise<void>;
-  createProject: (title: string) => Promise<void>;
+  createProject: (title?: string) => Promise<void>;
   openProject: (id: string) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
   duplicateProject: (id: string) => Promise<void>;
@@ -229,13 +240,13 @@ export const useVaultStore = create<VaultStore>()((set, get) => ({
     }
   },
 
-  createProject: async (title: string) => {
-    const { vaultHandle, storageMode } = get();
+  createProject: async (title?: string) => {
+    const { vaultHandle, storageMode, projects } = get();
     set({ isLoading: true, error: null });
 
     try {
       const presentation = createPresentation();
-      presentation.title = title;
+      presentation.title = title?.trim() || generateUntitledName(projects);
 
       let newProject: ProjectMeta;
 

@@ -2,6 +2,34 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { spawn, ChildProcess } from 'child_process'
 import path from 'path'
+import fs from 'fs'
+
+// Vite middleware: serve the prebuilt standalone/viewer templates during dev so the
+// editor's exporter can fetch them. Falls back to a friendly 404 if the templates
+// haven't been built yet.
+function standaloneTemplateMiddleware() {
+  const routes: Record<string, { file: string; buildCmd: string }> = {
+    '/standalone-template.html': { file: 'dist-standalone/index.html', buildCmd: 'npm run build:standalone' },
+    '/viewer-template.html': { file: 'dist-standalone-viewer/viewer.html', buildCmd: 'npm run build:viewer' },
+  }
+  return {
+    name: 'standalone-template-middleware',
+    configureServer(server: any) {
+      for (const [route, { file, buildCmd }] of Object.entries(routes)) {
+        server.middlewares.use(route, (_req: any, res: any) => {
+          const fullPath = path.resolve(__dirname, file)
+          if (!fs.existsSync(fullPath)) {
+            res.statusCode = 404
+            res.end(`Run \`${buildCmd}\` once to generate the template.`)
+            return
+          }
+          res.setHeader('Content-Type', 'text/html')
+          fs.createReadStream(fullPath).pipe(res)
+        })
+      }
+    },
+  }
+}
 
 // Plugin to start the backend server during development
 function backendServer() {
@@ -53,5 +81,11 @@ export default defineConfig(({ command }) => ({
   // Base path for GitHub Pages - use repo name as base
   // Change 'slides' to your actual repository name if different
   base: command === 'build' ? '/slides/' : '/',
-  plugins: command === 'serve' ? [react(), backendServer()] : [react()],
+  define: {
+    __SLIDES_STANDALONE_BUILD__: 'false',
+    __SLIDES_EDITOR_ORIGIN__: JSON.stringify(process.env.VITE_EDITOR_ORIGIN || 'https://doeringc.ch/slides'),
+  },
+  plugins: command === 'serve'
+    ? [react(), backendServer(), standaloneTemplateMiddleware()]
+    : [react()],
 }))

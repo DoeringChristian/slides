@@ -9,8 +9,6 @@ import { StorageSettingsDialog } from './StorageSettingsDialog';
 import { getStorageClient } from '../../utils/storageClient';
 
 export const ProjectPickerDialog: React.FC = () => {
-  const [newProjectTitle, setNewProjectTitle] = useState('');
-  const [showNewInput, setShowNewInput] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -70,23 +68,6 @@ export const ProjectPickerDialog: React.FC = () => {
 
     generateMissingThumbnails();
   }, [projects, vaultHandle, storageMode, updateThumbnail]);
-
-  const handleCreateProject = () => {
-    if (newProjectTitle.trim()) {
-      createProject(newProjectTitle.trim());
-      setNewProjectTitle('');
-      setShowNewInput(false);
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleCreateProject();
-    } else if (e.key === 'Escape') {
-      setShowNewInput(false);
-      setNewProjectTitle('');
-    }
-  };
 
   const handleImport = () => {
     fileInputRef.current?.click();
@@ -224,45 +205,7 @@ export const ProjectPickerDialog: React.FC = () => {
           ) : (
             /* Project grid */
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-              {/* New project input or card */}
-              {showNewInput ? (
-                <div className="flex flex-col border-2 border-blue-400 rounded-lg overflow-hidden bg-white">
-                  <div className="aspect-video flex items-center justify-center bg-blue-50">
-                    <div className="text-4xl font-light text-blue-400">+</div>
-                  </div>
-                  <div className="p-3">
-                    <input
-                      type="text"
-                      value={newProjectTitle}
-                      onChange={(e) => setNewProjectTitle(e.target.value)}
-                      onKeyDown={handleKeyDown}
-                      placeholder="Presentation title..."
-                      autoFocus
-                      className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:border-blue-400"
-                    />
-                    <div className="flex gap-2 mt-2">
-                      <button
-                        onClick={handleCreateProject}
-                        disabled={!newProjectTitle.trim()}
-                        className="flex-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        Create
-                      </button>
-                      <button
-                        onClick={() => {
-                          setShowNewInput(false);
-                          setNewProjectTitle('');
-                        }}
-                        className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <NewProjectCard onClick={() => setShowNewInput(true)} />
-              )}
+              <NewProjectCard onClick={() => createProject()} />
 
               {/* Existing projects */}
               {projects.map((project) => (

@@ -11,8 +11,13 @@ export interface MarginLayout {
   bottom: number;
 }
 
+export type StandaloneMode = 'off' | 'editor' | 'viewer';
+
 interface EditorStore extends EditorState {
   objectDrawerOpen: boolean;
+  standaloneMode: StandaloneMode;
+  standaloneEditorOrigin: string | null;
+  setStandaloneMode: (mode: StandaloneMode, editorOrigin: string | null) => void;
   hoveredObjectId: string | null;
   croppingElementId: string | null;
   marginLayoutId: string | null;
@@ -72,7 +77,10 @@ export const useEditorStore = create<EditorStore>()((set) => ({
   textEditClickPosition: null,
   selectedSlideIds: [],
   showSlideNumbers: false,
+  standaloneMode: 'off',
+  standaloneEditorOrigin: null,
 
+  setStandaloneMode: (mode, editorOrigin) => set({ standaloneMode: mode, standaloneEditorOrigin: editorOrigin }),
   setObjectDrawerOpen: (open) => set({ objectDrawerOpen: open }),
   setHoveredObjectId: (id) => set({ hoveredObjectId: id }),
   setActiveSlide: (slideId) => set((s) => {
