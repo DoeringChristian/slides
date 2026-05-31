@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { RefreshCw, Loader2, Settings, Upload } from 'lucide-react';
+import { RefreshCw, Loader2, Settings, Upload, Menu, X } from 'lucide-react';
 import { useVaultStore } from '../../store/vaultStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useEditorStore } from '../../store/editorStore';
+import { useIsMobile } from '../../hooks/useIsMobile';
 import { ProjectCard, NewProjectCard } from './ProjectCard';
 import { generateThumbnail } from '../../utils/thumbnailGenerator';
 import { StorageSettingsDialog } from './StorageSettingsDialog';
@@ -10,7 +11,9 @@ import { getStorageClient } from '../../utils/storageClient';
 
 export const ProjectPickerDialog: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isMobile = useIsMobile();
 
   const vaultHandle = useVaultStore((s) => s.vaultHandle);
   const projects = useVaultStore((s) => s.projects);
@@ -155,30 +158,42 @@ export const ProjectPickerDialog: React.FC = () => {
               )}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          {isMobile ? (
+            // On phones, collapse the three header actions into a hamburger
+            // menu — keeps the project grid the focal point.
             <button
-              onClick={handleImport}
-              className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+              onClick={() => setShowMobileMenu(true)}
+              className="w-10 h-10 flex items-center justify-center rounded-lg text-gray-600 hover:bg-gray-100"
+              aria-label="Menu"
             >
-              <Upload size={16} />
-              Import
+              <Menu size={20} />
             </button>
-            <button
-              onClick={loadProjects}
-              disabled={isLoading}
-              className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
-              Refresh
-            </button>
-            <button
-              onClick={() => setShowSettings(true)}
-              className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              <Settings size={16} />
-              Storage
-            </button>
-          </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleImport}
+                className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <Upload size={16} />
+                Import
+              </button>
+              <button
+                onClick={loadProjects}
+                disabled={isLoading}
+                className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
+                Refresh
+              </button>
+              <button
+                onClick={() => setShowSettings(true)}
+                className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <Settings size={16} />
+                Storage
+              </button>
+            </div>
+          )}
           <input
             ref={fileInputRef}
             type="file"
@@ -223,6 +238,41 @@ export const ProjectPickerDialog: React.FC = () => {
       </div>
 
       <StorageSettingsDialog isOpen={showSettings} onClose={() => setShowSettings(false)} />
+
+      {showMobileMenu && (
+        <div className="fixed inset-0 z-50 flex">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setShowMobileMenu(false)} />
+          <div className="relative ml-auto bg-white w-72 max-w-[80vw] h-full shadow-xl flex flex-col">
+            <div className="h-12 flex items-center justify-between px-4 border-b border-gray-200">
+              <span className="font-medium">Menu</span>
+              <button onClick={() => setShowMobileMenu(false)} className="w-10 h-10 flex items-center justify-center text-gray-600">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto py-2">
+              <button
+                onClick={() => { handleImport(); setShowMobileMenu(false); }}
+                className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm hover:bg-gray-100"
+              >
+                <Upload size={18} /> Import
+              </button>
+              <button
+                onClick={() => { loadProjects(); setShowMobileMenu(false); }}
+                disabled={isLoading}
+                className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm hover:bg-gray-100 disabled:opacity-50"
+              >
+                <RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} /> Refresh
+              </button>
+              <button
+                onClick={() => { setShowSettings(true); setShowMobileMenu(false); }}
+                className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm hover:bg-gray-100"
+              >
+                <Settings size={18} /> Storage settings
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

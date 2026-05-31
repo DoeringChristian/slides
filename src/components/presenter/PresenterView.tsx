@@ -287,6 +287,17 @@ export const PresenterView: React.FC = () => {
 
   return (
     <div ref={containerRef} className="fixed inset-0 bg-black z-[9999] flex items-center justify-center cursor-none"
+      // onPointerDown fires before onClick — important on iOS Safari where
+      // click is gated by the 300 ms double-tap heuristic. Initiating the
+      // fullscreen request from pointerdown makes the bootstrap feel instant
+      // on touch, while the click handler below covers mouse + non-touch
+      // platforms uniformly.
+      onPointerDown={(e) => {
+        if (e.pointerType !== 'mouse' && !hasBootstrapped) {
+          (containerRef.current ?? document.documentElement).requestFullscreen?.().catch(() => {});
+          setHasBootstrapped(true);
+        }
+      }}
       onClick={(e) => {
         // First click in standalone mode bootstraps fullscreen rather than advancing.
         if (!hasBootstrapped) {
