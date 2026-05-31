@@ -71,7 +71,7 @@ export const StorageSettingsDialog: React.FC<Props> = ({ isOpen, onClose }) => {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-[480px] max-h-[90vh] overflow-auto">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-[480px] mx-4 max-h-[90vh] overflow-auto">
         <div className="flex items-center justify-between p-4 border-b border-gray-200">
           <h2 className="text-lg font-medium">Storage Settings</h2>
           <button onClick={onClose} className="p-1 rounded hover:bg-gray-100">

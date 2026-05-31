@@ -62,11 +62,18 @@ export const TemplatePicker: React.FC<TemplatePickerProps> = ({ open, onClose, i
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
+    // Close on viewport changes so a stale anchorRect doesn't leave the popover
+    // floating in space after rotation / devtools resize.
+    const handleResize = () => onClose();
     document.addEventListener('mousedown', handleMouseDown);
     document.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
     return () => {
       document.removeEventListener('mousedown', handleMouseDown);
       document.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
     };
   }, [open, onClose]);
 
@@ -99,7 +106,7 @@ export const TemplatePicker: React.FC<TemplatePickerProps> = ({ open, onClose, i
     <div
       ref={popoverRef}
       className="fixed bg-white rounded-lg shadow-xl border border-gray-200 z-[200] overflow-hidden"
-      style={{ top, left, width: POPOVER_WIDTH }}
+      style={{ top, left, width: POPOVER_WIDTH, maxWidth: 'calc(100vw - 1rem)' }}
     >
       <div className="max-h-80 overflow-y-auto p-2 flex flex-wrap gap-2">
         {templateList.length === 0 && (

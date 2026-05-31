@@ -117,7 +117,7 @@ export const Toolbar: React.FC = () => {
   const showTextFormat = selectedElements.length === 1 && selectedElements[0].type === 'text';
 
   return (
-    <div className="h-10 bg-white border-b border-gray-200 flex items-center px-2 gap-1 shrink-0">
+    <div className="min-h-10 bg-white border-b border-gray-200 flex items-center flex-wrap overflow-x-auto px-2 gap-1 shrink-0">
       {tools.map(({ tool, icon, label }) => (
         <button
           key={tool}

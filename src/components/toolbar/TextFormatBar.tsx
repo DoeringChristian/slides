@@ -24,7 +24,7 @@ export const TextFormatBar: React.FC = () => {
   };
 
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center flex-wrap overflow-x-auto gap-1">
       <select
         value={style.fontFamily}
         onChange={(e) => updateStyle({ fontFamily: e.target.value })}

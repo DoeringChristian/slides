@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AppLayout } from './components/layout/AppLayout';
+import { AppLayoutMobile } from './components/layout/AppLayoutMobile';
 import { PresenterView } from './components/presenter/PresenterView';
 import { PresenterControlPanel } from './components/presenter/PresenterControlPanel';
 import { AudienceView } from './components/presenter/AudienceView';
@@ -8,6 +9,7 @@ import { useEditorStore } from './store/editorStore';
 import { usePresentationStore } from './store/presentationStore';
 import { useVaultStore } from './store/vaultStore';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import { useIsMobile } from './hooks/useIsMobile';
 import { readStandaloneBoot, applyStandaloneBoot } from './utils/standaloneBoot';
 
 // Check if this is the audience window
@@ -76,6 +78,11 @@ function App() {
 
   useKeyboardShortcuts();
 
+  const isMobile = useIsMobile();
+  // Standalone modes (viewer / standalone editor) keep the existing layout —
+  // editing a downloaded standalone HTML on a phone is an edge case.
+  const Layout = isMobile ? AppLayoutMobile : AppLayout;
+
   // Standalone viewer mode: just play the presentation. Esc → editor link
   // (handled inside PresenterView via the standaloneMode flag).
   if (standaloneMode === 'viewer') {
@@ -124,7 +131,7 @@ function App() {
 
   return (
     <>
-      <AppLayout />
+      <Layout />
       <PresenterView />
       <PresenterControlPanel />
     </>

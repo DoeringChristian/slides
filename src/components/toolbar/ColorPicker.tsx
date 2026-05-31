@@ -28,6 +28,24 @@ export const ColorPicker: React.FC<Props> = ({ color, onChange, label = 'Color',
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
+  // Recompute alignment when the viewport changes (rotation, devtools resize)
+  // so the picker doesn't go off-screen.
+  useEffect(() => {
+    if (!isOpen) return;
+    const recompute = () => {
+      if (ref.current) {
+        const rect = ref.current.getBoundingClientRect();
+        setAlignRight(rect.left + 224 > window.innerWidth);
+      }
+    };
+    window.addEventListener('resize', recompute);
+    window.addEventListener('orientationchange', recompute);
+    return () => {
+      window.removeEventListener('resize', recompute);
+      window.removeEventListener('orientationchange', recompute);
+    };
+  }, [isOpen]);
+
   const isTransparent = color === 'transparent' || color === 'none';
 
   return (
@@ -59,7 +77,10 @@ export const ColorPicker: React.FC<Props> = ({ color, onChange, label = 'Color',
       </button>
 
       {isOpen && (
-        <div className={`absolute top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 p-3 z-50 w-56 ${alignRight ? 'right-0' : 'left-0'}`}>
+        <div
+          className={`absolute top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 p-3 z-50 w-56 ${alignRight ? 'right-0' : 'left-0'}`}
+          style={{ maxWidth: 'calc(100vw - 1rem)' }}
+        >
           {allowTransparent && (
             <button
               onClick={() => { onChange('transparent'); setIsOpen(false); }}

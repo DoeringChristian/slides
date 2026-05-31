@@ -14,7 +14,7 @@ export const ConfirmDialog: React.FC<Props> = ({ isOpen, title, message, confirm
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-80 p-6">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-[400px] mx-4 p-6">
         <h2 className="text-lg font-medium mb-2">{title}</h2>
         <p className="text-sm text-gray-600 mb-4">{message}</p>
         <div className="flex gap-2 justify-end">

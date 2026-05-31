@@ -110,11 +110,16 @@ export const ResourcePicker: React.FC<ResourcePickerProps> = ({
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
+    const handleResize = () => onClose();
     document.addEventListener('mousedown', handleMouseDown);
     document.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
     return () => {
       document.removeEventListener('mousedown', handleMouseDown);
       document.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
     };
   }, [open, onClose]);
 
@@ -162,7 +167,7 @@ export const ResourcePicker: React.FC<ResourcePickerProps> = ({
     <div
       ref={popoverRef}
       className="fixed bg-white rounded-lg shadow-xl border border-gray-200 z-[200] overflow-hidden"
-      style={{ top, left, width: POPOVER_WIDTH }}
+      style={{ top, left, width: POPOVER_WIDTH, maxWidth: 'calc(100vw - 1rem)' }}
     >
       <div className="max-h-56 overflow-y-auto p-2">
         {/* None option */}

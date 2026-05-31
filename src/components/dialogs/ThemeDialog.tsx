@@ -21,7 +21,7 @@ export const ThemeDialog: React.FC<Props> = ({ isOpen, onClose }) => {
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-xl w-[500px] p-6">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-[500px] mx-4 p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-medium">Choose Theme</h2>
           <button onClick={onClose} className="p-1 rounded hover:bg-gray-100">
