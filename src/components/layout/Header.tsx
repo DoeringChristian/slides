@@ -3,8 +3,9 @@ import { usePresentationStore } from '../../store/presentationStore';
 import { useEditorStore } from '../../store/editorStore';
 import { useVaultStore } from '../../store/vaultStore';
 import { usePresenterMode } from '../../hooks/usePresenterMode';
-import { Play, Download, FilePlus, Undo2, Redo2, Monitor, ChevronDown, FileDown } from 'lucide-react';
+import { Play, Download, FilePlus, Undo2, Redo2, Monitor, ChevronDown, FileDown, Smartphone } from 'lucide-react';
 import { ExportDialog } from '../dialogs/ExportDialog';
+import { usePwaInstall } from '../../hooks/usePwaInstall';
 
 export const Header: React.FC = () => {
   const title = usePresentationStore((s) => s.presentation.title);
@@ -19,6 +20,8 @@ export const Header: React.FC = () => {
 
   const activeProjectId = useVaultStore((s) => s.activeProjectId);
   const closeProject = useVaultStore((s) => s.closeProject);
+
+  const { canInstall, promptInstall } = usePwaInstall();
 
   const [isEditing, setIsEditing] = useState(false);
   const [showPresentMenu, setShowPresentMenu] = useState(false);
@@ -115,6 +118,15 @@ export const Header: React.FC = () => {
         <button onClick={() => setShowExportDialog(true)} className="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Export">
           <FileDown size={18} />
         </button>
+        {canInstall && (
+          <button
+            onClick={() => { void promptInstall(); }}
+            className="p-1.5 rounded hover:bg-blue-50 text-blue-600"
+            title="Install Slides as an app"
+          >
+            <Smartphone size={18} />
+          </button>
+        )}
         <div className="w-px h-6 bg-gray-300 mx-1" />
         <button onClick={handleUndo} className="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Undo (Ctrl+Z)">
           <Undo2 size={18} />

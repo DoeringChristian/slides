@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { VitePWA } from 'vite-plugin-pwa'
 import { spawn, ChildProcess } from 'child_process'
 import path from 'path'
 import fs from 'fs'
@@ -76,6 +77,50 @@ function backendServer() {
   };
 }
 
+// PWA config for the editor build. Standalone HTML / viewer builds have their
+// own configs (vite.config.standalone.ts, vite.config.viewer.ts) and never see
+// this plugin — those outputs are single-file HTMLs and must not register a
+// service worker (they're opened from file:// by recipients).
+function editorPwa() {
+  return VitePWA({
+    registerType: 'autoUpdate',
+    includeAssets: ['favicon.ico', 'apple-touch-icon-180x180.png'],
+    manifest: {
+      name: 'Slides',
+      short_name: 'Slides',
+      description: 'Presentation editor',
+      theme_color: '#3b82f6',
+      background_color: '#ffffff',
+      display: 'standalone',
+      orientation: 'any',
+      scope: '/slides/',
+      start_url: '/slides/',
+      icons: [
+        { src: 'pwa-64x64.png', sizes: '64x64', type: 'image/png' },
+        { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
+        { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' },
+        { src: 'maskable-icon-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+      ],
+    },
+    workbox: {
+      // Precache app shell + assets. KaTeX fonts (≤ 100 KB each) are included
+      // automatically by globPatterns; bumping maximumFileSizeToCacheInBytes
+      // accommodates the editor's larger JS chunk.
+      globPatterns: ['**/*.{js,css,html,svg,png,ico,woff,woff2,ttf}'],
+      maximumFileSizeToCacheInBytes: 5_000_000,
+      navigateFallback: '/slides/index.html',
+      // Don't precache the prebuilt standalone-template / viewer-template HTMLs
+      // — they're fetched on demand by the exporter (Workbox's runtime cache
+      // can handle them) and would otherwise inflate the precache by ~7.5 MB.
+      globIgnores: ['standalone-template.html', 'viewer-template.html'],
+    },
+    devOptions: {
+      // Disable in dev to avoid SW caching getting in the way of HMR.
+      enabled: false,
+    },
+  })
+}
+
 // https://vite.dev/config/
 export default defineConfig(({ command }) => ({
   // Base path for GitHub Pages - use repo name as base
@@ -87,5 +132,5 @@ export default defineConfig(({ command }) => ({
   },
   plugins: command === 'serve'
     ? [react(), backendServer(), standaloneTemplateMiddleware()]
-    : [react()],
+    : [react(), editorPwa()],
 }))
