@@ -5,7 +5,7 @@ import { RenderShape } from './ElementRenderer';
 interface Props {
   element: ShapeElement;
   disableInteraction?: boolean;
-  onMouseDown?: (e: React.MouseEvent) => void;
+  onPointerDown?: (e: React.PointerEvent) => void;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
   onDoubleClick?: () => void;
@@ -14,7 +14,7 @@ interface Props {
 export const SVGShapeNode: React.FC<Props> = React.memo(({
   element,
   disableInteraction,
-  onMouseDown,
+  onPointerDown,
   onMouseEnter,
   onMouseLeave,
   onDoubleClick,
@@ -27,10 +27,11 @@ export const SVGShapeNode: React.FC<Props> = React.memo(({
   const interactionStyle: React.CSSProperties = {
     cursor: disableInteraction ? 'default' : (element.locked ? 'default' : 'move'),
     pointerEvents: disableInteraction ? 'none' : 'auto',
+    touchAction: 'none',
   };
 
   const interactionHandlers = disableInteraction ? {} : {
-    onMouseDown,
+    onPointerDown,
     onMouseEnter,
     onMouseLeave,
     onDoubleClick,
@@ -59,7 +60,7 @@ export const SVGShapeNode: React.FC<Props> = React.memo(({
             strokeWidth={20}
             style={interactionStyle}
             {...(disableInteraction ? {} : {
-              onMouseDown,
+              onPointerDown,
               onMouseEnter,
               onMouseLeave,
             })}

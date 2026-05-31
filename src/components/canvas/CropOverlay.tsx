@@ -76,16 +76,20 @@ export const CropOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     setCroppingElementId(null);
   }, [setCroppingElementId]);
 
-  const handleMouseDown = useCallback((e: React.MouseEvent, type: 'move' | 'nw' | 'ne' | 'sw' | 'se') => {
+  const handlePointerDown = useCallback((e: React.PointerEvent, type: 'move' | 'nw' | 'ne' | 'sw' | 'se') => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
+    try {
+      (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    } catch { /* ignore */ }
     setIsDragging(true);
     setDragType(type);
     setDragStart({ x: e.clientX, y: e.clientY });
     setCropStartState({ ...cropState });
   }, [cropState]);
 
-  const handleMouseMove = useCallback((e: MouseEvent) => {
+  const handlePointerMove = useCallback((e: PointerEvent) => {
     if (!isDragging || !dragType || !resource || !element) return;
 
     const dx = e.clientX - dragStart.x;
@@ -218,21 +222,23 @@ export const CropOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     setCropState({ x: snappedX, y: snappedY, width: snappedWidth, height: snappedHeight });
   }, [isDragging, dragType, dragStart, cropStartState, zoom, resource, element, activeSlideId]);
 
-  const handleMouseUp = useCallback(() => {
+  const handlePointerUp = useCallback(() => {
     setIsDragging(false);
     setDragType(null);
   }, []);
 
   useEffect(() => {
     if (isDragging) {
-      window.addEventListener('mousemove', handleMouseMove);
-      window.addEventListener('mouseup', handleMouseUp);
+      window.addEventListener('pointermove', handlePointerMove);
+      window.addEventListener('pointerup', handlePointerUp);
+      window.addEventListener('pointercancel', handlePointerUp);
       return () => {
-        window.removeEventListener('mousemove', handleMouseMove);
-        window.removeEventListener('mouseup', handleMouseUp);
+        window.removeEventListener('pointermove', handlePointerMove);
+        window.removeEventListener('pointerup', handlePointerUp);
+        window.removeEventListener('pointercancel', handlePointerUp);
       };
     }
-  }, [isDragging, handleMouseMove, handleMouseUp]);
+  }, [isDragging, handlePointerMove, handlePointerUp]);
 
   // Handle Escape key
   useEffect(() => {
@@ -374,7 +380,7 @@ export const CropOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
 
       {/* Crop border and handles */}
       <div
-        className="absolute border-2 border-blue-500 cursor-move"
+        className="absolute border-2 border-blue-500 cursor-move touch-none"
         style={{
           left: cropDisplayX,
           top: cropDisplayY,
@@ -382,25 +388,38 @@ export const CropOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
           height: cropDisplayHeight,
         }}
         onClick={(e) => e.stopPropagation()}
-        onMouseDown={(e) => handleMouseDown(e, 'move')}
+        onPointerDown={(e) => handlePointerDown(e, 'move')}
       >
-        {/* Corner handles */}
+        {/* Corner handles — 24x24 hit areas with 12x12 visible square inside.
+            Larger hit targets so they're thumb-grabbable on touch. */}
         <div
-          className="absolute -left-1.5 -top-1.5 w-3 h-3 bg-blue-500 cursor-nw-resize"
-          onMouseDown={(e) => handleMouseDown(e, 'nw')}
-        />
+          className="absolute flex items-center justify-center cursor-nw-resize touch-none"
+          style={{ left: -12, top: -12, width: 24, height: 24 }}
+          onPointerDown={(e) => handlePointerDown(e, 'nw')}
+        >
+          <div className="w-3 h-3 bg-blue-500" />
+        </div>
         <div
-          className="absolute -right-1.5 -top-1.5 w-3 h-3 bg-blue-500 cursor-ne-resize"
-          onMouseDown={(e) => handleMouseDown(e, 'ne')}
-        />
+          className="absolute flex items-center justify-center cursor-ne-resize touch-none"
+          style={{ right: -12, top: -12, width: 24, height: 24 }}
+          onPointerDown={(e) => handlePointerDown(e, 'ne')}
+        >
+          <div className="w-3 h-3 bg-blue-500" />
+        </div>
         <div
-          className="absolute -left-1.5 -bottom-1.5 w-3 h-3 bg-blue-500 cursor-sw-resize"
-          onMouseDown={(e) => handleMouseDown(e, 'sw')}
-        />
+          className="absolute flex items-center justify-center cursor-sw-resize touch-none"
+          style={{ left: -12, bottom: -12, width: 24, height: 24 }}
+          onPointerDown={(e) => handlePointerDown(e, 'sw')}
+        >
+          <div className="w-3 h-3 bg-blue-500" />
+        </div>
         <div
-          className="absolute -right-1.5 -bottom-1.5 w-3 h-3 bg-blue-500 cursor-se-resize"
-          onMouseDown={(e) => handleMouseDown(e, 'se')}
-        />
+          className="absolute flex items-center justify-center cursor-se-resize touch-none"
+          style={{ right: -12, bottom: -12, width: 24, height: 24 }}
+          onPointerDown={(e) => handlePointerDown(e, 'se')}
+        >
+          <div className="w-3 h-3 bg-blue-500" />
+        </div>
       </div>
 
       {/* Action buttons */}

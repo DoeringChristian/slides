@@ -9,7 +9,7 @@ interface Props {
   element: TextElement;
   disableInteraction?: boolean;
   isEditing?: boolean;
-  onMouseDown?: (e: React.MouseEvent) => void;
+  onPointerDown?: (e: React.PointerEvent) => void;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
   onDoubleClick?: () => void;
@@ -21,7 +21,7 @@ export const SVGTextNode: React.FC<Props> = React.memo(({
   element,
   disableInteraction,
   isEditing = false,
-  onMouseDown,
+  onPointerDown,
   onMouseEnter,
   onMouseLeave,
   onDoubleClick,
@@ -77,8 +77,9 @@ export const SVGTextNode: React.FC<Props> = React.memo(({
           style={{
             cursor: disableInteraction ? 'default' : (element.locked ? 'default' : 'move'),
             pointerEvents: disableInteraction ? 'none' : 'auto',
+            touchAction: 'none',
           }}
-          onMouseDown={disableInteraction ? undefined : onMouseDown}
+          onPointerDown={disableInteraction ? undefined : onPointerDown}
           onMouseEnter={disableInteraction ? undefined : onMouseEnter}
           onMouseLeave={disableInteraction ? undefined : onMouseLeave}
           onDoubleClick={disableInteraction ? undefined : onDoubleClick}

@@ -18,6 +18,7 @@ interface DrawState {
   snappedCurrentY: number;
 }
 
+// Drawing hook — pointer-event based so it works for mouse, touch, and stylus.
 export function useSVGDrawing() {
   const [drawState, setDrawState] = useState<DrawState>({
     startX: 0, startY: 0, currentX: 0, currentY: 0, isDrawing: false,
@@ -36,7 +37,6 @@ export function useSVGDrawing() {
   const getSnapContext = useCallback(() => {
     const { snapToGrid, marginLayoutId } = useEditorStore.getState();
     const slide = usePresentationStore.getState().presentation.slides[activeSlideId];
-    // Shift key disables snapping for precise placement
     if (!snapToGrid || isShiftHeld() || !slide) return { others: [], marginBounds: null, snappingEnabled: false };
 
     const others = Object.values(slide.elements)
@@ -49,11 +49,12 @@ export function useSVGDrawing() {
     return { others, marginBounds, snappingEnabled: true };
   }, [activeSlideId]);
 
-  const handleMouseDown = useCallback((
-    e: React.MouseEvent,
+  const handlePointerDown = useCallback((
+    e: React.PointerEvent,
     screenToSVG: (clientX: number, clientY: number) => { x: number; y: number }
   ) => {
     if (tool === 'select') return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
 
     const pos = screenToSVG(e.clientX, e.clientY);
 
@@ -76,8 +77,8 @@ export function useSVGDrawing() {
     });
   }, [tool, getSnapContext]);
 
-  const handleMouseMove = useCallback((
-    e: React.MouseEvent,
+  const handlePointerMove = useCallback((
+    e: React.PointerEvent,
     screenToSVG: (clientX: number, clientY: number) => { x: number; y: number }
   ) => {
     if (!drawState.isDrawing) return;
@@ -125,7 +126,7 @@ export function useSVGDrawing() {
     }
   }, [drawState.isDrawing, drawState.startX, drawState.startY, getSnapContext]);
 
-  const handleMouseUp = useCallback(() => {
+  const handlePointerUp = useCallback(() => {
     if (!drawState.isDrawing) return;
 
     const x = Math.min(drawState.snappedStartX, drawState.snappedCurrentX);
@@ -144,10 +145,8 @@ export function useSVGDrawing() {
       return;
     }
 
-    // Mark that we just finished drawing (to prevent click handler from clearing selection)
     justFinishedDrawing.current = true;
 
-    // Create element, select it, then switch tool (order matters to preserve selection)
     if (tool === 'text') {
       const el = createTextElement({ x, y, width: Math.max(width, 100), height: Math.max(height, 40) });
       addElement(activeSlideId, el);
@@ -169,7 +168,6 @@ export function useSVGDrawing() {
       setSelectedElements([el.id]);
     }
 
-    // Switch to select tool after element is created and selected
     setTool('select');
 
     setDrawState({
@@ -178,5 +176,5 @@ export function useSVGDrawing() {
     });
   }, [drawState, tool, activeSlideId, addElement, setTool, setSelectedElements, setEditingTextId]);
 
-  return { drawState, guides, handleMouseDown, handleMouseMove, handleMouseUp, justFinishedDrawing };
+  return { drawState, guides, handlePointerDown, handlePointerMove, handlePointerUp, justFinishedDrawing };
 }

@@ -8,7 +8,10 @@ interface Props {
   element: SlideElement;
   disableInteraction?: boolean;
   editingTextId?: string | null;
-  onMouseDown?: (id: string, e: React.MouseEvent) => void;
+  // Pointer events bridge mouse, touch, and stylus through one API. The hover
+  // mouseEnter/Leave handlers are kept separate because they only fire on
+  // fine-pointer (mouse) devices, which matches the desktop hover affordance.
+  onPointerDown?: (id: string, e: React.PointerEvent) => void;
   onMouseEnter?: (id: string) => void;
   onMouseLeave?: (id: string) => void;
   onDoubleClick?: (id: string) => void;
@@ -18,14 +21,14 @@ export const SVGElementRenderer: React.FC<Props> = React.memo(({
   element,
   disableInteraction,
   editingTextId,
-  onMouseDown,
+  onPointerDown,
   onMouseEnter,
   onMouseLeave,
   onDoubleClick,
 }) => {
   if (!element.visible) return null;
 
-  const handleMouseDown = (e: React.MouseEvent) => onMouseDown?.(element.id, e);
+  const handlePointerDown = (e: React.PointerEvent) => onPointerDown?.(element.id, e);
   const handleMouseEnter = () => onMouseEnter?.(element.id);
   const handleMouseLeave = () => onMouseLeave?.(element.id);
   const handleDoubleClick = () => onDoubleClick?.(element.id);
@@ -37,7 +40,7 @@ export const SVGElementRenderer: React.FC<Props> = React.memo(({
           element={element}
           disableInteraction={disableInteraction}
           isEditing={editingTextId === element.id}
-          onMouseDown={handleMouseDown}
+          onPointerDown={handlePointerDown}
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
           onDoubleClick={handleDoubleClick}
@@ -48,7 +51,7 @@ export const SVGElementRenderer: React.FC<Props> = React.memo(({
         <SVGShapeNode
           element={element}
           disableInteraction={disableInteraction}
-          onMouseDown={handleMouseDown}
+          onPointerDown={handlePointerDown}
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
           onDoubleClick={handleDoubleClick}
@@ -59,7 +62,7 @@ export const SVGElementRenderer: React.FC<Props> = React.memo(({
         <SVGImageNode
           element={element}
           disableInteraction={disableInteraction}
-          onMouseDown={handleMouseDown}
+          onPointerDown={handlePointerDown}
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
         />

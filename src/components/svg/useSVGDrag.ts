@@ -19,6 +19,9 @@ interface UseSVGDragOptions {
   onDragEnd?: (id: string, x: number, y: number) => void;
 }
 
+// Element drag hook — pointer-event based so it works for mouse, touch, and stylus.
+// Preserves Ctrl-axis-constrain behavior. Uses setPointerCapture so the drag keeps
+// flowing even if the pointer leaves the element bounds.
 export function useSVGDrag(options: UseSVGDragOptions) {
   const { zoom, onDragStart, onDragMove, onDragEnd } = options;
 
@@ -34,16 +37,28 @@ export function useSVGDrag(options: UseSVGDragOptions) {
   });
 
   const isDraggingRef = useRef(false);
+  const pointerIdRef = useRef<number | null>(null);
 
-  const handleMouseDown = useCallback((
+  const handlePointerDown = useCallback((
     id: string,
     elementX: number,
     elementY: number,
-    e: React.MouseEvent
+    e: React.PointerEvent
   ) => {
-    e.preventDefault(); // Prevent text selection
+    // Only react to the primary button on mouse pointers; touch/stylus report
+    // button === 0 and isPrimary === true.
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    e.preventDefault();
     e.stopPropagation();
+    pointerIdRef.current = e.pointerId;
     isDraggingRef.current = true;
+    // Capture on the originating element so subsequent moves/up reach us
+    // regardless of where the pointer goes (e.g. outside the SVG).
+    try {
+      (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    } catch {
+      // Capture can fail in rare cases; window listeners still cover us.
+    }
     onDragStart?.(id);
     setDragState({
       isDragging: true,
@@ -57,11 +72,15 @@ export function useSVGDrag(options: UseSVGDragOptions) {
     });
   }, [onDragStart]);
 
+  // Back-compat alias for any existing callers using the old name.
+  const handleMouseDown = handlePointerDown;
+
   useEffect(() => {
     if (!dragState.isDragging) return;
 
-    const handleMouseMove = (e: MouseEvent) => {
-      e.preventDefault(); // Prevent text selection during drag
+    const handlePointerMove = (e: PointerEvent) => {
+      if (pointerIdRef.current !== null && e.pointerId !== pointerIdRef.current) return;
+      e.preventDefault();
       const dx = (e.clientX - dragState.startX) / zoom;
       const dy = (e.clientY - dragState.startY) / zoom;
 
@@ -71,9 +90,9 @@ export function useSVGDrag(options: UseSVGDragOptions) {
       // Ctrl-constrain: lock to horizontal or vertical axis
       if (isCtrlHeld()) {
         if (Math.abs(dx) >= Math.abs(dy)) {
-          newY = dragState.startElementY; // horizontal lock
+          newY = dragState.startElementY;
         } else {
-          newX = dragState.startElementX; // vertical lock
+          newX = dragState.startElementX;
         }
       }
 
@@ -88,7 +107,8 @@ export function useSVGDrag(options: UseSVGDragOptions) {
       }
     };
 
-    const handleMouseUp = (e: MouseEvent) => {
+    const handlePointerUp = (e: PointerEvent) => {
+      if (pointerIdRef.current !== null && e.pointerId !== pointerIdRef.current) return;
       if (dragState.elementId) {
         const dx = (e.clientX - dragState.startX) / zoom;
         const dy = (e.clientY - dragState.startY) / zoom;
@@ -96,7 +116,6 @@ export function useSVGDrag(options: UseSVGDragOptions) {
         let finalX = dragState.startElementX + dx;
         let finalY = dragState.startElementY + dy;
 
-        // Ctrl-constrain final position
         if (isCtrlHeld()) {
           if (Math.abs(dx) >= Math.abs(dy)) {
             finalY = dragState.startElementY;
@@ -109,6 +128,7 @@ export function useSVGDrag(options: UseSVGDragOptions) {
       }
 
       isDraggingRef.current = false;
+      pointerIdRef.current = null;
       setDragState({
         isDragging: false,
         elementId: null,
@@ -121,17 +141,22 @@ export function useSVGDrag(options: UseSVGDragOptions) {
       });
     };
 
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    // pointercancel fires on iOS gestures, alt-tab, etc. — treat like up so we
+    // don't leak drag state.
+    window.addEventListener('pointercancel', handlePointerUp);
 
     return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
     };
   }, [dragState, zoom, onDragMove, onDragEnd]);
 
   return {
     dragState,
+    handlePointerDown,
     handleMouseDown,
     isDragging: isDraggingRef.current,
   };

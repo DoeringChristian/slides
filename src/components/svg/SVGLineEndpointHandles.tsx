@@ -64,9 +64,13 @@ export const SVGLineEndpointHandles: React.FC<Props> = ({
     };
   }, [svgRef, zoom]);
 
-  const handleMouseDown = useCallback((endpoint: 'start' | 'end', e: React.MouseEvent) => {
+  const handlePointerDown = useCallback((endpoint: 'start' | 'end', e: React.PointerEvent) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
+    try {
+      (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    } catch { /* ignore */ }
     onTransformStart?.();
 
     const pointX = endpoint === 'start' ? startX : endX;
@@ -85,7 +89,7 @@ export const SVGLineEndpointHandles: React.FC<Props> = ({
   useEffect(() => {
     if (!dragging) return;
 
-    const handleMouseMove = (e: MouseEvent) => {
+    const handlePointerMove = (e: PointerEvent) => {
       e.preventDefault();
 
       const pos = screenToSVG(e.clientX, e.clientY);
@@ -141,7 +145,7 @@ export const SVGLineEndpointHandles: React.FC<Props> = ({
       setCurrentPos({ x: newX, y: newY });
     };
 
-    const handleMouseUp = () => {
+    const handlePointerUp = () => {
       if (!currentPos) {
         setDragging(null);
         onGuidesChange?.([]);
@@ -209,12 +213,14 @@ export const SVGLineEndpointHandles: React.FC<Props> = ({
       onConnectorHighlight?.(null);
     };
 
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
 
     return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
     };
   }, [dragging, currentPos, screenToSVG, startX, startY, endX, endY, onUpdate, element.id, elements, onGuidesChange, onConnectorHighlight]);
 
@@ -244,7 +250,15 @@ export const SVGLineEndpointHandles: React.FC<Props> = ({
         style={{ pointerEvents: 'none' }}
       />
 
-      {/* Start handle */}
+      {/* Start handle — invisible 24px hit circle for touch + visible 12px circle. */}
+      <circle
+        cx={displayStartX}
+        cy={displayStartY}
+        r={12 / zoom}
+        fill="transparent"
+        style={{ cursor: 'move', touchAction: 'none', pointerEvents: 'all' }}
+        onPointerDown={(e) => handlePointerDown('start', e)}
+      />
       <circle
         cx={displayStartX}
         cy={displayStartY}
@@ -252,11 +266,19 @@ export const SVGLineEndpointHandles: React.FC<Props> = ({
         fill="white"
         stroke={COLOR}
         strokeWidth={strokeW}
-        style={{ cursor: 'move' }}
-        onMouseDown={(e) => handleMouseDown('start', e)}
+        style={{ cursor: 'move', touchAction: 'none' }}
+        onPointerDown={(e) => handlePointerDown('start', e)}
       />
 
       {/* End handle */}
+      <circle
+        cx={displayEndX}
+        cy={displayEndY}
+        r={12 / zoom}
+        fill="transparent"
+        style={{ cursor: 'move', touchAction: 'none', pointerEvents: 'all' }}
+        onPointerDown={(e) => handlePointerDown('end', e)}
+      />
       <circle
         cx={displayEndX}
         cy={displayEndY}
@@ -264,8 +286,8 @@ export const SVGLineEndpointHandles: React.FC<Props> = ({
         fill="white"
         stroke={COLOR}
         strokeWidth={strokeW}
-        style={{ cursor: 'move' }}
-        onMouseDown={(e) => handleMouseDown('end', e)}
+        style={{ cursor: 'move', touchAction: 'none' }}
+        onPointerDown={(e) => handlePointerDown('end', e)}
       />
     </g>
   );

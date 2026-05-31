@@ -138,10 +138,14 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
   const singleElement = selectedElements.length === 1 ? selectedElements[0] : null;
   const rotation = singleElement?.rotation || 0;
 
-  const handleResizeStart = useCallback((anchor: string, e: React.MouseEvent) => {
-    e.preventDefault(); // Prevent text selection
+  const handleResizeStart = useCallback((anchor: string, e: React.PointerEvent) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    e.preventDefault();
     e.stopPropagation();
     if (locked) return;
+    try {
+      (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    } catch { /* ignore */ }
     onTransformStart?.();
     setResizing({
       anchor,
@@ -151,12 +155,15 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
     });
   }, [bounds, locked, onTransformStart]);
 
-  const handleRotateStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault(); // Prevent text selection
+  const handleRotateStart = useCallback((e: React.PointerEvent) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    e.preventDefault();
     e.stopPropagation();
     if (locked || !singleElement) return;
+    try {
+      (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    } catch { /* ignore */ }
     onTransformStart?.();
-    // Use the center of the element as rotation center
     const centerX = bounds.x + bounds.width / 2;
     const centerY = bounds.y + bounds.height / 2;
     const pos = screenToSVG(e.clientX, e.clientY);
@@ -173,8 +180,8 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
   useEffect(() => {
     if (!resizing && !rotating) return;
 
-    const handleMouseMove = (e: MouseEvent) => {
-      e.preventDefault(); // Prevent text selection during transform
+    const handlePointerMove = (e: PointerEvent) => {
+      e.preventDefault();
       if (resizing && singleElement) {
         const screenDx = (e.clientX - resizing.startX) / zoom;
         const screenDy = (e.clientY - resizing.startY) / zoom;
@@ -318,9 +325,8 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
       }
     };
 
-    const handleMouseUp = () => {
+    const handlePointerUp = () => {
       if (resizing && singleElement) {
-        // Pass the final transform values that were stored during drag
         onTransformEnd?.(singleElement.id, lastTransformAttrs.current);
         onGuidesChange?.([]);
         lastTransformAttrs.current = {};
@@ -333,13 +339,16 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
       setRotating(null);
     };
 
-    window.addEventListener('mousemove', handleMouseMove);
-    window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    // pointercancel (iOS gesture, alt-tab) must clean up the same as pointerup.
+    window.addEventListener('pointercancel', handlePointerUp);
     return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
     };
-  }, [resizing, rotating, zoom, singleElement, onTransform, onTransformEnd, screenToSVG]);
+  }, [resizing, rotating, zoom, singleElement, onTransform, onTransformEnd, screenToSVG, onGuidesChange, elements]);
 
   // Early return after all hooks are called
   if (selectedIds.length === 0 || selectedElements.length === 0) return null;
@@ -387,23 +396,42 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
         style={{ pointerEvents: 'none' }}
       />
 
-      {/* Resize anchors */}
-      {!locked && anchors.map((anchor) => (
-        <rect
-          key={anchor.name}
-          x={anchor.x - halfAnchor}
-          y={anchor.y - halfAnchor}
-          width={anchorSize}
-          height={anchorSize}
-          fill="white"
-          stroke={color}
-          strokeWidth={strokeW}
-          rx={anchorRadius}
-          ry={anchorRadius}
-          style={{ cursor: anchor.cursor }}
-          onMouseDown={(e) => handleResizeStart(anchor.name, e)}
-        />
-      ))}
+      {/* Resize anchors — each pairs a visible (small, desktop precision) anchor
+          with an invisible 44px hit ring so touch users can grab it with a thumb. */}
+      {!locked && anchors.map((anchor) => {
+        const hitSize = 44 / zoom;
+        const halfHit = hitSize / 2;
+        return (
+          <g key={anchor.name}>
+            {/* Invisible touch-friendly hit target (44x44, always-on for pointer events). */}
+            <rect
+              x={anchor.x - halfHit}
+              y={anchor.y - halfHit}
+              width={hitSize}
+              height={hitSize}
+              fill="transparent"
+              style={{ cursor: anchor.cursor, touchAction: 'none', pointerEvents: 'all' }}
+              onPointerDown={(e) => handleResizeStart(anchor.name, e)}
+            />
+            {/* Visible anchor (10x10 on screen). Pointer events are still enabled
+                so a mouse drag from inside the small visible region works exactly
+                like before. */}
+            <rect
+              x={anchor.x - halfAnchor}
+              y={anchor.y - halfAnchor}
+              width={anchorSize}
+              height={anchorSize}
+              fill="white"
+              stroke={color}
+              strokeWidth={strokeW}
+              rx={anchorRadius}
+              ry={anchorRadius}
+              style={{ cursor: anchor.cursor, touchAction: 'none' }}
+              onPointerDown={(e) => handleResizeStart(anchor.name, e)}
+            />
+          </g>
+        );
+      })}
 
       {/* Rotation anchor (only for single selection) */}
       {!locked && singleElement && (
@@ -418,6 +446,15 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
             strokeWidth={thinStrokeW}
             style={{ pointerEvents: 'none' }}
           />
+          {/* Invisible 44px hit ring for the rotation handle (touch-friendly). */}
+          <circle
+            cx={bounds.x + bounds.width / 2}
+            cy={bounds.y - rotationOffset}
+            r={22 / zoom}
+            fill="transparent"
+            style={{ cursor: 'grab', touchAction: 'none', pointerEvents: 'all' }}
+            onPointerDown={handleRotateStart}
+          />
           {/* Rotation anchor circle */}
           <circle
             cx={bounds.x + bounds.width / 2}
@@ -426,8 +463,8 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
             fill="white"
             stroke={color}
             strokeWidth={strokeW}
-            style={{ cursor: 'grab' }}
-            onMouseDown={handleRotateStart}
+            style={{ cursor: 'grab', touchAction: 'none' }}
+            onPointerDown={handleRotateStart}
           />
           {/* Rotation icon (270° arc with arrowhead) */}
           <path

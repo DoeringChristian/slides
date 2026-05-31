@@ -122,8 +122,8 @@ export const SVGSlideCanvas: React.FC = () => {
   // Track initial positions of all selected elements for multi-element drag
   const dragStartPositions = useRef<Map<string, { x: number; y: number }>>(new Map());
 
-  // Drawing hook
-  const { drawState, guides: drawingGuides, handleMouseDown: handleDrawMouseDown, handleMouseMove: handleDrawMouseMove, handleMouseUp: handleDrawMouseUp, justFinishedDrawing } = useSVGDrawing();
+  // Drawing hook (pointer-based — mouse, touch, stylus all flow through here)
+  const { drawState, guides: drawingGuides, handlePointerDown: handleDrawPointerDown, handlePointerMove: handleDrawPointerMove, handlePointerUp: handleDrawPointerUp, justFinishedDrawing } = useSVGDrawing();
 
   // Combine drag and drawing guides
   const guides = drawState.isDrawing ? drawingGuides : dragGuides;
@@ -312,7 +312,7 @@ export const SVGSlideCanvas: React.FC = () => {
     dragStartPositions.current.clear();
   }, [activeSlideId, updateElements, slide, elements, setEditingTextId]);
 
-  const { handleMouseDown: handleElementMouseDown } = useSVGDrag({
+  const { handlePointerDown: handleElementPointerDown } = useSVGDrag({
     zoom,
     onDragStart: handleDragStart,
     onDragMove: handleDragMove,
@@ -329,9 +329,11 @@ export const SVGSlideCanvas: React.FC = () => {
     };
   }, [zoom]);
 
-  const handleSelect = useCallback((id: string, e: React.MouseEvent) => {
-    // Ignore middle-click (used for panning)
-    if (e.button === 1) return;
+  const handleSelect = useCallback((id: string, e: React.PointerEvent) => {
+    // Ignore middle-click (used for panning) — only meaningful for mouse pointers
+    if (e.pointerType === 'mouse' && e.button === 1) return;
+    // Ignore non-primary mouse buttons (right click). Touch/stylus always pass.
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
 
     // Read fresh state from stores to avoid stale closures (SVGElementRenderer's
     // React.memo comparator skips callback comparison for performance, so this
@@ -369,7 +371,7 @@ export const SVGSlideCanvas: React.FC = () => {
           // Click is on border, not text - exit edit mode and start drag
           setEditingTextId(null);
           if (!clickedElement.locked) {
-            handleElementMouseDown(id, clickedElement.x, clickedElement.y, e);
+            handleElementPointerDown(id, clickedElement.x, clickedElement.y, e);
           }
         }
       }
@@ -427,10 +429,10 @@ export const SVGSlideCanvas: React.FC = () => {
 
       // Always start drag
       if (!clickedElement?.locked) {
-        handleElementMouseDown(id, clickedElement?.x || 0, clickedElement?.y || 0, e);
+        handleElementPointerDown(id, clickedElement?.x || 0, clickedElement?.y || 0, e);
       }
     }
-  }, [activeSlideId, setSelectedElements, setEditingTextId, screenToSVG, handleElementMouseDown]);
+  }, [activeSlideId, setSelectedElements, setEditingTextId, screenToSVG, handleElementPointerDown]);
 
   const handleDoubleClick = useCallback((id: string) => {
     if (!slide) return;
@@ -471,10 +473,14 @@ export const SVGSlideCanvas: React.FC = () => {
     }
   }, [clearSelection, justFinishedDrawing]);
 
-  // Selection drag handlers
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+  // Selection drag handlers (pointer-based; mouse/touch/stylus all share this path)
+  const handleCanvasPointerDown = useCallback((e: React.PointerEvent) => {
+    // Ignore non-primary mouse buttons (right click). Middle-click panning is
+    // handled separately below.
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+
     if (tool !== 'select') {
-      handleDrawMouseDown(e, screenToSVG);
+      handleDrawPointerDown(e, screenToSVG);
       return;
     }
 
@@ -490,22 +496,22 @@ export const SVGSlideCanvas: React.FC = () => {
         isSelecting: true,
       });
     }
-  }, [tool, handleDrawMouseDown, screenToSVG]);
+  }, [tool, handleDrawPointerDown, screenToSVG]);
 
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+  const handleCanvasPointerMove = useCallback((e: React.PointerEvent) => {
     if (tool !== 'select') {
-      handleDrawMouseMove(e, screenToSVG);
+      handleDrawPointerMove(e, screenToSVG);
       return;
     }
 
     if (!selectionDrag?.isSelecting) return;
     const pos = screenToSVG(e.clientX, e.clientY);
     setSelectionDrag((prev) => prev ? { ...prev, currentX: pos.x, currentY: pos.y } : null);
-  }, [tool, handleDrawMouseMove, screenToSVG, selectionDrag?.isSelecting]);
+  }, [tool, handleDrawPointerMove, screenToSVG, selectionDrag?.isSelecting]);
 
-  const handleMouseUp = useCallback(() => {
+  const handleCanvasPointerUp = useCallback(() => {
     if (tool !== 'select') {
-      handleDrawMouseUp();
+      handleDrawPointerUp();
       return;
     }
 
@@ -532,7 +538,7 @@ export const SVGSlideCanvas: React.FC = () => {
     }
 
     setSelectionDrag(null);
-  }, [tool, handleDrawMouseUp, selectionDrag, elements, setSelectedElements]);
+  }, [tool, handleDrawPointerUp, selectionDrag, elements, setSelectedElements]);
 
   // Transform handlers
   const handleTransformStart = useCallback(() => {
@@ -832,15 +838,19 @@ export const SVGSlideCanvas: React.FC = () => {
         width={containerWidth}
         height={containerHeight}
         viewBox={`${-CANVAS_PADDING} ${-CANVAS_PADDING} ${viewBoxWidth} ${viewBoxHeight}`}
+        // touch-none: the browser would otherwise treat vertical touch drags as
+        // page scrolling. We want every drag to become a canvas gesture.
+        className="touch-none"
         style={{
           position: 'absolute',
           top: 0,
           left: 0,
         }}
         onClick={handleStageClick}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
+        onPointerDown={handleCanvasPointerDown}
+        onPointerMove={handleCanvasPointerMove}
+        onPointerUp={handleCanvasPointerUp}
+        onPointerCancel={handleCanvasPointerUp}
       >
         {/* Background layer */}
         <g className="background-layer">
@@ -870,7 +880,7 @@ export const SVGSlideCanvas: React.FC = () => {
               element={el}
               disableInteraction={tool !== 'select'}
               editingTextId={editingTextId}
-              onMouseDown={handleSelect}
+              onPointerDown={handleSelect}
               onMouseEnter={handleMouseEnter}
               onMouseLeave={handleMouseLeave}
               onDoubleClick={handleDoubleClick}

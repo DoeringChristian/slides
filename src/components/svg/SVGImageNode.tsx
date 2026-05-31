@@ -6,7 +6,7 @@ import type { ImageElement } from '../../types/presentation';
 interface Props {
   element: ImageElement;
   disableInteraction?: boolean;
-  onMouseDown?: (e: React.MouseEvent) => void;
+  onPointerDown?: (e: React.PointerEvent) => void;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
 }
@@ -14,7 +14,7 @@ interface Props {
 export const SVGImageNode: React.FC<Props> = React.memo(({
   element,
   disableInteraction,
-  onMouseDown,
+  onPointerDown,
   onMouseEnter,
   onMouseLeave,
 }) => {
@@ -76,6 +76,7 @@ export const SVGImageNode: React.FC<Props> = React.memo(({
   const interactionStyle: React.CSSProperties = {
     cursor: disableInteraction ? 'default' : (element.locked ? 'default' : 'move'),
     pointerEvents: disableInteraction ? 'none' : 'auto',
+    touchAction: 'none',
   };
 
   // Video resource - keep editor-specific video with play/pause overlay
@@ -108,7 +109,7 @@ export const SVGImageNode: React.FC<Props> = React.memo(({
           height={element.height}
           opacity={element.opacity}
           style={interactionStyle}
-          onMouseDown={disableInteraction ? undefined : onMouseDown}
+          onPointerDown={disableInteraction ? undefined : onPointerDown}
         >
           <video
             ref={setVideoRef}
@@ -188,7 +189,7 @@ export const SVGImageNode: React.FC<Props> = React.memo(({
           fill="transparent"
           style={interactionStyle}
           {...(disableInteraction ? {} : {
-            onMouseDown,
+            onPointerDown,
             onMouseEnter,
             onMouseLeave,
           })}
