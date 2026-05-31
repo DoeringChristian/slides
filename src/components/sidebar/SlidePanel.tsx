@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { SlideSortable } from './SlideSortable';
@@ -189,12 +189,14 @@ export const SlidePanel: React.FC = () => {
     }
   };
 
-  const handleContextMenu = useCallback((e: React.MouseEvent, slideId: string) => {
-    e.preventDefault();
+  // Show a small context menu at the given screen coords. Used by both
+  // right-click (onContextMenu) and long-press (touch). Keep the menu
+  // identical to avoid two divergent context paths.
+  const showSlideContextMenu = useCallback((slideId: string, clientX: number, clientY: number) => {
     const menu = document.createElement('div');
     menu.className = 'fixed bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-[100] text-sm';
-    menu.style.left = `${e.clientX}px`;
-    menu.style.top = `${e.clientY}px`;
+    menu.style.left = `${clientX}px`;
+    menu.style.top = `${clientY}px`;
 
     const idx = slideOrder.indexOf(slideId);
     const items = [
@@ -215,6 +217,51 @@ export const SlidePanel: React.FC = () => {
     const remove = () => { menu.remove(); document.removeEventListener('click', remove); };
     setTimeout(() => document.addEventListener('click', remove), 0);
   }, [slideOrder, addSlide, deleteSlide, duplicateSlide, setActiveSlide]);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent, slideId: string) => {
+    e.preventDefault();
+    showSlideContextMenu(slideId, e.clientX, e.clientY);
+  }, [showSlideContextMenu]);
+
+  // Long-press (touch / stylus) replaces onContextMenu. 500 ms hold with no
+  // movement > 8 px fires the same menu the right-click path uses.
+  const longPressTimer = useRef<number | null>(null);
+  const longPressStart = useRef<{ x: number; y: number; pointerId: number; slideId: string } | null>(null);
+  const longPressFired = useRef(false);
+
+  const cancelLongPress = useCallback(() => {
+    if (longPressTimer.current !== null) {
+      window.clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+    longPressStart.current = null;
+  }, []);
+
+  const handleSlidePointerDown = useCallback((e: React.PointerEvent, slideId: string) => {
+    // Don't intercept mouse — right-click handles its own path. Only touch /
+    // pen need long-press to surface the context menu.
+    if (e.pointerType === 'mouse') return;
+    longPressFired.current = false;
+    longPressStart.current = { x: e.clientX, y: e.clientY, pointerId: e.pointerId, slideId };
+    longPressTimer.current = window.setTimeout(() => {
+      longPressTimer.current = null;
+      if (longPressStart.current) {
+        longPressFired.current = true;
+        showSlideContextMenu(slideId, longPressStart.current.x, longPressStart.current.y);
+      }
+    }, 500);
+  }, [showSlideContextMenu]);
+
+  const handleSlidePointerMove = useCallback((e: React.PointerEvent) => {
+    if (!longPressStart.current || longPressStart.current.pointerId !== e.pointerId) return;
+    const dx = e.clientX - longPressStart.current.x;
+    const dy = e.clientY - longPressStart.current.y;
+    if (Math.hypot(dx, dy) > 8) cancelLongPress();
+  }, [cancelLongPress]);
+
+  const handleSlidePointerUp = useCallback(() => {
+    cancelLongPress();
+  }, [cancelLongPress]);
 
   const handleEmptySpaceClick = useCallback((e: React.MouseEvent) => {
     // Only reset if clicking directly on the container (empty space), not on children
@@ -261,7 +308,13 @@ export const SlidePanel: React.FC = () => {
                   />
                 )}
 
-                <div onContextMenu={(e) => handleContextMenu(e, slide.id)}>
+                <div
+                  onContextMenu={(e) => handleContextMenu(e, slide.id)}
+                  onPointerDown={(e) => handleSlidePointerDown(e, slide.id)}
+                  onPointerMove={handleSlidePointerMove}
+                  onPointerUp={handleSlidePointerUp}
+                  onPointerCancel={handleSlidePointerUp}
+                >
                   <SlideSortable
                     slide={slide}
                     index={index}

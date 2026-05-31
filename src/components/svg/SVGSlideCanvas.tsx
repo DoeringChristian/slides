@@ -3,6 +3,7 @@ import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useActiveSlide, useObjectElements } from '../../store/selectors';
 import { useCoarsePointer } from '../../hooks/useCoarsePointer';
+import { usePointerGesture, type GestureFrame } from '../../hooks/usePointerGesture';
 import { SVGBackground } from './SVGBackground';
 import { SVGElementRenderer } from './SVGElementRenderer';
 import { SVGGridOverlay } from './SVGGridOverlay';
@@ -25,7 +26,7 @@ import { getMarginLayout, getMarginBounds } from '../../utils/marginLayouts';
 import { snapToGrid as snapToGridFn } from '../../utils/geometry';
 import { isShiftHeld } from '../../utils/keyboard';
 import { SLIDE_WIDTH, SLIDE_HEIGHT, CANVAS_PADDING } from '../../utils/constants';
-import { loadImageFile, loadPdfFile, loadVideoFile } from '../../utils/slideFactory';
+import { loadImageFile, loadPdfFile, loadVideoFile, duplicateElement } from '../../utils/slideFactory';
 import { isPointOnTextContent } from '../../utils/textHitTest';
 import type { ShapeElement, TextElement } from '../../types/presentation';
 
@@ -59,6 +60,7 @@ export const SVGSlideCanvas: React.FC = () => {
   const setActiveSlide = useEditorStore((s) => s.setActiveSlide);
   const addElement = usePresentationStore((s) => s.addElement);
   const addResource = usePresentationStore((s) => s.addResource);
+  const deleteElements = usePresentationStore((s) => s.deleteElements);
 
   const slide = useActiveSlide();
   const objectElements = useObjectElements();
@@ -129,6 +131,22 @@ export const SVGSlideCanvas: React.FC = () => {
   // Combine drag and drawing guides
   const guides = drawState.isDrawing ? drawingGuides : dragGuides;
 
+  // Long-press detection on canvas elements (touch / stylus only). 500 ms hold
+  // without > 8 px movement shows a small context menu. Declared up here so
+  // handleDragMove / handleDragEnd can call cancelElementLongPress without a
+  // TDZ forward reference.
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressStartRef = useRef<{ x: number; y: number; pointerId: number } | null>(null);
+  const longPressFiredRef = useRef(false);
+
+  const cancelElementLongPress = useCallback(() => {
+    if (longPressTimerRef.current !== null) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    longPressStartRef.current = null;
+  }, []);
+
   // Drag handling
   const handleDragStart = useCallback((id: string) => {
     // Don't set isElementDragging here - we only want to set it when actual movement happens
@@ -157,6 +175,9 @@ export const SVGSlideCanvas: React.FC = () => {
   }, [activeSlideId, setSelectedElements]);
 
   const handleDragMove = useCallback((id: string, x: number, y: number) => {
+    // Any actual movement cancels the long-press timer — drag and long-press
+    // are mutually exclusive.
+    cancelElementLongPress();
     // Mark that an actual drag is happening (mouse moved while button down)
     isElementDragging.current = true;
 
@@ -224,11 +245,24 @@ export const SVGSlideCanvas: React.FC = () => {
     }
 
     setDragPreview(previews.length > 0 ? previews : null);
-  }, [slide, elements]);
+  }, [slide, elements, cancelElementLongPress]);
 
   const justFinishedElementDrag = useRef(false);
 
   const handleDragEnd = useCallback((id: string, x: number, y: number) => {
+    cancelElementLongPress();
+    // If a long-press just fired, swallow the rest of this pointerup — we
+    // showed a menu, don't also enter edit mode / fire click handlers.
+    if (longPressFiredRef.current) {
+      longPressFiredRef.current = false;
+      pendingTextEdit.current = null;
+      dragStartPositions.current.clear();
+      setDragGuides([]);
+      setDragPreview(null);
+      isElementDragging.current = false;
+      draggingElementId.current = null;
+      return;
+    }
     setDragGuides([]);
     setDragPreview(null);
     const didDrag = isElementDragging.current;
@@ -311,7 +345,7 @@ export const SVGSlideCanvas: React.FC = () => {
     }
 
     dragStartPositions.current.clear();
-  }, [activeSlideId, updateElements, slide, elements, setEditingTextId]);
+  }, [activeSlideId, updateElements, slide, elements, setEditingTextId, cancelElementLongPress]);
 
   const { handlePointerDown: handleElementPointerDown } = useSVGDrag({
     zoom,
@@ -330,11 +364,76 @@ export const SVGSlideCanvas: React.FC = () => {
     };
   }, [zoom]);
 
+  // Show a small context menu on long-press (touch / stylus) for the given
+  // element. Mirrors the SlidePanel long-press menu for consistency.
+  const showElementContextMenu = useCallback((elementId: string, clientX: number, clientY: number) => {
+    const slideId = useEditorStore.getState().activeSlideId;
+    const slide = usePresentationStore.getState().presentation.slides[slideId];
+    const target = slide?.elements[elementId];
+    if (!target) return;
+
+    const menu = document.createElement('div');
+    menu.className = 'fixed bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-[100] text-sm';
+    menu.style.left = `${clientX}px`;
+    menu.style.top = `${clientY}px`;
+
+    const items: { label: string; action: () => void }[] = [
+      {
+        label: 'Duplicate',
+        action: () => {
+          const dup = duplicateElement(target);
+          addElement(slideId, dup);
+          setSelectedElements([dup.id]);
+        },
+      },
+      {
+        label: target.locked ? 'Unlock' : 'Lock',
+        action: () => updateElement(slideId, elementId, { locked: !target.locked }),
+      },
+      {
+        label: 'Delete',
+        action: () => {
+          deleteElements(slideId, [elementId]);
+          setSelectedElements([]);
+        },
+      },
+    ];
+
+    items.forEach(({ label, action }) => {
+      const btn = document.createElement('button');
+      btn.className = 'block w-full text-left px-4 py-1.5 hover:bg-gray-100';
+      btn.textContent = label;
+      btn.onclick = () => { action(); menu.remove(); };
+      menu.appendChild(btn);
+    });
+
+    document.body.appendChild(menu);
+    const remove = () => { menu.remove(); document.removeEventListener('click', remove); };
+    setTimeout(() => document.addEventListener('click', remove), 0);
+  }, [addElement, deleteElements, setSelectedElements, updateElement]);
+
   const handleSelect = useCallback((id: string, e: React.PointerEvent) => {
     // Ignore middle-click (used for panning) — only meaningful for mouse pointers
     if (e.pointerType === 'mouse' && e.button === 1) return;
     // Ignore non-primary mouse buttons (right click). Touch/stylus always pass.
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+
+    // Arm long-press for touch / pen on this element. If 500 ms passes
+    // without movement > 8 px, fire the context menu and suppress the
+    // normal drag/edit path.
+    if (e.pointerType !== 'mouse') {
+      longPressFiredRef.current = false;
+      longPressStartRef.current = { x: e.clientX, y: e.clientY, pointerId: e.pointerId };
+      const startClientX = e.clientX;
+      const startClientY = e.clientY;
+      longPressTimerRef.current = window.setTimeout(() => {
+        longPressTimerRef.current = null;
+        if (longPressStartRef.current) {
+          longPressFiredRef.current = true;
+          showElementContextMenu(id, startClientX, startClientY);
+        }
+      }, 500);
+    }
 
     // Read fresh state from stores to avoid stale closures (SVGElementRenderer's
     // React.memo comparator skips callback comparison for performance, so this
@@ -424,7 +523,14 @@ export const SVGSlideCanvas: React.FC = () => {
             setEditingTextId(id, { x: localX, y: localY });
             return;
           }
-          pendingTextEdit.current = { id, localX, localY };
+          // Tap-once-tap-again: only enter edit mode if the element was already
+          // selected before this pointerdown. First tap selects, second tap
+          // edits. Desktop users keep the double-click fast path
+          // (handleDoubleClick below). Without this gate, a single tap on text
+          // would always pop the keyboard on touch.
+          if (isAlreadySelected) {
+            pendingTextEdit.current = { id, localX, localY };
+          }
         }
       }
 
@@ -433,7 +539,7 @@ export const SVGSlideCanvas: React.FC = () => {
         handleElementPointerDown(id, clickedElement?.x || 0, clickedElement?.y || 0, e);
       }
     }
-  }, [activeSlideId, setSelectedElements, setEditingTextId, screenToSVG, handleElementPointerDown]);
+  }, [activeSlideId, setSelectedElements, setEditingTextId, screenToSVG, handleElementPointerDown, showElementContextMenu]);
 
   const handleDoubleClick = useCallback((id: string) => {
     if (!slide) return;
@@ -546,6 +652,51 @@ export const SVGSlideCanvas: React.FC = () => {
 
     setSelectionDrag(null);
   }, [tool, handleDrawPointerUp, selectionDrag, elements, setSelectedElements]);
+
+  // Two-finger pan/zoom via pointer events. Composes with the existing single-
+  // pointer drag handlers above — the gesture hook only fires once a second
+  // pointer is down, so single-finger drags / clicks aren't affected.
+  const gestureActiveRef = useRef(false);
+  const gesture = usePointerGesture({
+    onGestureStart: () => {
+      gestureActiveRef.current = true;
+      // Cancel any in-flight single-pointer drag UI so it doesn't fight us.
+      setDragGuides([]);
+      setDragPreview(null);
+      setSelectionDrag(null);
+    },
+    onGesture: (frame: GestureFrame) => {
+      const scrollParent = containerRef.current?.closest('.canvas-scroll-parent') as HTMLElement | null;
+      if (!scrollParent) return;
+
+      // Pan: subtract translation from scrollLeft/Top
+      scrollParent.scrollLeft -= frame.translation.dx;
+      scrollParent.scrollTop -= frame.translation.dy;
+
+      // Zoom about gesture midpoint
+      if (Math.abs(frame.scaleDelta - 1) > 0.001) {
+        const oldZoom = useEditorStore.getState().zoom;
+        const newZoom = Math.max(0.25, Math.min(3, oldZoom * frame.scaleDelta));
+        if (newZoom !== oldZoom) {
+          const spRect = scrollParent.getBoundingClientRect();
+          const cursorVpX = frame.midpoint.x - spRect.left;
+          const cursorVpY = frame.midpoint.y - spRect.top;
+          const padX2 = viewport.w / 2;
+          const padY2 = viewport.h / 2;
+          const svgX = (scrollParent.scrollLeft + cursorVpX - padX2) / oldZoom;
+          const svgY = (scrollParent.scrollTop + cursorVpY - padY2) / oldZoom;
+          pendingScrollRef.current = {
+            left: padX2 + svgX * newZoom - cursorVpX,
+            top: padY2 + svgY * newZoom - cursorVpY,
+          };
+          setZoom(newZoom);
+        }
+      }
+    },
+    onGestureEnd: () => {
+      gestureActiveRef.current = false;
+    },
+  });
 
   // Transform handlers
   const handleTransformStart = useCallback(() => {
@@ -854,10 +1005,25 @@ export const SVGSlideCanvas: React.FC = () => {
           left: 0,
         }}
         onClick={handleStageClick}
-        onPointerDown={handleCanvasPointerDown}
-        onPointerMove={handleCanvasPointerMove}
-        onPointerUp={handleCanvasPointerUp}
-        onPointerCancel={handleCanvasPointerUp}
+        onPointerDown={(e) => {
+          // Run gesture tracker first so two-finger detection has the full
+          // pointer set. Single-finger interactions then continue normally via
+          // handleCanvasPointerDown.
+          gesture.onPointerDown(e);
+          handleCanvasPointerDown(e);
+        }}
+        onPointerMove={(e) => {
+          gesture.onPointerMove(e);
+          if (!gestureActiveRef.current) handleCanvasPointerMove(e);
+        }}
+        onPointerUp={(e) => {
+          gesture.onPointerUp(e);
+          handleCanvasPointerUp();
+        }}
+        onPointerCancel={(e) => {
+          gesture.onPointerCancel(e);
+          handleCanvasPointerUp();
+        }}
       >
         {/* Background layer */}
         <g className="background-layer">

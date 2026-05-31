@@ -249,6 +249,31 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     setCursorPosition(cursorPos);
   }, [zoom, editingTextId, textElement, renderText, getCursorPosition, setCursorPosition]);
 
+  // Virtual keyboard avoidance: when the keyboard appears on mobile, the
+  // visual viewport shrinks. If the editor ends up beneath it, scroll it back
+  // into view. window.visualViewport is the only reliable signal here — the
+  // window's outerHeight stays the same while the keyboard is up.
+  useEffect(() => {
+    if (!editingTextId) return;
+    if (typeof window === 'undefined' || !window.visualViewport) return;
+    const vv = window.visualViewport;
+    const handle = () => {
+      const el = editorRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      // visualViewport.height drops to the keyboard-uncovered region. If our
+      // editor's bottom is below it (rect.bottom > vv.height + vv.offsetTop),
+      // scroll the editor into the middle of the visible region.
+      if (rect.bottom > vv.offsetTop + vv.height || rect.top < vv.offsetTop) {
+        el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }
+    };
+    // Fire once on entry to account for an already-up keyboard.
+    handle();
+    vv.addEventListener('resize', handle);
+    return () => vv.removeEventListener('resize', handle);
+  }, [editingTextId]);
+
   // Handle input
   const handleInput = useCallback(() => {
     if (!editorRef.current || !textElement) return;
