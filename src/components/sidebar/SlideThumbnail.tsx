@@ -44,7 +44,7 @@ export const SlideThumbnail: React.FC<Props> = React.memo(({ slide, index, isAct
         </div>
         <button
           onClick={(e) => { e.stopPropagation(); onToggleHidden(); }}
-          className={`absolute -bottom-1.5 -right-1.5 p-0.5 rounded-full bg-white border border-gray-200 shadow-sm text-gray-400 hover:text-gray-600 transition-opacity ${hidden ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+          className={`absolute -bottom-1.5 -right-1.5 p-0.5 rounded-full bg-white border border-gray-200 shadow-sm text-gray-400 hover:text-gray-600 transition-opacity coarse:opacity-100 ${hidden ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
           title={hidden ? 'Show slide' : 'Hide slide'}
         >
           {hidden ? <Eye size={12} /> : <EyeOff size={12} />}
@@ -52,7 +52,7 @@ export const SlideThumbnail: React.FC<Props> = React.memo(({ slide, index, isAct
         {canDelete && (
           <button
             onClick={(e) => { e.stopPropagation(); onDelete(); }}
-            className="absolute -top-1.5 -right-1.5 p-0.5 rounded-full bg-white border border-gray-200 shadow-sm text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"
+            className="absolute -top-1.5 -right-1.5 p-0.5 rounded-full bg-white border border-gray-200 shadow-sm text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 coarse:opacity-100 transition-opacity"
             title="Delete slide"
           >
             <X size={12} />

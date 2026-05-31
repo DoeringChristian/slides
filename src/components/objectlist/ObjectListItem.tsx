@@ -85,7 +85,7 @@ export const ObjectListItem: React.FC<Props> = ({
         {/* Delete button overlay */}
         <button
           onClick={handleDeleteClick}
-          className="absolute top-1 left-1 p-0.5 rounded bg-white/80 hover:bg-red-100 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity"
+          className="absolute top-1 left-1 p-0.5 rounded bg-white/80 hover:bg-red-100 shadow-sm opacity-0 group-hover:opacity-100 coarse:opacity-100 transition-opacity"
           title="Delete object"
         >
           <X size={12} className="text-gray-500 hover:text-red-600" />
@@ -94,7 +94,7 @@ export const ObjectListItem: React.FC<Props> = ({
         <button
           onClick={handleVisibilityClick}
           className={`absolute top-1 right-1 p-0.5 rounded bg-white/80 hover:bg-white shadow-sm ${
-            isVisibleOnSlide ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'
+            isVisibleOnSlide ? 'opacity-0 group-hover:opacity-100 coarse:opacity-100' : 'opacity-100'
           } transition-opacity`}
         >
           {isVisibleOnSlide ? (

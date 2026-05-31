@@ -119,7 +119,7 @@ export const TemplatePicker: React.FC<TemplatePickerProps> = ({ open, onClose, i
             )}
             <button
               onClick={(e) => { e.stopPropagation(); deleteTemplate(t.id); }}
-              className="absolute -top-1.5 -right-1.5 p-0.5 rounded-full bg-white border border-gray-200 shadow-sm text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"
+              className="absolute -top-1.5 -right-1.5 p-0.5 rounded-full bg-white border border-gray-200 shadow-sm text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 coarse:opacity-100 transition-opacity"
               title="Delete template"
             >
               <X size={12} />

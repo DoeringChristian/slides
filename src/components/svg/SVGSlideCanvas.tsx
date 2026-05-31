@@ -2,6 +2,7 @@ import React, { useRef, useCallback, useMemo, useState, useEffect, useLayoutEffe
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useActiveSlide, useObjectElements } from '../../store/selectors';
+import { useCoarsePointer } from '../../hooks/useCoarsePointer';
 import { SVGBackground } from './SVGBackground';
 import { SVGElementRenderer } from './SVGElementRenderer';
 import { SVGGridOverlay } from './SVGGridOverlay';
@@ -442,13 +443,19 @@ export const SVGSlideCanvas: React.FC = () => {
     }
   }, [slide, setEditingTextId]);
 
+  // Touch devices don't have a hover state — painting a hover overlay on
+  // tap-release looks like a stuck highlight. Skip the hover branch entirely
+  // on coarse pointers; selection feedback still appears via the transformer.
+  const coarsePointer = useCoarsePointer();
   const handleMouseEnter = useCallback((id: string) => {
+    if (coarsePointer) return;
     setHoveredObjectId(id);
-  }, [setHoveredObjectId]);
+  }, [setHoveredObjectId, coarsePointer]);
 
   const handleMouseLeave = useCallback(() => {
+    if (coarsePointer) return;
     setHoveredObjectId(null);
-  }, [setHoveredObjectId]);
+  }, [setHoveredObjectId, coarsePointer]);
 
   const handleStageClick = useCallback((e: React.MouseEvent) => {
     if (justFinishedSelectionDrag.current) {
