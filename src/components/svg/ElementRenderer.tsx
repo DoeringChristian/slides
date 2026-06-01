@@ -1,5 +1,6 @@
 import React, { memo } from 'react';
 import { SVGTextContent } from './SVGTextContent';
+import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 import type { SlideElement, TextElement, ShapeElement, ImageElement, Resource } from '../../types/presentation';
 
 // ============================================================================
@@ -179,22 +180,43 @@ export const RenderShape: React.FC<ShapeProps> = memo(({ element }) => {
 interface ImageProps {
   element: ImageElement;
   resource?: Resource;
+  /** Reserved for legacy callers; the new HTML rendering doesn't need it. */
   clipIdPrefix?: string;
+  /**
+   * Override video autoplay. Defaults to `element.playing ?? true`.
+   * Editor passes `false` (paused preview); cross-fade source passes `false`
+   * so the transition doesn't pop a video into playback.
+   */
+  videoAutoplay?: boolean;
 }
 
-export const RenderImage: React.FC<ImageProps> = memo(({ element, resource, clipIdPrefix = 'img' }) => {
+// We render image/video content as HTML inside a single full-slide
+// <foreignObject>. Movement during transitions / drag is a CSS transform on
+// the inner <div>, which the browser GPU-composites — no SVG layout per
+// frame, no raster refit. Compare the old path: SVG <image> with x/y/width/
+// height attributes that re-fit the raster on every frame change.
+//
+// The foreignObject is sized to (0, 0, SLIDE_WIDTH, SLIDE_HEIGHT) so the
+// inner CSS coordinates align directly with the element's slide coordinates,
+// and the same renderer works inside any parent SVG whose viewBox contains
+// the slide region (editor canvas with padded viewBox, static thumbnail with
+// exact viewBox, presenter SVG composition).
+//
+// `pointer-events: none` on the foreignObject lets clicks pass through to
+// elements behind/in front in the same SVG document; the editor adds its own
+// transparent hit <rect> at the element layer.
+export const RenderImage: React.FC<ImageProps> = memo(({ element, resource, videoAutoplay }) => {
   if (!element.visible) return null;
 
   const { x, y, width, height, rotation, opacity, cropX, cropY, cropWidth, cropHeight } = element;
 
-  const cx = x + width / 2;
-  const cy = y + height / 2;
-  const transform = rotation ? `rotate(${rotation}, ${cx}, ${cy})` : undefined;
-
-  // No resource - render placeholder
+  // No resource - render placeholder. Vector, doesn't move much, stays SVG.
   if (!resource) {
+    const cx = x + width / 2;
+    const cy = y + height / 2;
+    const placeholderTransform = rotation ? `rotate(${rotation}, ${cx}, ${cy})` : undefined;
     return (
-      <g transform={transform}>
+      <g transform={placeholderTransform}>
         <rect
           x={x}
           y={y}
@@ -211,78 +233,86 @@ export const RenderImage: React.FC<ImageProps> = memo(({ element, resource, clip
     );
   }
 
-  // Video - show first frame using paused video in foreignObject
-  if (resource.type === 'video') {
-    return (
-      <g transform={transform}>
-        <foreignObject
-          x={x}
-          y={y}
-          width={width}
-          height={height}
-          opacity={opacity}
-          style={{ pointerEvents: 'none' }}
-        >
-          <video
-            src={resource.src}
-            style={{
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-              pointerEvents: 'none',
-            }}
-            muted
-            playsInline
-            preload="metadata"
-          />
-        </foreignObject>
-      </g>
-    );
-  }
-
   const hasCrop = cropWidth > 0 && cropHeight > 0;
+  const containerStyle: React.CSSProperties = {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    width: `${width}px`,
+    height: `${height}px`,
+    transform: `translate3d(${x}px, ${y}px, 0) rotate(${rotation}deg)`,
+    transformOrigin: '50% 50%',
+    opacity,
+    overflow: hasCrop ? 'hidden' : 'visible',
+    willChange: 'transform',
+    pointerEvents: 'none',
+  };
 
-  if (hasCrop) {
-    const clipId = `${clipIdPrefix}-${element.id}`;
-    const scaleX = width / cropWidth;
-    const scaleY = height / cropHeight;
-
-    return (
-      <g transform={transform}>
-        <defs>
-          <clipPath id={clipId}>
-            <rect x={x} y={y} width={width} height={height} />
-          </clipPath>
-        </defs>
-        <g clipPath={`url(#${clipId})`}>
-          <image
-            href={resource.src}
-            x={x - cropX * scaleX}
-            y={y - cropY * scaleY}
-            width={resource.originalWidth * scaleX}
-            height={resource.originalHeight * scaleY}
-            opacity={opacity}
-            preserveAspectRatio="none"
-            style={{ pointerEvents: 'none' }}
-          />
-        </g>
-      </g>
-    );
-  }
+  const isVideo = resource.type === 'video';
 
   return (
-    <g transform={transform}>
-      <image
-        href={resource.src}
-        x={x}
-        y={y}
-        width={width}
-        height={height}
-        opacity={opacity}
-        preserveAspectRatio="none"
-        style={{ pointerEvents: 'none' }}
-      />
-    </g>
+    <foreignObject
+      x={0}
+      y={0}
+      width={SLIDE_WIDTH}
+      height={SLIDE_HEIGHT}
+      style={{ pointerEvents: 'none', overflow: 'visible' }}
+    >
+      <div style={containerStyle}>
+        {hasCrop ? (
+          // Crop: oversize the media and offset it so the crop region fills the box.
+          (() => {
+            const scaleX = width / cropWidth;
+            const scaleY = height / cropHeight;
+            const mediaStyle: React.CSSProperties = {
+              position: 'absolute',
+              left: `${-cropX * scaleX}px`,
+              top: `${-cropY * scaleY}px`,
+              width: `${resource.originalWidth * scaleX}px`,
+              height: `${resource.originalHeight * scaleY}px`,
+              display: 'block',
+              pointerEvents: 'none',
+            };
+            return isVideo ? (
+              <video
+                src={resource.src}
+                style={mediaStyle}
+                autoPlay={videoAutoplay ?? element.playing ?? true}
+                loop={element.loop ?? false}
+                muted={element.muted ?? true}
+                playsInline
+                preload="metadata"
+              />
+            ) : (
+              <img src={resource.src} alt="" style={mediaStyle} draggable={false} />
+            );
+          })()
+        ) : (
+          (() => {
+            const mediaStyle: React.CSSProperties = {
+              width: '100%',
+              height: '100%',
+              objectFit: 'fill',
+              display: 'block',
+              pointerEvents: 'none',
+            };
+            return isVideo ? (
+              <video
+                src={resource.src}
+                style={mediaStyle}
+                autoPlay={videoAutoplay ?? element.playing ?? true}
+                loop={element.loop ?? false}
+                muted={element.muted ?? true}
+                playsInline
+                preload="metadata"
+              />
+            ) : (
+              <img src={resource.src} alt="" style={mediaStyle} draggable={false} />
+            );
+          })()
+        )}
+      </div>
+    </foreignObject>
   );
 });
 

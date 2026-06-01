@@ -311,8 +311,17 @@ export const PresenterView: React.FC = () => {
       }}
     >
       <div className="relative" style={{ width: stageW, height: stageH, background: bgColor }}>
-        {/* Render all elements in z-order */}
-        {renderedElements.map((el, index) => renderPresenterElement(el, index, scale, stageW, stageH, resources))}
+        {/* Single SVG composition root — same pattern as SVGStaticSlide. All
+            element rendering (shapes, foreignObject HTML for images/video/
+            text) lives in document order inside one viewBox. */}
+        <svg
+          width={stageW}
+          height={stageH}
+          viewBox={`0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}`}
+          style={{ display: 'block', position: 'absolute', inset: 0 }}
+        >
+          {renderedElements.map((el) => renderPresenterElement(el, resources))}
+        </svg>
 
         {/* Slide number overlay on the slide */}
         {showSlideNumbers && (

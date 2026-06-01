@@ -113,8 +113,16 @@ export const AudienceView: React.FC = () => {
   return (
     <div ref={containerRef} className="fixed inset-0 bg-black flex items-center justify-center cursor-none">
       <div className="relative" style={{ width: stageW, height: stageH, background: bgColor }}>
-        {/* Render all elements in z-order */}
-        {renderedElements.map((el, index) => renderPresenterElement(el, index, scale, stageW, stageH, resources))}
+        {/* Single SVG composition root — same pattern as PresenterView /
+            SVGStaticSlide. */}
+        <svg
+          width={stageW}
+          height={stageH}
+          viewBox={`0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}`}
+          style={{ display: 'block', position: 'absolute', inset: 0 }}
+        >
+          {renderedElements.map((el) => renderPresenterElement(el, resources))}
+        </svg>
 
         {/* Slide number overlay on the slide */}
         {showSlideNumbers && (

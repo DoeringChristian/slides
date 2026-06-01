@@ -1,8 +1,8 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { Play, Pause } from 'lucide-react';
-import { CustomMarkdownRenderer } from '../canvas/CustomMarkdownRenderer';
 import { RenderShape, RenderImage } from '../svg/ElementRenderer';
-import { SLIDE_WIDTH, SLIDE_HEIGHT, TEXT_BOX_PADDING } from '../../utils/constants';
+import { SVGTextContent } from '../svg/SVGTextContent';
+import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 import type { SlideElement, TextElement, ShapeElement, ImageElement, Slide, Resource } from '../../types/presentation';
 import type { CrossfadeSource, TextDissolveSource } from '../../utils/interpolation';
 
@@ -57,7 +57,10 @@ export function mergeElementOrders(sourceSlide: Slide | null, targetSlide: Slide
 }
 
 // ============================================================================
-// PresenterTextElement - Shared text renderer for presenter views and control panel
+// PresenterTextElement - Wraps SVGTextContent in a stage-sized SVG so the
+// same foreignObject+HTML renderer used by the editor and thumbnails drives
+// presenter text too. The old absolute-positioned-HTML implementation was a
+// separate path that diverged from SVGTextContent over time.
 // ============================================================================
 
 interface PresenterTextElementProps {
@@ -68,116 +71,90 @@ interface PresenterTextElementProps {
 }
 
 export const PresenterTextElement: React.FC<PresenterTextElementProps> = ({ element, scale, zIndex, dissolveText }) => {
-  const textContainerStyle = (opacity: number): React.CSSProperties => ({
+  const wrapperStyle: React.CSSProperties = {
     position: 'absolute',
-    left: `${element.x * scale}px`,
-    top: `${element.y * scale}px`,
-    width: `${element.width * scale}px`,
-    height: `${element.height * scale}px`,
-    transform: `rotate(${element.rotation}deg)`,
-    transformOrigin: 'center center',
-    opacity,
-    overflow: 'visible',
-    display: 'flex',
-    alignItems: element.style.verticalAlign === 'middle' ? 'center' :
-               element.style.verticalAlign === 'bottom' ? 'flex-end' : 'flex-start',
+    left: 0,
+    top: 0,
+    width: SLIDE_WIDTH * scale,
+    height: SLIDE_HEIGHT * scale,
+    pointerEvents: 'none',
     zIndex,
-    userSelect: 'none',
-  });
+  };
 
   if (dissolveText) {
+    // Render two text layers cross-fading. Distinct clipIdPrefix values
+    // keep their internal clipPath IDs from colliding inside one SVG.
     return (
-      <React.Fragment>
-        <div style={textContainerStyle(dissolveText.opacity)}>
-          <div style={{ width: '100%', padding: `${TEXT_BOX_PADDING * scale}px` }}>
-            <CustomMarkdownRenderer
-              text={dissolveText.text}
-              style={element.style}
-              zoom={scale}
-            />
-          </div>
-        </div>
-        <div style={textContainerStyle(element.opacity)}>
-          <div style={{ width: '100%', padding: `${TEXT_BOX_PADDING * scale}px` }}>
-            <CustomMarkdownRenderer
-              text={element.text}
-              style={element.style}
-              zoom={scale}
-            />
-          </div>
-        </div>
-      </React.Fragment>
+      <svg style={wrapperStyle} viewBox={`0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}`}>
+        <SVGTextContent
+          element={{ ...element, text: dissolveText.text }}
+          opacity={dissolveText.opacity}
+          clipIdPrefix="presenter-src"
+        />
+        <SVGTextContent
+          element={element}
+          opacity={element.opacity}
+          clipIdPrefix="presenter-tgt"
+        />
+      </svg>
     );
   }
 
   return (
-    <div style={textContainerStyle(element.opacity)}>
-      <div style={{ width: '100%', padding: `${TEXT_BOX_PADDING * scale}px` }}>
-        <CustomMarkdownRenderer
-          text={element.text}
-          style={element.style}
-          zoom={scale}
-        />
-      </div>
-    </div>
+    <svg style={wrapperStyle} viewBox={`0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}`}>
+      <SVGTextContent element={element} opacity={element.opacity} clipIdPrefix="presenter" />
+    </svg>
   );
 };
 
-// SVG Element renderer (dispatches to shared shape/image renderers)
-const PresenterSlideElement: React.FC<{ element: SlideElement; resources: Record<string, Resource> }> = ({ element, resources }) => {
-  if (!element.visible) return null;
-
-  // Text is rendered as HTML overlay for markdown support
-  if (element.type === 'text') return null;
-
-  if (element.type === 'shape') {
-    return <RenderShape element={element as ShapeElement} />;
-  }
-
-  if (element.type === 'image') {
-    const imgEl = element as ImageElement;
-    const resource = imgEl.resourceId ? resources[imgEl.resourceId] : undefined;
-    // Skip videos - they're rendered as HTML overlay
-    if (resource?.type === 'video') return null;
-    return <RenderImage element={imgEl} resource={resource} clipIdPrefix={`presenter-${element.id}`} />;
-  }
-
-  return null;
-};
-
-// Render a single element with correct positioning and z-order
+// Render a single element as SVG fragments (group / foreignObject) suitable
+// for embedding in a single SVG composition root. The caller (PresenterView /
+// AudienceView) wraps all elements in one <svg viewBox="0 0 SLIDE_WIDTH
+// SLIDE_HEIGHT">. Z-order is document order; no per-element wrapper.
 export function renderPresenterElement(
   element: SlideElement,
-  index: number,
-  scale: number,
-  stageW: number,
-  stageH: number,
-  resources: Record<string, Resource>
+  resources: Record<string, Resource>,
 ): React.ReactNode {
   if (!element.visible) return null;
 
-  // Text elements use HTML for markdown support
   if (element.type === 'text') {
     const textEl = element as (TextElement & { _dissolveText?: TextDissolveSource });
+    const dissolveText = textEl._dissolveText;
+    if (dissolveText) {
+      // Cross-fade: render source on top of target, each with its own opacity.
+      // Distinct clipIdPrefix values keep their internal <clipPath> IDs from
+      // colliding inside the parent SVG.
+      return (
+        <React.Fragment key={element.id}>
+          <SVGTextContent
+            element={{ ...textEl, text: dissolveText.text }}
+            opacity={dissolveText.opacity}
+            clipIdPrefix="presenter-src"
+          />
+          <SVGTextContent
+            element={textEl}
+            opacity={textEl.opacity}
+            clipIdPrefix="presenter-tgt"
+          />
+        </React.Fragment>
+      );
+    }
     return (
-      <PresenterTextElement
+      <SVGTextContent
         key={element.id}
         element={textEl}
-        scale={scale}
-        zIndex={index}
-        dissolveText={textEl._dissolveText}
+        opacity={textEl.opacity}
+        clipIdPrefix="presenter"
       />
     );
   }
 
-  // Check for dissolve source on image elements (for blending two images/videos)
   if (element.type === 'image') {
     const imgEl = element as ImageElementWithDissolve;
     const dissolveSource = imgEl._dissolveSource;
     const targetResource = imgEl.resourceId ? resources[imgEl.resourceId] : undefined;
     const sourceResource = dissolveSource?.resourceId ? resources[dissolveSource.resourceId] : undefined;
 
-    // Helper to render an image/video element
     const renderMedia = (
       resourceToRender: typeof targetResource,
       opacity: number,
@@ -185,78 +162,12 @@ export function renderPresenterElement(
       cropY: number,
       cropWidth: number,
       cropHeight: number,
-      zIdx: number,
       keySuffix: string,
-      autoPlay: boolean = true
+      autoPlay: boolean = true,
     ) => {
       if (!resourceToRender) return null;
-
-      const hasCrop = cropWidth > 0 && cropHeight > 0;
-
-      if (resourceToRender.type === 'video') {
-        if (hasCrop) {
-          const scaleX = resourceToRender.originalWidth / cropWidth;
-          const scaleY = resourceToRender.originalHeight / cropHeight;
-          return (
-            <div
-              key={`${element.id}${keySuffix}`}
-              style={{
-                position: 'absolute',
-                left: `${element.x * scale}px`,
-                top: `${element.y * scale}px`,
-                width: `${element.width * scale}px`,
-                height: `${element.height * scale}px`,
-                transform: `rotate(${element.rotation}deg)`,
-                transformOrigin: 'center center',
-                opacity,
-                overflow: 'hidden',
-                zIndex: zIdx,
-              }}
-            >
-              <video
-                src={resourceToRender.src}
-                autoPlay={autoPlay && (imgEl.playing ?? true)}
-                loop={imgEl.loop ?? false}
-                muted={imgEl.muted ?? false}
-                playsInline
-                preload="metadata"
-                style={{
-                  width: `${element.width * scale * scaleX}px`,
-                  height: `${element.height * scale * scaleY}px`,
-                  marginLeft: `${-cropX * (element.width / cropWidth) * scale}px`,
-                  marginTop: `${-cropY * (element.height / cropHeight) * scale}px`,
-                }}
-              />
-            </div>
-          );
-        }
-        return (
-          <video
-            key={`${element.id}${keySuffix}`}
-            src={resourceToRender.src}
-            autoPlay={autoPlay && (imgEl.playing ?? true)}
-            loop={imgEl.loop ?? false}
-            muted={imgEl.muted ?? false}
-            playsInline
-            preload="metadata"
-            style={{
-              position: 'absolute',
-              left: `${element.x * scale}px`,
-              top: `${element.y * scale}px`,
-              width: `${element.width * scale}px`,
-              height: `${element.height * scale}px`,
-              transform: `rotate(${element.rotation}deg)`,
-              transformOrigin: 'center center',
-              opacity,
-              objectFit: 'cover',
-              zIndex: zIdx,
-            }}
-          />
-        );
-      }
-
-      // Image
-      const imgElement: ImageElement = {
+      // Overlay dissolve/animation values without mutating the live element.
+      const tempElement: ImageElement = {
         ...imgEl,
         resourceId: resourceToRender.id,
         opacity,
@@ -266,58 +177,31 @@ export function renderPresenterElement(
         cropHeight,
       };
       return (
-        <svg
+        <RenderImage
           key={`${element.id}${keySuffix}`}
-          style={{
-            position: 'absolute',
-            left: 0,
-            top: 0,
-            width: stageW,
-            height: stageH,
-            pointerEvents: 'none',
-            zIndex: zIdx,
-          }}
-          viewBox={`0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}`}
-        >
-          <RenderImage element={imgElement} resource={resourceToRender} clipIdPrefix={`presenter-${element.id}${keySuffix}`} />
-        </svg>
+          element={tempElement}
+          resource={resourceToRender}
+          videoAutoplay={autoPlay && (imgEl.playing ?? true)}
+        />
       );
     };
 
-    // If we have a dissolve source, render both (videos paused during transition)
     if (dissolveSource && sourceResource) {
+      // Freeze both videos during cross-fade so the transition reads as a
+      // visual blend rather than two competing playbacks.
       return (
         <React.Fragment key={element.id}>
-          {renderMedia(sourceResource, dissolveSource.opacity, dissolveSource.cropX, dissolveSource.cropY, dissolveSource.cropWidth, dissolveSource.cropHeight, index, '-src', false)}
-          {renderMedia(targetResource, element.opacity, imgEl.cropX, imgEl.cropY, imgEl.cropWidth, imgEl.cropHeight, index + 0.5, '-tgt', false)}
+          {renderMedia(sourceResource, dissolveSource.opacity, dissolveSource.cropX, dissolveSource.cropY, dissolveSource.cropWidth, dissolveSource.cropHeight, '-src', false)}
+          {renderMedia(targetResource, element.opacity, imgEl.cropX, imgEl.cropY, imgEl.cropWidth, imgEl.cropHeight, '-tgt', false)}
         </React.Fragment>
       );
     }
 
-    // Single image/video - no dissolve
-    if (targetResource?.type === 'video') {
-      return renderMedia(targetResource, element.opacity, imgEl.cropX, imgEl.cropY, imgEl.cropWidth, imgEl.cropHeight, index, '');
-    }
+    return renderMedia(targetResource, element.opacity, imgEl.cropX, imgEl.cropY, imgEl.cropWidth, imgEl.cropHeight, '');
   }
 
-  // Shapes and images use inline SVG
-  return (
-    <svg
-      key={element.id}
-      style={{
-        position: 'absolute',
-        left: 0,
-        top: 0,
-        width: stageW,
-        height: stageH,
-        pointerEvents: 'none',
-        zIndex: index,
-      }}
-      viewBox={`0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}`}
-    >
-      <PresenterSlideElement element={element} resources={resources} />
-    </svg>
-  );
+  // Shape: native SVG primitive via the shared RenderShape.
+  return <RenderShape key={element.id} element={element as ShapeElement} />;
 }
 
 // ============================================================================
@@ -605,24 +489,40 @@ export const SlideRenderer: React.FC<SlideRendererProps> = ({
           }
         }
 
-        // Shapes and images use inline SVG
-        return (
-          <svg
-            key={element.id}
-            style={{
-              position: 'absolute',
-              left: 0,
-              top: 0,
-              width,
-              height,
-              pointerEvents: 'none',
-              zIndex: index,
-            }}
-            viewBox={`0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}`}
-          >
-            <PresenterSlideElement element={element} resources={resources} />
-          </svg>
-        );
+        // Shapes and static images use inline SVG. Each element gets a
+        // stage-sized SVG layer; this matches the per-element wrapper that
+        // PresenterView used to use before its single-SVG consolidation.
+        // (SlideRenderer keeps the per-element wrapper for now because it
+        // composes VideoWithControls — an HTML overlay — at the same z-stack
+        // level, which is awkward inside a single SVG composition.)
+        if (element.type === 'shape' || element.type === 'image') {
+          const imgResource =
+            element.type === 'image' && element.resourceId
+              ? resources[element.resourceId]
+              : undefined;
+          return (
+            <svg
+              key={element.id}
+              style={{
+                position: 'absolute',
+                left: 0,
+                top: 0,
+                width,
+                height,
+                pointerEvents: 'none',
+                zIndex: index,
+              }}
+              viewBox={`0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}`}
+            >
+              {element.type === 'shape' ? (
+                <RenderShape element={element as ShapeElement} />
+              ) : (
+                <RenderImage element={element as ImageElement} resource={imgResource} />
+              )}
+            </svg>
+          );
+        }
+        return null;
       })}
     </div>
   );
