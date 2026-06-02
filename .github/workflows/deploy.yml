@@ -30,8 +30,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
-        run: npm run build
+      - name: Build (editor + standalone + viewer templates)
+        # build:all also produces dist/{standalone,viewer}-template.html so the
+        # in-editor Save / Export → HTML can fetch them at runtime.
+        run: npm run build:all
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
