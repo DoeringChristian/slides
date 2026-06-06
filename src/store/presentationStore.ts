@@ -526,6 +526,66 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       addSlideWithMode: (afterIndex: number, mode: 'previous' | 'next' | 'interpolate') => {
+        const doc = getActiveDoc();
+        if (doc) {
+          // Read the neighbour slides out of Y as plain JSON, build the new
+          // Slide using the same JS logic as the Zustand branch below, then
+          // push it back into Y as a Y.Map subtree. Keeps the keyframe
+          // interpolation centralized — no duplicated math.
+          let newSlideId = '';
+          runInTxn(() => {
+            const root = getYRoot(doc);
+            const slides = root.get('slides') as Y.Map<unknown> | undefined;
+            const order = root.get('slideOrder') as Y.Array<string> | undefined;
+            if (!slides || !order) return;
+            const orderArr = order.toArray();
+            const prevSlide = orderArr[afterIndex] ? yDocToJsonSlideOnly(doc, orderArr[afterIndex]) : null;
+            const nextSlide = orderArr[afterIndex + 1] ? yDocToJsonSlideOnly(doc, orderArr[afterIndex + 1]) : null;
+
+            let newSlide: Slide;
+            if (mode === 'previous' && prevSlide) {
+              newSlide = copySlideAsKeyframe(prevSlide);
+            } else if (mode === 'next' && nextSlide) {
+              newSlide = copySlideAsKeyframe(nextSlide);
+            } else if (mode === 'interpolate' && prevSlide && nextSlide) {
+              newSlide = copySlideAsKeyframe(prevSlide);
+              for (const elId of newSlide.elementOrder) {
+                const elA = prevSlide.elements[elId];
+                const elB = nextSlide.elements[elId];
+                if (elA && elB) {
+                  newSlide.elements[elId] = {
+                    ...JSON.parse(JSON.stringify(elA)),
+                    x: (elA.x + elB.x) / 2,
+                    y: (elA.y + elB.y) / 2,
+                    width: (elA.width + elB.width) / 2,
+                    height: (elA.height + elB.height) / 2,
+                    rotation: (() => {
+                      let a = ((elA.rotation % 360) + 360) % 360;
+                      const b = ((elB.rotation % 360) + 360) % 360;
+                      let delta = b - a;
+                      if (delta > 180) delta -= 360;
+                      if (delta < -180) delta += 360;
+                      return a + delta * 0.5;
+                    })(),
+                    opacity: (elA.opacity + elB.opacity) / 2,
+                  } as SlideElement;
+                }
+              }
+            } else if (prevSlide) {
+              newSlide = copySlideAsKeyframe(prevSlide);
+            } else if (nextSlide) {
+              newSlide = copySlideAsKeyframe(nextSlide);
+            } else {
+              newSlide = createSlide();
+            }
+
+            slides.set(newSlide.id, slideToYMap(newSlide));
+            order.insert(afterIndex + 1, [newSlide.id]);
+            root.set('updatedAt', Date.now());
+            newSlideId = newSlide.id;
+          });
+          return newSlideId;
+        }
         let newSlideId = '';
         set((state) => {
           const { slideOrder, slides } = state.presentation;
@@ -1454,6 +1514,21 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       resetElementToKeyframe: (slideId: string, elementId: string) => {
+        const doc = getActiveDoc();
+        if (doc) {
+          runInTxn(() => {
+            const root = getYRoot(doc);
+            const order = (root.get('slideOrder') as Y.Array<string>).toArray();
+            const idx = order.indexOf(slideId);
+            if (idx <= 0) return;
+            const prevSrc = getYElement(doc, order[idx - 1], elementId);
+            const here = getYSlide(doc, slideId)?.get('elements') as Y.Map<unknown> | undefined;
+            if (!prevSrc || !here?.has(elementId)) return;
+            here.set(elementId, elementToYMap(prevSrc.toJSON() as SlideElement));
+            root.set('updatedAt', Date.now());
+          });
+          return;
+        }
         set((state) => {
           const { slideOrder, slides } = state.presentation;
           const slideIdx = slideOrder.indexOf(slideId);
@@ -1484,6 +1559,21 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       resetElementToNextKeyframe: (slideId: string, elementId: string) => {
+        const doc = getActiveDoc();
+        if (doc) {
+          runInTxn(() => {
+            const root = getYRoot(doc);
+            const order = (root.get('slideOrder') as Y.Array<string>).toArray();
+            const idx = order.indexOf(slideId);
+            if (idx < 0 || idx >= order.length - 1) return;
+            const nextSrc = getYElement(doc, order[idx + 1], elementId);
+            const here = getYSlide(doc, slideId)?.get('elements') as Y.Map<unknown> | undefined;
+            if (!nextSrc || !here?.has(elementId)) return;
+            here.set(elementId, elementToYMap(nextSrc.toJSON() as SlideElement));
+            root.set('updatedAt', Date.now());
+          });
+          return;
+        }
         set((state) => {
           const { slideOrder, slides } = state.presentation;
           const slideIdx = slideOrder.indexOf(slideId);
@@ -1514,6 +1604,17 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       renameObject: (objectId: string, name: string) => {
+        const doc = getActiveDoc();
+        if (doc) {
+          runInTxn(() => {
+            const objects = getYRoot(doc).get('objects') as Y.Map<unknown> | undefined;
+            const yObj = objects?.get(objectId) as Y.Map<unknown> | undefined;
+            if (!yObj) return;
+            yObj.set('name', name);
+            getYRoot(doc).set('updatedAt', Date.now());
+          });
+          return;
+        }
         set((state) => {
           if (!state.presentation.objects[objectId]) return state;
           return {
@@ -1530,6 +1631,43 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       removeObject: (objectId: string) => {
+        const doc = getActiveDoc();
+        if (doc) {
+          runInTxn(() => {
+            const root = getYRoot(doc);
+            const objects = root.get('objects') as Y.Map<unknown> | undefined;
+            if (!objects?.has(objectId)) return;
+            objects.delete(objectId);
+
+            // Strip the element from every slide that has it, tracking a
+            // resource for cleanup.
+            const order = (root.get('slideOrder') as Y.Array<string>).toArray();
+            let resourceIdToCheck: string | null = null;
+            for (const sid of order) {
+              const slide = getYSlide(doc, sid);
+              const elements = slide?.get('elements') as Y.Map<Y.Map<unknown>> | undefined;
+              const el = elements?.get(objectId);
+              if (el) {
+                if (el.get('type') === 'image') {
+                  const rid = el.get('resourceId');
+                  if (typeof rid === 'string') resourceIdToCheck = rid;
+                }
+                elements!.delete(objectId);
+                const elementOrder = slide?.get('elementOrder') as Y.Array<string> | undefined;
+                if (elementOrder) {
+                  const idx = elementOrder.toArray().indexOf(objectId);
+                  if (idx !== -1) elementOrder.delete(idx, 1);
+                }
+              }
+            }
+
+            if (resourceIdToCheck && !resourceReferencedInY(doc, resourceIdToCheck)) {
+              (root.get('resources') as Y.Map<unknown> | undefined)?.delete(resourceIdToCheck);
+            }
+            root.set('updatedAt', Date.now());
+          });
+          return;
+        }
         set((state) => {
           // Remove from objects registry
           const { [objectId]: removedObject, ...remainingObjects } = state.presentation.objects;
@@ -1578,6 +1716,26 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       syncElementToSlides: (sourceSlideId: string, elementId: string, targetSlideIds: string[], properties: (keyof SlideElement)[]) => {
+        const doc = getActiveDoc();
+        if (doc) {
+          runInTxn(() => {
+            const srcEl = getYElement(doc, sourceSlideId, elementId);
+            if (!srcEl) return;
+            const changes: Record<string, unknown> = {};
+            for (const p of properties) {
+              const v = srcEl.get(p as string);
+              if (v !== undefined) changes[p as string] = v instanceof Y.Text ? v.toString() : v;
+            }
+            for (const targetId of targetSlideIds) {
+              if (targetId === sourceSlideId) continue;
+              const tgt = getYElement(doc, targetId, elementId);
+              if (!tgt) continue;
+              applyChangesToYElement(tgt, changes);
+            }
+            getYRoot(doc).set('updatedAt', Date.now());
+          });
+          return;
+        }
         set((state) => {
           const sourceSlide = state.presentation.slides[sourceSlideId];
           if (!sourceSlide) return state;
@@ -1618,6 +1776,43 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       saveAsTemplate: (slideId: string, name: string) => {
+        const doc = getActiveDoc();
+        if (doc) {
+          let templateId = '';
+          runInTxn(() => {
+            const root = getYRoot(doc);
+            const templates = root.get('templates') as Y.Map<unknown> | undefined;
+            const slide = yDocToJsonSlideOnly(doc, slideId);
+            if (!templates || !slide) return;
+            templateId = generateId();
+            const tpl: SlideTemplate = {
+              id: templateId,
+              name,
+              elements: JSON.parse(JSON.stringify(slide.elements)),
+              elementOrder: [...slide.elementOrder],
+              background: JSON.parse(JSON.stringify(slide.background)),
+            };
+            // Build the template Y.Map by hand (slideToYMap is for slides;
+            // SlideTemplate has the same shape minus the slide-only fields).
+            const tplMap = new Y.Map<unknown>();
+            tplMap.set('id', tpl.id);
+            tplMap.set('name', tpl.name);
+            const tplElements = new Y.Map<unknown>();
+            for (const [eid, el] of Object.entries(tpl.elements)) {
+              tplElements.set(eid, elementToYMap(el));
+            }
+            tplMap.set('elements', tplElements);
+            const tplOrder = new Y.Array<string>();
+            tplOrder.insert(0, tpl.elementOrder);
+            tplMap.set('elementOrder', tplOrder);
+            const tplBg = new Y.Map<unknown>();
+            for (const [k, v] of Object.entries(tpl.background)) tplBg.set(k, v);
+            tplMap.set('background', tplBg);
+            templates.set(tpl.id, tplMap);
+            root.set('updatedAt', Date.now());
+          });
+          return templateId;
+        }
         let templateId = '';
         set((state) => {
           const slide = state.presentation.slides[slideId];
@@ -1644,6 +1839,59 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       addSlideFromTemplate: (templateId: string, index?: number) => {
+        const doc = getActiveDoc();
+        if (doc) {
+          let newSlideId = '';
+          runInTxn(() => {
+            const root = getYRoot(doc);
+            const templates = root.get('templates') as Y.Map<unknown> | undefined;
+            const slides = root.get('slides') as Y.Map<unknown> | undefined;
+            const order = root.get('slideOrder') as Y.Array<string> | undefined;
+            if (!templates || !slides || !order) return;
+            const yTpl = templates.get(templateId) as Y.Map<unknown> | undefined;
+            if (!yTpl) return;
+            const template = yTpl.toJSON() as SlideTemplate;
+
+            const newSlide = createSlide();
+            const elements: Record<string, SlideElement> = {};
+            for (const elId of template.elementOrder) {
+              const el = template.elements[elId];
+              if (el) elements[elId] = JSON.parse(JSON.stringify(el));
+            }
+            newSlide.elements = elements;
+            newSlide.elementOrder = [...template.elementOrder];
+            newSlide.background = JSON.parse(JSON.stringify(template.background));
+
+            slides.set(newSlide.id, slideToYMap(newSlide));
+            const insertIndex = index !== undefined ? index : order.length;
+            order.insert(insertIndex, [newSlide.id]);
+
+            const objects = root.get('objects') as Y.Map<unknown> | undefined;
+            if (objects) {
+              const objSnapshot = Object.fromEntries(
+                [...objects.entries()].map(([k, v]) => [k, (v as Y.Map<unknown>).toJSON()]),
+              ) as Record<string, ObjectMeta>;
+              for (const elId of template.elementOrder) {
+                const el = elements[elId];
+                if (!el || objects.has(elId)) continue;
+                const meta: ObjectMeta = {
+                  id: elId,
+                  name: generateObjectName(getObjectSubtype(el), objSnapshot),
+                  type: getObjectType(el),
+                };
+                objSnapshot[elId] = meta;
+                const yMeta = new Y.Map<unknown>();
+                yMeta.set('id', meta.id);
+                yMeta.set('name', meta.name);
+                yMeta.set('type', meta.type);
+                objects.set(elId, yMeta);
+              }
+            }
+            root.set('updatedAt', Date.now());
+            newSlideId = newSlide.id;
+          });
+          return newSlideId;
+        }
         let newSlideId = '';
         set((state) => {
           const template = state.presentation.templates[templateId];
@@ -1696,6 +1944,15 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       deleteTemplate: (templateId: string) => {
+        const doc = getActiveDoc();
+        if (doc) {
+          runInTxn(() => {
+            const templates = getYRoot(doc).get('templates') as Y.Map<unknown> | undefined;
+            templates?.delete(templateId);
+            getYRoot(doc).set('updatedAt', Date.now());
+          });
+          return;
+        }
         set((state) => {
           const { [templateId]: _removed, ...remaining } = state.presentation.templates;
           return {
