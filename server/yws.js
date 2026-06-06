@@ -155,6 +155,16 @@ export function attachYWS(httpServer, storage) {
       return;
     }
 
+    // Owner-only auth for now. The share-link commit adds an OR-clause for
+    // valid share tokens. Legacy projects without an ownerId stay open.
+    const userId = url.searchParams.get('userId');
+    if (userId && !(await storage.userOwnsProject(projectId, userId))) {
+      console.warn(`[yws] denied: ${userId} is not the owner of ${projectId}`);
+      socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
     try {
       await ensureLeveldbBootstrapped(projectId, storage);
     } catch (err) {

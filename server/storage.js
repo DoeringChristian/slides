@@ -46,16 +46,27 @@ export function createStorage(dataDir) {
   return {
     dataDir: resolvedDir,
 
-    // List all projects (returns metadata only)
-    async listProjects() {
+    // List projects. If `filter.ownerId` is set, returns only projects owned
+    // by that user (plus any legacy projects without an ownerId, since those
+    // predate the ownership model and would otherwise be inaccessible).
+    async listProjects(filter = {}) {
       await ensureDir();
       const index = await loadIndex();
 
-      // Convert to array and sort by updatedAt
-      const projects = Object.values(index.projects);
+      let projects = Object.values(index.projects);
+      if (filter.ownerId) {
+        projects = projects.filter((p) => p.ownerId === filter.ownerId || !p.ownerId);
+      }
       projects.sort((a, b) => b.updatedAt - a.updatedAt);
-
       return projects;
+    },
+
+    // True iff the given user owns the project (or it predates ownership).
+    async userOwnsProject(id, userId) {
+      const index = await loadIndex();
+      const entry = index.projects[id];
+      if (!entry) return false;
+      return !entry.ownerId || entry.ownerId === userId;
     },
 
     // Get a single project with full presentation data
@@ -74,14 +85,15 @@ export function createStorage(dataDir) {
       }
     },
 
-    // Save a project (create or update)
-    async saveProject(presentation, thumbnailDataUrl) {
+    // Save a project (create or update). ownerId is only set on first save;
+    // subsequent saves preserve the existing owner so collaborators can write
+    // back without taking ownership.
+    async saveProject(presentation, thumbnailDataUrl, ownerId) {
       await ensureDir();
 
       const id = presentation.id;
       const projectPath = getProjectPath(id);
 
-      // Save full presentation to file
       const projectData = {
         id,
         presentation,
@@ -89,14 +101,15 @@ export function createStorage(dataDir) {
       };
       await fs.writeFile(projectPath, JSON.stringify(projectData, null, 2));
 
-      // Update index with metadata
       const index = await loadIndex();
+      const existing = index.projects[id];
       index.projects[id] = {
         id,
         title: presentation.title,
         createdAt: presentation.createdAt,
         updatedAt: presentation.updatedAt,
         thumbnailDataUrl,
+        ownerId: existing?.ownerId ?? ownerId,
       };
       await saveIndex(index);
 
@@ -122,8 +135,8 @@ export function createStorage(dataDir) {
       await saveIndex(index);
     },
 
-    // Duplicate a project
-    async duplicateProject(id) {
+    // Duplicate a project. The duplicating user becomes the owner of the copy.
+    async duplicateProject(id, ownerId) {
       await ensureDir();
 
       const original = await this.getProject(id);
@@ -138,7 +151,7 @@ export function createStorage(dataDir) {
         updatedAt: Date.now(),
       };
 
-      return this.saveProject(newPresentation, original.thumbnailDataUrl);
+      return this.saveProject(newPresentation, original.thumbnailDataUrl, ownerId);
     },
   };
 }

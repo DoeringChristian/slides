@@ -92,6 +92,14 @@ export function useIdentity(): Identity {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
+/**
+ * Non-React getter for use from singletons (e.g. storageClient) that can't
+ * call hooks. Returns the same cached identity React consumers see.
+ */
+export function getIdentity(): Identity {
+  return ensureIdentity();
+}
+
 /** Update the display name. No-ops if `name` is empty after trimming. */
 export function setDisplayName(name: string) {
   const trimmed = name.trim();

@@ -6,6 +6,7 @@ import {
   deleteProjectFromIDB,
   listProjectsFromIDB,
 } from './vaultStorage';
+import { getIdentity } from '../hooks/useIdentity';
 
 export interface StorageClient {
   listProjects(): Promise<ProjectMeta[]>;
@@ -101,10 +102,15 @@ function createServerClient(serverUrl: string): StorageClient {
   const baseUrl = serverUrl.replace(/\/$/, ''); // Remove trailing slash
 
   async function fetchJSON<T>(path: string, options?: RequestInit): Promise<T> {
+    // Server scopes access by the anonymous identity in this header. Identity
+    // is just a nanoid in localStorage (no auth), so this is presence-based
+    // ownership for a personal tool — not a security boundary.
+    const userId = getIdentity().userId;
     const response = await fetch(`${baseUrl}${path}`, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
+        'X-Slides-User': userId,
         ...options?.headers,
       },
     });

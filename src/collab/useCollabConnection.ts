@@ -65,10 +65,13 @@ export function useCollabConnection({ projectId, serverUrl, identity }: UseColla
 
       const doc = new Doc();
       // y-websocket appends "/<room>" to the base URL — our server matches
-      // `/yjs/:projectId`. The trailing-slash-less `${serverUrl}/yjs` form
-      // is intentional; WebsocketProvider does the join.
+      // `/yjs/:projectId`. Identity travels as a query param so the server
+      // can authorize the connection (owner-only by default; share tokens
+      // added in the share-link phase).
       const wsBase = serverUrl.replace(/^http/, 'ws');
-      const provider = new WebsocketProvider(`${wsBase}/yjs`, projectId, doc);
+      const provider = new WebsocketProvider(`${wsBase}/yjs`, projectId, doc, {
+        params: { userId: identity.userId },
+      });
       providerRef.current = provider;
 
       // Publish the local user before the WS connects so peers see us as soon
