@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useEditorStore } from '../store/editorStore';
 import { usePresentationStore } from '../store/presentationStore';
 import { duplicateElement, loadImageFile } from '../utils/slideFactory';
+import { getActiveUndoManager } from '../collab/activeUndo';
 
 export function useKeyboardShortcuts() {
   const store = usePresentationStore;
@@ -38,16 +39,21 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      // Undo/Redo
+      // Undo/Redo. In collab mode, the active Y.UndoManager owns the stack
+      // (scoped to local edits); elsewhere we fall back to zundo's temporal.
       const key = e.key.toLowerCase();
       if (ctrl && key === 'z' && !e.shiftKey) {
         e.preventDefault();
-        (store as any).temporal?.getState()?.undo();
+        const yMgr = getActiveUndoManager();
+        if (yMgr) yMgr.undo();
+        else (store as any).temporal?.getState()?.undo();
         return;
       }
       if (ctrl && (key === 'y' || (key === 'z' && e.shiftKey))) {
         e.preventDefault();
-        (store as any).temporal?.getState()?.redo();
+        const yMgr = getActiveUndoManager();
+        if (yMgr) yMgr.redo();
+        else (store as any).temporal?.getState()?.redo();
         return;
       }
 

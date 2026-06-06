@@ -16,6 +16,7 @@ import { useYToStoreSync } from './collab/yToStoreSync';
 import { useAwarenessPublish } from './collab/useAwarenessPublish';
 import { setActiveAwareness } from './collab/activeAwareness';
 import { setActiveDoc } from './collab/yDocAdapter';
+import { createUndoManagerFor, setActiveUndoManager } from './collab/activeUndo';
 import { readStandaloneBoot, applyStandaloneBoot } from './utils/standaloneBoot';
 import { addJoinedProject, getJoinedProject } from './store/joinedStore';
 import { setStorageConfig } from './utils/storageClient';
@@ -102,10 +103,17 @@ function App() {
 
   // Phase 5: register the active doc so mutating actions in presentationStore
   // can route through Y, and run the sync hook to mirror Y updates back into
-  // Zustand.
+  // Zustand. Phase 8: build a Y.UndoManager scoped to local edits and
+  // register it for useHistory to pick up.
   useEffect(() => {
     setActiveDoc(collab.doc);
-    return () => setActiveDoc(null);
+    if (collab.doc) {
+      setActiveUndoManager(createUndoManagerFor(collab.doc));
+    }
+    return () => {
+      setActiveDoc(null);
+      setActiveUndoManager(null);
+    };
   }, [collab.doc]);
   // Phase 7: register the awareness so the header, slide panel, and canvas
   // can read peer state without prop-drilling.
