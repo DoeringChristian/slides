@@ -14,6 +14,10 @@ dist-standalone
 dist-standalone-viewer
 *.local
 
+# Server config + user-scoped data
+server/.env
+server/data
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
