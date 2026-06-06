@@ -1,6 +1,8 @@
 import express from 'express';
 import cors from 'cors';
+import http from 'http';
 import { createStorage } from './storage.js';
+import { attachYWS } from './yws.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -99,8 +101,12 @@ app.post('/api/projects/:id/duplicate', async (req, res) => {
   }
 });
 
-// Start server
-app.listen(PORT, () => {
+// Wrap Express in a bare http.Server so the WebSocket upgrade handler can hook
+// it. attachYWS adds the /yjs/:projectId route + LevelDB persistence.
+const server = http.createServer(app);
+attachYWS(server, storage);
+
+server.listen(PORT, () => {
   console.log(`Slides server running on http://localhost:${PORT}`);
   console.log(`Data directory: ${storage.dataDir}`);
 });

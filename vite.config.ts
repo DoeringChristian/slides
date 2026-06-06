@@ -43,7 +43,10 @@ function backendServer() {
 
       console.log('\x1b[36m%s\x1b[0m', '🚀 Starting backend server...');
 
-      serverProcess = spawn('node', ['index.js'], {
+      // Spawn the server via tsx so it can import TypeScript files (e.g. the
+      // shared collab schema in src/). tsx is hoisted to the workspace root.
+      const tsxBin = path.resolve(__dirname, 'node_modules', '.bin', 'tsx');
+      serverProcess = spawn(tsxBin, ['index.js'], {
         cwd: serverDir,
         stdio: ['ignore', 'pipe', 'pipe'],
         env: { ...process.env, PORT: '3001' }
