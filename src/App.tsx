@@ -10,6 +10,8 @@ import { usePresentationStore } from './store/presentationStore';
 import { useVaultStore } from './store/vaultStore';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useIsMobile } from './hooks/useIsMobile';
+import { useIdentity } from './hooks/useIdentity';
+import { useCollabConnection } from './collab/useCollabConnection';
 import { readStandaloneBoot, applyStandaloneBoot } from './utils/standaloneBoot';
 
 // Check if this is the audience window
@@ -32,6 +34,29 @@ function App() {
   const activeProjectId = useVaultStore((s) => s.activeProjectId);
   const initializeVault = useVaultStore((s) => s.initialize);
   const scheduleSave = useVaultStore((s) => s.scheduleSave);
+  const storageMode = useVaultStore((s) => s.storageMode);
+  const serverUrl = useVaultStore((s) => s.serverUrl);
+
+  // Collab connection — only opens a WS when the active project lives on
+  // the server. Hook is a no-op (returns INITIAL) for local/filesystem modes,
+  // and lazily code-splits yjs + y-websocket internally so non-collab users
+  // never pay the bundle cost.
+  const identity = useIdentity();
+  const collab = useCollabConnection({
+    projectId: storageMode === 'server' && activeProjectId ? activeProjectId : null,
+    serverUrl: storageMode === 'server' ? serverUrl : null,
+    identity,
+  });
+
+  // Phase 4 visibility — log peer changes during early testing. The UI piece
+  // moves to phase 7 (header avatars + selection outlines).
+  useEffect(() => {
+    if (!collab.ready) return;
+    console.log(`[collab] connected as ${identity.name} (${identity.userId}); ${collab.peerCount} peer(s)`);
+  }, [collab.ready, collab.peerCount, identity.name, identity.userId]);
+  useEffect(() => {
+    if (collab.error) console.error(`[collab] ${collab.error}`);
+  }, [collab.error]);
 
   // For audience mode: request presentation data from main window
   useEffect(() => {
