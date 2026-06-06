@@ -228,6 +228,22 @@ function App() {
     return <ProjectPickerDialog />;
   }
 
+  // In server (collab) mode, render a "Connecting…" overlay until the WS
+  // synchronises. Without this, edits made during the connection race fall
+  // through to the Zustand-only branch (getActiveDoc() returns null) and then
+  // get clobbered when the first Y sync arrives — peers never see them, and
+  // the local user briefly sees their edit too before it disappears.
+  if (storageMode === 'server' && !collab.ready) {
+    return (
+      <div className="h-screen flex flex-col items-center justify-center bg-gray-100 gap-3">
+        <div className="text-gray-500 text-sm">Connecting to collaboration server…</div>
+        {collab.error && (
+          <div className="text-xs text-red-600 max-w-md text-center">{collab.error}</div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <>
       <Layout />
