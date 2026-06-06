@@ -8,6 +8,7 @@ import { ExportDialog } from '../dialogs/ExportDialog';
 import { ShareDialog } from '../dialogs/ShareDialog';
 import { usePwaInstall } from '../../hooks/usePwaInstall';
 import { useJoinedProjects } from '../../store/joinedStore';
+import { useActivePeers } from '../../collab/activeAwareness';
 
 export const Header: React.FC = () => {
   const title = usePresentationStore((s) => s.presentation.title);
@@ -148,6 +149,8 @@ export const Header: React.FC = () => {
 
       <div className="flex-1" />
 
+      <PeerAvatars />
+
       {canShare && (
         <button
           onClick={() => setShowShareDialog(true)}
@@ -209,6 +212,30 @@ export const Header: React.FC = () => {
           onClose={() => setShowShareDialog(false)}
         />
       )}
+    </div>
+  );
+};
+
+// Small stack of avatar pills for every connected peer. Initial + color from
+// their identity, tooltip shows the full name and which slide they're on.
+const PeerAvatars: React.FC = () => {
+  const peers = useActivePeers();
+  if (peers.length === 0) return null;
+  return (
+    <div className="flex items-center gap-1 mr-3">
+      {peers.map((p) => {
+        const initial = (p.user.name || p.user.id || '?').trim().slice(0, 1).toUpperCase();
+        return (
+          <div
+            key={p.clientId}
+            className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium text-white shadow-sm"
+            style={{ backgroundColor: p.user.color }}
+            title={`${p.user.name}${p.activeSlideId ? ` — on a slide` : ''}`}
+          >
+            {initial}
+          </div>
+        );
+      })}
     </div>
   );
 };

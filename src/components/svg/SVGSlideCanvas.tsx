@@ -15,6 +15,7 @@ import { SVGDrawingPreview } from './SVGDrawingPreview';
 import { SVGDragPreview, type DragPreviewState } from './SVGDragPreview';
 import { SVGSelectionDrag } from './SVGSelectionDrag';
 import { SVGSelectionTransformer } from './SVGSelectionTransformer';
+import { SVGPeerSelectionOverlay } from './SVGPeerSelectionOverlay';
 import { SVGLineEndpointHandles } from './SVGLineEndpointHandles';
 import { useSVGDrag } from './useSVGDrag';
 import { useSVGDrawing } from './useSVGDrawing';
@@ -1070,6 +1071,7 @@ export const SVGSlideCanvas: React.FC = () => {
           <SVGDrawingPreview drawState={drawState} tool={tool} zoom={zoom} />
           <SVGDragPreview preview={dragPreview} zoom={zoom} />
           <SVGDragPreview preview={transformPreview} zoom={zoom} />
+          <SVGPeerSelectionOverlay slideId={activeSlideId || null} elements={elements} zoom={zoom} />
 
           {/* Selection transformer */}
           {unlockedSelectedIds.length > 0 && !soleSelectedLineElement && (

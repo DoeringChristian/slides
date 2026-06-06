@@ -13,6 +13,8 @@ import { useIsMobile } from './hooks/useIsMobile';
 import { useIdentity } from './hooks/useIdentity';
 import { useCollabConnection } from './collab/useCollabConnection';
 import { useYToStoreSync } from './collab/yToStoreSync';
+import { useAwarenessPublish } from './collab/useAwarenessPublish';
+import { setActiveAwareness } from './collab/activeAwareness';
 import { setActiveDoc } from './collab/yDocAdapter';
 import { readStandaloneBoot, applyStandaloneBoot } from './utils/standaloneBoot';
 import { addJoinedProject, getJoinedProject } from './store/joinedStore';
@@ -105,7 +107,14 @@ function App() {
     setActiveDoc(collab.doc);
     return () => setActiveDoc(null);
   }, [collab.doc]);
+  // Phase 7: register the awareness so the header, slide panel, and canvas
+  // can read peer state without prop-drilling.
+  useEffect(() => {
+    setActiveAwareness(collab.awareness);
+    return () => setActiveAwareness(null);
+  }, [collab.awareness]);
   useYToStoreSync(collab.doc);
+  useAwarenessPublish(collab.awareness);
 
   // For audience mode: request presentation data from main window
   useEffect(() => {

@@ -3,6 +3,7 @@ import { X, EyeOff, Eye } from 'lucide-react';
 import { SVGStaticSlide } from '../svg/SVGStaticSlide';
 import type { Slide } from '../../types/presentation';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
+import { useActivePeers } from '../../collab/activeAwareness';
 
 const THUMB_WIDTH = 192;
 const THUMB_SCALE = THUMB_WIDTH / SLIDE_WIDTH;
@@ -21,6 +22,13 @@ interface Props {
 
 export const SlideThumbnail: React.FC<Props> = React.memo(({ slide, index, isActive, isSelected = false, canDelete, onClick, onDelete, onToggleHidden }) => {
   const hidden = slide.hidden;
+  const peers = useActivePeers();
+  // Distinct peer colors currently viewing this slide.
+  const peersHere = peers
+    .filter((p) => p.activeSlideId === slide.id)
+    .map((p) => p.user.color)
+    .filter((c, i, arr) => arr.indexOf(c) === i)
+    .slice(0, 3);
 
   // Background: active = orange-50, selected (not active) = blue-50/50, else hover:gray-50
   const bgClass = isActive ? 'bg-orange-50' : isSelected ? 'bg-blue-50/50' : 'hover:bg-gray-50';
@@ -57,6 +65,17 @@ export const SlideThumbnail: React.FC<Props> = React.memo(({ slide, index, isAct
           >
             <X size={12} />
           </button>
+        )}
+        {peersHere.length > 0 && (
+          <div className="absolute top-1 left-1 flex gap-0.5">
+            {peersHere.map((c) => (
+              <span
+                key={c}
+                className="w-2 h-2 rounded-full border border-white shadow-sm"
+                style={{ backgroundColor: c }}
+              />
+            ))}
+          </div>
         )}
       </div>
     </div>
