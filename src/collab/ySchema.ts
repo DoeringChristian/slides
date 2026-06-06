@@ -134,7 +134,9 @@ function templatesToYMap(templates: Record<string, SlideTemplate>): Y.Map<unknow
   return m;
 }
 
-function slideToYMap(slide: Slide): Y.Map<unknown> {
+/** Exported for action code that needs to insert a full slide subtree
+ *  matching jsonToYDoc's layout (addSlide/duplicateSlide/etc.). */
+export function slideToYMap(slide: Slide): Y.Map<unknown> {
   const s = new Y.Map<unknown>();
   s.set('id', slide.id);
   s.set('elements', elementsToYMap(slide.elements));

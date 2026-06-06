@@ -6,7 +6,7 @@ import { generateId } from '../utils/idGenerator';
 import { createPresentation, createSlide, copySlideAsKeyframe, generateObjectName } from '../utils/slideFactory';
 import { resolveBindingPoint } from '../utils/connectorUtils';
 import { getActiveDoc, runInTxn } from '../collab/yDocAdapter';
-import { ROOT_KEY, elementToYMap } from '../collab/ySchema';
+import { ROOT_KEY, elementToYMap, slideToYMap } from '../collab/ySchema';
 
 // Collab helpers — small adapters over the Y schema so the actions below can
 // stay close to their original shape. All `getYxxx` returns either a Y type
@@ -23,6 +23,15 @@ function getYElement(doc: Y.Doc, slideId: string, elementId: string): Y.Map<unkn
   const elements = slide?.get('elements') as Y.Map<Y.Map<unknown>> | undefined;
   return elements?.get(elementId);
 }
+/** Snapshot a single slide back to plain JSON. The existing slide factories
+ *  (createSlide, copySlideAsKeyframe) operate on JS objects; we materialise a
+ *  source slide from Y so they can build a fresh one, then turn the result
+ *  back into a Y.Map via slideToYMap. */
+function yDocToJsonSlideOnly(doc: Y.Doc, slideId: string): Slide | null {
+  const slide = getYSlide(doc, slideId);
+  return slide ? (slide.toJSON() as Slide) : null;
+}
+
 /** Y.Array reorder helpers. Y.Array doesn't have a `set`-style replace; we
  *  delete and re-insert inside the surrounding transaction. */
 function moveInYArray(doc: Y.Doc, slideId: string, elementId: string, mode: 1 | -1 | 'front' | 'back') {
@@ -47,6 +56,46 @@ function moveInYArray(doc: Y.Doc, slideId: string, elementId: string, mode: 1 | 
 function yArrayReplaceAll<T>(arr: Y.Array<T>, newItems: readonly T[]) {
   if (arr.length > 0) arr.delete(0, arr.length);
   if (newItems.length > 0) arr.insert(0, [...newItems]);
+}
+
+/** Walk slideOrder forward from `fromSlideId` and apply `changes` to the same
+ *  element on every subsequent slide where it exists. Mirrors the JSON-side
+ *  propagateToSubsequentSlides helper. */
+function propagateInY(doc: Y.Doc, fromSlideId: string, elementId: string, changes: Record<string, unknown>) {
+  const order = (getYRoot(doc).get('slideOrder') as Y.Array<string>).toArray();
+  const fromIdx = order.indexOf(fromSlideId);
+  if (fromIdx === -1) return;
+  for (let i = fromIdx + 1; i < order.length; i++) {
+    const elMap = getYElement(doc, order[i], elementId);
+    if (!elMap) continue;
+    applyChangesToYElement(elMap, changes);
+  }
+}
+
+/** True iff `elementId` appears as visible on at least one slide. Used for
+ *  the "object completely gone" cleanup branch in hideElement / deleteElements. */
+function objectVisibleAnywhereInY(doc: Y.Doc, elementId: string): boolean {
+  const order = (getYRoot(doc).get('slideOrder') as Y.Array<string>).toArray();
+  for (const slideId of order) {
+    const elMap = getYElement(doc, slideId, elementId);
+    if (elMap && elMap.get('visible') === true) return true;
+  }
+  return false;
+}
+
+/** True iff `resourceId` is referenced by at least one image element on any
+ *  slide. Used to know whether removeResource should actually drop the entry. */
+function resourceReferencedInY(doc: Y.Doc, resourceId: string): boolean {
+  const order = (getYRoot(doc).get('slideOrder') as Y.Array<string>).toArray();
+  for (const slideId of order) {
+    const slide = getYSlide(doc, slideId);
+    const elements = slide?.get('elements') as Y.Map<Y.Map<unknown>> | undefined;
+    if (!elements) continue;
+    for (const el of elements.values()) {
+      if (el.get('type') === 'image' && el.get('resourceId') === resourceId) return true;
+    }
+  }
+  return false;
 }
 
 /** Apply a partial `changes` object onto a Y.Map element, handling Y.Text fields. */
@@ -196,6 +245,26 @@ export const usePresentationStore = create<PresentationStore>()(
       presentation: createPresentation(),
 
       addSlide: (index?: number) => {
+        const doc = getActiveDoc();
+        if (doc) {
+          let newSlideId = '';
+          runInTxn(() => {
+            const root = getYRoot(doc);
+            const slides = root.get('slides') as Y.Map<unknown> | undefined;
+            const order = root.get('slideOrder') as Y.Array<string> | undefined;
+            if (!slides || !order) return;
+            const orderArr = order.toArray();
+            const insertIndex = index !== undefined ? index : orderArr.length;
+            const neighborId = orderArr[insertIndex - 1] ?? orderArr[insertIndex];
+            const source = neighborId ? yDocToJsonSlideOnly(doc, neighborId) : null;
+            const fresh = source ? copySlideAsKeyframe(source) : createSlide();
+            slides.set(fresh.id, slideToYMap(fresh));
+            order.insert(insertIndex, [fresh.id]);
+            root.set('updatedAt', Date.now());
+            newSlideId = fresh.id;
+          });
+          return newSlideId;
+        }
         let newSlideId = '';
         set((state) => {
           const { slideOrder, slides } = state.presentation;
@@ -230,6 +299,21 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       deleteSlide: (slideId: string) => {
+        const doc = getActiveDoc();
+        if (doc) {
+          runInTxn(() => {
+            const root = getYRoot(doc);
+            const slides = root.get('slides') as Y.Map<unknown> | undefined;
+            const order = root.get('slideOrder') as Y.Array<string> | undefined;
+            if (!slides || !order) return;
+            if (order.length <= 1) return; // refuse to delete the last slide
+            slides.delete(slideId);
+            const idx = order.toArray().indexOf(slideId);
+            if (idx !== -1) order.delete(idx, 1);
+            root.set('updatedAt', Date.now());
+          });
+          return;
+        }
         set((state) => {
           if (state.presentation.slideOrder.length <= 1) return state;
           const { [slideId]: _removed, ...remainingSlides } = state.presentation.slides;
@@ -245,6 +329,26 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       duplicateSlide: (slideId: string) => {
+        const doc = getActiveDoc();
+        if (doc) {
+          let newSlideId = '';
+          runInTxn(() => {
+            const root = getYRoot(doc);
+            const slides = root.get('slides') as Y.Map<unknown> | undefined;
+            const order = root.get('slideOrder') as Y.Array<string> | undefined;
+            if (!slides || !order) return;
+            const sourceJson = yDocToJsonSlideOnly(doc, slideId);
+            if (!sourceJson) return;
+            const fresh = copySlideAsKeyframe(sourceJson);
+            fresh.notes = sourceJson.notes;
+            slides.set(fresh.id, slideToYMap(fresh));
+            const idx = order.toArray().indexOf(slideId);
+            order.insert(idx + 1, [fresh.id]);
+            root.set('updatedAt', Date.now());
+            newSlideId = fresh.id;
+          });
+          return newSlideId;
+        }
         let newSlideId = '';
         set((state) => {
           const sourceSlide = state.presentation.slides[slideId];
@@ -271,6 +375,17 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       reorderSlides: (slideOrder: string[]) => {
+        const doc = getActiveDoc();
+        if (doc) {
+          runInTxn(() => {
+            const root = getYRoot(doc);
+            const order = root.get('slideOrder') as Y.Array<string> | undefined;
+            if (!order) return;
+            yArrayReplaceAll(order, slideOrder);
+            root.set('updatedAt', Date.now());
+          });
+          return;
+        }
         set((state) => ({
           presentation: { ...state.presentation, slideOrder, updatedAt: Date.now() },
         }));
@@ -472,6 +587,23 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       addEmptySlide: (index?: number) => {
+        const doc = getActiveDoc();
+        if (doc) {
+          let newSlideId = '';
+          runInTxn(() => {
+            const root = getYRoot(doc);
+            const slides = root.get('slides') as Y.Map<unknown> | undefined;
+            const order = root.get('slideOrder') as Y.Array<string> | undefined;
+            if (!slides || !order) return;
+            const fresh = createSlide();
+            slides.set(fresh.id, slideToYMap(fresh));
+            const insertIndex = index !== undefined ? index : order.length;
+            order.insert(insertIndex, [fresh.id]);
+            root.set('updatedAt', Date.now());
+            newSlideId = fresh.id;
+          });
+          return newSlideId;
+        }
         let newSlideId = '';
         set((state) => {
           const { slideOrder, slides } = state.presentation;
@@ -848,13 +980,43 @@ export const usePresentationStore = create<PresentationStore>()(
         const doc = getActiveDoc();
         if (doc) {
           runInTxn(() => {
+            const root = getYRoot(doc);
             for (const elementId of elementIds) {
               const elMap = getYElement(doc, slideId, elementId);
-              if (elMap) elMap.set('visible', false);
+              if (!elMap) continue;
+              elMap.set('visible', false);
+              propagateInY(doc, slideId, elementId, { visible: false });
+
+              // If the element is invisible everywhere now, drop it from the
+              // object registry, the per-slide elements maps, and free its
+              // resource if nothing else references it.
+              if (!objectVisibleAnywhereInY(doc, elementId)) {
+                const objects = root.get('objects') as Y.Map<unknown> | undefined;
+                objects?.delete(elementId);
+                let resourceIdToCheck: string | null = null;
+                const order = (root.get('slideOrder') as Y.Array<string>).toArray();
+                for (const sid of order) {
+                  const slideEls = getYSlide(doc, sid)?.get('elements') as Y.Map<Y.Map<unknown>> | undefined;
+                  const e = slideEls?.get(elementId);
+                  if (e) {
+                    if (e.get('type') === 'image') {
+                      const rid = e.get('resourceId');
+                      if (typeof rid === 'string') resourceIdToCheck = rid;
+                    }
+                    slideEls!.delete(elementId);
+                    const elementOrder = getYSlide(doc, sid)?.get('elementOrder') as Y.Array<string> | undefined;
+                    if (elementOrder) {
+                      const idx = elementOrder.toArray().indexOf(elementId);
+                      if (idx !== -1) elementOrder.delete(idx, 1);
+                    }
+                  }
+                }
+                if (resourceIdToCheck && !resourceReferencedInY(doc, resourceIdToCheck)) {
+                  (root.get('resources') as Y.Map<unknown> | undefined)?.delete(resourceIdToCheck);
+                }
+              }
             }
-            getYRoot(doc).set('updatedAt', Date.now());
-            // Multi-slide visibility cascade + global object / resource
-            // cleanup live in the Zustand branch and move to Y in phase 6.
+            root.set('updatedAt', Date.now());
           });
           return;
         }
@@ -1043,6 +1205,18 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       addResource: (resource: Resource) => {
+        const doc = getActiveDoc();
+        if (doc) {
+          runInTxn(() => {
+            const resources = getYRoot(doc).get('resources') as Y.Map<unknown> | undefined;
+            if (!resources) return;
+            const yRes = new Y.Map<unknown>();
+            for (const [k, v] of Object.entries(resource)) if (v !== undefined) yRes.set(k, v);
+            resources.set(resource.id, yRes);
+            getYRoot(doc).set('updatedAt', Date.now());
+          });
+          return;
+        }
         set((state) => ({
           presentation: {
             ...state.presentation,
@@ -1053,6 +1227,19 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       removeResource: (resourceId: string) => {
+        const doc = getActiveDoc();
+        if (doc) {
+          runInTxn(() => {
+            // Only drop if no element still references it. This matches the
+            // Zustand path's expectation that the action is callable from
+            // anywhere without double-checking.
+            if (resourceReferencedInY(doc, resourceId)) return;
+            const resources = getYRoot(doc).get('resources') as Y.Map<unknown> | undefined;
+            resources?.delete(resourceId);
+            getYRoot(doc).set('updatedAt', Date.now());
+          });
+          return;
+        }
         set((state) => {
           const { [resourceId]: _removed, ...remaining } = state.presentation.resources;
           return {
@@ -1066,6 +1253,23 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       hideElement: (slideId: string, elementId: string) => {
+        const doc = getActiveDoc();
+        if (doc) {
+          runInTxn(() => {
+            const root = getYRoot(doc);
+            const elMap = getYElement(doc, slideId, elementId);
+            if (!elMap) return;
+            elMap.set('visible', false);
+            // hideElement (per its existing contract) hides only this slide.
+            // We don't propagate; deleteElements is the action that cascades.
+            if (!objectVisibleAnywhereInY(doc, elementId)) {
+              const objects = root.get('objects') as Y.Map<unknown> | undefined;
+              objects?.delete(elementId);
+            }
+            root.set('updatedAt', Date.now());
+          });
+          return;
+        }
         set((state) => {
           const slide = state.presentation.slides[slideId];
           if (!slide || !slide.elements[elementId]) return state;
@@ -1132,6 +1336,51 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       unhideElement: (slideId: string, elementId: string, position?: { x: number; y: number }) => {
+        const doc = getActiveDoc();
+        if (doc) {
+          runInTxn(() => {
+            const slideMap = getYSlide(doc, slideId);
+            if (!slideMap) return;
+
+            let elMap = getYElement(doc, slideId, elementId);
+            if (elMap) {
+              elMap.set('visible', true);
+              if (position) {
+                elMap.set('x', position.x);
+                elMap.set('y', position.y);
+              }
+            } else {
+              // Element not on this slide — copy from the nearest slide that has it.
+              const order = (getYRoot(doc).get('slideOrder') as Y.Array<string>).toArray();
+              const here = order.indexOf(slideId);
+              let sourceJson: SlideElement | null = null;
+              for (let i = here - 1; i >= 0 && !sourceJson; i--) {
+                const src = getYElement(doc, order[i], elementId);
+                if (src) sourceJson = src.toJSON() as SlideElement;
+              }
+              for (let i = here + 1; i < order.length && !sourceJson; i++) {
+                const src = getYElement(doc, order[i], elementId);
+                if (src) sourceJson = src.toJSON() as SlideElement;
+              }
+              if (!sourceJson) return;
+              const fresh = {
+                ...JSON.parse(JSON.stringify(sourceJson)),
+                visible: true,
+                ...(position ? { x: position.x, y: position.y } : {}),
+              } as SlideElement;
+              const elements = slideMap.get('elements') as Y.Map<unknown> | undefined;
+              const elementOrder = slideMap.get('elementOrder') as Y.Array<string> | undefined;
+              if (!elements || !elementOrder) return;
+              elements.set(elementId, elementToYMap(fresh));
+              elementOrder.push([elementId]);
+            }
+
+            // Propagate visible:true to subsequent slides where the element exists.
+            propagateInY(doc, slideId, elementId, { visible: true });
+            getYRoot(doc).set('updatedAt', Date.now());
+          });
+          return;
+        }
         set((state) => {
           const slide = state.presentation.slides[slideId];
           if (!slide) return state;
