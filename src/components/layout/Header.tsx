@@ -3,9 +3,11 @@ import { usePresentationStore } from '../../store/presentationStore';
 import { useEditorStore } from '../../store/editorStore';
 import { useVaultStore } from '../../store/vaultStore';
 import { usePresenterMode } from '../../hooks/usePresenterMode';
-import { Play, Download, FilePlus, Undo2, Redo2, Monitor, ChevronDown, FileDown, Smartphone } from 'lucide-react';
+import { Play, Download, FilePlus, Undo2, Redo2, Monitor, ChevronDown, FileDown, Smartphone, Link as LinkIcon } from 'lucide-react';
 import { ExportDialog } from '../dialogs/ExportDialog';
+import { ShareDialog } from '../dialogs/ShareDialog';
 import { usePwaInstall } from '../../hooks/usePwaInstall';
+import { useJoinedProjects } from '../../store/joinedStore';
 
 export const Header: React.FC = () => {
   const title = usePresentationStore((s) => s.presentation.title);
@@ -20,12 +22,20 @@ export const Header: React.FC = () => {
 
   const activeProjectId = useVaultStore((s) => s.activeProjectId);
   const closeProject = useVaultStore((s) => s.closeProject);
+  const storageMode = useVaultStore((s) => s.storageMode);
+  const joinedProjects = useJoinedProjects();
+
+  // Share is owner-only: visible when we're on the server and the project
+  // isn't one we joined via someone else's link.
+  const isJoined = !!activeProjectId && joinedProjects.some((p) => p.projectId === activeProjectId);
+  const canShare = storageMode === 'server' && !!activeProjectId && !isJoined;
 
   const { canInstall, promptInstall } = usePwaInstall();
 
   const [isEditing, setIsEditing] = useState(false);
   const [showPresentMenu, setShowPresentMenu] = useState(false);
   const [showExportDialog, setShowExportDialog] = useState(false);
+  const [showShareDialog, setShowShareDialog] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -138,6 +148,17 @@ export const Header: React.FC = () => {
 
       <div className="flex-1" />
 
+      {canShare && (
+        <button
+          onClick={() => setShowShareDialog(true)}
+          className="flex items-center gap-1.5 text-sm text-gray-700 hover:bg-gray-100 px-3 py-1.5 rounded-md mr-2"
+          title="Share this presentation"
+        >
+          <LinkIcon size={14} />
+          Share
+        </button>
+      )}
+
       <div className="relative" ref={menuRef}>
         <div className="flex">
           <button
@@ -181,6 +202,13 @@ export const Header: React.FC = () => {
       </div>
 
       <ExportDialog isOpen={showExportDialog} onClose={() => setShowExportDialog(false)} />
+      {canShare && (
+        <ShareDialog
+          isOpen={showShareDialog}
+          projectId={activeProjectId!}
+          onClose={() => setShowShareDialog(false)}
+        />
+      )}
     </div>
   );
 };

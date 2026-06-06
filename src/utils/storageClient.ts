@@ -10,10 +10,19 @@ import { getIdentity } from '../hooks/useIdentity';
 
 export interface StorageClient {
   listProjects(): Promise<ProjectMeta[]>;
-  getProject(id: string): Promise<{ presentation: Presentation; thumbnailDataUrl?: string } | null>;
+  getProject(id: string, shareToken?: string): Promise<{ presentation: Presentation; thumbnailDataUrl?: string } | null>;
   saveProject(presentation: Presentation, thumbnailDataUrl?: string): Promise<ProjectMeta>;
   deleteProject(id: string): Promise<void>;
   duplicateProject(id: string): Promise<ProjectMeta | null>;
+}
+
+/** Share-token metadata returned by the server. */
+export interface ShareEntry {
+  token: string;
+  projectId: string;
+  ownerId: string;
+  createdAt: number;
+  revoked: boolean;
 }
 
 // Storage mode configuration
@@ -52,7 +61,7 @@ const localClient: StorageClient = {
     return listProjectsFromIDB();
   },
 
-  async getProject(id: string) {
+  async getProject(id: string, _shareToken?: string) {
     const stored = await loadProjectFromIDB(id);
     if (!stored) return null;
     return {
@@ -135,13 +144,13 @@ function createServerClient(serverUrl: string): StorageClient {
       return projects.map((p) => ({ ...p, filename: '' }));
     },
 
-    async getProject(id: string) {
+    async getProject(id: string, shareToken?: string) {
       try {
         const data = await fetchJSON<{
           id: string;
           presentation: Presentation;
           thumbnailDataUrl?: string;
-        }>(`/api/projects/${id}`);
+        }>(`/api/projects/${id}`, shareToken ? { headers: { 'X-Share-Token': shareToken } } : undefined);
         return {
           presentation: data.presentation,
           thumbnailDataUrl: data.thumbnailDataUrl,
@@ -188,6 +197,53 @@ export function getStorageClient(): StorageClient {
     return createServerClient(currentConfig.serverUrl);
   }
   return localClient;
+}
+
+// Share-link helpers. Server-only — the local IDB / filesystem modes have no
+// concept of sharing. Returns server JSON shapes directly; the dialog UI
+// massages them.
+
+function shareHeaders(): HeadersInit {
+  return {
+    'Content-Type': 'application/json',
+    'X-Slides-User': getIdentity().userId,
+  };
+}
+
+function shareBaseUrl(): string | null {
+  if (currentConfig.mode !== 'server' || !currentConfig.serverUrl) return null;
+  return currentConfig.serverUrl.replace(/\/$/, '');
+}
+
+export async function mintShare(projectId: string): Promise<ShareEntry> {
+  const base = shareBaseUrl();
+  if (!base) throw new Error('Share links require server mode');
+  const res = await fetch(`${base}/api/projects/${projectId}/shares`, {
+    method: 'POST',
+    headers: shareHeaders(),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+export async function listShares(projectId: string): Promise<ShareEntry[]> {
+  const base = shareBaseUrl();
+  if (!base) return [];
+  const res = await fetch(`${base}/api/projects/${projectId}/shares`, {
+    headers: shareHeaders(),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return res.json();
+}
+
+export async function revokeShare(token: string): Promise<void> {
+  const base = shareBaseUrl();
+  if (!base) throw new Error('Share links require server mode');
+  const res = await fetch(`${base}/api/shares/${token}`, {
+    method: 'DELETE',
+    headers: shareHeaders(),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }
 
 // Test server connection

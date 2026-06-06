@@ -15,6 +15,8 @@ import { useCollabConnection } from './collab/useCollabConnection';
 import { useYToStoreSync } from './collab/yToStoreSync';
 import { setActiveDoc } from './collab/yDocAdapter';
 import { readStandaloneBoot, applyStandaloneBoot } from './utils/standaloneBoot';
+import { addJoinedProject, getJoinedProject } from './store/joinedStore';
+import { setStorageConfig } from './utils/storageClient';
 
 // Check if this is the audience window
 const isAudienceMode = new URLSearchParams(window.location.search).get('audience') === 'true';
@@ -22,6 +24,39 @@ const isAudienceMode = new URLSearchParams(window.location.search).get('audience
 const standaloneBoot = isAudienceMode ? null : readStandaloneBoot();
 // Apply synchronously, before React renders. See applyStandaloneBoot's note for why.
 if (standaloneBoot) applyStandaloneBoot(standaloneBoot);
+
+// Share-URL boot: when the page loads with ?project=<id>&t=<token>, record the
+// join and bootstrap into server mode if needed. The vault's existing
+// `openProject` flow picks up the token via the joinedStore. We strip the
+// params from the URL so reload doesn't re-join.
+const pendingJoin: { projectId: string; token: string } | null = (() => {
+  if (isAudienceMode || standaloneBoot) return null;
+  const params = new URLSearchParams(window.location.search);
+  const projectId = params.get('project');
+  const token = params.get('t');
+  if (!projectId || !token) return null;
+
+  addJoinedProject({ projectId, token });
+
+  // Force server mode if we're not on one yet — pasted share URLs should
+  // "just work" in a fresh browser. Default to localhost:3001 for dev; in
+  // production this URL is whatever's already configured.
+  try {
+    const raw = localStorage.getItem('slides-storage-config');
+    const existing = raw ? (JSON.parse(raw) as { mode?: string; serverUrl?: string }) : null;
+    if (existing?.mode !== 'server' || !existing.serverUrl) {
+      setStorageConfig({ mode: 'server', serverUrl: existing?.serverUrl || 'http://localhost:3001' });
+    }
+  } catch { /* localStorage disabled — fall through */ }
+
+  // Strip the query so a reload doesn't re-join.
+  const u = new URL(window.location.href);
+  u.searchParams.delete('project');
+  u.searchParams.delete('t');
+  window.history.replaceState({}, '', u.toString());
+
+  return { projectId, token };
+})();
 
 function App() {
   const [vaultInitialized, setVaultInitialized] = useState(false);
@@ -36,6 +71,7 @@ function App() {
   const activeProjectId = useVaultStore((s) => s.activeProjectId);
   const initializeVault = useVaultStore((s) => s.initialize);
   const scheduleSave = useVaultStore((s) => s.scheduleSave);
+  const openProject = useVaultStore((s) => s.openProject);
   const storageMode = useVaultStore((s) => s.storageMode);
   const serverUrl = useVaultStore((s) => s.serverUrl);
 
@@ -44,10 +80,12 @@ function App() {
   // and lazily code-splits yjs + y-websocket internally so non-collab users
   // never pay the bundle cost.
   const identity = useIdentity();
+  const activeJoined = activeProjectId ? getJoinedProject(activeProjectId) : undefined;
   const collab = useCollabConnection({
     projectId: storageMode === 'server' && activeProjectId ? activeProjectId : null,
     serverUrl: storageMode === 'server' ? serverUrl : null,
     identity,
+    shareToken: activeJoined?.token,
   });
 
   // Phase 4 visibility — log peer changes during early testing. The UI piece
@@ -94,6 +132,14 @@ function App() {
     if (isAudienceMode || standaloneBoot) return;
     initializeVault().then(() => setVaultInitialized(true));
   }, [initializeVault]);
+
+  // After vault is up, if we boot-detected a share URL, open the joined
+  // project. openProject reads the token from the joinedStore entry we wrote
+  // synchronously at module load.
+  useEffect(() => {
+    if (!vaultInitialized || !pendingJoin) return;
+    void openProject(pendingJoin.projectId);
+  }, [vaultInitialized, openProject]);
 
   // Initialize active slide on mount
   useEffect(() => {

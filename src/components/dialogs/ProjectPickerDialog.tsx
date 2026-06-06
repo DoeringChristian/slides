@@ -8,6 +8,7 @@ import { ProjectCard, NewProjectCard } from './ProjectCard';
 import { generateThumbnail } from '../../utils/thumbnailGenerator';
 import { StorageSettingsDialog } from './StorageSettingsDialog';
 import { getStorageClient } from '../../utils/storageClient';
+import { useJoinedProjects, removeJoinedProject } from '../../store/joinedStore';
 
 export const ProjectPickerDialog: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
@@ -31,6 +32,11 @@ export const ProjectPickerDialog: React.FC = () => {
 
   const loadPresentation = usePresentationStore((s) => s.loadPresentation);
   const setActiveSlide = useEditorStore((s) => s.setActiveSlide);
+
+  // "Shared with me" — projects the user joined via someone else's share URL.
+  // Only meaningful in server mode; we still surface them in other modes for
+  // visibility, since clicking one switches to server mode anyway.
+  const joinedProjects = useJoinedProjects();
 
   // Generate thumbnails for projects that don't have them
   useEffect(() => {
@@ -218,21 +224,52 @@ export const ProjectPickerDialog: React.FC = () => {
               <Loader2 size={32} className="animate-spin text-gray-400" />
             </div>
           ) : (
-            /* Project grid */
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-              <NewProjectCard onClick={() => createProject()} />
+            <>
+              {/* Owned projects */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                <NewProjectCard onClick={() => createProject()} />
+                {projects.map((project) => (
+                  <ProjectCard
+                    key={project.id}
+                    project={project}
+                    onOpen={() => openProject(project.id)}
+                    onDuplicate={() => duplicateProject(project.id)}
+                    onDelete={() => deleteProject(project.id)}
+                  />
+                ))}
+              </div>
 
-              {/* Existing projects */}
-              {projects.map((project) => (
-                <ProjectCard
-                  key={project.id}
-                  project={project}
-                  onOpen={() => openProject(project.id)}
-                  onDuplicate={() => duplicateProject(project.id)}
-                  onDelete={() => deleteProject(project.id)}
-                />
-              ))}
-            </div>
+              {/* Shared with me */}
+              {joinedProjects.length > 0 && (
+                <>
+                  <h2 className="mt-8 mb-3 text-sm font-medium text-gray-500 uppercase tracking-wide">
+                    Shared with me
+                  </h2>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                    {joinedProjects.map((j) => (
+                      <ProjectCard
+                        key={j.projectId}
+                        project={{
+                          id: j.projectId,
+                          title: j.title || j.projectId,
+                          filename: '',
+                          createdAt: j.joinedAt,
+                          updatedAt: j.refreshedAt || j.joinedAt,
+                          thumbnailDataUrl: j.thumbnailDataUrl,
+                        }}
+                        onOpen={() => openProject(j.projectId)}
+                        // Removing a joined project just drops it from the
+                        // localStorage list — the server-side project is
+                        // owned by someone else; we can't (and shouldn't)
+                        // delete it.
+                        onDelete={() => removeJoinedProject(j.projectId)}
+                        onDuplicate={() => { /* no-op: not our project */ }}
+                      />
+                    ))}
+                  </div>
+                </>
+              )}
+            </>
           )}
         </div>
       </div>

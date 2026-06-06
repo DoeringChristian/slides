@@ -47,15 +47,16 @@ export function createStorage(dataDir) {
     dataDir: resolvedDir,
 
     // List projects. If `filter.ownerId` is set, returns only projects owned
-    // by that user (plus any legacy projects without an ownerId, since those
-    // predate the ownership model and would otherwise be inaccessible).
+    // by that user. Legacy projects without an ownerId are excluded from the
+    // list but stay reachable via direct GET /api/projects/:id — once their
+    // owner saves them again, they get stamped and reappear in the list.
     async listProjects(filter = {}) {
       await ensureDir();
       const index = await loadIndex();
 
       let projects = Object.values(index.projects);
       if (filter.ownerId) {
-        projects = projects.filter((p) => p.ownerId === filter.ownerId || !p.ownerId);
+        projects = projects.filter((p) => p.ownerId === filter.ownerId);
       }
       projects.sort((a, b) => b.updatedAt - a.updatedAt);
       return projects;

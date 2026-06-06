@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import http from 'http';
 import { createStorage } from './storage.js';
+import { createShareStore } from './shares.js';
 import { attachYWS } from './yws.js';
 
 const app = express();
@@ -9,6 +10,7 @@ const PORT = process.env.PORT || 3001;
 
 // Initialize storage
 const storage = createStorage('./data');
+const shares = createShareStore('./data');
 
 // Middleware
 app.use(cors({ exposedHeaders: ['X-Slides-User'] }));
@@ -41,12 +43,15 @@ app.get('/api/projects', async (req, res) => {
   }
 });
 
-// Get a single project. Owner-only for now; share-token access added in the
-// share-link commit.
+// Get a single project. Owner OR valid share token (via X-Share-Token).
 app.get('/api/projects/:id', async (req, res) => {
   try {
     const userId = userIdOf(req);
-    if (userId && !(await storage.userOwnsProject(req.params.id, userId))) {
+    const token = req.get('x-share-token') || null;
+    const allowed =
+      (userId && (await storage.userOwnsProject(req.params.id, userId))) ||
+      (token && (await shares.isValid(token, req.params.id)));
+    if (!allowed) {
       return res.status(403).json({ error: 'Not your project' });
     }
     const project = await storage.getProject(req.params.id);
@@ -57,6 +62,52 @@ app.get('/api/projects/:id', async (req, res) => {
   } catch (error) {
     console.error('Error getting project:', error);
     res.status(500).json({ error: 'Failed to get project' });
+  }
+});
+
+// ----- Share-token endpoints (owner-only) ------------------------------------
+
+app.post('/api/projects/:id/shares', async (req, res) => {
+  try {
+    const userId = userIdOf(req);
+    if (!userId || !(await storage.userOwnsProject(req.params.id, userId))) {
+      return res.status(403).json({ error: 'Not your project' });
+    }
+    const entry = await shares.create(req.params.id, userId);
+    res.status(201).json(entry);
+  } catch (error) {
+    console.error('Error minting share:', error);
+    res.status(500).json({ error: 'Failed to create share' });
+  }
+});
+
+app.get('/api/projects/:id/shares', async (req, res) => {
+  try {
+    const userId = userIdOf(req);
+    if (!userId || !(await storage.userOwnsProject(req.params.id, userId))) {
+      return res.status(403).json({ error: 'Not your project' });
+    }
+    const entries = await shares.listForProject(req.params.id);
+    res.json(entries);
+  } catch (error) {
+    console.error('Error listing shares:', error);
+    res.status(500).json({ error: 'Failed to list shares' });
+  }
+});
+
+app.delete('/api/shares/:token', async (req, res) => {
+  try {
+    const userId = userIdOf(req);
+    const entry = await shares.get(req.params.token);
+    if (!entry) return res.status(404).json({ error: 'Share not found' });
+    if (!userId || entry.ownerId !== userId) {
+      return res.status(403).json({ error: 'Not your share' });
+    }
+    await shares.revoke(req.params.token);
+    res.status(204).send();
+  } catch (error) {
+    console.error('Error revoking share:', error);
+    res.status(500).json({ error: 'Failed to revoke share' });
   }
 });
 
@@ -131,7 +182,7 @@ app.post('/api/projects/:id/duplicate', async (req, res) => {
 // Wrap Express in a bare http.Server so the WebSocket upgrade handler can hook
 // it. attachYWS adds the /yjs/:projectId route + LevelDB persistence.
 const server = http.createServer(app);
-attachYWS(server, storage);
+attachYWS(server, storage, shares);
 
 server.listen(PORT, () => {
   console.log(`Slides server running on http://localhost:${PORT}`);

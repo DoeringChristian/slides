@@ -133,7 +133,7 @@ function subscribeSnapshot(projectId, storage) {
 // Public attach point — call from server/index.js after http.createServer.
 // =============================================================================
 
-export function attachYWS(httpServer, storage) {
+export function attachYWS(httpServer, storage, shares) {
   const wss = new WebSocketServer({ noServer: true });
 
   wss.on('connection', (conn, req) => {
@@ -155,11 +155,15 @@ export function attachYWS(httpServer, storage) {
       return;
     }
 
-    // Owner-only auth for now. The share-link commit adds an OR-clause for
-    // valid share tokens. Legacy projects without an ownerId stay open.
+    // Auth: owner OR holder of a valid share token. Identity arrives via
+    // ?userId=…, share token via ?token=…. Legacy projects without an
+    // ownerId stay open (the entry stays unscoped until the owner saves).
     const userId = url.searchParams.get('userId');
-    if (userId && !(await storage.userOwnsProject(projectId, userId))) {
-      console.warn(`[yws] denied: ${userId} is not the owner of ${projectId}`);
+    const shareToken = url.searchParams.get('token');
+    const isOwner = userId && (await storage.userOwnsProject(projectId, userId));
+    const tokenOk = shareToken && shares && (await shares.isValid(shareToken, projectId));
+    if (userId && !isOwner && !tokenOk) {
+      console.warn(`[yws] denied: ${userId} has no access to ${projectId}`);
       socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
       socket.destroy();
       return;

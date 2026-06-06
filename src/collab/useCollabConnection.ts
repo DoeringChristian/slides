@@ -31,6 +31,8 @@ interface UseCollabConnectionOpts {
   serverUrl: string | null;
   /** Local user's identity — published to awareness on connect. */
   identity: Identity;
+  /** Share-token for joining via someone else's link. Owner connections pass null. */
+  shareToken?: string | null;
 }
 
 const INITIAL: CollabConnection = {
@@ -42,7 +44,7 @@ const INITIAL: CollabConnection = {
   error: null,
 };
 
-export function useCollabConnection({ projectId, serverUrl, identity }: UseCollabConnectionOpts): CollabConnection {
+export function useCollabConnection({ projectId, serverUrl, identity, shareToken }: UseCollabConnectionOpts): CollabConnection {
   const [state, setState] = useState<CollabConnection>(INITIAL);
   // Hold the active provider in a ref so the cleanup function can reach it
   // even after fast state changes.
@@ -69,9 +71,9 @@ export function useCollabConnection({ projectId, serverUrl, identity }: UseColla
       // can authorize the connection (owner-only by default; share tokens
       // added in the share-link phase).
       const wsBase = serverUrl.replace(/^http/, 'ws');
-      const provider = new WebsocketProvider(`${wsBase}/yjs`, projectId, doc, {
-        params: { userId: identity.userId },
-      });
+      const params: Record<string, string> = { userId: identity.userId };
+      if (shareToken) params.token = shareToken;
+      const provider = new WebsocketProvider(`${wsBase}/yjs`, projectId, doc, { params });
       providerRef.current = provider;
 
       // Publish the local user before the WS connects so peers see us as soon
@@ -123,7 +125,7 @@ export function useCollabConnection({ projectId, serverUrl, identity }: UseColla
       }
       setState(INITIAL);
     };
-  }, [projectId, serverUrl, identity.userId, identity.name, identity.color]);
+  }, [projectId, serverUrl, identity.userId, identity.name, identity.color, shareToken]);
 
   return state;
 }

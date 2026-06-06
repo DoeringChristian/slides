@@ -23,6 +23,7 @@ import {
 } from '../utils/storageClient';
 import { usePresentationStore } from './presentationStore';
 import { useEditorStore } from './editorStore';
+import { getJoinedProject, updateJoinedProjectMeta } from './joinedStore';
 import { createPresentation } from '../utils/slideFactory';
 
 const supportsFileSystem = isFileSystemAccessSupported();
@@ -279,21 +280,31 @@ export const useVaultStore = create<VaultStore>()((set, get) => ({
 
   openProject: async (id: string) => {
     const { vaultHandle, projects, storageMode } = get();
-    const project = projects.find((p) => p.id === id);
-    if (!project) return;
+    // Owned projects are in `projects`; joined projects come via joinedStore
+    // and carry a share token used on the GET.
+    const owned = projects.find((p) => p.id === id);
+    const joined = getJoinedProject(id);
+    if (!owned && !joined) return;
 
     set({ isLoading: true, error: null });
 
     try {
       let presentation;
 
-      if (storageMode === 'filesystem' && vaultHandle) {
-        presentation = await loadProjectFS(vaultHandle, project.filename);
+      if (storageMode === 'filesystem' && vaultHandle && owned) {
+        presentation = await loadProjectFS(vaultHandle, owned.filename);
       } else {
         const client = getStorageClient();
-        const data = await client.getProject(id);
+        const data = await client.getProject(id, joined?.token);
         if (!data) throw new Error('Project not found');
         presentation = data.presentation;
+        // Refresh the joinedStore's cached title/thumb on each open.
+        if (joined) {
+          updateJoinedProjectMeta(id, {
+            title: presentation.title,
+            thumbnailDataUrl: data.thumbnailDataUrl,
+          });
+        }
       }
 
       usePresentationStore.getState().loadPresentation(presentation);
@@ -304,7 +315,7 @@ export const useVaultStore = create<VaultStore>()((set, get) => ({
 
       set({
         activeProjectId: id,
-        currentFilename: project.filename || null,
+        currentFilename: owned?.filename || null,
       });
     } catch (error) {
       set({ error: 'Failed to open project' });
