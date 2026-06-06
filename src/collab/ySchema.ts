@@ -162,7 +162,9 @@ function elementsToYMap(elements: Record<string, SlideElement>): Y.Map<unknown> 
   return m;
 }
 
-function elementToYMap(el: SlideElement): Y.Map<unknown> {
+/** Exported: action code in presentationStore needs this to insert new elements
+ *  into the Y.Doc as full Y.Map subtrees mirroring jsonToYDoc's layout. */
+export function elementToYMap(el: SlideElement): Y.Map<unknown> {
   const m = new Y.Map<unknown>();
   // Common BaseElement scalars.
   m.set('id', el.id);
