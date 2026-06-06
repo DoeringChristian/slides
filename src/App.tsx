@@ -12,6 +12,8 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useIsMobile } from './hooks/useIsMobile';
 import { useIdentity } from './hooks/useIdentity';
 import { useCollabConnection } from './collab/useCollabConnection';
+import { useYToStoreSync } from './collab/yToStoreSync';
+import { setActiveDoc } from './collab/yDocAdapter';
 import { readStandaloneBoot, applyStandaloneBoot } from './utils/standaloneBoot';
 
 // Check if this is the audience window
@@ -57,6 +59,15 @@ function App() {
   useEffect(() => {
     if (collab.error) console.error(`[collab] ${collab.error}`);
   }, [collab.error]);
+
+  // Phase 5: register the active doc so mutating actions in presentationStore
+  // can route through Y, and run the sync hook to mirror Y updates back into
+  // Zustand.
+  useEffect(() => {
+    setActiveDoc(collab.doc);
+    return () => setActiveDoc(null);
+  }, [collab.doc]);
+  useYToStoreSync(collab.doc);
 
   // For audience mode: request presentation data from main window
   useEffect(() => {

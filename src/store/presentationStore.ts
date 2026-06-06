@@ -1,9 +1,53 @@
 import { create } from 'zustand';
 import { temporal } from 'zundo';
+import * as Y from 'yjs';
 import type { Presentation, Slide, SlideElement, ShapeElement, ImageElement, ObjectMeta, SlideTemplate, Resource } from '../types/presentation';
 import { generateId } from '../utils/idGenerator';
 import { createPresentation, createSlide, copySlideAsKeyframe, generateObjectName } from '../utils/slideFactory';
 import { resolveBindingPoint } from '../utils/connectorUtils';
+import { getActiveDoc, runInTxn } from '../collab/yDocAdapter';
+import { ROOT_KEY } from '../collab/ySchema';
+
+// Collab helpers — small adapters over the Y schema so the actions below can
+// stay close to their original shape. All `getYxxx` returns either a Y type
+// or undefined if the doc hasn't been populated yet (cold-start in flight).
+function getYRoot(doc: Y.Doc): Y.Map<unknown> {
+  return doc.getMap(ROOT_KEY);
+}
+function getYSlide(doc: Y.Doc, slideId: string): Y.Map<unknown> | undefined {
+  const slides = getYRoot(doc).get('slides') as Y.Map<Y.Map<unknown>> | undefined;
+  return slides?.get(slideId);
+}
+function getYElement(doc: Y.Doc, slideId: string, elementId: string): Y.Map<unknown> | undefined {
+  const slide = getYSlide(doc, slideId);
+  const elements = slide?.get('elements') as Y.Map<Y.Map<unknown>> | undefined;
+  return elements?.get(elementId);
+}
+/** Apply a partial `changes` object onto a Y.Map element, handling Y.Text fields. */
+function applyChangesToYElement(elMap: Y.Map<unknown>, changes: Record<string, unknown>) {
+  for (const [key, value] of Object.entries(changes)) {
+    if (value === undefined) continue;
+    const existing = elMap.get(key);
+    // TextElement.text is a Y.Text — replace contents in-place to preserve
+    // the same Y.Text instance (so concurrent typing keeps working when a
+    // Y.Text-aware editor is added in a later phase).
+    if (existing instanceof Y.Text && typeof value === 'string') {
+      existing.delete(0, existing.length);
+      existing.insert(0, value);
+      continue;
+    }
+    // Nested object that the schema stores as a Y.Map (style, transitions,
+    // background, etc.) — overwrite known scalar fields.
+    if (existing instanceof Y.Map && value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      const child = existing;
+      for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+        if (v !== undefined) child.set(k, v);
+      }
+      continue;
+    }
+    elMap.set(key, value);
+  }
+}
 
 // Helper: propagate partial changes to an element across all slides after fromSlideId
 function propagateToSubsequentSlides(
@@ -207,6 +251,22 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       updateSlideBackground: (slideId, background) => {
+        const doc = getActiveDoc();
+        if (doc) {
+          runInTxn(() => {
+            const slideMap = getYSlide(doc, slideId);
+            if (!slideMap) return;
+            // Replace the whole background Y.Map — backgrounds are discriminated
+            // unions; a partial overlay would leak stale fields from the
+            // previous variant (e.g. gradient `from`/`to` lingering after
+            // switching to a solid color).
+            const bgMap = new Y.Map<unknown>();
+            for (const [k, v] of Object.entries(background)) bgMap.set(k, v);
+            slideMap.set('background', bgMap);
+            getYRoot(doc).set('updatedAt', Date.now());
+          });
+          return;
+        }
         set((state) => {
           const slide = state.presentation.slides[slideId];
           if (!slide) return state;
@@ -224,6 +284,23 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       updateSlideTransition: (slideId, transition) => {
+        const doc = getActiveDoc();
+        if (doc) {
+          runInTxn(() => {
+            const slideMap = getYSlide(doc, slideId);
+            if (!slideMap) return;
+            const txMap = slideMap.get('transition') as Y.Map<unknown> | undefined;
+            if (txMap instanceof Y.Map) {
+              for (const [k, v] of Object.entries(transition)) txMap.set(k, v);
+            } else {
+              const fresh = new Y.Map<unknown>();
+              for (const [k, v] of Object.entries(transition)) fresh.set(k, v);
+              slideMap.set('transition', fresh);
+            }
+            getYRoot(doc).set('updatedAt', Date.now());
+          });
+          return;
+        }
         set((state) => {
           const slide = state.presentation.slides[slideId];
           if (!slide) return state;
@@ -262,6 +339,24 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       updateSlideNotes: (slideId, notes) => {
+        const doc = getActiveDoc();
+        if (doc) {
+          runInTxn(() => {
+            const slideMap = getYSlide(doc, slideId);
+            if (!slideMap) return;
+            const yText = slideMap.get('notes');
+            if (yText instanceof Y.Text) {
+              yText.delete(0, yText.length);
+              yText.insert(0, notes);
+            } else {
+              const fresh = new Y.Text();
+              if (notes) fresh.insert(0, notes);
+              slideMap.set('notes', fresh);
+            }
+            getYRoot(doc).set('updatedAt', Date.now());
+          });
+          return;
+        }
         set((state) => {
           const slide = state.presentation.slides[slideId];
           if (!slide) return state;
@@ -451,6 +546,19 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       updateElement: (slideId, elementId, changes) => {
+        const doc = getActiveDoc();
+        if (doc) {
+          runInTxn(() => {
+            const elMap = getYElement(doc, slideId, elementId);
+            if (!elMap) return;
+            applyChangesToYElement(elMap, changes as Record<string, unknown>);
+            getYRoot(doc).set('updatedAt', Date.now());
+            // Connector rebinding when bound elements move lives in the
+            // Zustand branch below for now (phase 5a). When phase 5b ports
+            // it, callers won't notice — same action signature.
+          });
+          return;
+        }
         set((state) => {
           const slide = state.presentation.slides[slideId];
           if (!slide || !slide.elements[elementId]) return state;
@@ -525,6 +633,18 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       updateElements: (slideId, updates) => {
+        const doc = getActiveDoc();
+        if (doc) {
+          runInTxn(() => {
+            for (const { elementId, changes } of updates) {
+              const elMap = getYElement(doc, slideId, elementId);
+              if (!elMap) continue;
+              applyChangesToYElement(elMap, changes as Record<string, unknown>);
+            }
+            getYRoot(doc).set('updatedAt', Date.now());
+          });
+          return;
+        }
         set((state) => {
           const slide = state.presentation.slides[slideId];
           if (!slide) return state;
@@ -1182,6 +1302,21 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       updateTitle: (title) => {
+        const doc = getActiveDoc();
+        if (doc) {
+          runInTxn(() => {
+            const root = getYRoot(doc);
+            const yText = root.get('title');
+            if (yText instanceof Y.Text) {
+              yText.delete(0, yText.length);
+              yText.insert(0, title);
+            } else {
+              root.set('title', title);
+            }
+            root.set('updatedAt', Date.now());
+          });
+          return;
+        }
         set((state) => ({
           presentation: { ...state.presentation, title, updatedAt: Date.now() },
         }));
