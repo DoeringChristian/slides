@@ -165,15 +165,18 @@ function App() {
     }
   }, [activeSlideId, slideOrder, setActiveSlide]);
 
-  // Auto-save when project is open (only when a vault project is active — not in standalone)
+  // Auto-save when project is open. Skipped in collab (server) mode — the
+  // server's snapshot debouncer takes care of writing JSON on Y updates, and
+  // we don't want each Y mirror back into Zustand to fire a REST PUT (it
+  // would 403 for share-joiners and is redundant for owners).
   useEffect(() => {
-    if (!activeProjectId || standaloneBoot) return;
+    if (!activeProjectId || standaloneBoot || storageMode === 'server') return;
 
     const unsub = usePresentationStore.subscribe(() => {
       scheduleSave();
     });
     return unsub;
-  }, [activeProjectId, scheduleSave]);
+  }, [activeProjectId, scheduleSave, storageMode]);
 
   useKeyboardShortcuts();
 

@@ -70,6 +70,14 @@ export function createStorage(dataDir) {
       return !entry.ownerId || entry.ownerId === userId;
     },
 
+    // Lookup the index entry (or null) — used by REST handlers that need to
+    // distinguish "doesn't exist yet" (allow create) from "exists but owned
+    // by someone else" (deny).
+    async getProjectMeta(id) {
+      const index = await loadIndex();
+      return index.projects[id] || null;
+    },
+
     // Get a single project with full presentation data
     async getProject(id) {
       await ensureDir();

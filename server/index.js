@@ -126,11 +126,15 @@ app.post('/api/projects', async (req, res) => {
   }
 });
 
-// Update a project. Owner-only; collaborators write via the WS path.
+// Create or update a project. The client uses PUT for both ("save" is
+// idempotent on the ID). Allow it when (a) the project doesn't exist yet
+// (any identity may claim a fresh ID), or (b) the caller owns it. Reject
+// only when there's an existing different owner.
 app.put('/api/projects/:id', async (req, res) => {
   try {
     const userId = userIdOf(req);
-    if (userId && !(await storage.userOwnsProject(req.params.id, userId))) {
+    const existing = await storage.getProjectMeta(req.params.id);
+    if (existing && existing.ownerId && userId && existing.ownerId !== userId) {
       return res.status(403).json({ error: 'Not your project' });
     }
     const { presentation, thumbnailDataUrl } = req.body;
