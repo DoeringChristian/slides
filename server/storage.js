@@ -38,6 +38,17 @@ export function createStorage(dataDir) {
     await fs.writeFile(indexPath, JSON.stringify(index, null, 2));
   }
 
+  // Serialize read-modify-write cycles on _index.json. Without this, two
+  // concurrent saveProject calls each load the same snapshot, mutate, and
+  // race on writeFile — the loser's update is lost. Single-process Promise
+  // tail is enough; the server is single-node by design.
+  let indexTail = Promise.resolve();
+  function withIndexLock(fn) {
+    const run = indexTail.then(fn, fn);
+    indexTail = run.catch(() => {});
+    return run;
+  }
+
   // Get project file path
   function getProjectPath(id) {
     return path.join(resolvedDir, `${id}.json`);
@@ -96,52 +107,60 @@ export function createStorage(dataDir) {
 
     // Save a project (create or update). ownerId is only set on first save;
     // subsequent saves preserve the existing owner so collaborators can write
-    // back without taking ownership.
+    // back without taking ownership. thumbnailDataUrl is preserved when the
+    // caller passes undefined — the Y-snapshot path in yws.js only has the
+    // presentation, not a freshly-rendered thumbnail, and we don't want to
+    // wipe a perfectly good one every 5 seconds.
     async saveProject(presentation, thumbnailDataUrl, ownerId) {
       await ensureDir();
+      return withIndexLock(async () => {
+        const id = presentation.id;
+        const projectPath = getProjectPath(id);
+        const index = await loadIndex();
+        const existing = index.projects[id];
 
-      const id = presentation.id;
-      const projectPath = getProjectPath(id);
+        const resolvedThumb =
+          thumbnailDataUrl !== undefined ? thumbnailDataUrl : existing?.thumbnailDataUrl;
 
-      const projectData = {
-        id,
-        presentation,
-        thumbnailDataUrl,
-      };
-      await fs.writeFile(projectPath, JSON.stringify(projectData, null, 2));
+        const projectData = {
+          id,
+          presentation,
+          thumbnailDataUrl: resolvedThumb,
+        };
+        await fs.writeFile(projectPath, JSON.stringify(projectData, null, 2));
 
-      const index = await loadIndex();
-      const existing = index.projects[id];
-      index.projects[id] = {
-        id,
-        title: presentation.title,
-        createdAt: presentation.createdAt,
-        updatedAt: presentation.updatedAt,
-        thumbnailDataUrl,
-        ownerId: existing?.ownerId ?? ownerId,
-      };
-      await saveIndex(index);
+        index.projects[id] = {
+          id,
+          title: presentation.title,
+          createdAt: presentation.createdAt,
+          updatedAt: presentation.updatedAt,
+          thumbnailDataUrl: resolvedThumb,
+          ownerId: existing?.ownerId ?? ownerId,
+        };
+        await saveIndex(index);
 
-      return index.projects[id];
+        return index.projects[id];
+      });
     },
 
     // Delete a project
     async deleteProject(id) {
       await ensureDir();
+      return withIndexLock(async () => {
+        const projectPath = getProjectPath(id);
 
-      const projectPath = getProjectPath(id);
+        // Delete file
+        try {
+          await fs.unlink(projectPath);
+        } catch (error) {
+          if (error.code !== 'ENOENT') throw error;
+        }
 
-      // Delete file
-      try {
-        await fs.unlink(projectPath);
-      } catch (error) {
-        if (error.code !== 'ENOENT') throw error;
-      }
-
-      // Update index
-      const index = await loadIndex();
-      delete index.projects[id];
-      await saveIndex(index);
+        // Update index
+        const index = await loadIndex();
+        delete index.projects[id];
+        await saveIndex(index);
+      });
     },
 
     // Duplicate a project. The duplicating user becomes the owner of the copy.

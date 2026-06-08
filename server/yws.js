@@ -156,14 +156,17 @@ export function attachYWS(httpServer, storage, shares) {
     }
 
     // Auth: owner OR holder of a valid share token. Identity arrives via
-    // ?userId=…, share token via ?token=…. Legacy projects without an
-    // ownerId stay open (the entry stays unscoped until the owner saves).
+    // ?userId=…, share token via ?token=…. Either credential must be valid;
+    // an anonymous (no userId, no token) connection is rejected. Legacy
+    // ownerless projects are still reachable, because userOwnsProject treats
+    // missing ownerId as "any identified user owns it" — but a userId is
+    // still required.
     const userId = url.searchParams.get('userId');
     const shareToken = url.searchParams.get('token');
     const isOwner = userId && (await storage.userOwnsProject(projectId, userId));
     const tokenOk = shareToken && shares && (await shares.isValid(shareToken, projectId));
-    if (userId && !isOwner && !tokenOk) {
-      console.warn(`[yws] denied: ${userId} has no access to ${projectId}`);
+    if (!isOwner && !tokenOk) {
+      console.warn(`[yws] denied: userId=${userId ?? '<none>'} on ${projectId}`);
       socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
       socket.destroy();
       return;

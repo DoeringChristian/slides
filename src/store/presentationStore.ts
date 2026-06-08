@@ -860,9 +860,64 @@ export const usePresentationStore = create<PresentationStore>()(
             if (!elMap) return;
             applyChangesToYElement(elMap, changes as Record<string, unknown>);
             getYRoot(doc).set('updatedAt', Date.now());
-            // Connector rebinding when bound elements move lives in the
-            // Zustand branch below for now (phase 5a). When phase 5b ports
-            // it, callers won't notice — same action signature.
+
+            // Rebind any connectors whose start/end binds to the moved element.
+            // Snapshot the slide *after* applying our change so the bound
+            // anchor reflects the new geometry, then write back the recomputed
+            // connector endpoints through Y. Mirrors the Zustand fallback
+            // below — both paths must agree or peers diverge.
+            const moved =
+              changes.x !== undefined || changes.y !== undefined ||
+              changes.width !== undefined || changes.height !== undefined ||
+              changes.rotation !== undefined;
+            if (!moved) return;
+            const slide = yDocToJsonSlideOnly(doc, slideId);
+            if (!slide) return;
+            for (const elId of slide.elementOrder) {
+              if (elId === elementId) continue;
+              const el = slide.elements[elId];
+              if (!el || el.type !== 'shape') continue;
+              const shape = el as ShapeElement;
+              if (shape.shapeType !== 'line' && shape.shapeType !== 'arrow') continue;
+
+              const pts = shape.points ?? [0, 0, shape.width, 0];
+              let newX = shape.x;
+              let newY = shape.y;
+              let newPts = [...pts];
+              let needsUpdate = false;
+
+              if (shape.startBinding?.elementId === elementId) {
+                const pt = resolveBindingPoint(shape.startBinding, slide.elements);
+                if (pt) {
+                  const endAbsX = shape.x + pts[2];
+                  const endAbsY = shape.y + pts[3];
+                  newX = pt.x;
+                  newY = pt.y;
+                  newPts = [0, 0, endAbsX - pt.x, endAbsY - pt.y];
+                  needsUpdate = true;
+                }
+              }
+              if (shape.endBinding?.elementId === elementId) {
+                const pt = resolveBindingPoint(shape.endBinding, slide.elements);
+                if (pt) {
+                  newPts = [newPts[0], newPts[1], pt.x - newX, pt.y - newY];
+                  needsUpdate = true;
+                }
+              }
+
+              if (needsUpdate) {
+                const connMap = getYElement(doc, slideId, elId);
+                if (connMap) {
+                  applyChangesToYElement(connMap, {
+                    x: newX,
+                    y: newY,
+                    points: newPts,
+                    width: Math.abs(newPts[2] - newPts[0]),
+                    height: Math.abs(newPts[3] - newPts[1]),
+                  });
+                }
+              }
+            }
           });
           return;
         }

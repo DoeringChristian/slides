@@ -154,7 +154,7 @@ app.put('/api/projects/:id', async (req, res) => {
 app.delete('/api/projects/:id', async (req, res) => {
   try {
     const userId = userIdOf(req);
-    if (userId && !(await storage.userOwnsProject(req.params.id, userId))) {
+    if (!userId || !(await storage.userOwnsProject(req.params.id, userId))) {
       return res.status(403).json({ error: 'Not your project' });
     }
     await storage.deleteProject(req.params.id);
@@ -169,7 +169,7 @@ app.delete('/api/projects/:id', async (req, res) => {
 app.post('/api/projects/:id/duplicate', async (req, res) => {
   try {
     const userId = userIdOf(req);
-    if (userId && !(await storage.userOwnsProject(req.params.id, userId))) {
+    if (!userId || !(await storage.userOwnsProject(req.params.id, userId))) {
       return res.status(403).json({ error: 'Not your project' });
     }
     const project = await storage.duplicateProject(req.params.id, userId);
