@@ -255,3 +255,61 @@ function mkScalarMap(obj: object): Y.Map<unknown> {
 function setIfDefined<T>(m: Y.Map<unknown>, key: string, value: T | undefined) {
   if (value !== undefined) m.set(key, value as unknown);
 }
+
+// =============================================================================
+// Schema-aware accessors. Action code in presentationStore uses these to walk
+// the Y tree without re-encoding the layout in every action.
+// =============================================================================
+
+export function getYRoot(doc: Y.Doc): Y.Map<unknown> {
+  return doc.getMap(ROOT_KEY);
+}
+
+export function getYSlide(doc: Y.Doc, slideId: string): Y.Map<unknown> | undefined {
+  const slides = getYRoot(doc).get('slides') as Y.Map<Y.Map<unknown>> | undefined;
+  return slides?.get(slideId);
+}
+
+export function getYElement(doc: Y.Doc, slideId: string, elementId: string): Y.Map<unknown> | undefined {
+  const slide = getYSlide(doc, slideId);
+  const elements = slide?.get('elements') as Y.Map<Y.Map<unknown>> | undefined;
+  return elements?.get(elementId);
+}
+
+/** Snapshot a single slide back to plain JSON. Used by actions that need to
+ *  feed a Y slide into JS helpers (slide factories, connector resolution). */
+export function yDocToJsonSlideOnly(doc: Y.Doc, slideId: string): Slide | null {
+  const slide = getYSlide(doc, slideId);
+  return slide ? (slide.toJSON() as Slide) : null;
+}
+
+/** Replace a Y.Array's contents with `newItems` using a delete+insert pair so
+ *  the change reads as a single Y operation downstream. */
+export function yArrayReplaceAll<T>(arr: Y.Array<T>, newItems: readonly T[]) {
+  if (arr.length > 0) arr.delete(0, arr.length);
+  if (newItems.length > 0) arr.insert(0, [...newItems]);
+}
+
+/** Apply a partial `changes` object onto a Y.Map element, handling the schema's
+ *  nested Y.Text (TextElement.text) and Y.Map (style, transitions, background)
+ *  fields. Schema-aware — lives here so adding a new nested Y type only needs
+ *  one update. */
+export function applyChangesToYElement(elMap: Y.Map<unknown>, changes: Record<string, unknown>) {
+  for (const [key, value] of Object.entries(changes)) {
+    if (value === undefined) continue;
+    const existing = elMap.get(key);
+    if (existing instanceof Y.Text && typeof value === 'string') {
+      existing.delete(0, existing.length);
+      existing.insert(0, value);
+      continue;
+    }
+    if (existing instanceof Y.Map && value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      const child = existing;
+      for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+        if (v !== undefined) child.set(k, v);
+      }
+      continue;
+    }
+    elMap.set(key, value);
+  }
+}

@@ -6,32 +6,20 @@ import { generateId } from '../utils/idGenerator';
 import { createPresentation, createSlide, copySlideAsKeyframe, generateObjectName } from '../utils/slideFactory';
 import { resolveBindingPoint } from '../utils/connectorUtils';
 import { getActiveDoc, runInTxn } from '../collab/yDocAdapter';
-import { ROOT_KEY, elementToYMap, slideToYMap } from '../collab/ySchema';
+import {
+  elementToYMap,
+  slideToYMap,
+  getYRoot,
+  getYSlide,
+  getYElement,
+  yDocToJsonSlideOnly,
+  yArrayReplaceAll,
+  applyChangesToYElement,
+} from '../collab/ySchema';
 
 // Collab helpers — small adapters over the Y schema so the actions below can
 // stay close to their original shape. All `getYxxx` returns either a Y type
 // or undefined if the doc hasn't been populated yet (cold-start in flight).
-function getYRoot(doc: Y.Doc): Y.Map<unknown> {
-  return doc.getMap(ROOT_KEY);
-}
-function getYSlide(doc: Y.Doc, slideId: string): Y.Map<unknown> | undefined {
-  const slides = getYRoot(doc).get('slides') as Y.Map<Y.Map<unknown>> | undefined;
-  return slides?.get(slideId);
-}
-function getYElement(doc: Y.Doc, slideId: string, elementId: string): Y.Map<unknown> | undefined {
-  const slide = getYSlide(doc, slideId);
-  const elements = slide?.get('elements') as Y.Map<Y.Map<unknown>> | undefined;
-  return elements?.get(elementId);
-}
-/** Snapshot a single slide back to plain JSON. The existing slide factories
- *  (createSlide, copySlideAsKeyframe) operate on JS objects; we materialise a
- *  source slide from Y so they can build a fresh one, then turn the result
- *  back into a Y.Map via slideToYMap. */
-function yDocToJsonSlideOnly(doc: Y.Doc, slideId: string): Slide | null {
-  const slide = getYSlide(doc, slideId);
-  return slide ? (slide.toJSON() as Slide) : null;
-}
-
 /** Y.Array reorder helpers. Y.Array doesn't have a `set`-style replace; we
  *  delete and re-insert inside the surrounding transaction. */
 function moveInYArray(doc: Y.Doc, slideId: string, elementId: string, mode: 1 | -1 | 'front' | 'back') {
@@ -49,13 +37,6 @@ function moveInYArray(doc: Y.Doc, slideId: string, elementId: string, mode: 1 | 
   order.delete(idx, 1);
   order.insert(newIdx, [elementId]);
   getYRoot(doc).set('updatedAt', Date.now());
-}
-
-/** Replace a Y.Array's contents with `newItems` using a delete+insert pair so
- *  the change reads as a single Y operation downstream. */
-function yArrayReplaceAll<T>(arr: Y.Array<T>, newItems: readonly T[]) {
-  if (arr.length > 0) arr.delete(0, arr.length);
-  if (newItems.length > 0) arr.insert(0, [...newItems]);
 }
 
 /** Walk slideOrder forward from `fromSlideId` and apply `changes` to the same
@@ -96,32 +77,6 @@ function resourceReferencedInY(doc: Y.Doc, resourceId: string): boolean {
     }
   }
   return false;
-}
-
-/** Apply a partial `changes` object onto a Y.Map element, handling Y.Text fields. */
-function applyChangesToYElement(elMap: Y.Map<unknown>, changes: Record<string, unknown>) {
-  for (const [key, value] of Object.entries(changes)) {
-    if (value === undefined) continue;
-    const existing = elMap.get(key);
-    // TextElement.text is a Y.Text — replace contents in-place to preserve
-    // the same Y.Text instance (so concurrent typing keeps working when a
-    // Y.Text-aware editor is added in a later phase).
-    if (existing instanceof Y.Text && typeof value === 'string') {
-      existing.delete(0, existing.length);
-      existing.insert(0, value);
-      continue;
-    }
-    // Nested object that the schema stores as a Y.Map (style, transitions,
-    // background, etc.) — overwrite known scalar fields.
-    if (existing instanceof Y.Map && value !== null && typeof value === 'object' && !Array.isArray(value)) {
-      const child = existing;
-      for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-        if (v !== undefined) child.set(k, v);
-      }
-      continue;
-    }
-    elMap.set(key, value);
-  }
 }
 
 // Helper: propagate partial changes to an element across all slides after fromSlideId

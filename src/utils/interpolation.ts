@@ -1,4 +1,5 @@
 import type { SlideElement, TextElement, ShapeElement, ImageElement, EasingType } from '../types/presentation';
+import { clamp } from './geometry';
 
 export function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
@@ -44,10 +45,6 @@ function lerpAngleEased(a: number, b: number, t: number, easing: EasingType | un
 // Color lerp with easing applied
 function lerpColorEased(a: string, b: string, t: number, easing: EasingType | undefined): string {
   return lerpColor(a, b, applyEasing(t, easing));
-}
-
-function clamp(v: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, v));
 }
 
 function parseHex(hex: string): [number, number, number] {
