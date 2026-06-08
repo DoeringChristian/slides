@@ -3,6 +3,7 @@ import { X, ChevronLeft, ChevronRight, RotateCcw, Monitor, Hash } from 'lucide-r
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { usePresenterMode } from '../../hooks/usePresenterMode';
+import { useSlideAnimation } from '../../hooks/useSlideAnimation';
 import { SlideRenderer } from './presenterUtils';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 import type { Slide, Resource } from '../../types/presentation';
@@ -81,12 +82,8 @@ export const PresenterControlPanel: React.FC = () => {
   const slides = usePresentationStore((s) => s.presentation.slides);
   const resources = usePresentationStore((s) => s.presentation.resources);
 
-  const [isAnimating, setIsAnimating] = useState(false);
   const [autoAdvanceEnabled, setAutoAdvanceEnabled] = useState(true);
   const [, setTick] = useState(0); // For timer updates
-  const rafRef = useRef<number>(0);
-  const startTimeRef = useRef(0);
-  const targetIndexRef = useRef(0);
 
   // Update timer every second
   useEffect(() => {
@@ -110,32 +107,18 @@ export const PresenterControlPanel: React.FC = () => {
   const nextSlideIndex = visibleIndices[visibleIndices.indexOf(presentingSlideIndex) + 1];
   const nextSlide = nextSlideIndex !== undefined ? slides[slideOrder[nextSlideIndex]] : null;
 
+  const { isAnimating, start: startWithIndices } = useSlideAnimation({
+    getDuration: (target) => slides[slideOrder[target]]?.transition.duration || 300,
+    onFrame: (t, target) => sendAnimationState(true, t, target),
+    onComplete: (target) => {
+      goToSlide(target);
+      sendAnimationState(false, 1, target);
+    },
+  });
+
   const startAnimation = useCallback((targetIdx: number) => {
-    if (isAnimating) return;
-    const targetSlide = slides[slideOrder[targetIdx]];
-    const duration = targetSlide?.transition.duration || 300;
-
-    targetIndexRef.current = targetIdx;
-    setIsAnimating(true);
-    startTimeRef.current = performance.now();
-
-    const animate = (now: number) => {
-      const elapsed = now - startTimeRef.current;
-      const t = Math.min(elapsed / duration, 1);
-
-      sendAnimationState(true, t, targetIdx);
-
-      if (t < 1) {
-        rafRef.current = requestAnimationFrame(animate);
-      } else {
-        setIsAnimating(false);
-        goToSlide(targetIdx);
-        sendAnimationState(false, 1, targetIdx);
-      }
-    };
-
-    rafRef.current = requestAnimationFrame(animate);
-  }, [isAnimating, slides, slideOrder, goToSlide, sendAnimationState]);
+    startWithIndices(targetIdx, presentingSlideIndex);
+  }, [startWithIndices, presentingSlideIndex]);
 
   const goNext = useCallback(() => {
     if (isAnimating) return;
@@ -238,13 +221,6 @@ export const PresenterControlPanel: React.FC = () => {
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   }, [isPresenterMode, goNext, goPrev, exitPresenterMode, goToSlide, isAnimating, visibleIndices]);
-
-  // Cleanup RAF on unmount
-  useEffect(() => {
-    return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    };
-  }, []);
 
   // Compute scales based on available space
   const slidesAreaRef = useRef<HTMLDivElement>(null);

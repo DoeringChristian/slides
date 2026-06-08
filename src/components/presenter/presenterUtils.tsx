@@ -3,6 +3,7 @@ import { Play, Pause } from 'lucide-react';
 import { RenderShape, RenderImage } from '../svg/ElementRenderer';
 import { SVGTextContent } from '../svg/SVGTextContent';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
+import { interpolateWithVisibility, lerpColor } from '../../utils/interpolation';
 import type { SlideElement, TextElement, ShapeElement, ImageElement, Slide, Resource } from '../../types/presentation';
 import type { CrossfadeSource, TextDissolveSource } from '../../utils/interpolation';
 
@@ -12,6 +13,43 @@ type ImageElementWithDissolve = ImageElement & { _dissolveSource?: CrossfadeSour
 // Get slide background color
 export function getSlideBackground(slide: Slide): string {
   return slide.background.type === 'solid' ? slide.background.color : '#ffffff';
+}
+
+/** Produce the (bgColor, renderedElements) pair for one frame — either a steady
+ *  slide or the in-flight interpolation between two. PresenterView and
+ *  AudienceView both feed slides through this so transitions, z-order merging,
+ *  and dissolve behavior stay identical across editor + remote views. */
+export function composeSlideFrame(args: {
+  slideA: Slide;
+  slideB: Slide | null;
+  isForward: boolean;
+  animProgress: number;
+  isAnimating: boolean;
+}): { renderedElements: SlideElement[]; bgColor: string } {
+  const { slideA, slideB, isForward, animProgress, isAnimating } = args;
+
+  if (!isAnimating) {
+    return {
+      bgColor: getSlideBackground(slideA),
+      renderedElements: slideA.elementOrder
+        .map((id) => slideA.elements[id])
+        .filter((el): el is SlideElement => Boolean(el)),
+    };
+  }
+
+  const bgA = getSlideBackground(slideA);
+  const bgB = slideB ? getSlideBackground(slideB) : bgA;
+  const bgColor = lerpColor(bgA, bgB, animProgress);
+
+  const orderedIds = mergeElementOrders(slideA, slideB, isForward);
+  const renderedElements: SlideElement[] = [];
+  for (const id of orderedIds) {
+    const elA = slideA.elements[id];
+    const elB = slideB?.elements[id];
+    const interpolated = interpolateWithVisibility(elA, elB, animProgress, isForward);
+    if (interpolated) renderedElements.push(interpolated);
+  }
+  return { renderedElements, bgColor };
 }
 
 // Merge element orders from two slides for animation

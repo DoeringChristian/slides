@@ -1,10 +1,9 @@
 import React, { useEffect, useCallback, useRef, useState, useMemo } from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
+import { useSlideAnimation } from '../../hooks/useSlideAnimation';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
-import { interpolateWithVisibility, lerpColor } from '../../utils/interpolation';
-import { getSlideBackground, mergeElementOrders, renderPresenterElement } from './presenterUtils';
-import type { SlideElement } from '../../types/presentation';
+import { composeSlideFrame, renderPresenterElement } from './presenterUtils';
 
 export const PresenterView: React.FC = () => {
   const isPresenting = useEditorStore((s) => s.isPresenting);
@@ -22,16 +21,12 @@ export const PresenterView: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
 
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [isAnimating, setIsAnimating] = useState(false);
   const [animProgress, setAnimProgress] = useState(0);
   const [autoAdvanceEnabled, setAutoAdvanceEnabled] = useState(true);
   // Standalone modes auto-play on page load, but browsers refuse requestFullscreen
   // without a user gesture. Until the user's first interaction, swallow advance
   // keys/clicks and use that gesture to enter fullscreen instead.
   const [hasBootstrapped, setHasBootstrapped] = useState(standaloneMode === 'off');
-  const targetIndexRef = useRef(0);
-  const rafRef = useRef<number>(0);
-  const startTimeRef = useRef(0);
 
   const totalSlides = slideOrder.length;
 
@@ -46,44 +41,24 @@ export const PresenterView: React.FC = () => {
     setCurrentIndex(presentingSlideIndex);
   }, [presentingSlideIndex]);
 
+  // When going forward, the target slide's transition drives the duration.
+  // When going backward, we're reversing the current slide's entry — use its.
+  const { isAnimating, targetIndexRef, start: startWithIndices, cancel: cancelAnimation } = useSlideAnimation({
+    getDuration: (target, current) => {
+      const transitionSlide = target > current ? slides[slideOrder[target]] : slides[slideOrder[current]];
+      return transitionSlide?.transition.duration || 300;
+    },
+    onFrame: (t) => setAnimProgress(t),
+    onComplete: (target) => {
+      setCurrentIndex(target);
+      setPresentingSlideIndex(target);
+      setAnimProgress(0);
+    },
+  });
+
   const startAnimation = useCallback((targetIdx: number) => {
-    if (isAnimating) return;
-    // When going forward, use the target slide's transition duration.
-    // When going backward, use the current slide's duration (we're reversing its entry).
-    const goingForward = targetIdx > currentIndex;
-    const transitionSlide = goingForward ? slides[slideOrder[targetIdx]] : slides[slideOrder[currentIndex]];
-    const duration = transitionSlide?.transition.duration || 300;
-
-    targetIndexRef.current = targetIdx;
-    setIsAnimating(true);
-    setAnimProgress(0);
-    startTimeRef.current = performance.now();
-
-    const animate = (now: number) => {
-      const elapsed = now - startTimeRef.current;
-      const t = Math.min(elapsed / duration, 1);
-      setAnimProgress(t);
-
-      if (t < 1) {
-        rafRef.current = requestAnimationFrame(animate);
-      } else {
-        // Animation complete
-        setCurrentIndex(targetIndexRef.current);
-        setPresentingSlideIndex(targetIndexRef.current);
-        setIsAnimating(false);
-        setAnimProgress(0);
-      }
-    };
-
-    rafRef.current = requestAnimationFrame(animate);
-  }, [isAnimating, slides, slideOrder, setPresentingSlideIndex]);
-
-  // Cleanup RAF on unmount
-  useEffect(() => {
-    return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    };
-  }, []);
+    startWithIndices(targetIdx, currentIndex);
+  }, [startWithIndices, currentIndex]);
 
   // Auto-advance timer
   const autoAdvanceTimerRef = useRef<number | null>(null);
@@ -144,8 +119,7 @@ export const PresenterView: React.FC = () => {
   }, [currentIndex, visibleIndices, isAnimating, startAnimation]);
 
   const exitPresentation = useCallback(() => {
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    setIsAnimating(false);
+    cancelAnimation();
     if (document.fullscreenElement) {
       document.exitFullscreen().catch(() => {});
     }
@@ -155,7 +129,7 @@ export const PresenterView: React.FC = () => {
       return;
     }
     setPresenting(false);
-  }, [setPresenting, standaloneMode, standaloneEditorOrigin]);
+  }, [setPresenting, standaloneMode, standaloneEditorOrigin, cancelAnimation]);
 
   useEffect(() => {
     if (isPresenting && containerRef.current) {
@@ -252,38 +226,14 @@ export const PresenterView: React.FC = () => {
   const stageW = SLIDE_WIDTH * scale;
   const stageH = SLIDE_HEIGHT * scale;
 
-  // Compute elements to render
-  let renderedElements: SlideElement[];
-  let bgColor: string;
-
-  if (isAnimating) {
-    const targetIndex = targetIndexRef.current;
-    const slideA = currentSlide;
-    const slideB = slides[slideOrder[targetIndex]] || null;
-    const isForward = targetIndex > currentIndex;
-
-    // Interpolate background
-    const bgA = getSlideBackground(slideA);
-    const bgB = slideB ? getSlideBackground(slideB) : bgA;
-    bgColor = lerpColor(bgA, bgB, animProgress);
-
-    // Interpolate each element, preserving correct z-order based on direction
-    const orderedIds = mergeElementOrders(slideA, slideB, isForward);
-    renderedElements = [];
-    for (const id of orderedIds) {
-      const elA = slideA.elements[id];
-      const elB = slideB?.elements[id];
-      const interpolated = interpolateWithVisibility(elA, elB, animProgress, isForward);
-      if (interpolated) {
-        renderedElements.push(interpolated);
-      }
-    }
-  } else {
-    bgColor = getSlideBackground(currentSlide);
-    renderedElements = currentSlide.elementOrder
-      .map((id) => currentSlide.elements[id])
-      .filter(Boolean);
-  }
+  const targetIdx = targetIndexRef.current;
+  const { renderedElements, bgColor } = composeSlideFrame({
+    slideA: currentSlide,
+    slideB: isAnimating ? slides[slideOrder[targetIdx]] || null : null,
+    isForward: targetIdx > currentIndex,
+    animProgress,
+    isAnimating,
+  });
 
   return (
     <div ref={containerRef} className="fixed inset-0 bg-black z-[9999] flex items-center justify-center cursor-none"

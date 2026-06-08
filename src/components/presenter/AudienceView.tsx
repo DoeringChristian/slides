@@ -2,9 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useAudienceReceiver } from '../../hooks/usePresenterMode';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
-import { interpolateWithVisibility, lerpColor } from '../../utils/interpolation';
-import { getSlideBackground, mergeElementOrders, renderPresenterElement } from './presenterUtils';
-import type { SlideElement } from '../../types/presentation';
+import { composeSlideFrame, renderPresenterElement } from './presenterUtils';
 
 export const AudienceView: React.FC = () => {
   const { slideIndex, isAnimating, animProgress, targetIndex, shouldExit, videoCommand, showSlideNumbers } = useAudienceReceiver();
@@ -79,36 +77,14 @@ export const AudienceView: React.FC = () => {
   const stageW = SLIDE_WIDTH * scale;
   const stageH = SLIDE_HEIGHT * scale;
 
-  // Compute elements to render
-  let renderedElements: SlideElement[];
-  let bgColor: string;
-
-  if (isAnimating && targetIndex !== slideIndex) {
-    const slideA = currentSlide;
-    const slideB = slides[slideOrder[targetIndex]] || null;
-    const isForward = targetIndex > slideIndex;
-
-    const bgA = getSlideBackground(slideA);
-    const bgB = slideB ? getSlideBackground(slideB) : bgA;
-    bgColor = lerpColor(bgA, bgB, animProgress);
-
-    // Interpolate each element, preserving correct z-order based on direction
-    const orderedIds = mergeElementOrders(slideA, slideB, isForward);
-    renderedElements = [];
-    for (const id of orderedIds) {
-      const elA = slideA.elements[id];
-      const elB = slideB?.elements[id];
-      const interpolated = interpolateWithVisibility(elA, elB, animProgress, isForward);
-      if (interpolated) {
-        renderedElements.push(interpolated);
-      }
-    }
-  } else {
-    bgColor = getSlideBackground(currentSlide);
-    renderedElements = currentSlide.elementOrder
-      .map((id) => currentSlide.elements[id])
-      .filter(Boolean);
-  }
+  const animatingBetweenSlides = isAnimating && targetIndex !== slideIndex;
+  const { renderedElements, bgColor } = composeSlideFrame({
+    slideA: currentSlide,
+    slideB: animatingBetweenSlides ? slides[slideOrder[targetIndex]] || null : null,
+    isForward: targetIndex > slideIndex,
+    animProgress,
+    isAnimating: animatingBetweenSlides,
+  });
 
   return (
     <div ref={containerRef} className="fixed inset-0 bg-black flex items-center justify-center cursor-none">
