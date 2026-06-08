@@ -22,9 +22,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Node.js
+        # Node 22 ships npm 10.9+, which correctly walks the nested
+        # node_modules/tsx/node_modules/esbuild@0.28 entry alongside the
+        # hoisted node_modules/esbuild@0.21 that vite uses. Node 20's
+        # bundled npm 10.8 fails the lockfile-sync check on that layout.
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies
