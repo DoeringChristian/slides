@@ -27,6 +27,13 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
+      - name: Pin npm
+        # The npm bundled with the runner's default Node 22 build is older
+        # than the npm that wrote this lockfile and rejects the platform-
+        # gated optionalDependencies entries for tsx's nested esbuild
+        # (EBADPLATFORM). 11.x handles them correctly.
+        run: npm install -g npm@11
+
       - name: Install dependencies
         run: npm ci
 
