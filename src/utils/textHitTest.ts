@@ -100,25 +100,31 @@ export function measureBlockHeight(
   lineHeight: number,
   maxWidth: number
 ): number {
+  // Match the steady SVG and edit overlay metrics: same font (InterEdit),
+  // line-height 1 + per-line padding-bottom = (0.8 + 0.4 * styleLineHeight - 1).
+  // Using anything else here gives the wrong per-block height when blocks
+  // wrap or contain headings, and the click-to-cursor mapping snaps to the
+  // wrong line.
+  const totalLineFactor = 0.8 + 0.4 * lineHeight; // matches renderer
   const container = document.createElement('div');
   container.style.cssText = `
     position: absolute;
     visibility: hidden;
     width: ${maxWidth}px;
     font-size: ${fontSize}px;
-    font-family: ${fontFamily};
+    font-family: 'InterEdit', ${fontFamily};
     font-weight: ${fontWeight};
-    line-height: ${lineHeight};
+    line-height: 1;
     white-space: pre-wrap;
     word-break: break-word;
     margin: 0;
-    padding: 0;
+    padding: 0 0 ${fontSize * Math.max(0, totalLineFactor - 1)}px 0;
   `;
   container.textContent = text || '\u00A0'; // Use non-breaking space for empty lines
   document.body.appendChild(container);
   const height = container.getBoundingClientRect().height;
   document.body.removeChild(container);
-  return Math.max(height, fontSize * lineHeight); // Ensure minimum height
+  return Math.max(height, fontSize * totalLineFactor); // Ensure minimum height
 }
 
 /**
@@ -245,16 +251,18 @@ export function calculateCursorFromClick(
   const clickX = clickPos.x - padding;
   const clickYInBlock = clickPos.y - clickedLine.y;
 
-  // Create a temporary element to measure character positions
+  // Create a temporary element to measure character positions. Use the same
+  // font + line-height as the actual renderers (steady SVG and edit overlay)
+  // so the per-character X positions match what the user sees.
   const measureContainer = document.createElement('div');
   measureContainer.style.cssText = `
     position: absolute;
     visibility: hidden;
     width: ${contentWidth}px;
     font-size: ${clickedBlockInfo.fontSize}px;
-    font-family: ${fontFamily};
+    font-family: 'InterEdit', ${fontFamily};
     font-weight: ${clickedBlockInfo.isBold ? 'bold' : (fontWeight || 'normal')};
-    line-height: ${lineHeightMultiplier};
+    line-height: 1;
     white-space: pre-wrap;
     word-break: break-word;
     text-align: ${align};
