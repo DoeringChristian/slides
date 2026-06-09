@@ -1,9 +1,10 @@
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback, useState } from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useActiveSlide } from '../../store/selectors';
 import { TEXT_BOX_PADDING, CANVAS_PADDING } from '../../utils/constants';
 import { calculateCursorFromClick } from '../../utils/textHitTest';
+import { parseInlineSegments } from './CustomMarkdownRenderer';
 import type { TextElement } from '../../types/presentation';
 
 interface Props {
@@ -23,6 +24,9 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
   const mountTimeRef = useRef(Date.now());
   const editingTextIdRef = useRef<string | null>(null);
   const activeSlideIdRef = useRef<string>(activeSlideId);
+  // Which line the cursor is on; that line renders raw, others render with
+  // markdown formatting applied. -1 = no line is being edited yet (initial).
+  const [cursorLineIdx, setCursorLineIdx] = useState<number>(-1);
 
   // Keep activeSlideId ref in sync
   activeSlideIdRef.current = activeSlideId;
@@ -63,19 +67,45 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     return { text: line, type: 'normal', fontSizeMultiplier: 1 };
   }, []);
 
-  // Get text from editor
+  // Map an absolute character offset within the multi-line source text to its
+  // line index. Used to drive cursorLineIdx for the formatted-non-cursor-line
+  // rendering.
+  const lineFromOffset = useCallback((text: string, offset: number): number => {
+    const upto = text.slice(0, offset);
+    return upto.split('\n').length - 1;
+  }, []);
+
+  // Mirror cursorLineIdx into a ref so input/keydown/paste callbacks can read
+  // it without needing to re-create on every state change.
+  const cursorLineIdxRef = useRef(cursorLineIdx);
+  cursorLineIdxRef.current = cursorLineIdx;
+
+  // Determine the cursor line from the source text at the current DOM
+  // selection offset. Used at mount-time before the editor is wired up — we
+  // can't call getCursorPosition() until the DOM is constructed.
+  const getCursorPositionInText = useCallback((text: string): number => {
+    // First-mount fallback: cursor at end of text unless click position is
+    // available (handled by the focus effect below).
+    return text.length;
+  }, []);
+
+  // Read source text from the editor. Each line div holds its raw markdown
+  // in `data-source` so reformatted lines (which strip markup chars from the
+  // visible DOM) still round-trip correctly.
   const getTextFromEditor = useCallback((): string => {
     if (!editorRef.current) return '';
 
-    const lines: string[] = [];
     const divs = editorRef.current.querySelectorAll('div[data-line]');
-
     if (divs.length === 0) {
       return editorRef.current.textContent || '';
     }
 
+    const lines: string[] = [];
     divs.forEach((div) => {
-      if (div.querySelector('br') && div.childNodes.length === 1) {
+      const raw = div.getAttribute('data-source');
+      if (raw !== null) {
+        lines.push(raw);
+      } else if (div.querySelector('br') && div.childNodes.length === 1) {
         lines.push('');
       } else {
         lines.push(div.textContent || '');
@@ -85,29 +115,79 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     return lines.join('\n');
   }, []);
 
-  // Render text as formatted HTML
-  const renderText = useCallback((plainText: string, style: TextElement['style']) => {
+  const escapeHtml = (s: string): string =>
+    s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+  // Render one inline segment of a non-cursor (formatted) line as HTML. Bold,
+  // italic, strikethrough, underline get their styled span. LaTeX stays raw
+  // per the user's spec ("not regarding the latex formula"). Links render as
+  // their display text with link colour but no underline (so the visible
+  // result matches the steady SVG render).
+  const renderFormattedSegment = useCallback((content: string): string => {
+    const segs = parseInlineSegments(content, 0);
+    return segs.map((s) => {
+      if (s.type === 'formatted') {
+        const styleParts: string[] = [];
+        if (s.bold) styleParts.push('font-weight:bold');
+        if (s.italic) styleParts.push('font-style:italic');
+        if (s.underline && s.strikethrough) styleParts.push('text-decoration:underline line-through');
+        else if (s.underline) styleParts.push('text-decoration:underline');
+        else if (s.strikethrough) styleParts.push('text-decoration:line-through');
+        return `<span style="${styleParts.join(';')}">${escapeHtml(s.displayContent)}</span>`;
+      }
+      if (s.type === 'link') {
+        return `<span style="color:#2563eb">${escapeHtml(s.displayContent)}</span>`;
+      }
+      // 'latex' segments and plain 'text' both render raw (no KaTeX in edit).
+      return escapeHtml(s.displayContent);
+    }).join('');
+  }, []);
+
+  // Render text as HTML. Non-cursor lines get markdown formatting applied so
+  // they look (almost) like the rendered output; the cursor line stays raw so
+  // the user can see and edit the markup characters. Each line div carries
+  // `data-source` with its raw line content for round-tripping.
+  const renderText = useCallback((plainText: string, style: TextElement['style'], cursorLine: number) => {
     if (!editorRef.current) return;
 
     const baseFontSize = style.fontSize * zoom;
     const lines = plainText.split('\n');
+    const lineHeight = style.lineHeight || 1.2;
+
     const html = lines.map((line, index) => {
-      const lineInfo = parseLine(line);
-      const fontSize = baseFontSize * lineInfo.fontSizeMultiplier;
-      const fontWeight = lineInfo.type.startsWith('h') ? 'bold' : 'inherit';
+      const info = parseLine(line);
+      const fontSize = baseFontSize * info.fontSizeMultiplier;
+      const isHeading = info.type.startsWith('h');
+      const fontWeight = isHeading ? 'bold' : 'inherit';
+      const minHeight = fontSize * lineHeight;
+      const sourceAttr = ` data-source="${escapeHtml(line)}"`;
+      const styleAttr = `margin:0;padding:0;font-size:${fontSize}px;font-weight:${fontWeight};line-height:${lineHeight};min-height:${minHeight}px;`;
 
-      const escapedLine = line
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
+      // Cursor line (or no-cursor-line preview state) — render raw.
+      if (index === cursorLine || cursorLine < 0) {
+        const escaped = escapeHtml(line);
+        return `<div data-line="${index}"${sourceAttr} style="${styleAttr}">${escaped || '<br>'}</div>`;
+      }
 
-      return `<div data-line="${index}" style="margin: 0; padding: 0; font-size: ${fontSize}px; font-weight: ${fontWeight}; line-height: ${style.lineHeight || 1.2}; min-height: ${fontSize * (style.lineHeight || 1.2)}px;">${escapedLine || '<br>'}</div>`;
+      // Non-cursor line — render with inline markdown formatting applied.
+      // For headings, strip the `# ` / `## ` / `### ` prefix; the font size
+      // already accounts for the heading style.
+      let body = line;
+      if (isHeading) {
+        body = body.slice(info.type === 'h1' ? 2 : info.type === 'h2' ? 3 : 4);
+      }
+      const formatted = renderFormattedSegment(body);
+      return `<div data-line="${index}"${sourceAttr} style="${styleAttr}">${formatted || '<br>'}</div>`;
     }).join('');
 
     editorRef.current.innerHTML = html;
-  }, [zoom, parseLine]);
+  }, [zoom, parseLine, renderFormattedSegment]);
 
-  // Get cursor position
+  // Translate the DOM selection to a SOURCE-text offset. Formatted (non-cursor)
+  // lines strip markup chars from the visible DOM, so textContent length
+  // doesn't equal source length. Use each line's `data-source` length for
+  // counting BETWEEN lines; within the cursor line (raw → textContent ==
+  // source) use the range's startOffset directly.
   const getCursorPosition = useCallback((): number => {
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0 || !editorRef.current) return 0;
@@ -118,26 +198,26 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
 
     for (let i = 0; i < divs.length; i++) {
       const div = divs[i];
+      const sourceLen = (div.getAttribute('data-source') ?? div.textContent ?? '').length;
       if (div.contains(range.startContainer)) {
-        const textNode = Array.from(div.childNodes).find(n => n.nodeType === Node.TEXT_NODE);
-        if (textNode && textNode === range.startContainer) {
-          offset += range.startOffset;
-        }
-        break;
+        // Cursor lives in this line. For the cursor line we render raw so the
+        // range's startOffset within its text node = source-column. For the
+        // pathological case of clicking inside a formatted line (before we
+        // re-render), fall back to clamping.
+        offset += Math.min(range.startOffset, sourceLen);
+        return offset;
       }
-      offset += (div.textContent || '').length;
-      if (i < divs.length - 1) {
-        offset += 1; // newline
-      }
+      offset += sourceLen;
+      if (i < divs.length - 1) offset += 1; // newline between lines
     }
-
     return offset;
   }, []);
 
-  // Set cursor position
+  // Inverse of getCursorPosition. Counts source lengths between lines, then
+  // clamps within the target line (which after a re-render is the cursor
+  // line, rendered raw → textContent == source).
   const setCursorPosition = useCallback((offset: number) => {
     if (!editorRef.current) return;
-
     const selection = window.getSelection();
     if (!selection) return;
 
@@ -146,45 +226,33 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
 
     for (let i = 0; i < divs.length; i++) {
       const div = divs[i];
-      const textNode = Array.from(div.childNodes).find(n => n.nodeType === Node.TEXT_NODE);
-
-      if (textNode) {
-        const nodeLength = textNode.textContent?.length || 0;
-        if (currentOffset + nodeLength >= offset) {
-          const range = document.createRange();
-          range.setStart(textNode, offset - currentOffset);
-          range.collapse(true);
-          selection.removeAllRanges();
-          selection.addRange(range);
-          return;
-        }
-        currentOffset += nodeLength;
-      } else {
-        if (currentOffset === offset) {
-          const range = document.createRange();
+      const sourceLen = (div.getAttribute('data-source') ?? div.textContent ?? '').length;
+      if (currentOffset + sourceLen >= offset) {
+        const lineOffset = offset - currentOffset;
+        const textNode = Array.from(div.childNodes).find(n => n.nodeType === Node.TEXT_NODE);
+        const range = document.createRange();
+        if (textNode) {
+          const nodeLen = textNode.textContent?.length ?? 0;
+          range.setStart(textNode, Math.min(lineOffset, nodeLen));
+        } else {
           range.setStart(div, 0);
-          range.collapse(true);
-          selection.removeAllRanges();
-          selection.addRange(range);
-          return;
         }
+        range.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        return;
       }
-
-      if (i < divs.length - 1) {
-        currentOffset += 1;
-      }
+      currentOffset += sourceLen;
+      if (i < divs.length - 1) currentOffset += 1;
     }
 
-    // Fallback: end of last div
+    // Fallback: end of last div.
     if (divs.length > 0) {
       const lastDiv = divs[divs.length - 1];
       const textNode = Array.from(lastDiv.childNodes).find(n => n.nodeType === Node.TEXT_NODE);
       const range = document.createRange();
-      if (textNode) {
-        range.setStart(textNode, textNode.textContent?.length || 0);
-      } else {
-        range.setStart(lastDiv, 0);
-      }
+      if (textNode) range.setStart(textNode, textNode.textContent?.length ?? 0);
+      else range.setStart(lastDiv, 0);
       range.collapse(true);
       selection.removeAllRanges();
       selection.addRange(range);
@@ -203,7 +271,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     const text = textElement.text || '';
     currentTextRef.current = text;
     mountTimeRef.current = Date.now();
-    renderText(text, textElement.style);
+    renderText(text, textElement.style, lineFromOffset(text, getCursorPositionInText(text)));
 
     // Focus and set cursor - use setTimeout to ensure DOM is ready
     const timer = setTimeout(() => {
@@ -245,9 +313,37 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     if (editingTextId !== prevEditingIdRef.current) return;
 
     const cursorPos = getCursorPosition();
-    renderText(currentTextRef.current, textElement.style);
+    renderText(currentTextRef.current, textElement.style, cursorLineIdxRef.current);
     setCursorPosition(cursorPos);
   }, [zoom, editingTextId, textElement, renderText, getCursorPosition, setCursorPosition]);
+
+  // Cursor-line tracking. When the selection moves between lines we re-render
+  // so the previously-cursor line becomes formatted and the new line becomes
+  // raw. Listening on `selectionchange` rather than blur/focus catches every
+  // movement (arrow keys, mouse clicks within the editor, IME ending).
+  useEffect(() => {
+    if (!editingTextId) return;
+    const handle = () => {
+      if (!editorRef.current) return;
+      const sel = window.getSelection();
+      if (!sel || sel.rangeCount === 0) return;
+      const rect = editorRef.current.contains(sel.anchorNode);
+      if (!rect) return;
+      const offset = getCursorPosition();
+      const line = lineFromOffset(currentTextRef.current, offset);
+      if (line !== cursorLineIdxRef.current) {
+        cursorLineIdxRef.current = line;
+        setCursorLineIdx(line);
+        if (textElement) {
+          renderText(currentTextRef.current, textElement.style, line);
+          // Restore cursor at the same source-text offset after the rerender.
+          setCursorPosition(offset);
+        }
+      }
+    };
+    document.addEventListener('selectionchange', handle);
+    return () => document.removeEventListener('selectionchange', handle);
+  }, [editingTextId, getCursorPosition, lineFromOffset, renderText, setCursorPosition, textElement]);
 
   // Virtual keyboard avoidance: when the keyboard appears on mobile, the
   // visual viewport shrinks. If the editor ends up beneath it, scroll it back
@@ -282,7 +378,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     const newText = getTextFromEditor();
     currentTextRef.current = newText;
 
-    renderText(newText, textElement.style);
+    renderText(newText, textElement.style, cursorLineIdxRef.current);
     setCursorPosition(cursorPos);
   }, [getTextFromEditor, renderText, getCursorPosition, setCursorPosition, textElement]);
 
@@ -323,7 +419,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
         if (contentAfterPrefix === '') {
           const newText = currentText.slice(0, currentLineStart) + currentText.slice(cursorPos);
           currentTextRef.current = newText;
-          if (textElement) renderText(newText, textElement.style);
+          if (textElement) renderText(newText, textElement.style, cursorLineIdxRef.current);
           setCursorPosition(currentLineStart);
           return;
         }
@@ -337,7 +433,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
         if (contentAfterPrefix === '') {
           const newText = currentText.slice(0, currentLineStart) + currentText.slice(cursorPos);
           currentTextRef.current = newText;
-          if (textElement) renderText(newText, textElement.style);
+          if (textElement) renderText(newText, textElement.style, cursorLineIdxRef.current);
           setCursorPosition(currentLineStart);
           return;
         }
@@ -349,7 +445,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
       const newText = currentText.slice(0, cursorPos) + insertText + currentText.slice(cursorPos);
       currentTextRef.current = newText;
 
-      if (textElement) renderText(newText, textElement.style);
+      if (textElement) renderText(newText, textElement.style, cursorLineIdxRef.current);
       setCursorPosition(cursorPos + newCursorOffset);
       return;
     }
@@ -375,7 +471,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     const currentText = currentTextRef.current;
     const newText = currentText.slice(0, cursorPos) + pastedText + currentText.slice(cursorPos);
     currentTextRef.current = newText;
-    renderText(newText, textElement.style);
+    renderText(newText, textElement.style, cursorLineIdxRef.current);
     setCursorPosition(cursorPos + pastedText.length);
   }, [getCursorPosition, renderText, setCursorPosition, textElement]);
 
