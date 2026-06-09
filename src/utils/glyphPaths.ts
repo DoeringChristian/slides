@@ -29,10 +29,15 @@ type Weight = 'normal' | 'bold';
 type Style = 'normal' | 'italic';
 
 function resolveFontUrl(weight: Weight, style: Style): string {
-  if (weight === 'bold' && style === 'italic') return '/fonts/Inter-BoldItalic.ttf';
-  if (weight === 'bold') return '/fonts/Inter-Bold.ttf';
-  if (style === 'italic') return '/fonts/Inter-Italic.ttf';
-  return '/fonts/Inter-Regular.ttf';
+  // Vite rewrites import.meta.env.BASE_URL to the deploy base path. In dev
+  // this is "/", on GitHub Pages it's "/slides/". Without the prefix the
+  // fetch 404s in production and opentype rejects, falling back to the HTML
+  // renderer and losing all path-based animations.
+  const base = import.meta.env.BASE_URL;
+  if (weight === 'bold' && style === 'italic') return `${base}fonts/Inter-BoldItalic.ttf`;
+  if (weight === 'bold') return `${base}fonts/Inter-Bold.ttf`;
+  if (style === 'italic') return `${base}fonts/Inter-Italic.ttf`;
+  return `${base}fonts/Inter-Regular.ttf`;
 }
 
 const fontCache = new Map<string, Promise<Font>>();
