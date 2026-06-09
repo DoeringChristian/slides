@@ -16,9 +16,18 @@ function applyEasing(t: number, easing: EasingType | undefined): number {
     case 'const': return t < 0.5 ? 0 : 1;  // Snap at midpoint
     case 'ease': return easeInOutCubic(t);
     case 'dissolve': return t;  // Handled separately for opacity
+    case 'write': return t;     // Handled in interpolateWithVisibility / text branch
     case 'linear':
     default: return t;
   }
+}
+
+// Per-glyph stroke-draw animation. Attached to interpolated elements when
+// transitions.visibility or transitions.content selects 'write'. The renderer
+// looks for `_writeFx` and switches to per-path stroke rendering.
+export interface WriteEffect {
+  t: number;                  // 0..1 progress
+  direction: 'in' | 'out';    // 'in' = draw on, 'out' = erase
 }
 
 // Lerp with easing applied
@@ -223,7 +232,34 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
   if (a.type === 'text' && b.type === 'text') {
     const ta = a as TextElement;
     const tb = b as TextElement;
-    const textResult = interpolateText(ta.text, tb.text, t, tr.content ?? 'const');
+    const contentEasing = tr.content ?? 'const';
+
+    // Write for content changes: at t=0 the source text is still shown
+    // (that's the previous frame); from t=0+ the source snaps off and the
+    // target writes on across the full duration. No unwrite phase — the user
+    // asked for instant clear + re-write.
+    if (contentEasing === 'write' && ta.text !== tb.text) {
+      return {
+        ...base,
+        type: 'text',
+        text: tb.text,
+        opacity: baseOpacity,
+        style: {
+          fontFamily: tb.style.fontFamily,
+          fontSize: tb.style.fontSize,
+          fontWeight: tb.style.fontWeight,
+          fontStyle: tb.style.fontStyle,
+          textDecoration: tb.style.textDecoration,
+          color: tb.style.color,
+          align: tb.style.align,
+          verticalAlign: tb.style.verticalAlign,
+          lineHeight: tb.style.lineHeight,
+        },
+        _writeFx: { t, direction: 'in' },
+      } as TextElement & { _writeFx: WriteEffect };
+    }
+
+    const textResult = interpolateText(ta.text, tb.text, t, contentEasing);
     const result: TextElement & { _dissolveText?: TextDissolveSource } = {
       ...base,
       type: 'text',
@@ -370,25 +406,41 @@ export function interpolateWithVisibility(
   // Forward: appearing element (B) has the transition settings
   // Backward: disappearing element (A, which was B in forward) has the settings
   if (aVisible && !bVisible) {
+    const easing = elA.transitions?.visibility;
+    // Write/Unwrite uses the FULL transition window (not the half-mapped fade
+    // ramp): the pen-draw animation looks anaemic when crammed into 50% of the
+    // visible duration. Maps t∈[0,1] directly to writeFx.t.
+    if (easing === 'write') {
+      return {
+        ...elA,
+        visible: true,
+        _writeFx: { t: 1 - t, direction: 'out' },
+      } as SlideElement & { _writeFx: WriteEffect };
+    }
     // Fade out: completes at t=0.5, stays invisible after
     if (t >= 0.5) return null;
     // Map t from [0, 0.5] to [0, 1] for the fade-out
     const fadeOutT = t * 2;
     // When going backward, A was the target in forward direction, so use A's transitions
     // When going forward, B doesn't exist, so use A's transitions (fade-out stored on source)
-    const easing = elA.transitions?.visibility;
     const easedT = applyEasing(fadeOutT, easing);
     return { ...elA, opacity: lerp(elA.opacity, 0, easedT), visible: true } as SlideElement;
   }
 
-  // !aVisible && bVisible: fade in starts at t=0.5
+  // !aVisible && bVisible
+  const target = elB!;
+  const easing = target.transitions?.visibility;
+  if (easing === 'write') {
+    return {
+      ...target,
+      visible: true,
+      _writeFx: { t, direction: 'in' },
+    } as SlideElement & { _writeFx: WriteEffect };
+  }
+  // Fade in starts at t=0.5
   if (t < 0.5) return null;
   // Map t from [0.5, 1] to [0, 1] for the fade-in
   const fadeInT = (t - 0.5) * 2;
-  const target = elB!;
-  // When going forward, B is the target, use B's transitions
-  // When going backward, A doesn't exist, use B's transitions
-  const easing = target.transitions?.visibility;
   const easedT = applyEasing(fadeInT, easing);
   return { ...target, opacity: lerp(0, target.opacity, easedT), visible: true } as SlideElement;
 }

@@ -156,7 +156,23 @@ export function renderPresenterElement(
   if (!element.visible) return null;
 
   if (element.type === 'text') {
-    const textEl = element as (TextElement & { _dissolveText?: TextDissolveSource });
+    const textEl = element as (TextElement & {
+      _dissolveText?: TextDissolveSource;
+      _writeFx?: import('../../utils/interpolation').WriteEffect;
+    });
+    // Write/Unwrite has priority over dissolve — the interpolator already
+    // ensures they're mutually exclusive on the same element, but be defensive.
+    if (textEl._writeFx) {
+      return (
+        <SVGTextPaths
+          key={element.id}
+          element={textEl}
+          opacity={textEl.opacity}
+          clipIdPrefix="presenter"
+          writeFx={textEl._writeFx}
+        />
+      );
+    }
     const dissolveText = textEl._dissolveText;
     if (dissolveText) {
       // Cross-fade: render source on top of target, each with its own opacity.

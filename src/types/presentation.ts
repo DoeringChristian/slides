@@ -69,7 +69,7 @@ export interface SlideTransition {
 }
 
 // Animation easing types for property transitions
-export type EasingType = 'const' | 'linear' | 'ease' | 'dissolve' | 'fadeinout' | 'typewriter';
+export type EasingType = 'const' | 'linear' | 'ease' | 'dissolve' | 'fadeinout' | 'typewriter' | 'write';
 
 // Per-property-group transition settings
 export interface PropertyTransitions {

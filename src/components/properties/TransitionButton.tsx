@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Minus, TrendingUp, Spline, Layers, Type, ArrowRightLeft } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Minus, TrendingUp, Spline, Layers, Type, ArrowRightLeft, PenLine } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import type { EasingType, PropertyTransitions, SlideElement, TextElement, ShapeElement, ImageElement } from '../../types/presentation';
@@ -20,6 +20,7 @@ const EASING_ICONS: Record<EasingType, React.ReactNode> = {
   dissolve: <Layers size={ICON_SIZE} />,
   fadeinout: <ArrowRightLeft size={ICON_SIZE} />,
   typewriter: <Type size={ICON_SIZE} />,
+  write: <PenLine size={ICON_SIZE} />,
 };
 
 const EASING_LABELS: Record<EasingType, string> = {
@@ -29,12 +30,14 @@ const EASING_LABELS: Record<EasingType, string> = {
   dissolve: 'Dissolve (blend)',
   fadeinout: 'Fade In/Out',
   typewriter: 'Typewriter',
+  write: 'Write (pen-draw, uses Inter)',
 };
 
 // Default available types per property group
 const DEFAULT_TYPES: EasingType[] = ['const', 'linear', 'ease'];
-const CONTENT_TYPES: EasingType[] = ['const', 'dissolve', 'typewriter'];
+const CONTENT_TYPES: EasingType[] = ['const', 'dissolve', 'typewriter', 'write'];
 const RESOURCE_TYPES: EasingType[] = ['const', 'dissolve', 'fadeinout'];
+const VISIBILITY_TYPES: EasingType[] = ['const', 'linear', 'ease', 'write'];
 
 // Map property groups to the actual element fields to compare
 function getPropertyValues(element: SlideElement, group: keyof PropertyTransitions): (number | string | boolean | null | undefined)[] {
@@ -101,6 +104,7 @@ export const TransitionButton: React.FC<Props> = ({
   const types = availableTypes ?? (
     group === 'content' ? CONTENT_TYPES :
     group === 'resource' ? RESOURCE_TYPES :
+    group === 'visibility' ? VISIBILITY_TYPES :
     DEFAULT_TYPES
   );
   const [isOpen, setIsOpen] = useState(false);
