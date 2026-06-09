@@ -15,31 +15,69 @@ function applyEasing(t: number, easing: EasingType | undefined): number {
   switch (easing) {
     case 'const': return t < 0.5 ? 0 : 1;  // Snap at midpoint
     case 'ease': return easeInOutCubic(t);
-    case 'dissolve': return t;  // Handled separately for opacity
-    case 'write': return t;     // Handled in interpolateWithVisibility / text branch
+    case 'dissolve': return t;
+    // Glyph/path/visual-wrapper easings — numeric branch doesn't apply, the
+    // visibility/content branches handle them. Pass through.
+    case 'write':
+    case 'typewriter':
+    case 'fadebyglyph':
+    case 'create':
+    case 'wipe':
+    case 'slidein':
+    case 'grow':
+    case 'iris':
+      return t;
     case 'linear':
     default: return t;
   }
 }
 
-// Per-glyph reveal animation. Attached to interpolated elements when the
-// renderer should drive glyph-level entrance/exit. Two modes today:
+// Attached to interpolated elements when the renderer should drive a special
+// entrance/exit animation. Lives on a private `_writeFx` field on the element
+// so it doesn't pollute the persisted schema. Modes:
 //
-//   'write'      : manim's pen-draw — each glyph staggers its outline reveal
-//                  followed by a fill phase. Used when transitions.visibility
-//                  or transitions.content selects 'write'.
-//   'typewriter' : sequential per-glyph fill (no stroke phase). Used when
-//                  transitions.content selects 'typewriter' — the source
-//                  text is shaped through the same path layout as Write so
-//                  LaTeX glyphs reveal one by one instead of the raw source
-//                  string animating char-by-char.
+//  Glyph-level (text only — SVGTextPaths.RenderPaths picks the formula):
+//    'write'       : manim pen-draw — staggered outline reveal + fill phase.
+//    'typewriter'  : sequential per-glyph fill, no stroke.
+//    'fadebyglyph' : per-glyph staggered fade with overlap (LaggedStart).
 //
-// The renderer (SVGTextPaths.RenderPaths) picks the per-glyph formula off
-// `mode`; `t` and `direction` work the same in both.
+//  Shape-level (shape renderer reads it to switch to path-based draw):
+//    'create'      : outline trace + fill, like Write but on the shape's perimeter.
+//
+//  Element-agnostic visual wrappers (renderPresenterElement wraps the rendered
+//  element in a transform/clip group — works for text/shape/image uniformly):
+//    'wipe'        : directional clip-path reveal (uses anim.from).
+//    'slidein'     : translate from off-screen edge (uses anim.from).
+//    'grow'        : scale from anchor 0 → 1 (uses anim.anchor).
+//    'iris'        : circular clip-path expanding from a point.
+//
+// `t` and `direction` work the same across all modes — direction='out' is
+// just the reverse (interpolation flips t before attaching).
+export type AnimMode =
+  | 'write' | 'typewriter' | 'fadebyglyph'
+  | 'create'
+  | 'wipe' | 'slidein' | 'grow' | 'iris';
+
 export interface WriteEffect {
   t: number;                       // 0..1 progress
-  direction: 'in' | 'out';         // 'in' = reveal, 'out' = un-reveal
-  mode: 'write' | 'typewriter';
+  direction: 'in' | 'out';
+  mode: AnimMode;
+  /** Direction for wipe/slidein. */
+  from?: 'left' | 'right' | 'top' | 'bottom';
+  /** Anchor for grow. */
+  anchor?:
+    | 'center'
+    | 'top-left' | 'top' | 'top-right'
+    | 'left' | 'right'
+    | 'bottom-left' | 'bottom' | 'bottom-right';
+  /** Iris: optional centre in element-local [0,1] coordinates. */
+  cx?: number;
+  cy?: number;
+  /** Group stagger: per-child time delay (0..1). The parent's interpolation
+   *  attaches the same _writeFx to each child but bumps `t` down by
+   *  `childIndex * lag`; the per-child renderer then sees a delayed t. */
+  staggerLag?: number;
+  staggerIndex?: number;
 }
 
 // Lerp with easing applied
@@ -256,9 +294,13 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
     //   undoFirst=true: source un-reveals in the first half, target reveals
     //     in the second half. Matches the typewriter intuition of "delete
     //     then type" (so it's the default for typewriter).
-    if ((contentEasing === 'write' || contentEasing === 'typewriter') && ta.text !== tb.text) {
+    if ((contentEasing === 'write' || contentEasing === 'typewriter' || contentEasing === 'fadebyglyph') && ta.text !== tb.text) {
       const mode: WriteEffect['mode'] = contentEasing;
-      const opts = mode === 'write' ? tr.contentOptions?.write : tr.contentOptions?.typewriter;
+      const opts = mode === 'write' ? tr.contentOptions?.write
+        : mode === 'typewriter' ? tr.contentOptions?.typewriter
+        : undefined;
+      // typewriter historically defaults to "delete then type"; write and
+      // fadebyglyph default to "snap clear then reveal".
       const undoFirstDefault = mode === 'typewriter';
       const undoFirst = opts?.undoFirst ?? undoFirstDefault;
 
@@ -432,6 +474,31 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
   return (t < 0.5 ? { ...a } : { ...b }) as SlideElement;
 }
 
+/** Try to build a WriteEffect for a visibility transition. Returns null when
+ *  the easing isn't one of the new path/wrapper-style animations (fall
+ *  through to the existing fade ramp). All these animations span the FULL
+ *  transition window — pre-mapped baseT is 0 → 1 of visible time. */
+function buildVisibilityFx(
+  easing: import('../types/presentation').EasingType | undefined,
+  options: import('../types/presentation').TransitionOptions | undefined,
+  baseT: number,
+  direction: 'in' | 'out',
+): WriteEffect | null {
+  const mk = (mode: WriteEffect['mode'], extra: Partial<WriteEffect> = {}): WriteEffect =>
+    ({ t: baseT, direction, mode, ...extra });
+  switch (easing) {
+    case 'write':       return mk('write');
+    case 'typewriter':  return mk('typewriter');
+    case 'fadebyglyph': return mk('fadebyglyph');
+    case 'create':      return mk('create');
+    case 'wipe':        return mk('wipe',    { from: options?.wipe?.from });
+    case 'slidein':     return mk('slidein', { from: options?.slidein?.from });
+    case 'grow':        return mk('grow',    { anchor: options?.grow?.anchor });
+    case 'iris':        return mk('iris',    { cx: options?.iris?.cx, cy: options?.iris?.cy });
+    default:            return null;
+  }
+}
+
 // Build an interpolated element for visibility transitions
 // Fade-out happens in the first half (t: 0 -> 0.5)
 // Fade-in happens in the second half (t: 0.5 -> 1)
@@ -455,22 +522,14 @@ export function interpolateWithVisibility(
   // Backward: disappearing element (A, which was B in forward) has the settings
   if (aVisible && !bVisible) {
     const easing = elA.transitions?.visibility;
-    // Write/Unwrite uses the FULL transition window (not the half-mapped fade
-    // ramp): the pen-draw animation looks anaemic when crammed into 50% of the
-    // visible duration. Maps t∈[0,1] directly to writeFx.t.
-    if (easing === 'write') {
-      return {
-        ...elA,
-        visible: true,
-        _writeFx: { t: 1 - t, direction: 'out', mode: 'write' },
-      } as SlideElement & { _writeFx: WriteEffect };
+    const fx = buildVisibilityFx(easing, elA.transitions?.visibilityOptions, 1 - t, 'out');
+    if (fx) {
+      return { ...elA, visible: true, _writeFx: fx } as SlideElement & { _writeFx: WriteEffect };
     }
     // Fade out: completes at t=0.5, stays invisible after
     if (t >= 0.5) return null;
     // Map t from [0, 0.5] to [0, 1] for the fade-out
     const fadeOutT = t * 2;
-    // When going backward, A was the target in forward direction, so use A's transitions
-    // When going forward, B doesn't exist, so use A's transitions (fade-out stored on source)
     const easedT = applyEasing(fadeOutT, easing);
     return { ...elA, opacity: lerp(elA.opacity, 0, easedT), visible: true } as SlideElement;
   }
@@ -478,12 +537,9 @@ export function interpolateWithVisibility(
   // !aVisible && bVisible
   const target = elB!;
   const easing = target.transitions?.visibility;
-  if (easing === 'write') {
-    return {
-      ...target,
-      visible: true,
-      _writeFx: { t, direction: 'in', mode: 'write' },
-    } as SlideElement & { _writeFx: WriteEffect };
+  const fx = buildVisibilityFx(easing, target.transitions?.visibilityOptions, t, 'in');
+  if (fx) {
+    return { ...target, visible: true, _writeFx: fx } as SlideElement & { _writeFx: WriteEffect };
   }
   // Fade in starts at t=0.5
   if (t < 0.5) return null;

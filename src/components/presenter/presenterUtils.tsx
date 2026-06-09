@@ -2,10 +2,124 @@ import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { Play, Pause } from 'lucide-react';
 import { RenderShape, RenderImage } from '../svg/ElementRenderer';
 import { SVGTextPaths } from '../svg/SVGTextPaths';
+import { RenderPaths } from '../svg/RenderPaths';
+import { shapeToSvgPaths } from '../../utils/shapeToPath';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 import { interpolateWithVisibility, lerpColor } from '../../utils/interpolation';
 import type { SlideElement, TextElement, ShapeElement, ImageElement, Slide, Resource } from '../../types/presentation';
-import type { CrossfadeSource, TextDissolveSource } from '../../utils/interpolation';
+import type { CrossfadeSource, TextDissolveSource, WriteEffect } from '../../utils/interpolation';
+
+// ---------------------------------------------------------------------------
+// Visual-transform wrapper for animation modes that aren't element-internal.
+// `wipe`, `slidein`, `grow`, `iris` apply identically to text/shape/image —
+// we render the element as usual and wrap the result in a <g> with a
+// transform or clipPath driven by the animation's t. The element renderers
+// themselves never see these modes (only the glyph/shape-internal ones).
+// ---------------------------------------------------------------------------
+
+type WrapperMode = 'wipe' | 'slidein' | 'grow' | 'iris';
+
+const WRAPPER_MODES = new Set<WrapperMode>(['wipe', 'slidein', 'grow', 'iris']);
+
+function isWrapperMode(fx: WriteEffect | undefined): fx is WriteEffect & { mode: WrapperMode } {
+  return !!fx && WRAPPER_MODES.has(fx.mode as WrapperMode);
+}
+
+function anchorPoint(element: SlideElement, anchor: NonNullable<WriteEffect['anchor']>): { ax: number; ay: number } {
+  const { x, y, width, height } = element;
+  switch (anchor) {
+    case 'top-left':     return { ax: x, ay: y };
+    case 'top':          return { ax: x + width / 2, ay: y };
+    case 'top-right':    return { ax: x + width, ay: y };
+    case 'left':         return { ax: x, ay: y + height / 2 };
+    case 'right':        return { ax: x + width, ay: y + height / 2 };
+    case 'bottom-left':  return { ax: x, ay: y + height };
+    case 'bottom':       return { ax: x + width / 2, ay: y + height };
+    case 'bottom-right': return { ax: x + width, ay: y + height };
+    case 'center':
+    default:             return { ax: x + width / 2, ay: y + height / 2 };
+  }
+}
+
+function wrapVisualFx(
+  node: React.ReactNode,
+  element: SlideElement,
+  fx: WriteEffect,
+): React.ReactNode {
+  const { id, x, y, width: w, height: h } = element;
+  const t = fx.t;
+
+  if (fx.mode === 'wipe') {
+    const from = fx.from ?? 'left';
+    let rx = x, ry = y, rw = w, rh = h;
+    switch (from) {
+      case 'left':   rw = w * t; break;
+      case 'right':  rx = x + w * (1 - t); rw = w * t; break;
+      case 'top':    rh = h * t; break;
+      case 'bottom': ry = y + h * (1 - t); rh = h * t; break;
+    }
+    const clipId = `wipe-${id}`;
+    return (
+      <g key={id}>
+        <defs>
+          <clipPath id={clipId}>
+            <rect x={rx} y={ry} width={Math.max(0, rw)} height={Math.max(0, rh)} />
+          </clipPath>
+        </defs>
+        <g clipPath={`url(#${clipId})`}>{node}</g>
+      </g>
+    );
+  }
+
+  if (fx.mode === 'slidein') {
+    const from = fx.from ?? 'left';
+    const off = 1 - t;
+    let dx = 0, dy = 0;
+    switch (from) {
+      case 'left':   dx = -(x + w) * off; break;
+      case 'right':  dx = (SLIDE_WIDTH - x) * off; break;
+      case 'top':    dy = -(y + h) * off; break;
+      case 'bottom': dy = (SLIDE_HEIGHT - y) * off; break;
+    }
+    return <g key={id} transform={`translate(${dx} ${dy})`}>{node}</g>;
+  }
+
+  if (fx.mode === 'grow') {
+    const { ax, ay } = anchorPoint(element, fx.anchor ?? 'center');
+    return (
+      <g
+        key={id}
+        transform={`translate(${ax} ${ay}) scale(${t}) translate(${-ax} ${-ay})`}
+      >
+        {node}
+      </g>
+    );
+  }
+
+  if (fx.mode === 'iris') {
+    const cxFrac = fx.cx ?? 0.5;
+    const cyFrac = fx.cy ?? 0.5;
+    const cx = x + cxFrac * w;
+    const cy = y + cyFrac * h;
+    const maxR = Math.hypot(
+      Math.max(cx - x, x + w - cx),
+      Math.max(cy - y, y + h - cy),
+    );
+    const clipId = `iris-${id}`;
+    return (
+      <g key={id}>
+        <defs>
+          <clipPath id={clipId}>
+            <circle cx={cx} cy={cy} r={Math.max(0, maxR * t)} />
+          </clipPath>
+        </defs>
+        <g clipPath={`url(#${clipId})`}>{node}</g>
+      </g>
+    );
+  }
+
+  return node;
+}
 
 // Extended ImageElement type that may include dissolve source during transitions
 type ImageElementWithDissolve = ImageElement & { _dissolveSource?: CrossfadeSource };
@@ -155,21 +269,36 @@ export function renderPresenterElement(
 ): React.ReactNode {
   if (!element.visible) return null;
 
+  // Pull the animation effect off the element. Wrapper modes (wipe/slidein/
+  // grow/iris) are applied AROUND the type-specific render; element-internal
+  // modes (write/typewriter/fadebyglyph/create) flow into the renderer.
+  const fx = (element as SlideElement & { _writeFx?: WriteEffect })._writeFx;
+  const useWrapper = isWrapperMode(fx);
+  const innerFx = useWrapper ? undefined : fx;
+
+  const inner = renderElementInner(element, resources, innerFx);
+  return useWrapper && fx ? wrapVisualFx(inner, element, fx) : inner;
+}
+
+function renderElementInner(
+  element: SlideElement,
+  resources: Record<string, Resource>,
+  fx: WriteEffect | undefined,
+): React.ReactNode {
   if (element.type === 'text') {
     const textEl = element as (TextElement & {
       _dissolveText?: TextDissolveSource;
-      _writeFx?: import('../../utils/interpolation').WriteEffect;
     });
-    // Write/Unwrite has priority over dissolve — the interpolator already
-    // ensures they're mutually exclusive on the same element, but be defensive.
-    if (textEl._writeFx) {
+    // Glyph-internal anim has priority over dissolve — interpolator ensures
+    // they're mutually exclusive, but be defensive.
+    if (fx) {
       return (
         <SVGTextPaths
           key={element.id}
           element={textEl}
           opacity={textEl.opacity}
           clipIdPrefix="presenter"
-          writeFx={textEl._writeFx}
+          writeFx={fx}
         />
       );
     }
@@ -254,8 +383,23 @@ export function renderPresenterElement(
     return renderMedia(targetResource, element.opacity, imgEl.cropX, imgEl.cropY, imgEl.cropWidth, imgEl.cropHeight, '');
   }
 
-  // Shape: native SVG primitive via the shared RenderShape.
-  return <RenderShape key={element.id} element={element as ShapeElement} />;
+  // Shape: native SVG primitive via the shared RenderShape. If a Create
+  // animation is in flight, route through the outline-path renderer so the
+  // perimeter strokes in and the fill ramps via the shared RenderPaths.
+  const shapeEl = element as ShapeElement;
+  if (fx?.mode === 'create') {
+    const paths = shapeToSvgPaths(shapeEl);
+    const strokeWidth = Math.max(1, shapeEl.strokeWidth || 2);
+    const cx = shapeEl.x + shapeEl.width / 2;
+    const cy = shapeEl.y + shapeEl.height / 2;
+    const transform = shapeEl.rotation ? `rotate(${shapeEl.rotation}, ${cx}, ${cy})` : undefined;
+    return (
+      <g key={shapeEl.id} transform={transform} opacity={shapeEl.opacity}>
+        <RenderPaths paths={paths} writeFx={fx} strokeWidth={strokeWidth} />
+      </g>
+    );
+  }
+  return <RenderShape key={element.id} element={shapeEl} />;
 }
 
 // ============================================================================

@@ -69,7 +69,15 @@ export interface SlideTransition {
 }
 
 // Animation easing types for property transitions
-export type EasingType = 'const' | 'linear' | 'ease' | 'dissolve' | 'fadeinout' | 'typewriter' | 'write';
+export type EasingType =
+  | 'const' | 'linear' | 'ease' | 'dissolve' | 'fadeinout' | 'typewriter' | 'write'
+  // Visibility / content reveal easings added in the "all animations" pass:
+  | 'create'        // shape outline trace + fill (Write for shapes)
+  | 'wipe'          // directional clip-path reveal
+  | 'slidein'       // translate from off-screen edge
+  | 'grow'          // scale from anchor point
+  | 'iris'          // circular clip-path reveal
+  | 'fadebyglyph';  // staggered per-glyph fade (text)
 
 /** Per-easing settings. Each top-level key targets one easing's behaviour;
  *  callers read e.g. `transitions.contentOptions?.write?.undoFirst` only when
@@ -88,9 +96,48 @@ export interface GlyphRevealOptions {
  *  call sites don't break. */
 export type WriteOptions = GlyphRevealOptions;
 
+export type WipeDirection = 'left' | 'right' | 'top' | 'bottom';
+export type GrowAnchor =
+  | 'center'
+  | 'top-left' | 'top' | 'top-right'
+  | 'left' | 'right'
+  | 'bottom-left' | 'bottom' | 'bottom-right';
+
+export interface DirectionalOptions {
+  /** Direction the reveal advances FROM. e.g. `from: 'left'` for slide-in
+   *  means the element flies in starting off-screen to the left. */
+  from?: WipeDirection;
+}
+export type WipeOptions = DirectionalOptions;
+export type SlideInOptions = DirectionalOptions;
+
+export interface GrowOptions {
+  /** Anchor point that stays fixed while the element grows from 0 → 1. */
+  anchor?: GrowAnchor;
+}
+
+export interface IrisOptions {
+  /** Optional centre of the circular reveal in element-local coordinates
+   *  (0..1). Defaults to centre of element. */
+  cx?: number;
+  cy?: number;
+}
+
+/** lagRatio: 0 = all children animate simultaneously; 1 = strict sequence
+ *  (each finishes before next starts). Default 0.1 — gentle stagger. */
+export interface StaggerOptions {
+  lagRatio?: number;
+}
+
 export interface TransitionOptions {
   write?: GlyphRevealOptions;
   typewriter?: GlyphRevealOptions;
+  wipe?: WipeOptions;
+  slidein?: SlideInOptions;
+  grow?: GrowOptions;
+  iris?: IrisOptions;
+  /** Group-level stagger applies to whichever child-level easing fires. */
+  stagger?: StaggerOptions;
 }
 
 /** Keys of `PropertyTransitions` that hold an `EasingType` (i.e. the property

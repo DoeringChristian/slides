@@ -1,6 +1,10 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronLeft, ChevronRight, Minus, TrendingUp, Spline, Layers, Type, ArrowRightLeft, PenLine } from 'lucide-react';
+import {
+  ChevronLeft, ChevronRight, Minus, TrendingUp, Spline, Layers,
+  Type, ArrowRightLeft, PenLine, Pencil, MoveHorizontal,
+  ArrowRightFromLine, Maximize, Circle, Sparkles,
+} from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import type {
@@ -32,6 +36,12 @@ const EASING_ICONS: Record<EasingType, React.ReactNode> = {
   fadeinout: <ArrowRightLeft size={ICON_SIZE} />,
   typewriter: <Type size={ICON_SIZE} />,
   write: <PenLine size={ICON_SIZE} />,
+  create: <Pencil size={ICON_SIZE} />,
+  wipe: <MoveHorizontal size={ICON_SIZE} />,
+  slidein: <ArrowRightFromLine size={ICON_SIZE} />,
+  grow: <Maximize size={ICON_SIZE} />,
+  iris: <Circle size={ICON_SIZE} />,
+  fadebyglyph: <Sparkles size={ICON_SIZE} />,
 };
 
 const EASING_LABELS: Record<EasingType, string> = {
@@ -42,16 +52,43 @@ const EASING_LABELS: Record<EasingType, string> = {
   fadeinout: 'Fade In/Out',
   typewriter: 'Typewriter',
   write: 'Write',
+  create: 'Create',
+  wipe: 'Wipe',
+  slidein: 'Slide In',
+  grow: 'Grow',
+  iris: 'Iris',
+  fadebyglyph: 'Fade by Glyph',
 };
 
 const DEFAULT_TYPES: EasingType[] = ['const', 'linear', 'ease'];
-const CONTENT_TYPES: EasingType[] = ['const', 'dissolve', 'typewriter', 'write'];
 const RESOURCE_TYPES: EasingType[] = ['const', 'dissolve', 'fadeinout'];
-const VISIBILITY_TYPES: EasingType[] = ['const', 'linear', 'ease', 'write'];
+
+// Visibility easings differ by element type:
+// - text:  glyph reveal (write/typewriter/fadebyglyph) + visual wrappers
+// - shape: outline create + visual wrappers
+// - image: visual wrappers (no glyphs / no outline trace)
+const TEXT_VISIBILITY_TYPES:  EasingType[] = ['const', 'linear', 'ease', 'write', 'fadebyglyph', 'wipe', 'slidein', 'grow', 'iris'];
+const SHAPE_VISIBILITY_TYPES: EasingType[] = ['const', 'linear', 'ease', 'create', 'wipe', 'slidein', 'grow', 'iris'];
+const IMAGE_VISIBILITY_TYPES: EasingType[] = ['const', 'linear', 'ease', 'wipe', 'slidein', 'grow', 'iris'];
+// Default fall-back covers other element types (e.g. groups) with safe options.
+const FALLBACK_VISIBILITY_TYPES: EasingType[] = ['const', 'linear', 'ease', 'wipe', 'slidein', 'grow', 'iris'];
+
+// Content easings — text only.
+const CONTENT_TYPES: EasingType[] = ['const', 'dissolve', 'typewriter', 'write', 'fadebyglyph'];
+
+function visibilityTypesFor(elementType: SlideElement['type'] | undefined): EasingType[] {
+  switch (elementType) {
+    case 'text':  return TEXT_VISIBILITY_TYPES;
+    case 'shape': return SHAPE_VISIBILITY_TYPES;
+    case 'image': return IMAGE_VISIBILITY_TYPES;
+    default:      return FALLBACK_VISIBILITY_TYPES;
+  }
+}
 
 // Which easings (per group) expose user-configurable options.
 function easingHasOptions(group: TransitionGroup, easing: EasingType): boolean {
   if (group === 'content' && (easing === 'write' || easing === 'typewriter')) return true;
+  if (group === 'visibility' && (easing === 'wipe' || easing === 'slidein' || easing === 'grow')) return true;
   return false;
 }
 
@@ -117,12 +154,6 @@ export const TransitionButton: React.FC<Props> = ({
   direction,
   availableTypes,
 }) => {
-  const types = availableTypes ?? (
-    group === 'content' ? CONTENT_TYPES :
-    group === 'resource' ? RESOURCE_TYPES :
-    group === 'visibility' ? VISIBILITY_TYPES :
-    DEFAULT_TYPES
-  );
   const [isOpen, setIsOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -140,7 +171,19 @@ export const TransitionButton: React.FC<Props> = ({
   const sourceSlide = sourceSlideId ? slides[sourceSlideId] : undefined;
   const targetSlide = targetSlideId ? slides[targetSlideId] : undefined;
   const sourceElement = sourceSlide?.elements[elementId];
+
   const targetElement = targetSlide?.elements[elementId];
+
+  // Visibility options depend on the element type (shapes get Create, text
+  // gets glyph effects, etc.). The element exists on at least one side of
+  // the transition.
+  const elementType = (sourceElement ?? targetElement)?.type;
+  const types = availableTypes ?? (
+    group === 'content' ? CONTENT_TYPES :
+    group === 'resource' ? RESOURCE_TYPES :
+    group === 'visibility' ? visibilityTypesFor(elementType) :
+    DEFAULT_TYPES
+  );
 
   const differs = propertiesDiffer(sourceElement, targetElement, group);
 
@@ -255,7 +298,7 @@ export const TransitionButton: React.FC<Props> = ({
               <div className="text-xs font-medium text-gray-500 mb-2 px-1">
                 {EASING_LABELS[currentEasing]} options
               </div>
-              <GlyphRevealOptionsPanel
+              <EasingOptionsPanel
                 value={currentOptions ?? {}}
                 onChange={handleOptionChange}
                 easing={currentEasing}
@@ -378,36 +421,92 @@ const PortalPanel: React.FC<{
   );
 };
 
-/** Shared options for the glyph-reveal easings ('write' and 'typewriter') on a
- *  content change. Reads / writes the per-easing sub-key of TransitionOptions
- *  so each easing's setting persists independently. */
-const GlyphRevealOptionsPanel: React.FC<{
+/** Per-easing settings panel. Dispatches on the currently-selected easing
+ *  and renders the right sub-panel. */
+const EasingOptionsPanel: React.FC<{
   value: TransitionOptions;
   onChange: (next: TransitionOptions) => void;
   easing: EasingType;
 }> = ({ value, onChange, easing }) => {
-  if (easing !== 'write' && easing !== 'typewriter') return null;
-  const key = easing;                       // 'write' | 'typewriter'
-  const sub = value[key] ?? {};
-  const undoFirstDefault = easing === 'typewriter';
-  const undoFirst = sub.undoFirst ?? undoFirstDefault;
-  return (
-    <label className="flex items-start gap-2 text-xs text-gray-700 cursor-pointer px-1">
-      <input
-        type="checkbox"
-        checked={undoFirst}
-        onChange={(e) => onChange({ ...value, [key]: { ...sub, undoFirst: e.target.checked } })}
-        className="mt-0.5"
-      />
-      <span>
-        <span className="font-medium">Undo source before revealing target</span>
-        <br />
-        <span className="text-gray-500">
-          First half un-reveals the source text, second half reveals the target.
-          Off: source vanishes instantly and the full duration is spent
-          revealing the target.
+  if (easing === 'write' || easing === 'typewriter') {
+    const sub = value[easing] ?? {};
+    const undoFirstDefault = easing === 'typewriter';
+    const undoFirst = sub.undoFirst ?? undoFirstDefault;
+    return (
+      <label className="flex items-start gap-2 text-xs text-gray-700 cursor-pointer px-1">
+        <input
+          type="checkbox"
+          checked={undoFirst}
+          onChange={(e) => onChange({ ...value, [easing]: { ...sub, undoFirst: e.target.checked } })}
+          className="mt-0.5"
+        />
+        <span>
+          <span className="font-medium">Undo source before revealing target</span>
+          <br />
+          <span className="text-gray-500">
+            First half un-reveals the source text, second half reveals the target.
+            Off: source vanishes instantly and the full duration is spent
+            revealing the target.
+          </span>
         </span>
-      </span>
-    </label>
-  );
+      </label>
+    );
+  }
+
+  if (easing === 'wipe' || easing === 'slidein') {
+    const sub = value[easing] ?? {};
+    const from = sub.from ?? 'left';
+    const setFrom = (next: 'left' | 'right' | 'top' | 'bottom') =>
+      onChange({ ...value, [easing]: { ...sub, from: next } });
+    return (
+      <div className="text-xs text-gray-700 px-1 space-y-2">
+        <div className="font-medium">From</div>
+        <div className="grid grid-cols-4 gap-1">
+          {(['left', 'right', 'top', 'bottom'] as const).map((d) => (
+            <button
+              key={d}
+              onClick={() => setFrom(d)}
+              className={`py-1 rounded border text-xs ${
+                from === d ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white border-gray-200 hover:border-gray-400 text-gray-600'
+              }`}
+            >
+              {d}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (easing === 'grow') {
+    const sub = value.grow ?? {};
+    const anchor = sub.anchor ?? 'center';
+    const setAnchor = (next: typeof anchor) =>
+      onChange({ ...value, grow: { ...sub, anchor: next } });
+    const cells: Array<typeof anchor> = [
+      'top-left', 'top', 'top-right',
+      'left', 'center', 'right',
+      'bottom-left', 'bottom', 'bottom-right',
+    ];
+    return (
+      <div className="text-xs text-gray-700 px-1 space-y-2">
+        <div className="font-medium">Anchor</div>
+        <div className="grid grid-cols-3 gap-1 w-32">
+          {cells.map((c) => (
+            <button
+              key={c}
+              onClick={() => setAnchor(c)}
+              className={`aspect-square rounded border ${
+                anchor === c ? 'bg-blue-500 border-blue-700' : 'bg-white border-gray-300 hover:border-gray-500'
+              }`}
+              title={c}
+            />
+          ))}
+        </div>
+        <div className="text-gray-500">Element grows from this point.</div>
+      </div>
+    );
+  }
+
+  return null;
 };

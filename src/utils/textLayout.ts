@@ -15,21 +15,8 @@ import { parseBlocks, parseInlineSegments, getBlockFontMultiplier } from '../com
 import type { TextStyle } from '../types/presentation';
 import { texFragmentToSvg } from '../services/latexToSvg';
 import { loadFont, textToGlyphPaths, pathLengthFor } from './glyphPaths';
-
-export interface SvgPath {
-  d: string;
-  transform: string;
-  /** Length used both for the budget and for stroke-dasharray. In SCREEN
-   *  pixels — for text paths that's the local length (no transform scaling),
-   *  for math paths it's local length × scaleY. Combined with
-   *  vectorEffect="non-scaling-stroke" on math paths, stroke attributes land
-   *  in screen-pixel space so the dash and length match up. */
-  length: number;
-  fillColor: string;
-  /** Math paths render inside a heavy scale-down transform; without
-   *  non-scaling-stroke their stroke-width shrinks to invisibility. */
-  nonScalingStroke: boolean;
-}
+import type { SvgPath } from '../components/svg/RenderPaths';
+export type { SvgPath } from '../components/svg/RenderPaths';
 
 export interface SvgTextDoc {
   /** Per-glyph paths. The renderer runs them through the same stroke-dash

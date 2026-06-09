@@ -2,100 +2,14 @@ import React, { useEffect, useMemo, useState, memo } from 'react';
 import type { TextElement } from '../../types/presentation';
 import type { WriteEffect } from '../../utils/interpolation';
 import { TEXT_BOX_PADDING } from '../../utils/constants';
-import { layoutSvgText, type SvgTextDoc, type SvgPath } from '../../utils/textLayout';
+import { layoutSvgText, type SvgTextDoc } from '../../utils/textLayout';
 import { prewarmFonts } from '../../utils/glyphPaths';
+import { RenderPaths } from './RenderPaths';
 import { SVGTextContent } from './SVGTextContent';
 
 // Pre-warm Inter fonts so the first transition doesn't burn its window on the
 // font fetch + parse (~100-300ms).
 prewarmFonts();
-
-/**
- * Per-glyph frame for the WRITE mode: each glyph runs a staggered two-phase
- * animation (manim's `Write`).
- *
- *   REVEAL (~70% of the glyph's window): a thin pen traces the outline.
- *   FILL  (~30%): stroke fades, fill ramps 0 → 1.
- *
- * Steady state collapses to the FILL endpoint by feeding T=Infinity.
- */
-function writeGlyphFrame(
-  pathLength: number,
-  glyphIndex: number,
-  lag: number,
-  T: number,
-  glyphSpan: number,
-): { dashOffset: number; fillOpacity: number; strokeOpacity: number } {
-  const REVEAL_END = 0.7;
-  const startT = glyphIndex * lag;
-  const localT = Math.max(0, Math.min(1, (T - startT) / glyphSpan));
-  if (localT <= 0) return { dashOffset: pathLength, fillOpacity: 0, strokeOpacity: 0 };
-  if (localT < REVEAL_END) {
-    const ph = localT / REVEAL_END;
-    return { dashOffset: pathLength * (1 - ph), fillOpacity: 0, strokeOpacity: 1 };
-  }
-  const ph = (localT - REVEAL_END) / (1 - REVEAL_END);
-  return { dashOffset: 0, fillOpacity: ph, strokeOpacity: 1 - ph };
-}
-
-/**
- * Per-glyph frame for the TYPEWRITER mode: glyphs fade in one at a time, no
- * pen tracing, no stroke phase. Each glyph gets `1/N` of the total animation
- * and reveals over that window. At T=Infinity every glyph is fully visible.
- */
-function typewriterGlyphFrame(
-  pathLength: number,
-  glyphIndex: number,
-  T: number,
-  N: number,
-): { dashOffset: number; fillOpacity: number; strokeOpacity: number } {
-  const localT = Math.max(0, Math.min(1, T * N - glyphIndex));
-  return { dashOffset: 0, fillOpacity: localT, strokeOpacity: 0 };
-  // pathLength only matters for the stroke branch (unused here).
-  void pathLength;
-}
-
-/**
- * Per-glyph render. Used for BOTH the steady frame and the in-flight glyph
- * transitions — same pipeline, no second renderer. Branches on `writeFx.mode`
- * for the per-glyph formula; steady frame uses mode='write' with T=Infinity
- * which lands on full fill, no stroke.
- */
-const RenderPaths: React.FC<{ paths: SvgPath[]; totalLength: number; writeFx?: WriteEffect; fontSize: number }> = ({ paths, writeFx, fontSize }) => {
-  const T = writeFx ? writeFx.t : Number.POSITIVE_INFINITY;
-  const mode: WriteEffect['mode'] = writeFx?.mode ?? 'write';
-  const N = paths.length;
-  const glyphSpan = 0.5;
-  const lag = writeFx && N > 1 ? (1 - glyphSpan) / (N - 1) : 0;
-  const strokeWidth = Math.max(1.2, fontSize / 20);
-
-  return (
-    <g>
-      {paths.map((p, i) => {
-        const frame = mode === 'typewriter'
-          ? typewriterGlyphFrame(p.length, i, T, N)
-          : writeGlyphFrame(p.length, i, lag, T, glyphSpan);
-        return (
-          <path
-            key={i}
-            d={p.d}
-            transform={p.transform}
-            fill={p.fillColor}
-            fillOpacity={frame.fillOpacity}
-            stroke={p.fillColor}
-            strokeOpacity={frame.strokeOpacity}
-            strokeWidth={strokeWidth}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeDasharray={p.length}
-            strokeDashoffset={frame.dashOffset}
-            vectorEffect={p.nonScalingStroke ? 'non-scaling-stroke' : undefined}
-          />
-        );
-      })}
-    </g>
-  );
-};
 
 interface Props {
   element: TextElement;
@@ -199,7 +113,7 @@ export const SVGTextPaths: React.FC<Props> = memo(({
           transform={`translate(${elementX + padding}, ${elementY + padding + verticalOffset})`}
           opacity={opacity}
         >
-          <RenderPaths paths={doc.paths} totalLength={doc.totalLength} writeFx={writeFx} fontSize={style.fontSize} />
+          <RenderPaths paths={doc.paths} writeFx={writeFx} strokeWidth={Math.max(1.2, style.fontSize / 20)} />
         </g>
       </g>
     </g>
