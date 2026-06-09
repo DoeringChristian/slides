@@ -1,7 +1,7 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { Play, Pause } from 'lucide-react';
 import { RenderShape, RenderImage } from '../svg/ElementRenderer';
-import { SVGTextContent } from '../svg/SVGTextContent';
+import { SVGTextPaths } from '../svg/SVGTextPaths';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 import { interpolateWithVisibility, lerpColor } from '../../utils/interpolation';
 import type { SlideElement, TextElement, ShapeElement, ImageElement, Slide, Resource } from '../../types/presentation';
@@ -124,12 +124,12 @@ export const PresenterTextElement: React.FC<PresenterTextElementProps> = ({ elem
     // keep their internal clipPath IDs from colliding inside one SVG.
     return (
       <svg style={wrapperStyle} viewBox={`0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}`}>
-        <SVGTextContent
+        <SVGTextPaths
           element={{ ...element, text: dissolveText.text }}
           opacity={dissolveText.opacity}
           clipIdPrefix="presenter-src"
         />
-        <SVGTextContent
+        <SVGTextPaths
           element={element}
           opacity={element.opacity}
           clipIdPrefix="presenter-tgt"
@@ -140,7 +140,7 @@ export const PresenterTextElement: React.FC<PresenterTextElementProps> = ({ elem
 
   return (
     <svg style={wrapperStyle} viewBox={`0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}`}>
-      <SVGTextContent element={element} opacity={element.opacity} clipIdPrefix="presenter" />
+      <SVGTextPaths element={element} opacity={element.opacity} clipIdPrefix="presenter" />
     </svg>
   );
 };
@@ -164,12 +164,12 @@ export function renderPresenterElement(
       // colliding inside the parent SVG.
       return (
         <React.Fragment key={element.id}>
-          <SVGTextContent
+          <SVGTextPaths
             element={{ ...textEl, text: dissolveText.text }}
             opacity={dissolveText.opacity}
             clipIdPrefix="presenter-src"
           />
-          <SVGTextContent
+          <SVGTextPaths
             element={textEl}
             opacity={textEl.opacity}
             clipIdPrefix="presenter-tgt"
@@ -178,7 +178,7 @@ export function renderPresenterElement(
       );
     }
     return (
-      <SVGTextContent
+      <SVGTextPaths
         key={element.id}
         element={textEl}
         opacity={textEl.opacity}

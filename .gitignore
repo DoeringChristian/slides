@@ -18,6 +18,9 @@ dist-standalone-viewer
 server/.env
 server/data
 
+# Reference clones (not part of this repo)
+inkwell/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

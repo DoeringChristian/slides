@@ -1,5 +1,5 @@
 import React, { memo } from 'react';
-import { SVGTextContent } from './SVGTextContent';
+import { SVGTextPaths } from './SVGTextPaths';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 import type { SlideElement, TextElement, ShapeElement, ImageElement, Resource } from '../../types/presentation';
 
@@ -332,7 +332,7 @@ export const RenderElement: React.FC<ElementProps> = memo(({ element, resource, 
 
   switch (element.type) {
     case 'text':
-      return <SVGTextContent element={element as TextElement} isEditing={isEditing} opacity={element.opacity} clipIdPrefix={clipIdPrefix ? `text-clip-${clipIdPrefix}` : 'text-clip'} />;
+      return <SVGTextPaths element={element as TextElement} isEditing={isEditing} opacity={element.opacity} clipIdPrefix={clipIdPrefix ? `text-clip-${clipIdPrefix}` : 'text-clip'} />;
     case 'shape':
       return <RenderShape element={element as ShapeElement} />;
     case 'image':

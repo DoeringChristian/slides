@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import type { TextElement } from '../../types/presentation';
-import { SVGTextContent } from './SVGTextContent';
+import { SVGTextPaths } from './SVGTextPaths';
 import { parseBlocks, getBlockFontMultiplier } from '../canvas/CustomMarkdownRenderer';
 import { measureBlockHeight } from '../../utils/textHitTest';
 import { TEXT_BOX_PADDING } from '../../utils/constants';
@@ -60,7 +60,7 @@ export const SVGTextNode: React.FC<Props> = React.memo(({
   return (
     <g data-element-id={element.id}>
       {/* Render actual text content */}
-      <SVGTextContent
+      <SVGTextPaths
         element={element}
         isEditing={isEditing}
       />
