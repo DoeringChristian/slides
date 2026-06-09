@@ -51,7 +51,7 @@ const VISIBILITY_TYPES: EasingType[] = ['const', 'linear', 'ease', 'write'];
 
 // Which easings (per group) expose user-configurable options.
 function easingHasOptions(group: TransitionGroup, easing: EasingType): boolean {
-  if (easing === 'write' && group === 'content') return true;
+  if (group === 'content' && (easing === 'write' || easing === 'typewriter')) return true;
   return false;
 }
 
@@ -255,10 +255,10 @@ export const TransitionButton: React.FC<Props> = ({
               <div className="text-xs font-medium text-gray-500 mb-2 px-1">
                 {EASING_LABELS[currentEasing]} options
               </div>
-              <WriteOptionsPanel
+              <GlyphRevealOptionsPanel
                 value={currentOptions ?? {}}
                 onChange={handleOptionChange}
-                group={group}
+                easing={currentEasing}
               />
             </div>
           )}
@@ -319,32 +319,36 @@ const PortalPanel: React.FC<{
   );
 };
 
-const WriteOptionsPanel: React.FC<{
+/** Shared options for the glyph-reveal easings ('write' and 'typewriter') on a
+ *  content change. Reads / writes the per-easing sub-key of TransitionOptions
+ *  so each easing's setting persists independently. */
+const GlyphRevealOptionsPanel: React.FC<{
   value: TransitionOptions;
   onChange: (next: TransitionOptions) => void;
-  group: TransitionGroup;
-}> = ({ value, onChange, group }) => {
-  if (group === 'content') {
-    const undoFirst = Boolean(value.write?.undoFirst);
-    return (
-      <label className="flex items-start gap-2 text-xs text-gray-700 cursor-pointer px-1">
-        <input
-          type="checkbox"
-          checked={undoFirst}
-          onChange={(e) => onChange({ ...value, write: { ...(value.write || {}), undoFirst: e.target.checked } })}
-          className="mt-0.5"
-        />
-        <span>
-          <span className="font-medium">Undo source before writing target</span>
-          <br />
-          <span className="text-gray-500">
-            First half un-writes the source text, second half writes the target.
-            Off: source vanishes instantly and the full duration is spent writing
-            the target.
-          </span>
+  easing: EasingType;
+}> = ({ value, onChange, easing }) => {
+  if (easing !== 'write' && easing !== 'typewriter') return null;
+  const key = easing;                       // 'write' | 'typewriter'
+  const sub = value[key] ?? {};
+  const undoFirstDefault = easing === 'typewriter';
+  const undoFirst = sub.undoFirst ?? undoFirstDefault;
+  return (
+    <label className="flex items-start gap-2 text-xs text-gray-700 cursor-pointer px-1">
+      <input
+        type="checkbox"
+        checked={undoFirst}
+        onChange={(e) => onChange({ ...value, [key]: { ...sub, undoFirst: e.target.checked } })}
+        className="mt-0.5"
+      />
+      <span>
+        <span className="font-medium">Undo source before revealing target</span>
+        <br />
+        <span className="text-gray-500">
+          First half un-reveals the source text, second half reveals the target.
+          Off: source vanishes instantly and the full duration is spent
+          revealing the target.
         </span>
-      </label>
-    );
-  }
-  return null;
+      </span>
+    </label>
+  );
 };

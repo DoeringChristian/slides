@@ -63,6 +63,14 @@ function escapeXml(s: string): string {
 function parseMathSvg(mathSvg: string, fontPx: number): {
   widthPx: number;
   heightPx: number;
+  /** Distance from the math baseline (vb y=0) to the TOP of the math. The
+   *  layout pass uses this to push the line baseline DOWN far enough that the
+   *  math doesn't intrude into the line above. */
+  aboveBaseline: number;
+  /** Distance from the math baseline to the BOTTOM. The layout pass uses this
+   *  to grow the line's descender room so the math doesn't crash into the
+   *  line below either. */
+  belowBaseline: number;
   emitPaths: (xCursor: number, baselineY: number, color: string) => SvgPath[];
 } | null {
   if (typeof DOMParser === 'undefined') return null;
@@ -92,10 +100,15 @@ function parseMathSvg(mathSvg: string, fontPx: number): {
   const vb = vbAttr.split(/\s+/).map(parseFloat);
   const [vbX, vbY, vbW, vbH] = vb.length === 4 ? vb : [0, 0, 1, 1];
   if (!vbW || !vbH) {
-    return { widthPx, heightPx, emitPaths: () => [] };
+    return { widthPx, heightPx, aboveBaseline: heightPx, belowBaseline: 0, emitPaths: () => [] };
   }
   const scaleX = widthPx / vbW;
   const scaleY = heightPx / vbH;
+  // MathJax baseline is at vb y=0. vbY is typically negative (e.g. -792),
+  // so -vbY gives the distance from baseline up to the viewBox top; vbY+vbH
+  // gives the distance from baseline down to the viewBox bottom.
+  const aboveBaseline = -vbY * scaleY;
+  const belowBaseline = (vbY + vbH) * scaleY;
 
   // id → path data lookup from <defs>.
   const defs = new Map<string, string>();
@@ -144,7 +157,7 @@ function parseMathSvg(mathSvg: string, fontPx: number): {
     }));
   };
 
-  return { widthPx, heightPx, emitPaths };
+  return { widthPx, heightPx, aboveBaseline, belowBaseline, emitPaths };
 }
 
 function buildTextDecoration(underline: boolean, strikethrough: boolean): string {
@@ -168,6 +181,11 @@ type PlacedUnit =
       kind: 'math';
       widthPx: number;
       heightPx: number;
+      /** Distance from baseline to top/bottom of the math — used by the layout
+       *  pass to grow the line's ascender/descender room so math doesn't
+       *  intrude into adjacent lines. */
+      aboveBaseline: number;
+      belowBaseline: number;
       /** Captures the parsed MathJax SVG + the color; emits glyph paths at the
        *  given pen position. */
       emitPaths: (xCursor: number, baselineY: number) => SvgPath[];
@@ -258,6 +276,8 @@ export async function layoutSvgText(
             kind: 'math',
             widthPx: parsed.widthPx,
             heightPx: parsed.heightPx,
+            aboveBaseline: parsed.aboveBaseline,
+            belowBaseline: parsed.belowBaseline,
             emitPaths: (x, y) => parsed.emitPaths(x, y, mathColor),
           };
           if (seg.isBlock) {
@@ -322,11 +342,24 @@ export async function layoutSvgText(
           yCursor += blockFontSize * lineHeight;
           continue;
         }
-        const lineMathHeight = line
-          .filter((u): u is Extract<PlacedUnit, { kind: 'math' }> => u.kind === 'math')
-          .reduce((m, u) => Math.max(m, u.heightPx), 0);
-        const lineHeightPx = Math.max(blockFontSize, lineMathHeight) * lineHeight;
-        const baseline = yCursor + blockFontSize * 0.8;
+        // Per-line baseline metrics. Math glyphs extend by `aboveBaseline`
+        // px above the baseline (often ~0.8 * heightPx for MathJax) and by
+        // `belowBaseline` below. If we only used `max(fontSize, mathHeight) *
+        // lineHeight` for line spacing, the line baseline would sit
+        // `fontSize * 0.8` below yCursor and tall math would extend ABOVE
+        // yCursor into the line above. Compute the baseline offset from the
+        // actual ascender requirements of everything on this line.
+        const mathUnits = line.filter(
+          (u): u is Extract<PlacedUnit, { kind: 'math' }> => u.kind === 'math',
+        );
+        const mathAbove = mathUnits.reduce((m, u) => Math.max(m, u.aboveBaseline), 0);
+        const mathBelow = mathUnits.reduce((m, u) => Math.max(m, u.belowBaseline), 0);
+        const textAbove = blockFontSize * 0.8;
+        const textBelow = blockFontSize * 0.4 * lineHeight;
+        const aboveBaseline = Math.max(textAbove, mathAbove);
+        const belowBaseline = Math.max(textBelow, mathBelow + blockFontSize * 0.1);
+        const lineHeightPx = aboveBaseline + belowBaseline;
+        const baseline = yCursor + aboveBaseline;
 
         const lineContentWidth = line.reduce((a, u) => a + u.widthPx, 0);
         let xOffset = 0;

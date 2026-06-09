@@ -75,16 +75,22 @@ export type EasingType = 'const' | 'linear' | 'ease' | 'dissolve' | 'fadeinout' 
  *  callers read e.g. `transitions.contentOptions?.write?.undoFirst` only when
  *  `transitions.content === 'write'`. Schema is open-ended so adding options
  *  later (stagger ratio, stroke colour, …) doesn't require a migration. */
-export interface WriteOptions {
-  /** Content-change Write only. If true, run a two-phase animation: unwrite
-   *  the source text across the first half, write the target across the
-   *  second. If false/undefined, the source snaps off at t=0 and the target
-   *  writes on across the full duration. */
+/** Content-change behaviour for glyph-reveal easings ('write' and 'typewriter'
+ *  share this shape). When true, the source text un-reveals across the first
+ *  half then the target reveals across the second; when false/undefined, the
+ *  source snaps off at t=0 and the full duration is spent revealing the
+ *  target. */
+export interface GlyphRevealOptions {
   undoFirst?: boolean;
 }
 
+/** Compatibility alias — `WriteOptions` was the original name, kept so older
+ *  call sites don't break. */
+export type WriteOptions = GlyphRevealOptions;
+
 export interface TransitionOptions {
-  write?: WriteOptions;
+  write?: GlyphRevealOptions;
+  typewriter?: GlyphRevealOptions;
 }
 
 /** Keys of `PropertyTransitions` that hold an `EasingType` (i.e. the property

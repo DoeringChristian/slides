@@ -11,19 +11,22 @@ import { SVGTextContent } from './SVGTextContent';
 prewarmFonts();
 
 /**
- * Compute (fillOpacity, strokeOpacity, dashOffset) for a single glyph at the
- * given progress. The "steady" frame is just `writeFx = undefined` — which
- * we represent by feeding T=Infinity so every glyph lands in the FILL phase
- * with fillOpacity=1, no stroke. One rendering pipeline, no drift.
+ * Per-glyph frame for the WRITE mode: each glyph runs a staggered two-phase
+ * animation (manim's `Write`).
+ *
+ *   REVEAL (~70% of the glyph's window): a thin pen traces the outline.
+ *   FILL  (~30%): stroke fades, fill ramps 0 → 1.
+ *
+ * Steady state collapses to the FILL endpoint by feeding T=Infinity.
  */
-function glyphFrame(
+function writeGlyphFrame(
   pathLength: number,
   glyphIndex: number,
   lag: number,
   T: number,
   glyphSpan: number,
-  REVEAL_END: number,
 ): { dashOffset: number; fillOpacity: number; strokeOpacity: number } {
+  const REVEAL_END = 0.7;
   const startT = glyphIndex * lag;
   const localT = Math.max(0, Math.min(1, (T - startT) / glyphSpan));
   if (localT <= 0) return { dashOffset: pathLength, fillOpacity: 0, strokeOpacity: 0 };
@@ -36,43 +39,56 @@ function glyphFrame(
 }
 
 /**
- * Per-glyph render. Used for BOTH the steady frame and the in-flight Write
- * transition — same pipeline, no second renderer. Modelled on manim's `Write`:
- * each glyph runs a staggered two-phase animation.
- *
- *   REVEAL (~70% of the glyph's window): a thin pen traces the outline.
- *   FILL  (~30%): stroke fades, fill ramps 0 → 1. End state: solid filled glyph.
- *
- * For `writeFx = undefined` (steady), every glyph is at localT=1 → full fill,
- * no stroke. That's just what the manim animation lands on at t=1, so the
- * transition end-state matches the steady frame exactly.
+ * Per-glyph frame for the TYPEWRITER mode: glyphs fade in one at a time, no
+ * pen tracing, no stroke phase. Each glyph gets `1/N` of the total animation
+ * and reveals over that window. At T=Infinity every glyph is fully visible.
+ */
+function typewriterGlyphFrame(
+  pathLength: number,
+  glyphIndex: number,
+  T: number,
+  N: number,
+): { dashOffset: number; fillOpacity: number; strokeOpacity: number } {
+  const localT = Math.max(0, Math.min(1, T * N - glyphIndex));
+  return { dashOffset: 0, fillOpacity: localT, strokeOpacity: 0 };
+  // pathLength only matters for the stroke branch (unused here).
+  void pathLength;
+}
+
+/**
+ * Per-glyph render. Used for BOTH the steady frame and the in-flight glyph
+ * transitions — same pipeline, no second renderer. Branches on `writeFx.mode`
+ * for the per-glyph formula; steady frame uses mode='write' with T=Infinity
+ * which lands on full fill, no stroke.
  */
 const RenderPaths: React.FC<{ paths: SvgPath[]; totalLength: number; writeFx?: WriteEffect; fontSize: number }> = ({ paths, writeFx, fontSize }) => {
   const T = writeFx ? writeFx.t : Number.POSITIVE_INFINITY;
+  const mode: WriteEffect['mode'] = writeFx?.mode ?? 'write';
   const N = paths.length;
   const glyphSpan = 0.5;
   const lag = writeFx && N > 1 ? (1 - glyphSpan) / (N - 1) : 0;
-  const REVEAL_END = 0.7;
   const strokeWidth = Math.max(1.2, fontSize / 20);
 
   return (
     <g>
       {paths.map((p, i) => {
-        const { dashOffset, fillOpacity, strokeOpacity } = glyphFrame(p.length, i, lag, T, glyphSpan, REVEAL_END);
+        const frame = mode === 'typewriter'
+          ? typewriterGlyphFrame(p.length, i, T, N)
+          : writeGlyphFrame(p.length, i, lag, T, glyphSpan);
         return (
           <path
             key={i}
             d={p.d}
             transform={p.transform}
             fill={p.fillColor}
-            fillOpacity={fillOpacity}
+            fillOpacity={frame.fillOpacity}
             stroke={p.fillColor}
-            strokeOpacity={strokeOpacity}
+            strokeOpacity={frame.strokeOpacity}
             strokeWidth={strokeWidth}
             strokeLinecap="round"
             strokeLinejoin="round"
             strokeDasharray={p.length}
-            strokeDashoffset={dashOffset}
+            strokeDashoffset={frame.dashOffset}
             vectorEffect={p.nonScalingStroke ? 'non-scaling-stroke' : undefined}
           />
         );

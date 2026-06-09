@@ -22,12 +22,24 @@ function applyEasing(t: number, easing: EasingType | undefined): number {
   }
 }
 
-// Per-glyph stroke-draw animation. Attached to interpolated elements when
-// transitions.visibility or transitions.content selects 'write'. The renderer
-// looks for `_writeFx` and switches to per-path stroke rendering.
+// Per-glyph reveal animation. Attached to interpolated elements when the
+// renderer should drive glyph-level entrance/exit. Two modes today:
+//
+//   'write'      : manim's pen-draw — each glyph staggers its outline reveal
+//                  followed by a fill phase. Used when transitions.visibility
+//                  or transitions.content selects 'write'.
+//   'typewriter' : sequential per-glyph fill (no stroke phase). Used when
+//                  transitions.content selects 'typewriter' — the source
+//                  text is shaped through the same path layout as Write so
+//                  LaTeX glyphs reveal one by one instead of the raw source
+//                  string animating char-by-char.
+//
+// The renderer (SVGTextPaths.RenderPaths) picks the per-glyph formula off
+// `mode`; `t` and `direction` work the same in both.
 export interface WriteEffect {
-  t: number;                  // 0..1 progress
-  direction: 'in' | 'out';    // 'in' = draw on, 'out' = erase
+  t: number;                       // 0..1 progress
+  direction: 'in' | 'out';         // 'in' = reveal, 'out' = un-reveal
+  mode: 'write' | 'typewriter';
 }
 
 // Lerp with easing applied
@@ -234,25 +246,28 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
     const tb = b as TextElement;
     const contentEasing = tr.content ?? 'const';
 
-    // Write for content changes. Two behaviours, picked by the
-    // `contentOptions.write.undoFirst` flag on whichever element holds the
-    // transition (= the target).
+    // Glyph-level content change. Both Write and Typewriter share the same
+    // mechanics — the only differences are the per-glyph render formula
+    // (RenderPaths branches on `mode`) and the undoFirst default.
     //
-    //   undoFirst=false (default): at t=0+ the source snaps off and the
-    //     target writes on across the FULL duration. Simple "clear + write".
+    //   undoFirst=false: at t=0+ the source snaps off, target reveals across
+    //     the FULL duration. Cleanest for Write ("clear + write").
     //
-    //   undoFirst=true: source unwrites in the first half (writeFx going
-    //     1 → 0 on the source text), target writes in the second half
-    //     (writeFx going 0 → 1 on the target text). Matches manim's
-    //     ReplacementTransform of Write/Unwrite back-to-back.
-    if (contentEasing === 'write' && ta.text !== tb.text) {
-      const undoFirst = Boolean(tr.contentOptions?.write?.undoFirst);
+    //   undoFirst=true: source un-reveals in the first half, target reveals
+    //     in the second half. Matches the typewriter intuition of "delete
+    //     then type" (so it's the default for typewriter).
+    if ((contentEasing === 'write' || contentEasing === 'typewriter') && ta.text !== tb.text) {
+      const mode: WriteEffect['mode'] = contentEasing;
+      const opts = mode === 'write' ? tr.contentOptions?.write : tr.contentOptions?.typewriter;
+      const undoFirstDefault = mode === 'typewriter';
+      const undoFirst = opts?.undoFirst ?? undoFirstDefault;
+
       if (undoFirst) {
-        const sourceText = t < 0.5 ? ta.text : tb.text;
-        const fx: WriteEffect = t < 0.5
-          ? { t: 1 - t * 2, direction: 'out' }
-          : { t: (t - 0.5) * 2, direction: 'in' };
         const useA = t < 0.5;
+        const sourceText = useA ? ta.text : tb.text;
+        const fx: WriteEffect = useA
+          ? { t: 1 - t * 2, direction: 'out', mode }
+          : { t: (t - 0.5) * 2, direction: 'in', mode };
         return {
           ...base,
           type: 'text',
@@ -288,7 +303,7 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
           verticalAlign: tb.style.verticalAlign,
           lineHeight: tb.style.lineHeight,
         },
-        _writeFx: { t, direction: 'in' },
+        _writeFx: { t, direction: 'in', mode },
       } as TextElement & { _writeFx: WriteEffect };
     }
 
@@ -447,7 +462,7 @@ export function interpolateWithVisibility(
       return {
         ...elA,
         visible: true,
-        _writeFx: { t: 1 - t, direction: 'out' },
+        _writeFx: { t: 1 - t, direction: 'out', mode: 'write' },
       } as SlideElement & { _writeFx: WriteEffect };
     }
     // Fade out: completes at t=0.5, stays invisible after
@@ -467,7 +482,7 @@ export function interpolateWithVisibility(
     return {
       ...target,
       visible: true,
-      _writeFx: { t, direction: 'in' },
+      _writeFx: { t, direction: 'in', mode: 'write' },
     } as SlideElement & { _writeFx: WriteEffect };
   }
   // Fade in starts at t=0.5
