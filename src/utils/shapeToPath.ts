@@ -103,20 +103,58 @@ export function shapeToPathD(shape: ShapeElement): string {
 }
 
 /**
+ * Cache for (d-string → length) pairs. The Create animation calls
+ * shapeToSvgPaths inside renderElementInner, which fires every frame; without
+ * caching, each call invokes pathLengthFor which forces an SVG layout via
+ * getTotalLength(). At 60 fps for several shapes that's the difference
+ * between buttery and choppy.
+ *
+ * Keyed on the d-string itself — two shapes with identical geometry get the
+ * same length. Cache grows unbounded but is bounded by distinct shape
+ * geometries in the deck, which is small.
+ */
+const geomCache = new Map<string, { d: string; length: number }>();
+
+function shapeGeometryKey(shape: ShapeElement): string {
+  // Only the fields that affect the d-string.
+  return [
+    shape.shapeType,
+    shape.x, shape.y, shape.width, shape.height,
+    shape.cornerRadius ?? 0,
+    shape.points ? shape.points.join(',') : '',
+  ].join('|');
+}
+
+/**
  * Build the SvgPath array for a shape's Create animation. Returns ONE entry
  * (single outline) — RenderPaths' stagger naturally degrades to "no stagger"
  * for N=1, and the REVEAL → FILL pacing runs across the full window.
+ *
+ * The d-string + path length are cached by geometry; fill/stroke colours are
+ * applied on top and DON'T trigger a re-compute (they live on the SvgPath,
+ * not the cache key).
  */
 export function shapeToSvgPaths(shape: ShapeElement): SvgPath[] {
-  const d = shapeToPathD(shape);
-  if (!d) return [];
-  const length = pathLengthFor(d);
+  const key = shapeGeometryKey(shape);
+  let entry = geomCache.get(key);
+  if (!entry) {
+    const d = shapeToPathD(shape);
+    if (!d) return [];
+    entry = { d, length: pathLengthFor(d) };
+    geomCache.set(key, entry);
+  }
   return [{
-    d,
+    d: entry.d,
     transform: '',
-    length,
+    length: entry.length,
     fillColor: shape.fill || 'transparent',
     strokeColor: shape.stroke || shape.fill || '#000',
     nonScalingStroke: false,
   }];
+}
+
+/** Invalidate the geometry cache (e.g. after a bulk import). Not needed for
+ *  normal operation — distinct geometries simply add new entries. */
+export function clearShapePathCache(): void {
+  geomCache.clear();
 }
