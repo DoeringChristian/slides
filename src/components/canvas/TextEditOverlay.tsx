@@ -214,7 +214,13 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     const baseFontSize = style.fontSize * zoom;
     const lines = plainText.split('\n');
     const styleLineHeight = style.lineHeight ?? 1.2;
-    const cssLineHeight = 0.8 + 0.4 * styleLineHeight;
+    // SVG renderer total line height is (0.8 + 0.4*lineHeight) * fontSize,
+    // with baseline at 0.8 * fontSize from the top of the line. Setting CSS
+    // line-height to 1 keeps the baseline near the font's intrinsic position
+    // (Inter ≈ 0.8 * fontSize) and we add the extra below-baseline space as
+    // bottom padding instead — that way the baselines align with the SVG
+    // render line for line.
+    const extraBelow = Math.max(0, (0.8 + 0.4 * styleLineHeight - 1)) ;
     const allRaw = rawLines.size === 0;
 
     const html = lines.map((line, index) => {
@@ -222,9 +228,9 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
       const fontSize = baseFontSize * info.fontSizeMultiplier;
       const isHeading = info.type.startsWith('h');
       const fontWeight = isHeading ? 'bold' : 'inherit';
-      const minHeight = fontSize * cssLineHeight;
+      const padBottom = fontSize * extraBelow;
       const sourceAttr = ` data-source="${escapeHtml(line)}"`;
-      const styleAttr = `margin:0;padding:0;font-size:${fontSize}px;font-weight:${fontWeight};line-height:${cssLineHeight};min-height:${minHeight}px;`;
+      const styleAttr = `margin:0;padding:0 0 ${padBottom}px 0;font-size:${fontSize}px;font-weight:${fontWeight};line-height:1;min-height:${fontSize}px;`;
 
       if (allRaw || rawLines.has(index)) {
         const escaped = escapeHtml(line);
@@ -338,7 +344,19 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     const text = textElement.text || '';
     currentTextRef.current = text;
     mountTimeRef.current = Date.now();
-    renderText(text, textElement.style, new Set([lineFromOffset(text, getCursorPositionInText(text))]));
+
+    // Use the click position (if any) to decide which line should be raw at
+    // mount. Without this, we render the last line raw by default, and then
+    // when setCursorPosition fires it's already too late — the user briefly
+    // sees the wrong line as the edit target.
+    const clickPosForInit = useEditorStore.getState().textEditClickPosition;
+    const initialCursor = clickPosForInit && textElement
+      ? (calculateCursorFromClick(textElement, clickPosForInit) ?? text.length)
+      : text.length;
+    const initialLine = lineFromOffset(text, initialCursor);
+    const initialRaw = new Set<number>([initialLine]);
+    setRawLines(initialRaw);
+    renderText(text, textElement.style, initialRaw);
 
     // Focus and set cursor - use setTimeout to ensure DOM is ready
     const timer = setTimeout(() => {
@@ -472,6 +490,74 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     if (!editorRef.current || !textElement) return;
     currentTextRef.current = getTextFromEditor();
   }, [getTextFromEditor, textElement]);
+
+  // Click on a FORMATTED line: the browser would land the caret in/around
+  // the rendered SVG (which can't host a caret), so we'd never get into
+  // edit position. Intercept mousedown, switch the clicked line to raw
+  // BEFORE the browser places the caret, then put the caret at the click
+  // point via caretRangeFromPoint / caretPositionFromPoint.
+  const handleEditorMouseDown = useCallback((e: React.MouseEvent) => {
+    const editor = editorRef.current;
+    if (!editor || !textElement) return;
+    // Walk up to find the data-line ancestor.
+    let target = e.target as HTMLElement | null;
+    while (target && target !== editor && !target.hasAttribute?.('data-line')) {
+      target = target.parentElement;
+    }
+    if (!target || target === editor || !target.hasAttribute('data-line')) return;
+    const idx = parseInt(target.getAttribute('data-line') || '-1', 10);
+    if (idx < 0) return;
+    if (rawLinesRef.current.has(idx)) return; // already raw, browser handles it natively
+
+    e.preventDefault();
+    const next = new Set<number>([idx]);
+    setRawLines(next);
+    renderText(currentTextRef.current, textElement.style, next);
+
+    requestAnimationFrame(() => {
+      const sel = window.getSelection();
+      if (!sel) return;
+      // Prefer caretRangeFromPoint (WebKit) → fall back to
+      // caretPositionFromPoint (Firefox) → fall back to end-of-line.
+      type DocWithCaret = Document & {
+        caretRangeFromPoint?: (x: number, y: number) => Range | null;
+        caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+      };
+      const docCaret = document as DocWithCaret;
+      let placed = false;
+      if (docCaret.caretRangeFromPoint) {
+        const r = docCaret.caretRangeFromPoint(e.clientX, e.clientY);
+        if (r) {
+          sel.removeAllRanges();
+          sel.addRange(r);
+          placed = true;
+        }
+      }
+      if (!placed && docCaret.caretPositionFromPoint) {
+        const p = docCaret.caretPositionFromPoint(e.clientX, e.clientY);
+        if (p) {
+          const range = document.createRange();
+          range.setStart(p.offsetNode, p.offset);
+          range.collapse(true);
+          sel.removeAllRanges();
+          sel.addRange(range);
+          placed = true;
+        }
+      }
+      if (!placed) {
+        const newLineDiv = editor.querySelector(`div[data-line="${idx}"]`) as HTMLElement | null;
+        const textNode = newLineDiv?.firstChild as Node | null;
+        if (textNode) {
+          const range = document.createRange();
+          const len = (textNode.textContent || '').length;
+          range.setStart(textNode, len);
+          range.collapse(true);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        }
+      }
+    });
+  }, [textElement, renderText]);
 
   // Handle keydown
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -631,6 +717,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
         ref={editorRef}
         contentEditable
         suppressContentEditableWarning
+        onMouseDown={handleEditorMouseDown}
         onInput={handleInput}
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
