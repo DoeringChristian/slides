@@ -191,11 +191,17 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     editorRef.current.innerHTML = html;
   }, [zoom, parseLine, renderFormattedSegment]);
 
-  // Translate the DOM selection to a SOURCE-text offset. Formatted (non-cursor)
-  // lines strip markup chars from the visible DOM, so textContent length
-  // doesn't equal source length. Use each line's `data-source` length for
-  // counting BETWEEN lines; within the cursor line (raw → textContent ==
-  // source) use the range's startOffset directly.
+  // Translate the DOM selection to a SOURCE-text offset.
+  //
+  // For the line that contains the cursor, the range's startOffset is the
+  // truth — it reflects fresh typing immediately, even before our state has
+  // caught up. (Clamping against data-source was a bug: data-source holds
+  // the value at the LAST render, so clamping rewinds the cursor every time
+  // you type past the old length.)
+  //
+  // For lines that DON'T contain the cursor, count source-length: formatted
+  // lines have markup chars stripped from textContent, so we read
+  // data-source which preserves them.
   const getCursorPosition = useCallback((): number => {
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0 || !editorRef.current) return 0;
@@ -206,17 +212,13 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
 
     for (let i = 0; i < divs.length; i++) {
       const div = divs[i];
-      const sourceLen = (div.getAttribute('data-source') ?? div.textContent ?? '').length;
       if (div.contains(range.startContainer)) {
-        // Cursor lives in this line. For the cursor line we render raw so the
-        // range's startOffset within its text node = source-column. For the
-        // pathological case of clicking inside a formatted line (before we
-        // re-render), fall back to clamping.
-        offset += Math.min(range.startOffset, sourceLen);
+        offset += range.startOffset;
         return offset;
       }
+      const sourceLen = (div.getAttribute('data-source') ?? div.textContent ?? '').length;
       offset += sourceLen;
-      if (i < divs.length - 1) offset += 1; // newline between lines
+      if (i < divs.length - 1) offset += 1;
     }
     return offset;
   }, []);
@@ -327,31 +329,39 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
 
   // Cursor-line tracking. When the selection moves between lines we re-render
   // so the previously-cursor line becomes formatted and the new line becomes
-  // raw. Listening on `selectionchange` rather than blur/focus catches every
-  // movement (arrow keys, mouse clicks within the editor, IME ending).
+  // raw. Read the line directly from the DOM (which div contains the cursor)
+  // rather than from currentTextRef + offset — the ref can be stale between
+  // a keystroke and the next handleInput snapshot, and a wrong line index
+  // here would wipe the just-typed character on re-render.
   useEffect(() => {
     if (!editingTextId) return;
     const handle = () => {
       if (!editorRef.current) return;
       const sel = window.getSelection();
       if (!sel || sel.rangeCount === 0) return;
-      const rect = editorRef.current.contains(sel.anchorNode);
-      if (!rect) return;
+      if (!editorRef.current.contains(sel.anchorNode)) return;
+      const range = sel.getRangeAt(0);
+      const divs = Array.from(editorRef.current.querySelectorAll('div[data-line]'));
+      let line = -1;
+      for (let i = 0; i < divs.length; i++) {
+        if (divs[i].contains(range.startContainer)) { line = i; break; }
+      }
+      if (line < 0 || line === cursorLineIdxRef.current) return;
+      // Snapshot the CURRENT DOM (with whatever the user just typed) before
+      // we replace it, so the typed character survives the re-render.
       const offset = getCursorPosition();
-      const line = lineFromOffset(currentTextRef.current, offset);
-      if (line !== cursorLineIdxRef.current) {
-        cursorLineIdxRef.current = line;
-        setCursorLineIdx(line);
-        if (textElement) {
-          renderText(currentTextRef.current, textElement.style, line);
-          // Restore cursor at the same source-text offset after the rerender.
-          setCursorPosition(offset);
-        }
+      const currentText = getTextFromEditor();
+      currentTextRef.current = currentText;
+      cursorLineIdxRef.current = line;
+      setCursorLineIdx(line);
+      if (textElement) {
+        renderText(currentText, textElement.style, line);
+        setCursorPosition(offset);
       }
     };
     document.addEventListener('selectionchange', handle);
     return () => document.removeEventListener('selectionchange', handle);
-  }, [editingTextId, getCursorPosition, lineFromOffset, renderText, setCursorPosition, textElement]);
+  }, [editingTextId, getCursorPosition, getTextFromEditor, renderText, setCursorPosition, textElement]);
 
   // Virtual keyboard avoidance: when the keyboard appears on mobile, the
   // visual viewport shrinks. If the editor ends up beneath it, scroll it back
@@ -378,17 +388,16 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     return () => vv.removeEventListener('resize', handle);
   }, [editingTextId]);
 
-  // Handle input
+  // Handle input. We deliberately DON'T re-render on every keystroke — that
+  // races with selectionchange and stomps fresh-typed characters with stale
+  // text. The native contentEditable already shows what the user typed; we
+  // just snapshot it into our source-of-truth. The selectionchange handler
+  // re-renders only when the cursor moves to a different line (which is
+  // when the formatting swap actually matters).
   const handleInput = useCallback(() => {
     if (!editorRef.current || !textElement) return;
-
-    const cursorPos = getCursorPosition();
-    const newText = getTextFromEditor();
-    currentTextRef.current = newText;
-
-    renderText(newText, textElement.style, cursorLineIdxRef.current);
-    setCursorPosition(cursorPos);
-  }, [getTextFromEditor, renderText, getCursorPosition, setCursorPosition, textElement]);
+    currentTextRef.current = getTextFromEditor();
+  }, [getTextFromEditor, textElement]);
 
   // Handle keydown
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
