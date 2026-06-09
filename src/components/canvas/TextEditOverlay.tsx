@@ -89,9 +89,11 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     return text.length;
   }, []);
 
-  // Read source text from the editor. Each line div holds its raw markdown
-  // in `data-source` so reformatted lines (which strip markup chars from the
-  // visible DOM) still round-trip correctly.
+  // Read source text from the editor. The cursor line is always rendered raw
+  // (textContent == source), so reading its textContent picks up any chars
+  // the user just typed. Non-cursor lines have markup chars stripped from
+  // their visible DOM, so we read their `data-source` attribute — which
+  // holds the raw markdown that was put in when they were last rendered.
   const getTextFromEditor = useCallback((): string => {
     if (!editorRef.current) return '';
 
@@ -100,18 +102,24 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
       return editorRef.current.textContent || '';
     }
 
+    const cursorLine = cursorLineIdxRef.current;
     const lines: string[] = [];
-    divs.forEach((div) => {
-      const raw = div.getAttribute('data-source');
-      if (raw !== null) {
-        lines.push(raw);
-      } else if (div.querySelector('br') && div.childNodes.length === 1) {
-        lines.push('');
+    divs.forEach((div, i) => {
+      const isRawLine = i === cursorLine || cursorLine < 0;
+      if (isRawLine) {
+        // Raw line: textContent is the source (and reflects fresh keystrokes).
+        if (div.querySelector('br') && div.childNodes.length === 1) {
+          lines.push('');
+        } else {
+          lines.push(div.textContent || '');
+        }
       } else {
-        lines.push(div.textContent || '');
+        // Formatted line: source lives in data-source; visible DOM has the
+        // markup chars stripped, so don't trust textContent.
+        const raw = div.getAttribute('data-source');
+        lines.push(raw ?? div.textContent ?? '');
       }
     });
-
     return lines.join('\n');
   }, []);
 
