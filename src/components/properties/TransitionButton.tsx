@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { ChevronLeft, ChevronRight, Minus, TrendingUp, Spline, Layers, Type, ArrowRightLeft, PenLine } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
@@ -209,10 +210,7 @@ export const TransitionButton: React.FC<Props> = ({
       </button>
 
       {isOpen && (
-        <div
-          ref={menuRef}
-          className="absolute z-[9999] top-full mt-1 right-0 bg-white border border-gray-200 rounded-lg shadow-xl p-3 w-[420px]"
-        >
+        <PortalPanel anchorRef={buttonRef} menuRef={menuRef}>
           <div className="text-xs font-medium text-gray-500 mb-2 px-1">
             {direction === 'in' ? 'Incoming' : 'Outgoing'} transition
           </div>
@@ -264,9 +262,60 @@ export const TransitionButton: React.FC<Props> = ({
               />
             </div>
           )}
-        </div>
+        </PortalPanel>
       )}
     </div>
+  );
+};
+
+/**
+ * Renders its children into document.body as a fixed-positioned panel anchored
+ * below the button. Bypasses ancestor `overflow: hidden` clipping (the sidebar
+ * does this, and z-index alone can't escape it).
+ */
+const PANEL_W = 420;
+const GAP = 4;
+const VIEWPORT_PAD = 8;
+
+const PortalPanel: React.FC<{
+  anchorRef: React.RefObject<HTMLButtonElement | null>;
+  menuRef: React.RefObject<HTMLDivElement | null>;
+  children: React.ReactNode;
+}> = ({ anchorRef, menuRef, children }) => {
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+
+  useLayoutEffect(() => {
+    const reposition = () => {
+      const rect = anchorRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      // Default: anchor right edge to button right edge, panel below.
+      const desiredLeft = rect.right - PANEL_W;
+      const left = Math.min(
+        Math.max(VIEWPORT_PAD, desiredLeft),
+        window.innerWidth - PANEL_W - VIEWPORT_PAD,
+      );
+      const top = rect.bottom + GAP;
+      setPos({ top, left });
+    };
+    reposition();
+    window.addEventListener('resize', reposition);
+    window.addEventListener('scroll', reposition, true);
+    return () => {
+      window.removeEventListener('resize', reposition);
+      window.removeEventListener('scroll', reposition, true);
+    };
+  }, [anchorRef]);
+
+  if (!pos) return null;
+  return createPortal(
+    <div
+      ref={menuRef}
+      className="fixed z-[9999] bg-white border border-gray-200 rounded-lg shadow-xl p-3"
+      style={{ top: pos.top, left: pos.left, width: PANEL_W }}
+    >
+      {children}
+    </div>,
+    document.body,
   );
 };
 
