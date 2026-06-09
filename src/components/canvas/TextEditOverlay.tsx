@@ -7,6 +7,7 @@ import { TEXT_BOX_PADDING, CANVAS_PADDING } from '../../utils/constants';
 import { calculateCursorFromClick } from '../../utils/textHitTest';
 import { injectInterFontFace } from '../../utils/glyphPaths';
 import { renderLatex } from '../../utils/latexUtils';
+import { preloadMathJax, isMathJaxReady, texFragmentToSvgSync } from '../../services/latexToSvg';
 import { parseInlineSegments } from './CustomMarkdownRenderer';
 import type { TextElement } from '../../types/presentation';
 
@@ -15,6 +16,10 @@ import type { TextElement } from '../../types/presentation';
 // @font-face so HTML edit mode can render them too, then force fontFamily =
 // 'InterEdit' on the editor div so glyph metrics align across modes.
 injectInterFontFace();
+// Start MathJax loading right away so edit-mode math can render synchronously
+// (matching the steady SVG render exactly) by the time the user enters an
+// element. Fall back to KaTeX while it's still loading.
+preloadMathJax();
 
 interface Props {
   stageRef: React.RefObject<HTMLDivElement | null>;
@@ -33,9 +38,31 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
   const mountTimeRef = useRef(Date.now());
   const editingTextIdRef = useRef<string | null>(null);
   const activeSlideIdRef = useRef<string>(activeSlideId);
-  // Which line the cursor is on; that line renders raw, others render with
-  // markdown formatting applied. -1 = no line is being edited yet (initial).
-  const [cursorLineIdx, setCursorLineIdx] = useState<number>(-1);
+  // Set of line indices that should render RAW (markup characters visible).
+  // The cursor's line is always in this set; if the selection extends across
+  // multiple lines, every covered line is added. Empty = nothing being edited.
+  const rawLinesRef = useRef<Set<number>>(new Set());
+  // Stays in sync via setRawLinesState for the few effects that close over a
+  // snapshot value rather than the ref.
+  const [, setRawLinesState] = useState<Set<number>>(new Set());
+  const setRawLines = (next: Set<number>) => {
+    rawLinesRef.current = next;
+    setRawLinesState(next);
+  };
+  // Used by getTextFromEditor: per-line cursor-or-selection check.
+  // We expose `isRawLine` rather than the set directly for clarity.
+  const isRawLine = (i: number) => rawLinesRef.current.has(i) || rawLinesRef.current.size === 0;
+
+  // True once MathJax has finished its async setup. Flipping this true
+  // invalidates the line render cache so the visible math swaps from KaTeX
+  // (the initial fallback) to MathJax to exactly match the steady SVG render.
+  const [mathReady, setMathReady] = useState<boolean>(isMathJaxReady());
+  useEffect(() => {
+    if (mathReady) return;
+    let cancelled = false;
+    preloadMathJax().then(() => { if (!cancelled) setMathReady(true); });
+    return () => { cancelled = true; };
+  }, [mathReady]);
 
   // Keep activeSlideId ref in sync
   activeSlideIdRef.current = activeSlideId;
@@ -77,17 +104,11 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
   }, []);
 
   // Map an absolute character offset within the multi-line source text to its
-  // line index. Used to drive cursorLineIdx for the formatted-non-cursor-line
-  // rendering.
+  // line index. Used at mount time and for the cursor-after-Enter path.
   const lineFromOffset = useCallback((text: string, offset: number): number => {
     const upto = text.slice(0, offset);
     return upto.split('\n').length - 1;
   }, []);
-
-  // Mirror cursorLineIdx into a ref so input/keydown/paste callbacks can read
-  // it without needing to re-create on every state change.
-  const cursorLineIdxRef = useRef(cursorLineIdx);
-  cursorLineIdxRef.current = cursorLineIdx;
 
   // Determine the cursor line from the source text at the current DOM
   // selection offset. Used at mount-time before the editor is wired up — we
@@ -97,6 +118,21 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     // available (handled by the focus effect below).
     return text.length;
   }, []);
+
+  // ─── Per-line render cache ────────────────────────────────────────────────
+  // Maps `(line source, fontSize, color, lineHeight, mathReady)` → rendered
+  // HTML. Re-render only when a line's own source/style/font-availability
+  // changes; sibling-line edits never invalidate cached entries. Cleared
+  // when MathJax flips from "still loading" to "ready" so old KaTeX-rendered
+  // math is replaced with MathJax-rendered math.
+  const lineCacheRef = useRef<Map<string, string>>(new Map());
+  useEffect(() => {
+    // Wipe the cache when MathJax becomes ready so cached KaTeX HTML for
+    // math segments is replaced. Subsequent renders use MathJax SVG.
+    if (mathReady) lineCacheRef.current = new Map();
+  }, [mathReady]);
+  const buildCacheKey = (line: string, multiplier: number, style: TextElement['style']): string =>
+    `${line}${multiplier}${style.fontSize}${style.color}${style.lineHeight ?? 1.2}${mathReady ? 'mj' : 'kx'}`;
 
   // Read source text from the editor. The cursor line is always rendered raw
   // (textContent == source), so reading its textContent picks up any chars
@@ -111,11 +147,9 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
       return editorRef.current.textContent || '';
     }
 
-    const cursorLine = cursorLineIdxRef.current;
     const lines: string[] = [];
     divs.forEach((div, i) => {
-      const isRawLine = i === cursorLine || cursorLine < 0;
-      if (isRawLine) {
+      if (isRawLine(i)) {
         // Raw line: textContent is the source (and reflects fresh keystrokes).
         if (div.querySelector('br') && div.childNodes.length === 1) {
           lines.push('');
@@ -156,53 +190,63 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
         return `<span style="color:#2563eb">${escapeHtml(s.displayContent)}</span>`;
       }
       if (s.type === 'latex') {
-        // Render via KaTeX so non-cursor lines match the rendered output.
-        // The cursor line stays raw so the user can edit `$…$` directly.
-        return renderLatex(s.displayContent, s.isBlock);
+        // Use MathJax for exact parity with the steady SVG render. Fall back
+        // to KaTeX HTML while MathJax is still finishing its async setup.
+        const mj = texFragmentToSvgSync(s.displayContent, s.isBlock);
+        return mj ?? renderLatex(s.displayContent, s.isBlock);
       }
       return escapeHtml(s.displayContent);
     }).join('');
   }, []);
 
-  // Render text as HTML. Non-cursor lines get markdown formatting applied so
-  // they look (almost) like the rendered output; the cursor line stays raw so
-  // the user can see and edit the markup characters. Each line div carries
-  // `data-source` with its raw line content for round-tripping.
-  const renderText = useCallback((plainText: string, style: TextElement['style'], cursorLine: number) => {
+  // Render text as HTML. Lines in `rawLines` (cursor + selection coverage)
+  // render raw — markup characters visible — so the user can edit them
+  // directly. Other lines go through parseInlineSegments + KaTeX/MathJax for
+  // a result that visually matches the steady SVG render. Per-line cache
+  // means a change on line N doesn't re-render lines M ≠ N.
+  //
+  // Line height uses 0.8 + 0.4 * style.lineHeight (the SVG renderer's
+  // ascender + descender breakdown) so the edit overlay's line spacing
+  // matches the steady frame's line spacing.
+  const renderText = useCallback((plainText: string, style: TextElement['style'], rawLines: Set<number>) => {
     if (!editorRef.current) return;
 
     const baseFontSize = style.fontSize * zoom;
     const lines = plainText.split('\n');
-    const lineHeight = style.lineHeight || 1.2;
+    const styleLineHeight = style.lineHeight ?? 1.2;
+    const cssLineHeight = 0.8 + 0.4 * styleLineHeight;
+    const allRaw = rawLines.size === 0;
 
     const html = lines.map((line, index) => {
       const info = parseLine(line);
       const fontSize = baseFontSize * info.fontSizeMultiplier;
       const isHeading = info.type.startsWith('h');
       const fontWeight = isHeading ? 'bold' : 'inherit';
-      const minHeight = fontSize * lineHeight;
+      const minHeight = fontSize * cssLineHeight;
       const sourceAttr = ` data-source="${escapeHtml(line)}"`;
-      const styleAttr = `margin:0;padding:0;font-size:${fontSize}px;font-weight:${fontWeight};line-height:${lineHeight};min-height:${minHeight}px;`;
+      const styleAttr = `margin:0;padding:0;font-size:${fontSize}px;font-weight:${fontWeight};line-height:${cssLineHeight};min-height:${minHeight}px;`;
 
-      // Cursor line (or no-cursor-line preview state) — render raw.
-      if (index === cursorLine || cursorLine < 0) {
+      if (allRaw || rawLines.has(index)) {
         const escaped = escapeHtml(line);
         return `<div data-line="${index}"${sourceAttr} style="${styleAttr}">${escaped || '<br>'}</div>`;
       }
 
-      // Non-cursor line — render with inline markdown formatting applied.
-      // For headings, strip the `# ` / `## ` / `### ` prefix; the font size
-      // already accounts for the heading style.
-      let body = line;
-      if (isHeading) {
-        body = body.slice(info.type === 'h1' ? 2 : info.type === 'h2' ? 3 : 4);
+      // Cached formatted render for this line.
+      const cacheKey = buildCacheKey(line, info.fontSizeMultiplier, style);
+      let formatted = lineCacheRef.current.get(cacheKey);
+      if (formatted === undefined) {
+        // Headings have their prefix stripped from the rendered output;
+        // font-size handles the visual size jump.
+        let body = line;
+        if (isHeading) body = body.slice(info.type === 'h1' ? 2 : info.type === 'h2' ? 3 : 4);
+        formatted = renderFormattedSegment(body) || '<br>';
+        lineCacheRef.current.set(cacheKey, formatted);
       }
-      const formatted = renderFormattedSegment(body);
-      return `<div data-line="${index}"${sourceAttr} style="${styleAttr}">${formatted || '<br>'}</div>`;
+      return `<div data-line="${index}"${sourceAttr} style="${styleAttr}">${formatted}</div>`;
     }).join('');
 
     editorRef.current.innerHTML = html;
-  }, [zoom, parseLine, renderFormattedSegment]);
+  }, [zoom, parseLine, renderFormattedSegment, buildCacheKey]);
 
   // Translate the DOM selection to a SOURCE-text offset.
   //
@@ -294,7 +338,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     const text = textElement.text || '';
     currentTextRef.current = text;
     mountTimeRef.current = Date.now();
-    renderText(text, textElement.style, lineFromOffset(text, getCursorPositionInText(text)));
+    renderText(text, textElement.style, new Set([lineFromOffset(text, getCursorPositionInText(text))]));
 
     // Focus and set cursor - use setTimeout to ensure DOM is ready
     const timer = setTimeout(() => {
@@ -336,16 +380,19 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     if (editingTextId !== prevEditingIdRef.current) return;
 
     const cursorPos = getCursorPosition();
-    renderText(currentTextRef.current, textElement.style, cursorLineIdxRef.current);
+    renderText(currentTextRef.current, textElement.style, rawLinesRef.current);
     setCursorPosition(cursorPos);
   }, [zoom, editingTextId, textElement, renderText, getCursorPosition, setCursorPosition]);
 
-  // Cursor-line tracking. When the selection moves between lines we re-render
-  // so the previously-cursor line becomes formatted and the new line becomes
-  // raw. Read the line directly from the DOM (which div contains the cursor)
-  // rather than from currentTextRef + offset — the ref can be stale between
-  // a keystroke and the next handleInput snapshot, and a wrong line index
-  // here would wipe the just-typed character on re-render.
+  // Raw-line tracking. Lines that should render raw are: the line containing
+  // the cursor + every line covered by a non-collapsed selection. When this
+  // set changes between events we re-render so the formatting swap matches
+  // the new state.
+  //
+  // Line detection comes from the DOM (which div contains the range
+  // endpoints) — never from currentTextRef + offset, because the ref can be
+  // stale between a keystroke and the next handleInput snapshot, and a wrong
+  // line index here would wipe the just-typed character on re-render.
   useEffect(() => {
     if (!editingTextId) return;
     const handle = () => {
@@ -355,20 +402,34 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
       if (!editorRef.current.contains(sel.anchorNode)) return;
       const range = sel.getRangeAt(0);
       const divs = Array.from(editorRef.current.querySelectorAll('div[data-line]'));
-      let line = -1;
+      let startLine = -1, endLine = -1;
       for (let i = 0; i < divs.length; i++) {
-        if (divs[i].contains(range.startContainer)) { line = i; break; }
+        if (divs[i].contains(range.startContainer)) startLine = i;
+        if (divs[i].contains(range.endContainer)) endLine = i;
+        if (startLine >= 0 && endLine >= 0) break;
       }
-      if (line < 0 || line === cursorLineIdxRef.current) return;
-      // Snapshot the CURRENT DOM (with whatever the user just typed) before
+      if (startLine < 0) return;
+      const next = new Set<number>();
+      const lo = Math.min(startLine, endLine);
+      const hi = Math.max(startLine, endLine);
+      for (let i = lo; i <= hi; i++) next.add(i);
+
+      // Diff against the previous raw-line set — if identical, no re-render.
+      const prev = rawLinesRef.current;
+      if (prev.size === next.size) {
+        let same = true;
+        for (const v of next) if (!prev.has(v)) { same = false; break; }
+        if (same) return;
+      }
+
+      // Snapshot the current DOM (with whatever the user just typed) before
       // we replace it, so the typed character survives the re-render.
       const offset = getCursorPosition();
       const currentText = getTextFromEditor();
       currentTextRef.current = currentText;
-      cursorLineIdxRef.current = line;
-      setCursorLineIdx(line);
+      setRawLines(next);
       if (textElement) {
-        renderText(currentText, textElement.style, line);
+        renderText(currentText, textElement.style, next);
         setCursorPosition(offset);
       }
     };
@@ -449,7 +510,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
         if (contentAfterPrefix === '') {
           const newText = currentText.slice(0, currentLineStart) + currentText.slice(cursorPos);
           currentTextRef.current = newText;
-          if (textElement) renderText(newText, textElement.style, cursorLineIdxRef.current);
+          if (textElement) renderText(newText, textElement.style, rawLinesRef.current);
           setCursorPosition(currentLineStart);
           return;
         }
@@ -463,7 +524,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
         if (contentAfterPrefix === '') {
           const newText = currentText.slice(0, currentLineStart) + currentText.slice(cursorPos);
           currentTextRef.current = newText;
-          if (textElement) renderText(newText, textElement.style, cursorLineIdxRef.current);
+          if (textElement) renderText(newText, textElement.style, rawLinesRef.current);
           setCursorPosition(currentLineStart);
           return;
         }
@@ -475,7 +536,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
       const newText = currentText.slice(0, cursorPos) + insertText + currentText.slice(cursorPos);
       currentTextRef.current = newText;
 
-      if (textElement) renderText(newText, textElement.style, cursorLineIdxRef.current);
+      if (textElement) renderText(newText, textElement.style, rawLinesRef.current);
       setCursorPosition(cursorPos + newCursorOffset);
       return;
     }
@@ -501,7 +562,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     const currentText = currentTextRef.current;
     const newText = currentText.slice(0, cursorPos) + pastedText + currentText.slice(cursorPos);
     currentTextRef.current = newText;
-    renderText(newText, textElement.style, cursorLineIdxRef.current);
+    renderText(newText, textElement.style, rawLinesRef.current);
     setCursorPosition(cursorPos + pastedText.length);
   }, [getCursorPosition, renderText, setCursorPosition, textElement]);
 

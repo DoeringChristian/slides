@@ -145,6 +145,25 @@ export async function texFragmentToSvg(texStr: string, displayMode: boolean): Pr
   return texToSvg(texStr, displayMode);
 }
 
+/** Async pre-load so callers can render math synchronously afterwards. */
+export function preloadMathJax(): Promise<void> {
+  return ensureMathJax();
+}
+
+/** True once MathJax has finished its async setup and `texFragmentToSvgSync`
+ *  is safe to call. Callers using this for caching keys should invalidate
+ *  their cache when this transitions from false → true. */
+export function isMathJaxReady(): boolean {
+  return mjDoc !== null;
+}
+
+/** Synchronous form of `texFragmentToSvg`. Returns `null` when MathJax
+ *  hasn't loaded yet — caller should fall back (e.g. KaTeX) until then. */
+export function texFragmentToSvgSync(texStr: string, displayMode: boolean): string | null {
+  if (!mjDoc) return null;
+  return texToSvg(texStr, displayMode);
+}
+
 export function clearLatexCache(): void {
   texCache.clear();
   contentCache.clear();
