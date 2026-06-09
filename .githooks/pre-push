@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+#
+# Pre-push: rebuild every flavour of the app so a broken standalone or viewer
+# template can't slip through to GitHub Pages. The CI does the SAME build on
+# push to main; this hook just catches breakage locally before you wait on CI.
+#
+# Set GIT_HOOKS_SKIP=1 to bypass (e.g. when you're pushing a doc-only branch).
+#
+# To enable in a fresh clone, run:
+#   git config core.hooksPath .githooks
+# (One-time per checkout. README repeats this for new contributors.)
+
+set -e
+
+if [ "${GIT_HOOKS_SKIP:-0}" = "1" ]; then
+  echo "[pre-push] GIT_HOOKS_SKIP=1 — skipping build check"
+  exit 0
+fi
+
+# Only run when pushing the editor's main code path — no reason to rebuild for
+# pushes that don't touch the build inputs.
+changed=$(git diff --name-only "$(git merge-base HEAD @{u} 2>/dev/null || echo HEAD~1)" HEAD 2>/dev/null || true)
+if [ -n "$changed" ] && ! echo "$changed" | grep -qE '^(src/|public/|index\.html|package(-lock)?\.json|vite\.config|scripts/)'; then
+  echo "[pre-push] No build-affecting changes; skipping build check"
+  exit 0
+fi
+
+echo "[pre-push] Running npm run build:all to verify the standalone + viewer + editor templates still compile…"
+if ! npm run build:all > /tmp/slides-prepush-build.log 2>&1; then
+  echo "[pre-push] BUILD FAILED. Push blocked." >&2
+  echo "[pre-push] Last 60 lines of build output:" >&2
+  tail -n 60 /tmp/slides-prepush-build.log >&2
+  echo "[pre-push] Full log at /tmp/slides-prepush-build.log" >&2
+  exit 1
+fi
+
+echo "[pre-push] All three builds clean."

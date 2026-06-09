@@ -22,7 +22,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "preview": "vite preview",
-    "postinstall": "node scripts/patch-mathjax.cjs"
+    "postinstall": "node scripts/patch-mathjax.cjs && git config core.hooksPath .githooks 2>/dev/null || true"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
