@@ -78,6 +78,54 @@ export function prewarmFonts(): void {
   loadFont('bold', 'italic');
 }
 
+/**
+ * Inject @font-face declarations for the same bundled Inter TTFs that
+ * opentype parses, so the HTML edit overlay can render its text in the same
+ * font as the SVG path renderer. Without this, edit mode falls back to the
+ * element's style.fontFamily (Arial, Helvetica, etc.) and the layout shifts
+ * visibly when entering / leaving edit mode.
+ *
+ * Idempotent: only injects once per page load.
+ */
+let fontFaceInjected = false;
+export function injectInterFontFace(): void {
+  if (fontFaceInjected || typeof document === 'undefined') return;
+  fontFaceInjected = true;
+  const style = document.createElement('style');
+  style.setAttribute('data-inter-edit-font', '');
+  style.textContent = `
+    @font-face {
+      font-family: 'InterEdit';
+      src: url(${interRegularUrl}) format('truetype');
+      font-weight: 400;
+      font-style: normal;
+      font-display: block;
+    }
+    @font-face {
+      font-family: 'InterEdit';
+      src: url(${interBoldUrl}) format('truetype');
+      font-weight: 700;
+      font-style: normal;
+      font-display: block;
+    }
+    @font-face {
+      font-family: 'InterEdit';
+      src: url(${interItalicUrl}) format('truetype');
+      font-weight: 400;
+      font-style: italic;
+      font-display: block;
+    }
+    @font-face {
+      font-family: 'InterEdit';
+      src: url(${interBoldItalicUrl}) format('truetype');
+      font-weight: 700;
+      font-style: italic;
+      font-display: block;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 // Hidden detached SVG path used to compute path lengths. Browsers cache the
 // underlying path data per-element; we recreate one element and reuse it.
 let lengthProbe: SVGPathElement | null = null;

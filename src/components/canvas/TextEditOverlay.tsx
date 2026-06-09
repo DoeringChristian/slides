@@ -1,11 +1,20 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
+import 'katex/dist/katex.min.css';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useActiveSlide } from '../../store/selectors';
 import { TEXT_BOX_PADDING, CANVAS_PADDING } from '../../utils/constants';
 import { calculateCursorFromClick } from '../../utils/textHitTest';
+import { injectInterFontFace } from '../../utils/glyphPaths';
+import { renderLatex } from '../../utils/latexUtils';
 import { parseInlineSegments } from './CustomMarkdownRenderer';
 import type { TextElement } from '../../types/presentation';
+
+// Match the steady SVG render: that path uses Inter regardless of the
+// element's chosen font (Phase 2 unification). Wire the same TTFs into a
+// @font-face so HTML edit mode can render them too, then force fontFamily =
+// 'InterEdit' on the editor div so glyph metrics align across modes.
+injectInterFontFace();
 
 interface Props {
   stageRef: React.RefObject<HTMLDivElement | null>;
@@ -146,7 +155,11 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
       if (s.type === 'link') {
         return `<span style="color:#2563eb">${escapeHtml(s.displayContent)}</span>`;
       }
-      // 'latex' segments and plain 'text' both render raw (no KaTeX in edit).
+      if (s.type === 'latex') {
+        // Render via KaTeX so non-cursor lines match the rendered output.
+        // The cursor line stays raw so the user can edit `$…$` directly.
+        return renderLatex(s.displayContent, s.isBlock);
+      }
       return escapeHtml(s.displayContent);
     }).join('');
   }, []);
@@ -572,7 +585,10 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
           paddingRight: 0,
           paddingBottom: 0,
           boxSizing: 'border-box',
-          fontFamily: style.fontFamily,
+          // Force Inter to match the steady SVG render (which always uses
+          // Inter regardless of style.fontFamily). Falls back gracefully to
+          // the user's chosen font if the @font-face hasn't loaded yet.
+          fontFamily: `'InterEdit', ${style.fontFamily}`,
           fontWeight: style.fontWeight,
           fontStyle: style.fontStyle,
           color: style.color,
