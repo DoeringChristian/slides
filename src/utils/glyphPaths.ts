@@ -11,6 +11,10 @@
  * follow-up — the resolveFontUrl table is the single registration point.
  */
 import { parse as parseFont, type Font } from 'opentype.js';
+import interRegularUrl from '../assets/fonts/Inter-Regular.ttf';
+import interBoldUrl from '../assets/fonts/Inter-Bold.ttf';
+import interItalicUrl from '../assets/fonts/Inter-Italic.ttf';
+import interBoldItalicUrl from '../assets/fonts/Inter-BoldItalic.ttf';
 
 export interface GlyphPath {
   /** SVG path data, local to the pen position. */
@@ -29,15 +33,16 @@ type Weight = 'normal' | 'bold';
 type Style = 'normal' | 'italic';
 
 function resolveFontUrl(weight: Weight, style: Style): string {
-  // Vite rewrites import.meta.env.BASE_URL to the deploy base path. In dev
-  // this is "/", on GitHub Pages it's "/slides/". Without the prefix the
-  // fetch 404s in production and opentype rejects, falling back to the HTML
-  // renderer and losing all path-based animations.
-  const base = import.meta.env.BASE_URL;
-  if (weight === 'bold' && style === 'italic') return `${base}fonts/Inter-BoldItalic.ttf`;
-  if (weight === 'bold') return `${base}fonts/Inter-Bold.ttf`;
-  if (style === 'italic') return `${base}fonts/Inter-Italic.ttf`;
-  return `${base}fonts/Inter-Regular.ttf`;
+  // URLs come from Vite imports so the bundler decides:
+  //   editor build → hashed asset served from /slides/assets/Inter-*.<hash>.ttf
+  //   standalone build → inlined as data: URL (assetsInlineLimit: 100MB)
+  // Either way the runtime fetch finds the bytes without depending on a
+  // sibling `fonts/` directory next to the HTML — which the single-file
+  // standalone export doesn't have.
+  if (weight === 'bold' && style === 'italic') return interBoldItalicUrl;
+  if (weight === 'bold') return interBoldUrl;
+  if (style === 'italic') return interItalicUrl;
+  return interRegularUrl;
 }
 
 const fontCache = new Map<string, Promise<Font>>();
