@@ -32,11 +32,11 @@ export interface SvgPath {
 }
 
 export interface SvgTextDoc {
-  /** SVG fragment string ready for `innerHTML` on a <g> element. */
-  svgMarkup: string;
-  /** Phase 2: per-glyph paths for Write effect. Empty in Phase 1. */
+  /** Per-glyph paths. The renderer runs them through the same stroke-dash
+   *  pipeline for both steady (writeFx undefined → every glyph at full fill)
+   *  and Write/Unwrite (writeFx.t drives per-glyph progress). */
   paths: SvgPath[];
-  /** Phase 2: sum of path lengths; drives the Write stroke budget. */
+  /** Sum of path lengths; drives the Write stroke budget. */
   totalLength: number;
   /** Computed content width (capped at boxWidth). */
   width: number;
@@ -50,40 +50,101 @@ function escapeXml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-// MathJax emits the outer <svg> with width/height in `ex` units (or em/px) and
-// a viewBox like "0 -792 2756 999" where y=0 in vb-space is the math baseline.
-// Returns pixel dims plus the viewBox vertical metrics so the layout can land
-// the math baseline exactly on the text baseline (used by both Phase 1 steady
-// and Phase 2 flatten — they MUST agree or the math jumps at transition end).
-function parseMathSvgSize(svgMarkup: string, fontPx: number): {
+// Parse a MathJax SVG fragment once. Returns the pixel dimensions used for
+// layout plus a closure that emits per-glyph paths at a given pen position.
+// The closure captures the DOM-walked glyph list and the viewBox-to-pixel
+// scale so the layout pass can decide where the math goes and the emission
+// pass can produce its paths — without re-parsing the SVG.
+//
+// Math vertical alignment: MathJax viewBox uses y=0 as the baseline (vbY is
+// typically negative). The emit closure computes
+// yOffset = baselineY + vbY * scaleY so the math baseline lands exactly on
+// the surrounding text baseline.
+function parseMathSvg(mathSvg: string, fontPx: number): {
   widthPx: number;
   heightPx: number;
-  vbY: number;
-  vbH: number;
-} {
-  const widthMatch = svgMarkup.match(/<svg[^>]*\bwidth="([\d.]+)(ex|em|px)?"/);
-  const heightMatch = svgMarkup.match(/<svg[^>]*\bheight="([\d.]+)(ex|em|px)?"/);
-  const vbMatch = svgMarkup.match(/<svg[^>]*\bviewBox="([^"]+)"/);
-  const toPx = (val: number, unit: string | undefined): number => {
+  emitPaths: (xCursor: number, baselineY: number, color: string) => SvgPath[];
+} | null {
+  if (typeof DOMParser === 'undefined') return null;
+
+  const parser = new DOMParser();
+  const wrapped = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">${mathSvg}</svg>`;
+  const doc = parser.parseFromString(wrapped, 'image/svg+xml');
+  if (doc.querySelector('parsererror')) return null;
+  const inner = doc.documentElement.querySelector('svg');
+  if (!inner) return null;
+
+  // Dimensions: MathJax uses `ex` units; 1ex ≈ 0.5em ≈ 0.5 * fontPx.
+  const parseDim = (attr: string | null, fallback: number): number => {
+    if (!attr) return fallback;
+    const m = attr.match(/^([\d.]+)(ex|em|px)?$/);
+    if (!m) return fallback;
+    const val = parseFloat(m[1]);
+    const unit = m[2];
     if (unit === 'em') return val * fontPx;
     if (unit === 'px') return val;
     return val * fontPx * 0.5;
   };
-  let vbY = 0;
-  let vbH = 1;
-  if (vbMatch) {
-    const parts = vbMatch[1].split(/\s+/).map(parseFloat);
-    if (parts.length === 4) {
-      vbY = parts[1];
-      vbH = parts[3] || 1;
-    }
+  const widthPx = parseDim(inner.getAttribute('width'), fontPx);
+  const heightPx = parseDim(inner.getAttribute('height'), fontPx);
+
+  const vbAttr = inner.getAttribute('viewBox') || '0 0 1 1';
+  const vb = vbAttr.split(/\s+/).map(parseFloat);
+  const [vbX, vbY, vbW, vbH] = vb.length === 4 ? vb : [0, 0, 1, 1];
+  if (!vbW || !vbH) {
+    return { widthPx, heightPx, emitPaths: () => [] };
   }
-  return {
-    widthPx: widthMatch ? toPx(parseFloat(widthMatch[1]), widthMatch[2]) : fontPx,
-    heightPx: heightMatch ? toPx(parseFloat(heightMatch[1]), heightMatch[2]) : fontPx,
-    vbY,
-    vbH,
+  const scaleX = widthPx / vbW;
+  const scaleY = heightPx / vbH;
+
+  // id → path data lookup from <defs>.
+  const defs = new Map<string, string>();
+  inner.querySelectorAll('defs path').forEach((p) => {
+    const id = p.getAttribute('id');
+    const d = p.getAttribute('d');
+    if (id && d) defs.set(id, d);
+  });
+
+  // Collect every renderable glyph in document order with its accumulated
+  // inner-SVG transform. The outer translate+scale is appended at emit time.
+  type RawGlyph = { d: string; innerTr: string; localLen: number };
+  const raws: RawGlyph[] = [];
+  const walk = (el: Element, parentTr: string): void => {
+    const tr = el.getAttribute('transform');
+    const combinedTr = tr ? (parentTr ? `${parentTr} ${tr}` : tr) : parentTr;
+
+    if (el.localName === 'use') {
+      const href = el.getAttribute('href') || el.getAttribute('xlink:href') || '';
+      const id = href.startsWith('#') ? href.slice(1) : href;
+      const d = defs.get(id);
+      if (d) raws.push({ d, innerTr: combinedTr, localLen: pathLengthFor(d) });
+      return;
+    }
+    if (el.localName === 'path' && !el.closest('defs')) {
+      const d = el.getAttribute('d');
+      if (d) raws.push({ d, innerTr: combinedTr, localLen: pathLengthFor(d) });
+      return;
+    }
+    for (const child of Array.from(el.children)) walk(child, combinedTr);
   };
+  for (const child of Array.from(inner.children)) {
+    if (child.localName === 'defs') continue;
+    walk(child, '');
+  }
+
+  const emitPaths = (xCursor: number, baselineY: number, color: string): SvgPath[] => {
+    const yOffset = baselineY + vbY * scaleY;
+    const outerTr = `translate(${xCursor.toFixed(3)},${yOffset.toFixed(3)}) scale(${scaleX.toFixed(4)},${scaleY.toFixed(4)}) translate(${(-vbX).toFixed(3)},${(-vbY).toFixed(3)})`;
+    return raws.map((g) => ({
+      d: g.d,
+      transform: g.innerTr ? `${outerTr} ${g.innerTr}` : outerTr,
+      length: g.localLen * scaleY,
+      fillColor: color,
+      nonScalingStroke: true,
+    }));
+  };
+
+  return { widthPx, heightPx, emitPaths };
 }
 
 function buildTextDecoration(underline: boolean, strikethrough: boolean): string {
@@ -103,116 +164,14 @@ type PlacedUnit =
       decoration: string;
       color: string;
     }
-  | { kind: 'math'; svg: string; widthPx: number; heightPx: number; vbY: number; vbH: number; color: string };
-
-/**
- * Flatten a MathJax SVG fragment into per-glyph paths suitable for stroke
- * animation. Resolves <use href> references against the SVG's <defs>, chains
- * ancestor transforms, and maps from the math's viewBox units into our layout
- * pixel coordinates.
- *
- * Vertical alignment: MathJax SVGs have viewBox like "0 -792 2756.4 999.8"
- * where y=0 in viewBox space is the math baseline. We compute yOffset so that
- * after the scale + viewBox-origin translation, the math's baseline lines up
- * exactly with the surrounding text baseline.
- */
-function flattenMathSvgToPaths(
-  mathSvg: string,
-  xCursor: number,
-  baselineY: number,
-  widthPx: number,
-  heightPx: number,
-  vbY: number,
-  vbH: number,
-  color: string,
-): Array<{ d: string; transform: string; length: number; fillColor: string; nonScalingStroke: boolean }> {
-  if (typeof DOMParser === 'undefined') return [];
-
-  const parser = new DOMParser();
-  const wrapped = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">${mathSvg}</svg>`;
-  const doc = parser.parseFromString(wrapped, 'image/svg+xml');
-  if (doc.querySelector('parsererror')) return [];
-
-  // The wrapping <svg> contains the MathJax <svg> as its first/only child.
-  const inner = doc.documentElement.querySelector('svg');
-  if (!inner) return [];
-
-  const vbAttr = inner.getAttribute('viewBox') || '0 0 1 1';
-  const vb = vbAttr.split(/\s+/).map(parseFloat);
-  const [vbX, , vbW] = vb.length === 4 ? vb : [0, 0, 1, 1];
-  if (!vbW || !vbH) return [];
-
-  const scaleX = widthPx / vbW;
-  const scaleY = heightPx / vbH;
-
-  // baselineY = top-of-svg + heightPx * (-vbY)/vbH (the baseline is at vb y=0;
-  // that lands `heightPx*(-vbY)/vbH` below the SVG top). Solve for top:
-  // top = baselineY - heightPx*(-vbY)/vbH = baselineY + vbY*scaleY.
-  // Outer translate then scale then origin-translate puts (0,0)_layout at the
-  // viewBox top-left, which matches `top`.
-  const yOffset = baselineY + vbY * scaleY;
-  const outerTr = `translate(${xCursor.toFixed(3)},${yOffset.toFixed(3)}) scale(${scaleX.toFixed(4)},${scaleY.toFixed(4)}) translate(${(-vbX).toFixed(3)},${(-vbY).toFixed(3)})`;
-
-  // id → path data lookup from <defs>.
-  const defs = new Map<string, string>();
-  inner.querySelectorAll('defs path').forEach((p) => {
-    const id = p.getAttribute('id');
-    const d = p.getAttribute('d');
-    if (id && d) defs.set(id, d);
-  });
-
-  const out: Array<{ d: string; transform: string; length: number; fillColor: string; nonScalingStroke: boolean }> = [];
-
-  const walk = (el: Element, parentTr: string): void => {
-    const tr = el.getAttribute('transform');
-    const combinedTr = tr ? `${parentTr} ${tr}` : parentTr;
-
-    if (el.localName === 'use') {
-      const href = el.getAttribute('href') || el.getAttribute('xlink:href') || '';
-      const id = href.startsWith('#') ? href.slice(1) : href;
-      const d = defs.get(id);
-      if (d) {
-        // Path length is measured in the path's LOCAL (viewBox-units) space.
-        // The Write budget needs to be comparable across text glyphs and math
-        // glyphs; multiply by the per-axis scale (use scaleY since math glyph
-        // strokes are roughly isotropic post-scale).
-        const localLen = pathLengthFor(d);
-        out.push({
-          d,
-          transform: combinedTr,
-          length: localLen * scaleY,
-          fillColor: color,
-          nonScalingStroke: true,
-        });
-      }
-      return;
-    }
-    if (el.localName === 'path' && !el.closest('defs')) {
-      const d = el.getAttribute('d');
-      if (d) {
-        const localLen = pathLengthFor(d);
-        out.push({
-          d,
-          transform: combinedTr,
-          length: localLen * scaleY,
-          fillColor: color,
-          nonScalingStroke: true,
-        });
-      }
-      return;
-    }
-    for (const child of Array.from(el.children)) {
-      walk(child, combinedTr);
-    }
-  };
-
-  for (const child of Array.from(inner.children)) {
-    if (child.localName === 'defs') continue;
-    walk(child, outerTr);
-  }
-
-  return out;
-}
+  | {
+      kind: 'math';
+      widthPx: number;
+      heightPx: number;
+      /** Captures the parsed MathJax SVG + the color; emits glyph paths at the
+       *  given pen position. */
+      emitPaths: (xCursor: number, baselineY: number) => SvgPath[];
+    };
 
 export async function layoutSvgText(
   text: string,
@@ -292,16 +251,24 @@ export async function layoutSvgText(
           } catch {
             mathSvg = `<text fill="#d1242f" font-size="${blockFontSize * 0.8}" font-family="monospace">${escapeXml(seg.content)}</text>`;
           }
-          const { widthPx, heightPx, vbY, vbH } = parseMathSvgSize(mathSvg, blockFontSize);
+          const parsed = parseMathSvg(mathSvg, blockFontSize);
+          if (!parsed) continue;
+          const mathColor = style.color;
+          const unit: PlacedUnit = {
+            kind: 'math',
+            widthPx: parsed.widthPx,
+            heightPx: parsed.heightPx,
+            emitPaths: (x, y) => parsed.emitPaths(x, y, mathColor),
+          };
           if (seg.isBlock) {
             if (curLineWidth > 0) startNewLine();
-            lines[lines.length - 1].push({ kind: 'math', svg: mathSvg, widthPx, heightPx, vbY, vbH, color: style.color });
-            curLineWidth = widthPx;
+            lines[lines.length - 1].push(unit);
+            curLineWidth = parsed.widthPx;
             startNewLine();
           } else {
-            if (curLineWidth + widthPx > boxWidth && curLineWidth > 0) startNewLine();
-            lines[lines.length - 1].push({ kind: 'math', svg: mathSvg, widthPx, heightPx, vbY, vbH, color: style.color });
-            curLineWidth += widthPx;
+            if (curLineWidth + parsed.widthPx > boxWidth && curLineWidth > 0) startNewLine();
+            lines[lines.length - 1].push(unit);
+            curLineWidth += parsed.widthPx;
           }
           continue;
         }
@@ -382,8 +349,7 @@ export async function layoutSvgText(
             }
             xCursor = endX;
           } else {
-            const flat = flattenMathSvgToPaths(unit.svg, xCursor, baseline, unit.widthPx, unit.heightPx, unit.vbY, unit.vbH, unit.color);
-            pathsOut.push(...flat);
+            pathsOut.push(...unit.emitPaths(xCursor, baseline));
             xCursor += unit.widthPx;
           }
         }
@@ -396,7 +362,6 @@ export async function layoutSvgText(
     const totalLength = pathsOut.reduce((s, p) => s + p.length, 0);
 
     return {
-      svgMarkup: '',
       paths: pathsOut,
       totalLength,
       width: totalWidth,
