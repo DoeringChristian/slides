@@ -10,6 +10,54 @@ import type {
 import { usePresentationStore } from '../../store/presentationStore';
 import { composeSlideFrame, renderPresenterElement } from '../presenter/presenterUtils';
 
+// ---------------------------------------------------------------------------
+// Shared animation clock for every preview card in every open picker. With
+// per-card RAF loops each card snapshots its own `performance.now()` at mount
+// and drifts out of phase from siblings; one global RAF feeding one `t` value
+// to all subscribers keeps every card on the same frame.
+// ---------------------------------------------------------------------------
+const ANIM_MS = 1200;
+const PAUSE_MS = 400;
+const CYCLE_MS = ANIM_MS + PAUSE_MS;
+
+const subscribers = new Set<(t: number) => void>();
+let sharedRaf = 0;
+
+function tickAll(): void {
+  // Use the page-relative clock so all cards across all open pickers share
+  // a single phase even if they mount at different times.
+  const phase = performance.now() % CYCLE_MS;
+  const t = phase < ANIM_MS ? phase / ANIM_MS : 1;
+  for (const fn of subscribers) fn(t);
+  sharedRaf = requestAnimationFrame(tickAll);
+}
+
+function subscribeTick(fn: (t: number) => void): () => void {
+  subscribers.add(fn);
+  if (subscribers.size === 1) {
+    sharedRaf = requestAnimationFrame(tickAll);
+  }
+  return () => {
+    subscribers.delete(fn);
+    if (subscribers.size === 0) {
+      cancelAnimationFrame(sharedRaf);
+      sharedRaf = 0;
+    }
+  };
+}
+
+function useSharedAnimationTick(active: boolean): number {
+  const [t, setT] = useState(0);
+  useEffect(() => {
+    if (!active) {
+      setT(0);
+      return;
+    }
+    return subscribeTick(setT);
+  }, [active]);
+  return t;
+}
+
 interface Props {
   sourceElement: SlideElement | undefined;
   targetElement: SlideElement | undefined;
@@ -25,20 +73,19 @@ interface Props {
   active?: boolean;
 }
 
-const ANIM_MS = 1200;
-const PAUSE_MS = 400;
-const CYCLE_MS = ANIM_MS + PAUSE_MS;
-
 /**
  * Mini preview that loops the slide transition for one easing choice. Uses
  * composeSlideFrame + renderPresenterElement (the exact production renderer)
  * so the preview can never disagree with what shipping decks will play.
+ *
+ * All cards share a single RAF source (`useSharedAnimationTick`) so they tick
+ * in phase — picking "ease" vs "write" you see the same t across the grid.
  */
 export const TransitionPreview: React.FC<Props> = ({
   sourceElement, targetElement, group, easing, options, width, height, active = true,
 }) => {
   const resources = usePresentationStore((s) => s.presentation.resources);
-  const [t, setT] = useState(0);
+  const t = useSharedAnimationTick(active);
 
   // Decide which side carries the transition. For a visibility fade-OUT the
   // source element holds the easing (the target is gone); everywhere else it's
@@ -69,23 +116,6 @@ export const TransitionPreview: React.FC<Props> = ({
     () => (isFadeOut ? targetElement : withEasing(targetElement)),
     [targetElement, isFadeOut, easing, options, group],
   );
-
-  useEffect(() => {
-    if (!active) {
-      setT(0);
-      return;
-    }
-    let raf = 0;
-    const start = performance.now();
-    const loop = () => {
-      const elapsed = (performance.now() - start) % CYCLE_MS;
-      const tNew = elapsed < ANIM_MS ? elapsed / ANIM_MS : 1;
-      setT(tNew);
-      raf = requestAnimationFrame(loop);
-    };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
-  }, [active, easing, options, sourceElement?.id, targetElement?.id]);
 
   // viewBox = union of source + target bboxes (+ 20% padding).
   const bbox = useMemo(() => {
