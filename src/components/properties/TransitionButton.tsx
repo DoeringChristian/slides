@@ -2,11 +2,21 @@ import React, { useState, useRef, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Minus, TrendingUp, Spline, Layers, Type, ArrowRightLeft, PenLine } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
-import type { EasingType, PropertyTransitions, SlideElement, TextElement, ShapeElement, ImageElement } from '../../types/presentation';
+import type {
+  EasingType,
+  PropertyTransitions,
+  SlideElement,
+  TextElement,
+  ShapeElement,
+  ImageElement,
+  TransitionGroup,
+  TransitionOptions,
+} from '../../types/presentation';
+import { TransitionPreview } from './TransitionPreview';
 
 interface Props {
   elementId: string;
-  group: keyof PropertyTransitions;
+  group: TransitionGroup;
   direction: 'in' | 'out';
   availableTypes?: EasingType[];
 }
@@ -24,23 +34,27 @@ const EASING_ICONS: Record<EasingType, React.ReactNode> = {
 };
 
 const EASING_LABELS: Record<EasingType, string> = {
-  const: 'Constant (snap)',
+  const: 'Constant',
   linear: 'Linear',
-  ease: 'Ease (smooth)',
-  dissolve: 'Dissolve (blend)',
+  ease: 'Ease',
+  dissolve: 'Dissolve',
   fadeinout: 'Fade In/Out',
   typewriter: 'Typewriter',
-  write: 'Write (pen-draw, uses Inter)',
+  write: 'Write',
 };
 
-// Default available types per property group
 const DEFAULT_TYPES: EasingType[] = ['const', 'linear', 'ease'];
 const CONTENT_TYPES: EasingType[] = ['const', 'dissolve', 'typewriter', 'write'];
 const RESOURCE_TYPES: EasingType[] = ['const', 'dissolve', 'fadeinout'];
 const VISIBILITY_TYPES: EasingType[] = ['const', 'linear', 'ease', 'write'];
 
-// Map property groups to the actual element fields to compare
-function getPropertyValues(element: SlideElement, group: keyof PropertyTransitions): (number | string | boolean | null | undefined)[] {
+// Which easings (per group) expose user-configurable options.
+function easingHasOptions(group: TransitionGroup, easing: EasingType): boolean {
+  if (easing === 'write' && group === 'content') return true;
+  return false;
+}
+
+function getPropertyValues(element: SlideElement, group: TransitionGroup): (number | string | boolean | null | undefined)[] {
   switch (group) {
     case 'position': return [element.x, element.y];
     case 'size': return [element.width, element.height];
@@ -66,17 +80,14 @@ function getPropertyValues(element: SlideElement, group: keyof PropertyTransitio
   }
 }
 
-function propertiesDiffer(a: SlideElement | undefined, b: SlideElement | undefined, group: keyof PropertyTransitions): boolean {
-  // For visibility: element appearing/disappearing counts as a difference
+function propertiesDiffer(a: SlideElement | undefined, b: SlideElement | undefined, group: TransitionGroup): boolean {
   if (group === 'visibility') {
     const aVisible = a?.visible ?? false;
     const bVisible = b?.visible ?? false;
-    // Also treat element not existing as not visible
     const aExists = !!a;
     const bExists = !!b;
     return (aExists && aVisible) !== (bExists && bVisible);
   }
-
   if (!a || !b) return false;
   const valsA = getPropertyValues(a, group);
   const valsB = getPropertyValues(b, group);
@@ -84,7 +95,6 @@ function propertiesDiffer(a: SlideElement | undefined, b: SlideElement | undefin
   for (let i = 0; i < valsA.length; i++) {
     const valA = valsA[i];
     const valB = valsB[i];
-    // For numbers, compare with rounding
     if (typeof valA === 'number' && typeof valB === 'number') {
       if (Math.round(valA) !== Math.round(valB)) return true;
     } else if (valA !== valB) {
@@ -94,13 +104,18 @@ function propertiesDiffer(a: SlideElement | undefined, b: SlideElement | undefin
   return false;
 }
 
+const optionsKeyFor = (group: TransitionGroup): 'contentOptions' | 'visibilityOptions' | null => {
+  if (group === 'content') return 'contentOptions';
+  if (group === 'visibility') return 'visibilityOptions';
+  return null;
+};
+
 export const TransitionButton: React.FC<Props> = ({
   elementId,
   group,
   direction,
   availableTypes,
 }) => {
-  // Determine available types based on property group
   const types = availableTypes ?? (
     group === 'content' ? CONTENT_TYPES :
     group === 'resource' ? RESOURCE_TYPES :
@@ -116,44 +131,33 @@ export const TransitionButton: React.FC<Props> = ({
   const slides = usePresentationStore((s) => s.presentation.slides);
   const updateElement = usePresentationStore((s) => s.updateElement);
 
-  // Find current slide index
   const currentSlideIndex = slideOrder.indexOf(activeSlideId);
-
-  // For 'in' direction: compare with previous slide, edit current slide's transitions
-  // For 'out' direction: compare with next slide, edit next slide's transitions
   const sourceSlideIndex = direction === 'in' ? currentSlideIndex - 1 : currentSlideIndex;
   const targetSlideIndex = direction === 'in' ? currentSlideIndex : currentSlideIndex + 1;
-
   const sourceSlideId = slideOrder[sourceSlideIndex];
   const targetSlideId = slideOrder[targetSlideIndex];
-
   const sourceSlide = sourceSlideId ? slides[sourceSlideId] : undefined;
   const targetSlide = targetSlideId ? slides[targetSlideId] : undefined;
-
   const sourceElement = sourceSlide?.elements[elementId];
   const targetElement = targetSlide?.elements[elementId];
 
-  // Only show if the property differs between source and target
   const differs = propertiesDiffer(sourceElement, targetElement, group);
 
-  // For visibility transitions when element disappears (fade-out),
-  // we store the transition on the source element since target doesn't exist
+  // Where the transition lives: target by default, source for fade-out
+  // visibility changes (because target doesn't exist).
   const isFadeOut = group === 'visibility' && sourceElement?.visible && !targetElement;
-
-  // Determine which element holds the transition settings
-  // For fade-out: use source element (since target doesn't exist)
-  // For everything else: use target element
   const transitionElement = isFadeOut ? sourceElement : targetElement;
   const transitionSlideId = isFadeOut ? sourceSlideId : targetSlideId;
 
-  // Get current easing value from the appropriate element
   const defaultEasing: EasingType = group === 'resource' ? 'dissolve' : group === 'content' ? 'const' : 'linear';
   const currentEasing: EasingType = transitionElement?.transitions?.[group] || defaultEasing;
+  const optKey = optionsKeyFor(group);
+  const currentOptions: TransitionOptions | undefined = optKey
+    ? transitionElement?.transitions?.[optKey]
+    : undefined;
 
-  // Can edit if we have an element to store transitions on and property differs
   const canEdit = !!transitionElement && differs;
 
-  // Close menu when clicking outside
   useEffect(() => {
     if (!isOpen) return;
     const handleClick = (e: MouseEvent) => {
@@ -164,19 +168,32 @@ export const TransitionButton: React.FC<Props> = ({
         setIsOpen(false);
       }
     };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsOpen(false);
+    };
     document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('keydown', handleKey);
+    };
   }, [isOpen]);
 
   if (!canEdit) return null;
 
+  const writeNewTransitions = (mutate: (t: PropertyTransitions) => void) => {
+    const next: PropertyTransitions = { ...(transitionElement!.transitions || {}) };
+    mutate(next);
+    updateElement(transitionSlideId!, elementId, { transitions: next } as Partial<SlideElement>);
+  };
+
   const handleSelect = (easing: EasingType) => {
-    const newTransitions: PropertyTransitions = {
-      ...transitionElement!.transitions,
-      [group]: easing,
-    };
-    updateElement(transitionSlideId!, elementId, { transitions: newTransitions } as Partial<SlideElement>);
-    setIsOpen(false);
+    writeNewTransitions((t) => { t[group] = easing; });
+  };
+
+  const handleOptionChange = (nextOptions: TransitionOptions) => {
+    if (!optKey) return;
+    writeNewTransitions((t) => { t[optKey] = nextOptions; });
   };
 
   return (
@@ -194,22 +211,91 @@ export const TransitionButton: React.FC<Props> = ({
       {isOpen && (
         <div
           ref={menuRef}
-          className="absolute z-[9999] top-full mt-1 right-0 bg-white border border-gray-200 rounded shadow-lg py-1 min-w-[140px]"
+          className="absolute z-[9999] top-full mt-1 right-0 bg-white border border-gray-200 rounded-lg shadow-xl p-3 w-[420px]"
         >
-          {types.map((type) => (
-            <button
-              key={type}
-              onClick={() => handleSelect(type)}
-              className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100 ${
-                currentEasing === type ? 'bg-blue-50 text-blue-600' : 'text-gray-700'
-              }`}
-            >
-              {EASING_ICONS[type]}
-              {EASING_LABELS[type]}
-            </button>
-          ))}
+          <div className="text-xs font-medium text-gray-500 mb-2 px-1">
+            {direction === 'in' ? 'Incoming' : 'Outgoing'} transition
+          </div>
+
+          <div className="grid grid-cols-3 gap-2">
+            {types.map((easing) => {
+              const selected = currentEasing === easing;
+              return (
+                <button
+                  key={easing}
+                  onClick={() => handleSelect(easing)}
+                  className={`group flex flex-col items-stretch rounded overflow-hidden border ${
+                    selected ? 'border-blue-500 ring-1 ring-blue-300' : 'border-gray-200 hover:border-gray-400'
+                  }`}
+                  title={EASING_LABELS[easing]}
+                >
+                  <div className="bg-gray-50 aspect-[3/2]">
+                    <TransitionPreview
+                      sourceElement={sourceElement}
+                      targetElement={targetElement}
+                      group={group}
+                      easing={easing}
+                      options={easing === currentEasing ? currentOptions : undefined}
+                      width={120}
+                      height={80}
+                      active={isOpen}
+                    />
+                  </div>
+                  <div className={`flex items-center gap-1 px-2 py-1 text-xs ${
+                    selected ? 'bg-blue-50 text-blue-700' : 'bg-white text-gray-600'
+                  }`}>
+                    {EASING_ICONS[easing]}
+                    <span>{EASING_LABELS[easing]}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {easingHasOptions(group, currentEasing) && (
+            <div className="mt-3 pt-3 border-t border-gray-200">
+              <div className="text-xs font-medium text-gray-500 mb-2 px-1">
+                {EASING_LABELS[currentEasing]} options
+              </div>
+              <WriteOptionsPanel
+                value={currentOptions ?? {}}
+                onChange={handleOptionChange}
+                group={group}
+              />
+            </div>
+          )}
         </div>
       )}
     </div>
   );
+};
+
+const WriteOptionsPanel: React.FC<{
+  value: TransitionOptions;
+  onChange: (next: TransitionOptions) => void;
+  group: TransitionGroup;
+}> = ({ value, onChange, group }) => {
+  if (group === 'content') {
+    const undoFirst = Boolean(value.write?.undoFirst);
+    return (
+      <label className="flex items-start gap-2 text-xs text-gray-700 cursor-pointer px-1">
+        <input
+          type="checkbox"
+          checked={undoFirst}
+          onChange={(e) => onChange({ ...value, write: { ...(value.write || {}), undoFirst: e.target.checked } })}
+          className="mt-0.5"
+        />
+        <span>
+          <span className="font-medium">Undo source before writing target</span>
+          <br />
+          <span className="text-gray-500">
+            First half un-writes the source text, second half writes the target.
+            Off: source vanishes instantly and the full duration is spent writing
+            the target.
+          </span>
+        </span>
+      </label>
+    );
+  }
+  return null;
 };

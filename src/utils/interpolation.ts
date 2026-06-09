@@ -234,11 +234,44 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
     const tb = b as TextElement;
     const contentEasing = tr.content ?? 'const';
 
-    // Write for content changes: at t=0 the source text is still shown
-    // (that's the previous frame); from t=0+ the source snaps off and the
-    // target writes on across the full duration. No unwrite phase — the user
-    // asked for instant clear + re-write.
+    // Write for content changes. Two behaviours, picked by the
+    // `contentOptions.write.undoFirst` flag on whichever element holds the
+    // transition (= the target).
+    //
+    //   undoFirst=false (default): at t=0+ the source snaps off and the
+    //     target writes on across the FULL duration. Simple "clear + write".
+    //
+    //   undoFirst=true: source unwrites in the first half (writeFx going
+    //     1 → 0 on the source text), target writes in the second half
+    //     (writeFx going 0 → 1 on the target text). Matches manim's
+    //     ReplacementTransform of Write/Unwrite back-to-back.
     if (contentEasing === 'write' && ta.text !== tb.text) {
+      const undoFirst = Boolean(tr.contentOptions?.write?.undoFirst);
+      if (undoFirst) {
+        const sourceText = t < 0.5 ? ta.text : tb.text;
+        const fx: WriteEffect = t < 0.5
+          ? { t: 1 - t * 2, direction: 'out' }
+          : { t: (t - 0.5) * 2, direction: 'in' };
+        const useA = t < 0.5;
+        return {
+          ...base,
+          type: 'text',
+          text: sourceText,
+          opacity: baseOpacity,
+          style: {
+            fontFamily: useA ? ta.style.fontFamily : tb.style.fontFamily,
+            fontSize: lerpEased(ta.style.fontSize, tb.style.fontSize, t, tr.fontSize),
+            fontWeight: useA ? ta.style.fontWeight : tb.style.fontWeight,
+            fontStyle: useA ? ta.style.fontStyle : tb.style.fontStyle,
+            textDecoration: useA ? ta.style.textDecoration : tb.style.textDecoration,
+            color: lerpColorEased(ta.style.color, tb.style.color, t, tr.color),
+            align: useA ? ta.style.align : tb.style.align,
+            verticalAlign: useA ? ta.style.verticalAlign : tb.style.verticalAlign,
+            lineHeight: lerpEased(ta.style.lineHeight, tb.style.lineHeight, t, tr.lineHeight),
+          },
+          _writeFx: fx,
+        } as TextElement & { _writeFx: WriteEffect };
+      }
       return {
         ...base,
         type: 'text',

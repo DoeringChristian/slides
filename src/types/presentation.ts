@@ -71,6 +71,31 @@ export interface SlideTransition {
 // Animation easing types for property transitions
 export type EasingType = 'const' | 'linear' | 'ease' | 'dissolve' | 'fadeinout' | 'typewriter' | 'write';
 
+/** Per-easing settings. Each top-level key targets one easing's behaviour;
+ *  callers read e.g. `transitions.contentOptions?.write?.undoFirst` only when
+ *  `transitions.content === 'write'`. Schema is open-ended so adding options
+ *  later (stagger ratio, stroke colour, …) doesn't require a migration. */
+export interface WriteOptions {
+  /** Content-change Write only. If true, run a two-phase animation: unwrite
+   *  the source text across the first half, write the target across the
+   *  second. If false/undefined, the source snaps off at t=0 and the target
+   *  writes on across the full duration. */
+  undoFirst?: boolean;
+}
+
+export interface TransitionOptions {
+  write?: WriteOptions;
+}
+
+/** Keys of `PropertyTransitions` that hold an `EasingType` (i.e. the property
+ *  groups that have a transition setting). Excludes the per-easing options
+ *  fields. UI code uses this as its `group` discriminator. */
+export type TransitionGroup =
+  | 'position' | 'size' | 'rotation' | 'opacity'
+  | 'fill' | 'stroke' | 'strokeWidth' | 'cornerRadius'
+  | 'fontSize' | 'color' | 'lineHeight'
+  | 'crop' | 'resource' | 'visibility' | 'content';
+
 // Per-property-group transition settings
 export interface PropertyTransitions {
   position?: EasingType;      // x, y
@@ -88,6 +113,11 @@ export interface PropertyTransitions {
   resource?: EasingType;      // resourceId (supports dissolve)
   visibility?: EasingType;    // fade-in/fade-out animation
   content?: EasingType;       // text content (typewriter effect)
+
+  /** Optional per-easing settings, per group. Read only when the matching
+   *  easing field above is set. Unset → all options take their defaults. */
+  contentOptions?: TransitionOptions;
+  visibilityOptions?: TransitionOptions;
 }
 
 export type SlideElement = TextElement | ShapeElement | ImageElement | GroupElement;
