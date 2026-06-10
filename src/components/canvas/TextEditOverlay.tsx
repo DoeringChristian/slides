@@ -44,7 +44,6 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
   const slide = useActiveSlide();
 
   const editorRef = useRef<HTMLDivElement>(null);
-  const currentTextRef = useRef('');
   const mountTimeRef = useRef(Date.now());
   const editingTextIdRef = useRef<string | null>(null);
   const activeSlideIdRef = useRef<string>(activeSlideId);
@@ -56,24 +55,23 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
   };
   // Live local copy of the editable text. Drives the SVG re-layout on every
   // keystroke (the store is only written back when the line / element
-  // changes, which is way too coarse for "show my edit immediately").
+  // changes, which is way too coarse for "show my edit immediately"). The
+  // ref mirror lets ref-only callbacks read the latest value without
+  // capturing a stale closure.
   const [liveText, setLiveText] = useState('');
-  // Mirror for use inside ref-based callbacks (so they don't capture stale
-  // closures of liveText across renders).
   const liveTextRef = useRef('');
   liveTextRef.current = liveText;
 
   activeSlideIdRef.current = activeSlideId;
 
-  // Save text whenever editingTextId changes away from a value.
+  // Save text back to the store whenever editingTextId changes away.
   useEffect(() => {
     editingTextIdRef.current = editingTextId;
     return () => {
       const prevId = editingTextIdRef.current;
       const slideId = activeSlideIdRef.current;
       if (prevId && slideId) {
-        const text = currentTextRef.current;
-        usePresentationStore.getState().updateElement(slideId, prevId, { text });
+        usePresentationStore.getState().updateElement(slideId, prevId, { text: liveTextRef.current });
       }
     };
   }, [editingTextId]);
@@ -115,22 +113,29 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     return offs;
   };
 
-  // Translate the DOM selection to a source-text offset.
-  const getCursorPosition = useCallback((): number => {
+  // (container, domOffset) → absolute source offset.
+  const domToSourceOffset = useCallback((container: Node, domOffset: number): number => {
     const editor = editorRef.current;
-    const selection = window.getSelection();
-    if (!editor || !selection || selection.rangeCount === 0) return 0;
-    const range = selection.getRangeAt(0);
+    if (!editor) return 0;
     const divs = Array.from(editor.querySelectorAll('div[data-line]'));
     const offs = computeLineStartOffsets(liveTextRef.current);
     for (let i = 0; i < divs.length; i++) {
-      const div = divs[i];
-      if (div.contains(range.startContainer)) {
-        return (offs[i] ?? 0) + range.startOffset;
-      }
+      if (divs[i].contains(container)) return (offs[i] ?? 0) + domOffset;
     }
     return 0;
   }, []);
+
+  // Selection start/end as source offsets (sorted ascending).
+  const getSelectionRange = useCallback((): [number, number] => {
+    const editor = editorRef.current;
+    const sel = window.getSelection();
+    if (!editor || !sel || sel.rangeCount === 0) return [0, 0];
+    const range = sel.getRangeAt(0);
+    if (!editor.contains(range.startContainer)) return [0, 0];
+    const a = domToSourceOffset(range.startContainer, range.startOffset);
+    const b = domToSourceOffset(range.endContainer, range.endOffset);
+    return a <= b ? [a, b] : [b, a];
+  }, [domToSourceOffset]);
 
   const setCursorPosition = useCallback((offset: number) => {
     const editor = editorRef.current;
@@ -175,12 +180,11 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     return lines.join('\n');
   }, []);
 
-  const lineFromOffset = useCallback((text: string, offset: number): number => {
-    const upto = text.slice(0, offset);
-    return upto.split('\n').length - 1;
-  }, []);
-
-  // Mount: seed liveText, currentText, raw-line set, cursor.
+  // Mount: seed liveText, currentText, raw-line set, cursor. Resolves the
+  // initial cursor position from the click that entered edit mode by asking
+  // the SVG layout where the click landed (cache hit if the element was
+  // rendered before this turn — which it always is, since the click was on
+  // its rendered glyphs).
   const prevEditingIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (editingTextId === prevEditingIdRef.current) return;
@@ -188,32 +192,40 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     if (!editingTextId || !textElement || !editorRef.current) return;
 
     const text = textElement.text || '';
-    currentTextRef.current = text;
     setLiveText(text);
     mountTimeRef.current = Date.now();
 
     const clickPos = useEditorStore.getState().textEditClickPosition;
-    const initialCursor = clickPos
-      ? (calculateCursorFromClick(textElement, clickPos) ?? text.length)
-      : text.length;
-    setRawLines(new Set([lineFromOffset(text, initialCursor)]));
-
-    const timer = setTimeout(() => {
-      if (!editorRef.current) return;
-      editorRef.current.focus();
-      if (text) setCursorPosition(initialCursor);
-      else {
-        const selection = window.getSelection();
-        if (selection && editorRef.current) {
-          const range = document.createRange();
-          range.selectNodeContents(editorRef.current);
-          selection.removeAllRanges();
-          selection.addRange(range);
+    let cancelled = false;
+    const placeCursor = (initialCursor: number) => {
+      if (cancelled) return;
+      setRawLines(new Set([text.slice(0, initialCursor).split('\n').length - 1]));
+      requestAnimationFrame(() => {
+        if (cancelled || !editorRef.current) return;
+        editorRef.current.focus();
+        if (text) setCursorPosition(initialCursor);
+        else {
+          const selection = window.getSelection();
+          if (selection && editorRef.current) {
+            const range = document.createRange();
+            range.selectNodeContents(editorRef.current);
+            selection.removeAllRanges();
+            selection.addRange(range);
+          }
         }
-      }
-    }, 10);
-    return () => clearTimeout(timer);
-  }, [editingTextId, textElement, setCursorPosition, lineFromOffset]);
+      });
+    };
+
+    if (clickPos) {
+      calculateCursorFromClick(textElement, clickPos).then(
+        (cur) => placeCursor(cur ?? text.length),
+        () => placeCursor(text.length),
+      );
+    } else {
+      placeCursor(text.length);
+    }
+    return () => { cancelled = true; };
+  }, [editingTextId, textElement, setCursorPosition]);
 
   // Track which lines are raw via the DOM (range start / end → line indices).
   useEffect(() => {
@@ -242,12 +254,11 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
         for (const v of next) if (!prev.has(v)) { same = false; break; }
         if (same) return;
       }
-      currentTextRef.current = getTextFromEditor();
       setRawLines(next);
     };
     document.addEventListener('selectionchange', handle);
     return () => document.removeEventListener('selectionchange', handle);
-  }, [editingTextId, getTextFromEditor]);
+  }, [editingTextId]);
 
   useEffect(() => {
     if (!editingTextId) return;
@@ -266,88 +277,154 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     return () => vv.removeEventListener('resize', handle);
   }, [editingTextId]);
 
+  // Plain typing path: browser already mutated the text node inside one of
+  // our line divs (single-line, structure unchanged) — just snapshot the
+  // result into state so the SVG re-lays out.
   const handleInput = useCallback(() => {
     if (!editorRef.current || !textElement) return;
-    const text = getTextFromEditor();
-    currentTextRef.current = text;
-    // Push EVERY keystroke into liveText so the SVG layer re-lays out
-    // immediately. Without this, the SVG stayed pinned to the store's text
-    // (only written on line-change) and edits weren't visible until the user
-    // moved off the line.
-    setLiveText(text);
+    setLiveText(getTextFromEditor());
   }, [getTextFromEditor, textElement]);
 
-  const handleEditorMouseDown = useCallback((e: React.MouseEvent) => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    let target = e.target as HTMLElement | null;
-    while (target && target !== editor && !target.hasAttribute?.('data-line')) {
-      target = target.parentElement;
+  // Replace liveText with newText and place the caret at newCursor on the
+  // next frame (so React's commit of the new line divs has run).
+  const replaceText = useCallback((newText: string, newCursor: number) => {
+    setLiveText(newText);
+    requestAnimationFrame(() => setCursorPosition(newCursor));
+  }, [setCursorPosition]);
+
+  // Apply an Enter at [selStart, selEnd], with bullet / numbered list
+  // continuation: Enter at the end of `- ` or `1. ` autostarts the next item;
+  // Enter on an empty list item clears the prefix.
+  const applyEnter = useCallback((selStart: number, selEnd: number) => {
+    const text = liveTextRef.current;
+    const lineStart = text.slice(0, selStart).lastIndexOf('\n') + 1;
+    const line = text.slice(lineStart, selStart);
+    const bulletMatch = line.match(/^([-*])\s/);
+    const numberedMatch = line.match(/^(\d+)\.\s/);
+
+    const isEmptyBullet = bulletMatch && line.slice(2).trim() === '';
+    const isEmptyNumbered = numberedMatch && line.slice(numberedMatch[0].length).trim() === '';
+    if (selStart === selEnd && (isEmptyBullet || isEmptyNumbered)) {
+      replaceText(text.slice(0, lineStart) + text.slice(selEnd), lineStart);
+      return;
     }
-    if (!target || target === editor || !target.hasAttribute('data-line')) return;
-    const idx = parseInt(target.getAttribute('data-line') || '-1', 10);
-    if (idx < 0 || rawLinesRef.current.has(idx)) return;
-    // Let the native click do the work — it'll land in the (transparent) text
-    // node of the line div. selectionchange picks up the new line and adds it
-    // to the raw set, which un-hides the text in the same render cycle.
-  }, []);
+
+    const insert = bulletMatch
+      ? `\n${bulletMatch[1]} `
+      : numberedMatch
+        ? `\n${parseInt(numberedMatch[1], 10) + 1}. `
+        : '\n';
+    replaceText(
+      text.slice(0, selStart) + insert + text.slice(selEnd),
+      selStart + insert.length,
+    );
+  }, [replaceText]);
+
+  // Browser-driven mutations route through this BEFORE the DOM is touched.
+  // We intercept anything that would change line structure (Enter, line-
+  // crossing deletes, multi-line selection replacement, cut, paste, drop)
+  // and apply it through state instead; React stays in charge of the line-
+  // div structure so its vDOM never falls out of sync with the DOM.
+  //
+  // Plain typing and char-level deletes within a line are left to the
+  // browser — they only mutate a text node, not the line-div structure,
+  // and handleInput picks up the result without React reconciling anything
+  // structural.
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || !editingTextId) return;
+    const handler = (e: InputEvent) => {
+      const inputType = e.inputType;
+      const [selStart, selEnd] = getSelectionRange();
+      const text = liveTextRef.current;
+      const crossesLine = selStart !== selEnd && text.slice(selStart, selEnd).includes('\n');
+
+      switch (inputType) {
+        case 'insertParagraph':
+        case 'insertLineBreak':
+          e.preventDefault();
+          applyEnter(selStart, selEnd);
+          return;
+
+        case 'deleteContentBackward':
+          if (selStart === selEnd) {
+            // At line start? Browser would merge divs — intercept.
+            if (selStart > 0 && text[selStart - 1] === '\n') {
+              e.preventDefault();
+              replaceText(text.slice(0, selStart - 1) + text.slice(selStart), selStart - 1);
+            }
+          } else if (crossesLine) {
+            e.preventDefault();
+            replaceText(text.slice(0, selStart) + text.slice(selEnd), selStart);
+          }
+          return;
+
+        case 'deleteContentForward':
+          if (selStart === selEnd) {
+            if (selStart < text.length && text[selStart] === '\n') {
+              e.preventDefault();
+              replaceText(text.slice(0, selStart) + text.slice(selStart + 1), selStart);
+            }
+          } else if (crossesLine) {
+            e.preventDefault();
+            replaceText(text.slice(0, selStart) + text.slice(selEnd), selStart);
+          }
+          return;
+
+        case 'deleteByCut':
+          if (crossesLine) {
+            e.preventDefault();
+            navigator.clipboard?.writeText(text.slice(selStart, selEnd)).catch(() => {});
+            replaceText(text.slice(0, selStart) + text.slice(selEnd), selStart);
+          }
+          return;
+
+        case 'insertText':
+          if (crossesLine) {
+            e.preventDefault();
+            const data = e.data ?? '';
+            replaceText(text.slice(0, selStart) + data + text.slice(selEnd), selStart + data.length);
+          }
+          return;
+
+        case 'insertFromPaste':
+        case 'insertFromDrop':
+          // handlePaste (React onPaste) preventDefaults the paste path; this
+          // catch is for drops, which we conservatively block to avoid HTML
+          // payloads building rich nodes inside our contentEditable.
+          if (inputType === 'insertFromDrop') {
+            e.preventDefault();
+            const data = e.data ?? '';
+            if (data) replaceText(text.slice(0, selStart) + data + text.slice(selEnd), selStart + data.length);
+          }
+          return;
+
+        default:
+          // Any other inputType that targets a multi-line selection would
+          // also wreck our structure; bail to a plain delete.
+          if (crossesLine) {
+            e.preventDefault();
+            replaceText(text.slice(0, selStart) + text.slice(selEnd), selStart);
+          }
+      }
+    };
+    editor.addEventListener('beforeinput', handler);
+    return () => editor.removeEventListener('beforeinput', handler);
+  }, [editingTextId, getSelectionRange, applyEnter, replaceText]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       e.preventDefault();
       if (activeSlideId && editingTextId) {
-        updateElement(activeSlideId, editingTextId, { text: currentTextRef.current });
+        updateElement(activeSlideId, editingTextId, { text: liveTextRef.current });
       }
       setEditingTextId(null);
       return;
     }
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      // Enter creates a new SOURCE line, which in our line-div model means a
-      // new <div data-line="N+1"> from React. execCommand('insertText','\n')
-      // would jam the \n into the current div instead; manage it ourselves.
-      const cursorPos = getCursorPosition();
-      const currentText = currentTextRef.current;
-      const textBeforeCursor = currentText.slice(0, cursorPos);
-      const lastNewlineIndex = textBeforeCursor.lastIndexOf('\n');
-      const currentLineStart = lastNewlineIndex + 1;
-      const currentLine = currentText.slice(currentLineStart, cursorPos);
-      const bulletMatch = currentLine.match(/^([-*])\s/);
-      const numberedMatch = currentLine.match(/^(\d+)\.\s/);
-      let insertText = '\n';
-      let newCursorOffset = 1;
-      if (bulletMatch) {
-        const after = currentLine.slice(2).trim();
-        if (after === '') {
-          const newText = currentText.slice(0, currentLineStart) + currentText.slice(cursorPos);
-          currentTextRef.current = newText;
-          setLiveText(newText);
-          requestAnimationFrame(() => setCursorPosition(currentLineStart));
-          return;
-        }
-        insertText = `\n${bulletMatch[1]} `;
-        newCursorOffset = insertText.length;
-      } else if (numberedMatch) {
-        const after = currentLine.slice(numberedMatch[0].length).trim();
-        if (after === '') {
-          const newText = currentText.slice(0, currentLineStart) + currentText.slice(cursorPos);
-          currentTextRef.current = newText;
-          setLiveText(newText);
-          requestAnimationFrame(() => setCursorPosition(currentLineStart));
-          return;
-        }
-        const currentNum = parseInt(numberedMatch[1], 10);
-        insertText = `\n${currentNum + 1}. `;
-        newCursorOffset = insertText.length;
-      }
-      const newText = currentText.slice(0, cursorPos) + insertText + currentText.slice(cursorPos);
-      currentTextRef.current = newText;
-      setLiveText(newText);
-      requestAnimationFrame(() => setCursorPosition(cursorPos + newCursorOffset));
-      return;
-    }
+    // Stop canvas-level hotkeys (e.g. Backspace deleting the selected
+    // element) from firing while we're editing.
     e.stopPropagation();
-  }, [activeSlideId, editingTextId, updateElement, setEditingTextId, getCursorPosition, setCursorPosition]);
+  }, [activeSlideId, editingTextId, updateElement, setEditingTextId]);
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items;
@@ -359,15 +436,13 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     e.preventDefault();
     const pastedText = e.clipboardData.getData('text/plain');
     if (!pastedText) return;
-    // Same reason as Enter: if the pasted text contains \n we want new
-    // <div data-line=...> elements, not a literal \n inside one div.
-    const cursorPos = getCursorPosition();
-    const currentText = currentTextRef.current;
-    const newText = currentText.slice(0, cursorPos) + pastedText + currentText.slice(cursorPos);
-    currentTextRef.current = newText;
-    setLiveText(newText);
-    requestAnimationFrame(() => setCursorPosition(cursorPos + pastedText.length));
-  }, [getCursorPosition, setCursorPosition]);
+    const [selStart, selEnd] = getSelectionRange();
+    const text = liveTextRef.current;
+    replaceText(
+      text.slice(0, selStart) + pastedText + text.slice(selEnd),
+      selStart + pastedText.length,
+    );
+  }, [getSelectionRange, replaceText]);
 
   const handleBlur = useCallback(() => {
     if (Date.now() - mountTimeRef.current < 200) return;
@@ -456,7 +531,6 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
         ref={editorRef}
         contentEditable
         suppressContentEditableWarning
-        onMouseDown={handleEditorMouseDown}
         onInput={handleInput}
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}

@@ -1,96 +1,55 @@
 import type { TextElement } from '../types/presentation';
-import { parseBlocks, getBlockFontMultiplier, parseInlineSegments, type ParsedBlock } from '../components/canvas/CustomMarkdownRenderer';
+import { parseBlocks, getBlockFontMultiplier, parseInlineSegments } from '../components/canvas/CustomMarkdownRenderer';
 import { TEXT_BOX_PADDING } from './constants';
+import { getLayoutSync, layoutSvgText, type SvgTextDoc } from './textLayout';
 
-interface Point {
-  x: number;
-  y: number;
-}
+interface Point { x: number; y: number }
 
 /**
- * Check if a point (relative to the element's top-left) is within the actual text content area.
- * Accounts for markdown formatting (headers have larger font sizes).
+ * Hit-test a point (element-local coords, slide units) against the text
+ * content. Used by the canvas pointer handler to decide drag-vs-edit when
+ * the user clicks an unselected text element.
+ *
+ * Sources the rendered height from the SVG layout cache so we agree with
+ * what the user sees; falls back to the box height if the layout hasn't
+ * resolved yet (first frame after slide switch).
  */
 export function isPointOnTextContent(element: TextElement, point: Point): boolean {
   const { text, width, height, style } = element;
-
-  if (!text || text.trim() === '') {
-    return false;
-  }
+  if (!text || text.trim() === '') return false;
 
   const padding = TEXT_BOX_PADDING;
-  const { fontSize, fontFamily, fontWeight, lineHeight, align, verticalAlign } = style;
-  const lineHeightMultiplier = lineHeight || 1.2;
 
-  const blocks = parseBlocks(text);
-
-  const contentWidth = width - padding * 2;
-  const contentHeight = height - padding * 2;
-
-  // Calculate total height using DOM measurement (accounts for word wrapping)
-  let totalHeight = 0;
-
-  for (const block of blocks) {
-    const multiplier = getBlockFontMultiplier(block.type);
-    const blockFontSize = fontSize * multiplier;
-    const isHeader = block.type === 'h1' || block.type === 'h2' || block.type === 'h3';
-    const blockFontWeight = isHeader ? 'bold' : (fontWeight || 'normal');
-
-    totalHeight += measureBlockHeight(
-      block.displayContent,
-      blockFontSize,
-      fontFamily,
-      blockFontWeight,
-      lineHeightMultiplier,
-      contentWidth
-    );
-  }
-
-  // Text always fills the content width (word wrapping)
-  const effectiveTextWidth = contentWidth;
-
-  // Calculate text position based on alignment
-  let textX = padding;
-  if (align === 'center') {
-    textX = padding + (contentWidth - effectiveTextWidth) / 2;
-  } else if (align === 'right') {
-    textX = padding + contentWidth - effectiveTextWidth;
-  }
-
-  let textY = padding;
-  if (verticalAlign === 'middle') {
-    textY = padding + (contentHeight - totalHeight) / 2;
-  } else if (verticalAlign === 'bottom') {
-    textY = padding + contentHeight - totalHeight;
-  }
-
-  // Border margin: clicks near box edges always start a drag, not edit mode
-  // Only apply border margin within the original element bounds (not overflow area)
+  // Border margin: clicks near box edges always start a drag, not edit mode.
+  // Only enforced within the original bounds (not below for overflow).
   const borderMargin = 8;
   if (point.x < borderMargin || point.x > width - borderMargin ||
       (point.y < height && (point.y < borderMargin || point.y > height - borderMargin))) {
     return false;
   }
 
-  const tolerance = 4;
-  const textBounds = {
-    left: Math.max(0, textX - tolerance),
-    top: Math.max(0, textY - tolerance),
-    right: Math.min(width, textX + effectiveTextWidth + tolerance),
-    bottom: textY + totalHeight + tolerance,
-  };
+  const contentWidth = width - padding * 2;
+  const contentHeight = height - padding * 2;
+  const doc = getLayoutSync(text, style, contentWidth);
+  const renderedHeight = doc?.height ?? contentHeight;
 
+  let textY = padding;
+  if (style.verticalAlign === 'middle') textY = padding + Math.max(0, (contentHeight - renderedHeight) / 2);
+  else if (style.verticalAlign === 'bottom') textY = padding + Math.max(0, contentHeight - renderedHeight);
+
+  const tolerance = 4;
   return (
-    point.x >= textBounds.left &&
-    point.x <= textBounds.right &&
-    point.y >= textBounds.top &&
-    point.y <= textBounds.bottom
+    point.x >= padding - tolerance &&
+    point.x <= padding + contentWidth + tolerance &&
+    point.y >= textY - tolerance &&
+    point.y <= textY + renderedHeight + tolerance
   );
 }
 
 /**
- * Measure the actual rendered height of a block using DOM measurement.
- * This matches the browser's word-wrapping exactly.
+ * Approximate rendered block height when no layout is cached. Used only by
+ * SVGTextNode's hit-rect sizing before the SVG's first layout settles —
+ * everywhere else reads doc.lines / doc.height from the layout cache.
  */
 export function measureBlockHeight(
   text: string,
@@ -98,14 +57,11 @@ export function measureBlockHeight(
   fontFamily: string,
   fontWeight: string,
   lineHeight: number,
-  maxWidth: number
+  maxWidth: number,
 ): number {
-  // Match the steady SVG and edit overlay metrics: same font (InterEdit),
-  // line-height 1 + per-line padding-bottom = (0.8 + 0.4 * styleLineHeight - 1).
-  // Using anything else here gives the wrong per-block height when blocks
-  // wrap or contain headings, and the click-to-cursor mapping snaps to the
-  // wrong line.
-  const totalLineFactor = 0.8 + 0.4 * lineHeight; // matches renderer
+  // Match the SVG renderer's per-line factor: a baseline at 0.8 * fontSize
+  // plus a descender of 0.4 * lineHeight * fontSize.
+  const totalLineFactor = 0.8 + 0.4 * lineHeight;
   const container = document.createElement('div');
   container.style.cssText = `
     position: absolute;
@@ -119,237 +75,182 @@ export function measureBlockHeight(
     word-break: break-word;
     margin: 0;
     padding: 0 0 ${fontSize * Math.max(0, totalLineFactor - 1)}px 0;
+    font-kerning: none;
+    font-feature-settings: "kern" 0;
   `;
-  container.textContent = text || '\u00A0'; // Use non-breaking space for empty lines
+  container.textContent = text || ' ';
   document.body.appendChild(container);
-  const height = container.getBoundingClientRect().height;
+  const measured = container.getBoundingClientRect().height;
   document.body.removeChild(container);
-  return Math.max(height, fontSize * totalLineFactor); // Ensure minimum height
+  return Math.max(measured, fontSize * totalLineFactor);
 }
 
 /**
- * Calculate cursor position from click coordinates.
- * Maps from rendered (display) position back to source position.
- * Handles word-wrapped text properly.
+ * Map a click in element-local coords (slide units) to a cursor offset in
+ * the element's source text.
+ *
+ * Y mapping comes from the SVG layout (`doc.lines[i].yTop/yBottom` is the
+ * actual rendered range of source line `i`), so the line we pick is exactly
+ * the line under the user's finger. If the layout hasn't resolved yet (rare
+ * — steady frames pre-populate the cache), we await it; the caller already
+ * runs this on the edit-mode-entry path, which is async-friendly.
+ *
+ * X mapping uses the DOM Range API against the displayContent of the
+ * clicked block, in InterEdit at the same font-size + line-height + kerning
+ * settings as the renderer. Browser shaping isn't bit-identical to
+ * opentype.js, but with kerning off the per-char advance widths line up
+ * within a sub-pixel.
  */
-export function calculateCursorFromClick(
+export async function calculateCursorFromClick(
   element: TextElement,
-  clickPos: Point
-): number {
-  const { text, width, style } = element;
-  const { fontSize, fontFamily, fontWeight, lineHeight, align, verticalAlign } = style;
-  const padding = TEXT_BOX_PADDING;
-  const lineHeightMultiplier = lineHeight || 1.2;
-
+  clickPos: Point,
+): Promise<number> {
+  const { text, width, height, style } = element;
   if (!text) return 0;
 
-  const blocks = parseBlocks(text);
+  const padding = TEXT_BOX_PADDING;
   const contentWidth = width - padding * 2;
-  const contentHeight = element.height - padding * 2;
+  const contentHeight = height - padding * 2;
 
-  // Structure to hold wrapped line info for each block
-  interface WrappedLine {
-    text: string;
-    startIndex: number; // Index within displayContent
-    endIndex: number;
-    height: number;
-    y: number; // Y position of this line
+  const doc = getLayoutSync(text, style, contentWidth)
+    ?? await layoutSvgText(text, style, contentWidth);
+
+  let verticalOffset = 0;
+  if (style.verticalAlign === 'middle') verticalOffset = Math.max(0, (contentHeight - doc.height) / 2);
+  else if (style.verticalAlign === 'bottom') verticalOffset = Math.max(0, contentHeight - doc.height);
+
+  const yInContent = clickPos.y - padding - verticalOffset;
+  const xInContent = clickPos.x - padding;
+
+  // Find the source line whose [yTop, yBottom) contains the click. Below
+  // the last line → snap to the last line.
+  const lineIdx = findClickedLine(doc, yInContent);
+  const blocks = parseBlocks(text);
+  const block = blocks[lineIdx];
+  if (!block) return text.length;
+
+  // X-within-line: find the character offset in displayContent under the
+  // click. The block may wrap visually; we pass click Y relative to the
+  // block top so the Range API can disambiguate rows of a wrapped block.
+  const isHeader = block.type === 'h1' || block.type === 'h2' || block.type === 'h3';
+  const blockFontSize = style.fontSize * getBlockFontMultiplier(block.type);
+  const blockFontWeight = isHeader ? 'bold' : (style.fontWeight || 'normal');
+  const yInBlock = yInContent - doc.lines[lineIdx].yTop;
+  const charIndex = findCharIndexAt({
+    text: block.displayContent,
+    fontSize: blockFontSize,
+    fontFamily: style.fontFamily,
+    fontWeight: blockFontWeight,
+    align: style.align,
+    boxWidth: contentWidth,
+    clickX: xInContent,
+    clickY: yInBlock,
+  });
+
+  return mapDisplayIndexToSource(block, charIndex);
+}
+
+function findClickedLine(doc: SvgTextDoc, yInContent: number): number {
+  if (doc.lines.length === 0) return 0;
+  for (let i = 0; i < doc.lines.length; i++) {
+    if (yInContent < doc.lines[i].yBottom) return i;
   }
+  return doc.lines.length - 1;
+}
 
-  interface BlockInfo {
-    block: ParsedBlock;
-    fontSize: number;
-    isBold: boolean;
-    wrappedLines: WrappedLine[];
-    totalHeight: number;
-  }
+interface CharLookup {
+  text: string;
+  fontSize: number;
+  fontFamily: string;
+  fontWeight: string;
+  align: string;
+  boxWidth: number;
+  clickX: number;
+  clickY: number;
+}
 
-  // Calculate block heights using actual DOM measurement
-  const blockInfos: BlockInfo[] = [];
-  let totalHeight = 0;
-
-  for (const block of blocks) {
-    const multiplier = getBlockFontMultiplier(block.type);
-    const blockFontSize = fontSize * multiplier;
-    const isHeader = block.type === 'h1' || block.type === 'h2' || block.type === 'h3';
-    const isBold = isHeader || fontWeight === 'bold';
-
-    // Measure actual rendered height (accounts for word wrapping)
-    const blockTotalHeight = measureBlockHeight(
-      block.displayContent,
-      blockFontSize,
-      fontFamily,
-      isBold ? 'bold' : (fontWeight || 'normal'),
-      lineHeightMultiplier,
-      contentWidth
-    );
-
-    // For click detection, we treat the whole block as one area
-    // (we'll refine X position within the block later)
-    const wrappedLinesWithHeight: WrappedLine[] = [{
-      text: block.displayContent,
-      startIndex: 0,
-      endIndex: block.displayContent.length,
-      height: blockTotalHeight,
-      y: 0,
-    }];
-
-    blockInfos.push({
-      block,
-      fontSize: blockFontSize,
-      isBold,
-      wrappedLines: wrappedLinesWithHeight,
-      totalHeight: blockTotalHeight,
-    });
-
-    totalHeight += blockTotalHeight;
-  }
-
-  // Calculate starting Y based on vertical alignment
-  let startY = padding;
-  if (verticalAlign === 'middle') {
-    startY = padding + (contentHeight - totalHeight) / 2;
-  } else if (verticalAlign === 'bottom') {
-    startY = padding + contentHeight - totalHeight;
-  }
-
-  // Assign Y positions to all wrapped lines
-  let currentY = startY;
-  for (const blockInfo of blockInfos) {
-    for (const line of blockInfo.wrappedLines) {
-      line.y = currentY;
-      currentY += line.height;
-    }
-  }
-
-  // Find which wrapped line was clicked
-  let clickedBlockInfo: BlockInfo | null = null;
-  let clickedLine: WrappedLine | null = null;
-
-  for (const blockInfo of blockInfos) {
-    for (const line of blockInfo.wrappedLines) {
-      if (clickPos.y >= line.y && clickPos.y < line.y + line.height) {
-        clickedBlockInfo = blockInfo;
-        clickedLine = line;
-        break;
-      }
-    }
-    if (clickedLine) break;
-  }
-
-  // If click is below all lines, use the last line
-  if (!clickedBlockInfo || !clickedLine) {
-    const lastBlockInfo = blockInfos[blockInfos.length - 1];
-    clickedBlockInfo = lastBlockInfo;
-    clickedLine = lastBlockInfo.wrappedLines[lastBlockInfo.wrappedLines.length - 1];
-  }
-
-  const block = clickedBlockInfo.block;
-
-  // For wrapped text blocks, we need to find which character was clicked
-  // Use DOM-based measurement for accurate character positioning
-  const clickX = clickPos.x - padding;
-  const clickYInBlock = clickPos.y - clickedLine.y;
-
-  // Create a temporary element to measure character positions. Use the same
-  // font + line-height as the actual renderers (steady SVG and edit overlay)
-  // so the per-character X positions match what the user sees.
-  const measureContainer = document.createElement('div');
-  measureContainer.style.cssText = `
+/**
+ * Build a hidden DOM mirror of one block's display content in the same font
+ * the SVG renderer reads (Inter), then binary-search via Range API to find
+ * the character whose center is closest to the click. Kerning is disabled
+ * so the browser's per-char advance widths match opentype.js's.
+ */
+function findCharIndexAt(opts: CharLookup): number {
+  const container = document.createElement('div');
+  container.style.cssText = `
     position: absolute;
     visibility: hidden;
-    width: ${contentWidth}px;
-    font-size: ${clickedBlockInfo.fontSize}px;
-    font-family: 'InterEdit', ${fontFamily};
-    font-weight: ${clickedBlockInfo.isBold ? 'bold' : (fontWeight || 'normal')};
+    width: ${opts.boxWidth}px;
+    font-size: ${opts.fontSize}px;
+    font-family: 'InterEdit', ${opts.fontFamily};
+    font-weight: ${opts.fontWeight};
     line-height: 1;
     white-space: pre-wrap;
     word-break: break-word;
-    text-align: ${align};
+    text-align: ${opts.align};
     margin: 0;
     padding: 0;
+    font-kerning: none;
+    font-feature-settings: "kern" 0;
   `;
-  document.body.appendChild(measureContainer);
+  document.body.appendChild(container);
+  const textNode = document.createTextNode(opts.text || ' ');
+  container.appendChild(textNode);
 
-  // Find character index by binary search using Range API
-  const textNode = document.createTextNode(block.displayContent || ' ');
-  measureContainer.appendChild(textNode);
-
-  let charIndex = 0;
-  const textLength = block.displayContent.length;
-
-  if (textLength > 0) {
-    const range = document.createRange();
-
-    // Binary search for the closest character
-    let low = 0;
-    let high = textLength;
-
-    while (low < high) {
-      const mid = Math.floor((low + high) / 2);
-      range.setStart(textNode, mid);
-      range.setEnd(textNode, mid + 1);
-      const rect = range.getBoundingClientRect();
-      const containerRect = measureContainer.getBoundingClientRect();
-
-      const charX = rect.left - containerRect.left;
-      const charY = rect.top - containerRect.top;
-
-      // Check if click is before this character (in reading order)
-      if (clickYInBlock < charY || (Math.abs(clickYInBlock - charY) < rect.height && clickX < charX + rect.width / 2)) {
-        high = mid;
-      } else {
-        low = mid + 1;
-      }
-    }
-
-    charIndex = low;
+  const textLength = opts.text.length;
+  if (textLength === 0) {
+    document.body.removeChild(container);
+    return 0;
   }
 
-  document.body.removeChild(measureContainer);
+  const range = document.createRange();
+  const containerRect = container.getBoundingClientRect();
+  let low = 0;
+  let high = textLength;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    range.setStart(textNode, mid);
+    range.setEnd(textNode, mid + 1);
+    const rect = range.getBoundingClientRect();
+    const charX = rect.left - containerRect.left;
+    const charY = rect.top - containerRect.top;
+    if (opts.clickY < charY || (Math.abs(opts.clickY - charY) < rect.height && opts.clickX < charX + rect.width / 2)) {
+      high = mid;
+    } else {
+      low = mid + 1;
+    }
+  }
 
-  // Map back to source position
-  const displayIndex = charIndex;
+  document.body.removeChild(container);
+  return low;
+}
 
-  // For simple text without markdown, displayContent == source content within the block
-  // For blocks with prefixes (headers, bullets), we need to account for that
-  // block.sourceStart is the start of the source line
-  // block.prefixLength is the length of any prefix (e.g., "# " for headers)
-  // displayContent starts after the prefix
-
-  // Parse inline segments to handle formatted text properly
+/**
+ * Map a `displayContent`-relative index back to an absolute source offset,
+ * respecting markdown inline segments: clicking inside a LaTeX segment
+ * places the cursor inside the delimiters, clicking inside a `**bold**`
+ * segment lands inside the asterisks, etc.
+ */
+function mapDisplayIndexToSource(
+  block: ReturnType<typeof parseBlocks>[number],
+  displayIndex: number,
+): number {
   const inlineSourceOffset = block.sourceStart + block.prefixLength;
   const segments = parseInlineSegments(block.displayContent, inlineSourceOffset);
-
-  // Find which segment contains the displayIndex
-  let accumulatedDisplayLength = 0;
-
-  for (const segment of segments) {
-    const segmentDisplayLength = segment.displayContent.length;
-
-    if (displayIndex < accumulatedDisplayLength + segmentDisplayLength) {
-      // Click is within this segment
-      const indexInSegment = displayIndex - accumulatedDisplayLength;
-
-      if (segment.type === 'latex') {
-        // For LaTeX, place cursor at the end (before closing delimiter)
-        const delimiterLength = segment.isBlock ? 2 : 1;
-        return segment.sourceEnd - delimiterLength;
-      } else if (segment.type === 'link') {
-        // Map to position within the link text
-        return (segment.linkTextStart ?? segment.sourceStart + 1) + indexInSegment;
-      } else if (segment.type === 'formatted') {
-        // Map to position within the formatted text (after opening delimiter)
-        return (segment.innerSourceStart ?? segment.sourceStart + 2) + indexInSegment;
-      } else {
-        // Plain text
-        return segment.sourceStart + indexInSegment;
+  let acc = 0;
+  for (const seg of segments) {
+    const segLen = seg.displayContent.length;
+    if (displayIndex < acc + segLen) {
+      const offsetInSeg = displayIndex - acc;
+      if (seg.type === 'latex') {
+        const delim = seg.isBlock ? 2 : 1;
+        return seg.sourceEnd - delim;
       }
+      if (seg.type === 'link') return (seg.linkTextStart ?? seg.sourceStart + 1) + offsetInSeg;
+      if (seg.type === 'formatted') return (seg.innerSourceStart ?? seg.sourceStart + 2) + offsetInSeg;
+      return seg.sourceStart + offsetInSeg;
     }
-
-    accumulatedDisplayLength += segmentDisplayLength;
+    acc += segLen;
   }
-
-  // Click is past the end of content, return end of block
   return block.sourceEnd;
 }

@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Type, Square, Image, Film } from 'lucide-react';
 import { usePresentationStore } from '../../store/presentationStore';
-import type { SlideElement, ObjectMeta } from '../../types/presentation';
+import { SVGTextPaths } from '../svg/SVGTextPaths';
+import type { SlideElement, ObjectMeta, TextElement } from '../../types/presentation';
 
 interface Props {
   element: SlideElement | undefined;
@@ -83,22 +84,29 @@ export const ObjectPreview: React.FC<Props> = ({ element, objectType }) => {
   }
 
   if (element.type === 'text') {
+    // Render through the production SVG path renderer so markdown + LaTeX
+    // appear formatted exactly the way the slide will show them. The svg
+    // viewBox matches the element's slide-unit dimensions and the browser
+    // auto-scales to the tile.
+    const textElement = element as TextElement;
+    if (!textElement.text || !textElement.text.trim()) {
+      return (
+        <div className="w-full h-full flex items-center justify-center bg-gray-50">
+          <Type size={24} className="text-gray-300" />
+        </div>
+      );
+    }
+    const localElement: TextElement = { ...textElement, x: 0, y: 0, rotation: 0 };
     return (
-      <div
-        className="w-full h-full flex items-center justify-center p-1 overflow-hidden bg-gray-50"
-        style={{
-          fontFamily: element.style.fontFamily,
-          color: element.style.color,
-          fontSize: Math.min(element.style.fontSize * 0.3, 14),
-          fontWeight: element.style.fontWeight,
-          fontStyle: element.style.fontStyle,
-          textAlign: element.style.align,
-          lineHeight: 1.2,
-        }}
-      >
-        <span className="line-clamp-3 break-words w-full text-center">
-          {element.text || 'Text'}
-        </span>
+      <div className="w-full h-full bg-gray-50 overflow-hidden">
+        <svg
+          width="100%"
+          height="100%"
+          viewBox={`0 0 ${textElement.width} ${textElement.height}`}
+          preserveAspectRatio="xMidYMid meet"
+        >
+          <SVGTextPaths element={localElement} clipIdPrefix="object-preview-text-clip" />
+        </svg>
       </div>
     );
   }

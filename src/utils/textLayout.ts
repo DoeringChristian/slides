@@ -46,6 +46,48 @@ export interface SvgTextDoc {
 }
 
 const layoutCache = new Map<string, Promise<SvgTextDoc>>();
+// Settled-result mirror of layoutCache so hit-testing and hit-rect sizing
+// can read the same layout the SVG renderer used, without each one DOM-
+// measuring its own approximation. Populated as soon as each promise
+// resolves; queried via getLayoutSync.
+const syncLayoutCache = new Map<string, SvgTextDoc>();
+
+function layoutCacheKey(
+  text: string,
+  style: TextStyle,
+  boxWidth: number,
+  rawLineIndices?: Set<number>,
+): string {
+  const rawKey = rawLineIndices && rawLineIndices.size > 0
+    ? Array.from(rawLineIndices).sort((a, b) => a - b).join(',')
+    : '';
+  return JSON.stringify([
+    text,
+    style.fontSize,
+    style.fontWeight,
+    style.fontStyle,
+    style.color,
+    style.lineHeight,
+    style.align,
+    boxWidth,
+    rawKey,
+  ]);
+}
+
+/**
+ * Returns the cached SvgTextDoc for these inputs if the SVG renderer has
+ * already laid them out, or null otherwise. Callers (hit-testing, hit-rect
+ * sizing) read from this instead of rolling their own DOM-measurement
+ * estimate, which guarantees they agree with what the user actually sees.
+ */
+export function getLayoutSync(
+  text: string,
+  style: TextStyle,
+  boxWidth: number,
+  rawLineIndices?: Set<number>,
+): SvgTextDoc | null {
+  return syncLayoutCache.get(layoutCacheKey(text, style, boxWidth, rawLineIndices)) ?? null;
+}
 
 function escapeXml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -198,20 +240,7 @@ export async function layoutSvgText(
   boxWidth: number,
   rawLineIndices?: Set<number>,
 ): Promise<SvgTextDoc> {
-  const rawKey = rawLineIndices && rawLineIndices.size > 0
-    ? Array.from(rawLineIndices).sort((a, b) => a - b).join(',')
-    : '';
-  const key = JSON.stringify([
-    text,
-    style.fontSize,
-    style.fontWeight,
-    style.fontStyle,
-    style.color,
-    style.lineHeight,
-    style.align,
-    boxWidth,
-    rawKey,
-  ]);
+  const key = layoutCacheKey(text, style, boxWidth, rawLineIndices);
   const cached = layoutCache.get(key);
   if (cached) return cached;
 
@@ -450,9 +479,11 @@ export async function layoutSvgText(
   })();
 
   layoutCache.set(key, promise);
+  promise.then((d) => { syncLayoutCache.set(key, d); }, () => {});
   return promise;
 }
 
 export function clearTextLayoutCache(): void {
   layoutCache.clear();
+  syncLayoutCache.clear();
 }
