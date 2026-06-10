@@ -17,6 +17,15 @@ interface Props {
   opacity?: number;
   clipIdPrefix?: string;
   writeFx?: WriteEffect;
+  /** Edit-overlay use case: these source-line indices are laid out as RAW
+   *  source text (markdown delimiters visible, no math/segment processing) so
+   *  the user can see and edit the markup. The line still uses the same font,
+   *  weight, and baseline as a formatted line — only the content differs. */
+  rawLineIndices?: Set<number>;
+  /** Called once whenever the layout finishes (or replaces). The edit overlay
+   *  uses the doc's per-line metrics to size its contentEditable line divs to
+   *  match the rendered glyph positions exactly. */
+  onLayout?: (doc: SvgTextDoc) => void;
 }
 
 /**
@@ -35,6 +44,8 @@ export const SVGTextPaths: React.FC<Props> = memo(({
   opacity = 1,
   clipIdPrefix = 'text-clip',
   writeFx,
+  rawLineIndices,
+  onLayout,
 }) => {
   if (isEditing) return null;
 
@@ -47,10 +58,16 @@ export const SVGTextPaths: React.FC<Props> = memo(({
   const cy = elementY + height / 2;
   const transform = rotation ? `rotate(${rotation}, ${cx}, ${cy})` : undefined;
 
+  // Stable rawLineIndices key for the memo. Sets aren't structurally compared.
+  const rawKey = rawLineIndices && rawLineIndices.size > 0
+    ? Array.from(rawLineIndices).sort((a, b) => a - b).join(',')
+    : '';
+
   const layoutPromise = useMemo(
-    () => layoutSvgText(element.text || '', style, Math.max(1, width - padding * 2)),
+    () => layoutSvgText(element.text || '', style, Math.max(1, width - padding * 2), rawLineIndices),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [element.text, style.fontSize, style.fontWeight, style.fontStyle,
-     style.color, style.lineHeight, style.align, width, padding],
+     style.color, style.lineHeight, style.align, width, padding, rawKey],
   );
 
   const [doc, setDoc] = useState<SvgTextDoc | null>(null);
@@ -61,7 +78,7 @@ export const SVGTextPaths: React.FC<Props> = memo(({
     setFailed(false);
     setDoc(null);
     layoutPromise.then(
-      (d) => { if (!cancelled) setDoc(d); },
+      (d) => { if (!cancelled) { setDoc(d); onLayout?.(d); } },
       (err) => {
         if (!cancelled) {
           console.warn('[SVGTextPaths] layout failed, falling back to SVGTextContent', err);
@@ -140,6 +157,15 @@ export const SVGTextPaths: React.FC<Props> = memo(({
     a.style.verticalAlign === b.style.verticalAlign &&
     a.style.lineHeight === b.style.lineHeight &&
     prev.writeFx?.t === next.writeFx?.t &&
-    prev.writeFx?.direction === next.writeFx?.direction
+    prev.writeFx?.direction === next.writeFx?.direction &&
+    setsEqual(prev.rawLineIndices, next.rawLineIndices)
   );
 });
+
+function setsEqual(a: Set<number> | undefined, b: Set<number> | undefined): boolean {
+  if (a === b) return true;
+  if (!a || !b) return (a?.size ?? 0) === 0 && (b?.size ?? 0) === 0;
+  if (a.size !== b.size) return false;
+  for (const v of a) if (!b.has(v)) return false;
+  return true;
+}

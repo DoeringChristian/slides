@@ -16,6 +16,11 @@ export interface SvgPath {
   /** Math glyphs render inside a heavy scale-down transform; without
    *  non-scaling-stroke their stroke width shrinks to invisibility. */
   nonScalingStroke: boolean;
+  /** Source-line index this path belongs to. Used by the edit overlay to
+   *  hide paths on the cursor / selection lines so the raw text underneath
+   *  shows through. -1 for paths that don't belong to a specific source
+   *  line (rare). */
+  lineIndex?: number;
 }
 
 /**

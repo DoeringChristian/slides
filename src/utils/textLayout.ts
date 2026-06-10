@@ -29,6 +29,20 @@ export interface SvgTextDoc {
   width: number;
   /** Computed content height (sum of line advances). */
   height: number;
+  /** One entry per source line (`text.split('\n')`). The edit overlay uses
+   *  these to size its contentEditable line divs to match the SVG layout
+   *  exactly, so cursor positions line up with the rendered glyphs. */
+  lines: Array<{
+    /** Top y of this line in layout coordinates (inside the padding-translated
+     *  group, so 0 is the first line's top). */
+    yTop: number;
+    /** Bottom y (exclusive). yBottom - yTop is the line's CSS height. */
+    yBottom: number;
+    /** Baseline y for this line (yTop + aboveBaseline). */
+    baseline: number;
+    /** The raw source for this line (markdown markup chars intact). */
+    source: string;
+  }>;
 }
 
 const layoutCache = new Map<string, Promise<SvgTextDoc>>();
@@ -182,7 +196,11 @@ export async function layoutSvgText(
   text: string,
   style: TextStyle,
   boxWidth: number,
+  rawLineIndices?: Set<number>,
 ): Promise<SvgTextDoc> {
+  const rawKey = rawLineIndices && rawLineIndices.size > 0
+    ? Array.from(rawLineIndices).sort((a, b) => a - b).join(',')
+    : '';
   const key = JSON.stringify([
     text,
     style.fontSize,
@@ -192,11 +210,17 @@ export async function layoutSvgText(
     style.lineHeight,
     style.align,
     boxWidth,
+    rawKey,
   ]);
   const cached = layoutCache.get(key);
   if (cached) return cached;
 
   const promise = (async (): Promise<SvgTextDoc> => {
+    // Per-source-line metrics returned in SvgTextDoc.lines. parseBlocks emits
+    // one block per source line; we accumulate yTop/yBottom around each block
+    // to give the edit overlay enough info to size its contentEditable line
+    // divs to match the SVG layout exactly.
+    const linesOut: SvgTextDoc['lines'] = [];
     // Pre-load every font variant up front. Single rendering pipeline ⇒ we
     // always need them (steady frame uses path rendering too).
     const [fontRegular, fontBold, fontItalic, fontBoldItalic] = await Promise.all([
@@ -221,7 +245,11 @@ export async function layoutSvgText(
     let yCursor = 0;
     let maxLineWidth = 0;
 
-    for (const block of blocks) {
+    for (let blockIdx = 0; blockIdx < blocks.length; blockIdx++) {
+      const block = blocks[blockIdx];
+      const sourceLineIdx = blockIdx; // parseBlocks → one block per source line
+      const lineYTop = yCursor;
+      let lineBaseline = -1;
       const multiplier = getBlockFontMultiplier(block.type);
       const blockFontSize = baseFontSize * multiplier;
       const isHeader = block.type === 'h1' || block.type === 'h2' || block.type === 'h3';
@@ -231,13 +259,34 @@ export async function layoutSvgText(
       // renderer's `&nbsp;` placeholder behaviour).
       if (!block.displayContent.trim() && block.type === 'paragraph') {
         yCursor += blockFontSize * lineHeight;
+        linesOut.push({
+          yTop: lineYTop,
+          yBottom: yCursor,
+          baseline: lineYTop + blockFontSize * 0.8,
+          source: block.content,
+        });
         continue;
       }
 
-      const segments = parseInlineSegments(
-        block.displayContent,
-        block.sourceStart + block.prefixLength,
-      );
+      // Cursor / selected lines: lay out the RAW source text instead of the
+      // parsed-markdown segments. The edit overlay needs to see (and edit)
+      // the literal markdown chars; doing this through the same SVG renderer
+      // guarantees the cursor line looks identical to a non-cursor line in
+      // font, weight, and baseline — only the content differs.
+      const isRawLine = rawLineIndices?.has(sourceLineIdx) ?? false;
+      const segments = isRawLine
+        ? [{
+            type: 'text' as const,
+            content: block.content,
+            displayContent: block.content,
+            sourceStart: block.sourceStart,
+            sourceEnd: block.sourceEnd,
+            isBlock: false,
+          }]
+        : parseInlineSegments(
+            block.displayContent,
+            block.sourceStart + block.prefixLength,
+          );
 
       // Build line[] from segments. Each line is a list of placed units.
       const lines: PlacedUnit[][] = [[]];
@@ -354,6 +403,7 @@ export async function layoutSvgText(
         else if (style.align === 'right') xOffset = Math.max(0, boxWidth - lineContentWidth);
 
         let xCursor = xOffset;
+        if (lineBaseline < 0) lineBaseline = baseline;
         for (const unit of line) {
           if (unit.kind === 'text') {
             const font = pickFont(unit.weight, unit.fontStyle);
@@ -365,16 +415,25 @@ export async function layoutSvgText(
                 length: g.length,
                 fillColor: unit.color,
                 nonScalingStroke: false,
+                lineIndex: sourceLineIdx,
               });
             }
             xCursor = endX;
           } else {
+            const before = pathsOut.length;
             pathsOut.push(...unit.emitPaths(xCursor, baseline));
+            for (let k = before; k < pathsOut.length; k++) pathsOut[k].lineIndex = sourceLineIdx;
             xCursor += unit.widthPx;
           }
         }
         yCursor += lineHeightPx;
       }
+      linesOut.push({
+        yTop: lineYTop,
+        yBottom: yCursor,
+        baseline: lineBaseline >= 0 ? lineBaseline : lineYTop + blockFontSize * 0.8,
+        source: block.content,
+      });
     }
 
     const totalHeight = yCursor;
@@ -386,6 +445,7 @@ export async function layoutSvgText(
       totalLength,
       width: totalWidth,
       height: totalHeight,
+      lines: linesOut,
     };
   })();
 
