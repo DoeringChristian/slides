@@ -277,11 +277,23 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     return () => vv.removeEventListener('resize', handle);
   }, [editingTextId]);
 
+  // When we intercept a keystroke in beforeinput (currently only $ auto-
+  // pair) we write the new state via replaceText. Some browsers still fire
+  // the corresponding `input` event afterwards, and handleInput would then
+  // re-read the DOM (which may reflect a partial browser insertion or be
+  // the pre-intercept content) and overwrite our intent. The flag tells
+  // handleInput to skip that one event.
+  const skipNextInputRef = useRef(false);
+
   // Plain typing path: browser already mutated the text node inside one of
   // our line divs (single-line, structure unchanged) — just snapshot the
   // result into state so the SVG re-lays out.
   const handleInput = useCallback(() => {
     if (!editorRef.current || !textElement) return;
+    if (skipNextInputRef.current) {
+      skipNextInputRef.current = false;
+      return;
+    }
     setLiveText(getTextFromEditor());
   }, [getTextFromEditor, textElement]);
 
@@ -379,13 +391,47 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
           }
           return;
 
-        case 'insertText':
-          if (crossesLine) {
+        case 'insertText': {
+          const data = e.data ?? '';
+          // Auto-pair $ delimiters for math.
+          //   * next char is $  → skip past it (the user typed the closing $)
+          //   * cursor is at $|$ (and not inside $$|$$ already) → expand to $$|$$
+          //   * otherwise → insert $$ and place caret between them
+          if (data === '$' && selStart === selEnd) {
             e.preventDefault();
-            const data = e.data ?? '';
+            // Suppress the input event that some browsers fire even after
+            // we cancel the beforeinput — otherwise handleInput would
+            // re-read the DOM and clobber the state we set below.
+            skipNextInputRef.current = true;
+            setTimeout(() => { skipNextInputRef.current = false; }, 0);
+            const prev = text[selStart - 1];
+            const next = text[selStart];
+            const prevPrev = text[selStart - 2];
+            const nextNext = text[selStart + 1];
+            //   $: empty                 → "$|$"   (insert pair)
+            //   $: at $|$ (no $ left)    → "$$|$$" (expand inline to block)
+            //   $: at $$|$$ (4 around)   → no-op  (so $$$ ends up at $$|$$)
+            //   $: next is $             → skip past (closing existing $)
+            if (prevPrev === '$' && prev === '$' && next === '$' && nextNext === '$') {
+              return;
+            }
+            if (prev === '$' && next === '$' && prevPrev !== '$') {
+              replaceText(text.slice(0, selStart) + '$$' + text.slice(selStart), selStart + 1);
+              return;
+            }
+            if (next === '$') {
+              requestAnimationFrame(() => setCursorPosition(selStart + 1));
+              return;
+            }
+            replaceText(text.slice(0, selStart) + '$$' + text.slice(selStart), selStart + 1);
+            return;
+          }
+          if (crossesLine || data.includes('\n')) {
+            e.preventDefault();
             replaceText(text.slice(0, selStart) + data + text.slice(selEnd), selStart + data.length);
           }
           return;
+        }
 
         case 'insertFromPaste':
         case 'insertFromDrop':
