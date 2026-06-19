@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import type { SlideElement, ShapeElement, ConnectorBinding } from '../../types/presentation';
 import { CANVAS_PADDING } from '../../utils/constants';
-import { pathBounds } from '../../utils/pathShapes';
+import { pathBounds, pathD, insetEndpoints } from '../../utils/pathShapes';
 import { getBindingTarget, getAnchorPoint } from '../../utils/connectorUtils';
 
 interface Props {
@@ -181,8 +181,34 @@ export const SVGPolyVertexHandles: React.FC<Props> = ({
   const strokeW = STROKE_W / zoom;
   const closed = element.closed ?? false;
 
+  // Dashed preview of the path with the dragged vertex applied. Uses the
+  // production pathD so curves / closed / corner-radius render exactly
+  // like they will on release. The stored path (already drawn by
+  // ElementRenderer with the pre-drag vertex list) stays visible
+  // underneath as the "before" reference.
+  const previewD = livePoints
+    ? pathD(
+        insetEndpoints(livePoints, !!element.startArrow, !!element.endArrow),
+        element.curve ?? 'linear',
+        element.closed ?? false,
+        (element.curve ?? 'linear') === 'linear' ? (element.cornerRadius ?? 0) : 0,
+      )
+    : null;
+
   return (
     <g className="poly-vertex-handles">
+      {previewD && (
+        <path
+          d={previewD}
+          transform={`translate(${element.x} ${element.y})`}
+          fill="none"
+          stroke={COLOR}
+          strokeWidth={Math.max(STROKE_W / zoom, 1)}
+          strokeDasharray={`${4 / zoom} ${3 / zoom}`}
+          opacity={0.8}
+          style={{ pointerEvents: 'none' }}
+        />
+      )}
       {/* Invisible alt-click strips along each segment, on top of the path. */}
       {Array.from({ length: closed ? n : n - 1 }, (_, segIdx) => {
         const a = segIdx;
