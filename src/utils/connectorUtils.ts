@@ -1,4 +1,5 @@
-import type { SlideElement, ConnectorBinding } from '../types/presentation';
+import type { SlideElement, ShapeElement, ConnectorBinding } from '../types/presentation';
+import { pathBounds } from './pathShapes';
 
 // Rotate a point around a center by an angle (in degrees)
 function rotatePoint(
@@ -100,4 +101,51 @@ export function resolveBindingPoint(
   const target = elements[binding.elementId];
   if (!target) return null;
   return getAnchorPoint(target, binding.anchor);
+}
+
+/**
+ * Recompute a path shape's (x, y, width, height, points) so that its first
+ * and/or last vertex tracks the connector anchor of `anchorElementId`.
+ *
+ * Works for ANY vertex count — old code assumed `pts[0..3]` (a 2-vertex
+ * line), which on a curve with N > 2 was silently truncating the vertex
+ * list down to 2 every time the bound-to element moved. Returns null when
+ * the shape isn't a bound path or no rebind is needed.
+ */
+export function rebindPathToMovedAnchor(
+  shape: ShapeElement,
+  anchorElementId: string,
+  elements: Record<string, SlideElement>,
+): { x: number; y: number; width: number; height: number; points: number[] } | null {
+  if (shape.shapeType !== 'path') return null;
+  const pts = shape.points;
+  if (!pts || pts.length < 4) return null;
+
+  // Working set: every vertex in absolute slide coords. Only the first /
+  // last get overwritten if a binding moved — interior vertices keep
+  // their absolute positions, so a curved path holds its shape.
+  const abs = pts.slice();
+  for (let i = 0; i < abs.length; i += 2) {
+    abs[i] += shape.x;
+    abs[i + 1] += shape.y;
+  }
+
+  let changed = false;
+  if (shape.startBinding?.elementId === anchorElementId) {
+    const pt = resolveBindingPoint(shape.startBinding, elements);
+    if (pt) { abs[0] = pt.x; abs[1] = pt.y; changed = true; }
+  }
+  if (shape.endBinding?.elementId === anchorElementId) {
+    const pt = resolveBindingPoint(shape.endBinding, elements);
+    if (pt) {
+      const lastX = abs.length - 2;
+      abs[lastX] = pt.x;
+      abs[lastX + 1] = pt.y;
+      changed = true;
+    }
+  }
+  if (!changed) return null;
+
+  const b = pathBounds(abs);
+  return { x: b.x, y: b.y, width: b.width, height: b.height, points: b.points };
 }

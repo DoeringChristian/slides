@@ -5,7 +5,7 @@ import type { Presentation, Slide, SlideElement, ShapeElement, ImageElement, Obj
 import { generateId } from '../utils/idGenerator';
 import { createPresentation, createSlide, copySlideAsKeyframe, generateObjectName } from '../utils/slideFactory';
 import { migratePresentation } from '../utils/migrations';
-import { resolveBindingPoint } from '../utils/connectorUtils';
+import { rebindPathToMovedAnchor } from '../utils/connectorUtils';
 import { getActiveDoc, runInTxn } from '../collab/yDocAdapter';
 import {
   elementToYMap,
@@ -833,46 +833,10 @@ export const usePresentationStore = create<PresentationStore>()(
               if (elId === elementId) continue;
               const el = slide.elements[elId];
               if (!el || el.type !== 'shape') continue;
-              const shape = el as ShapeElement;
-              if (shape.shapeType !== 'path') continue;
-
-              const pts = shape.points ?? [0, 0, shape.width, 0];
-              let newX = shape.x;
-              let newY = shape.y;
-              let newPts = [...pts];
-              let needsUpdate = false;
-
-              if (shape.startBinding?.elementId === elementId) {
-                const pt = resolveBindingPoint(shape.startBinding, slide.elements);
-                if (pt) {
-                  const endAbsX = shape.x + pts[2];
-                  const endAbsY = shape.y + pts[3];
-                  newX = pt.x;
-                  newY = pt.y;
-                  newPts = [0, 0, endAbsX - pt.x, endAbsY - pt.y];
-                  needsUpdate = true;
-                }
-              }
-              if (shape.endBinding?.elementId === elementId) {
-                const pt = resolveBindingPoint(shape.endBinding, slide.elements);
-                if (pt) {
-                  newPts = [newPts[0], newPts[1], pt.x - newX, pt.y - newY];
-                  needsUpdate = true;
-                }
-              }
-
-              if (needsUpdate) {
-                const connMap = getYElement(doc, slideId, elId);
-                if (connMap) {
-                  applyChangesToYElement(connMap, {
-                    x: newX,
-                    y: newY,
-                    points: newPts,
-                    width: Math.abs(newPts[2] - newPts[0]),
-                    height: Math.abs(newPts[3] - newPts[1]),
-                  });
-                }
-              }
+              const rebound = rebindPathToMovedAnchor(el as ShapeElement, elementId, slide.elements);
+              if (!rebound) continue;
+              const connMap = getYElement(doc, slideId, elId);
+              if (connMap) applyChangesToYElement(connMap, rebound);
             }
           });
           return;
@@ -886,51 +850,16 @@ export const usePresentationStore = create<PresentationStore>()(
             [elementId]: { ...slide.elements[elementId], ...changes } as SlideElement,
           };
 
-          // If a non-connector element moved or rotated, update any connectors bound to it
+          // If a non-connector element moved or rotated, update any
+          // connectors bound to it.
           if (changes.x !== undefined || changes.y !== undefined || changes.width !== undefined || changes.height !== undefined || changes.rotation !== undefined) {
             for (const elId of slide.elementOrder) {
               if (elId === elementId) continue;
               const el = updatedElements[elId];
               if (el.type !== 'shape') continue;
-              const shape = el as ShapeElement;
-              if (shape.shapeType !== 'path') continue;
-
-              let needsUpdate = false;
-              const pts = shape.points ?? [0, 0, shape.width, 0];
-              let newX = shape.x;
-              let newY = shape.y;
-              let newPts = [...pts];
-
-              if (shape.startBinding?.elementId === elementId) {
-                const pt = resolveBindingPoint(shape.startBinding, updatedElements);
-                if (pt) {
-                  const endAbsX = shape.x + pts[2];
-                  const endAbsY = shape.y + pts[3];
-                  newX = pt.x;
-                  newY = pt.y;
-                  newPts = [0, 0, endAbsX - pt.x, endAbsY - pt.y];
-                  needsUpdate = true;
-                }
-              }
-
-              if (shape.endBinding?.elementId === elementId) {
-                const pt = resolveBindingPoint(shape.endBinding, updatedElements);
-                if (pt) {
-                  newPts = [newPts[0], newPts[1], pt.x - newX, pt.y - newY];
-                  needsUpdate = true;
-                }
-              }
-
-              if (needsUpdate) {
-                updatedElements[elId] = {
-                  ...shape,
-                  x: newX,
-                  y: newY,
-                  points: newPts,
-                  width: Math.abs(newPts[2] - newPts[0]),
-                  height: Math.abs(newPts[3] - newPts[1]),
-                } as SlideElement;
-              }
+              const rebound = rebindPathToMovedAnchor(el as ShapeElement, elementId, updatedElements);
+              if (!rebound) continue;
+              updatedElements[elId] = { ...(el as ShapeElement), ...rebound } as SlideElement;
             }
           }
 
@@ -990,43 +919,14 @@ export const usePresentationStore = create<PresentationStore>()(
               const el = updatedElements[elId];
               if (el.type !== 'shape') continue;
               const shape = el as ShapeElement;
-              if (shape.shapeType !== 'path') continue;
-
-              let needsUpdate = false;
-              const pts = shape.points ?? [0, 0, shape.width, 0];
-              let newX = shape.x;
-              let newY = shape.y;
-              let newPts = [...pts];
-
-              if (shape.startBinding && movedElementIds.has(shape.startBinding.elementId)) {
-                const pt = resolveBindingPoint(shape.startBinding, updatedElements);
-                if (pt) {
-                  const endAbsX = shape.x + pts[2];
-                  const endAbsY = shape.y + pts[3];
-                  newX = pt.x;
-                  newY = pt.y;
-                  newPts = [0, 0, endAbsX - pt.x, endAbsY - pt.y];
-                  needsUpdate = true;
+              // Check against every moved anchor. The helper bails on any
+              // anchor it doesn't recognise, so iterating is cheap.
+              for (const movedId of movedElementIds) {
+                const rebound = rebindPathToMovedAnchor(shape, movedId, updatedElements);
+                if (rebound) {
+                  updatedElements[elId] = { ...shape, ...rebound } as SlideElement;
+                  break;
                 }
-              }
-
-              if (shape.endBinding && movedElementIds.has(shape.endBinding.elementId)) {
-                const pt = resolveBindingPoint(shape.endBinding, updatedElements);
-                if (pt) {
-                  newPts = [newPts[0], newPts[1], pt.x - newX, pt.y - newY];
-                  needsUpdate = true;
-                }
-              }
-
-              if (needsUpdate) {
-                updatedElements[elId] = {
-                  ...shape,
-                  x: newX,
-                  y: newY,
-                  points: newPts,
-                  width: Math.abs(newPts[2] - newPts[0]),
-                  height: Math.abs(newPts[3] - newPts[1]),
-                } as SlideElement;
               }
             }
           }
