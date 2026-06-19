@@ -4,6 +4,7 @@ import * as Y from 'yjs';
 import type { Presentation, Slide, SlideElement, ShapeElement, ImageElement, ObjectMeta, SlideTemplate, Resource } from '../types/presentation';
 import { generateId } from '../utils/idGenerator';
 import { createPresentation, createSlide, copySlideAsKeyframe, generateObjectName } from '../utils/slideFactory';
+import { migratePresentation } from '../utils/migrations';
 import { resolveBindingPoint } from '../utils/connectorUtils';
 import { getActiveDoc, runInTxn } from '../collab/yDocAdapter';
 import {
@@ -833,7 +834,7 @@ export const usePresentationStore = create<PresentationStore>()(
               const el = slide.elements[elId];
               if (!el || el.type !== 'shape') continue;
               const shape = el as ShapeElement;
-              if (shape.shapeType !== 'line' && shape.shapeType !== 'arrow') continue;
+              if (shape.shapeType !== 'path') continue;
 
               const pts = shape.points ?? [0, 0, shape.width, 0];
               let newX = shape.x;
@@ -892,7 +893,7 @@ export const usePresentationStore = create<PresentationStore>()(
               const el = updatedElements[elId];
               if (el.type !== 'shape') continue;
               const shape = el as ShapeElement;
-              if (shape.shapeType !== 'line' && shape.shapeType !== 'arrow') continue;
+              if (shape.shapeType !== 'path') continue;
 
               let needsUpdate = false;
               const pts = shape.points ?? [0, 0, shape.width, 0];
@@ -989,7 +990,7 @@ export const usePresentationStore = create<PresentationStore>()(
               const el = updatedElements[elId];
               if (el.type !== 'shape') continue;
               const shape = el as ShapeElement;
-              if (shape.shapeType !== 'line' && shape.shapeType !== 'arrow') continue;
+              if (shape.shapeType !== 'path') continue;
 
               let needsUpdate = false;
               const pts = shape.points ?? [0, 0, shape.width, 0];
@@ -2017,7 +2018,7 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       loadPresentation: (presentation) => {
-        set({ presentation });
+        set({ presentation: migratePresentation(presentation) });
       },
 
       resetPresentation: () => {

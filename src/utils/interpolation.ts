@@ -1,5 +1,6 @@
 import type { SlideElement, TextElement, ShapeElement, ImageElement, EasingType } from '../types/presentation';
 import { clamp } from './geometry';
+import { resamplePath, sampledPath } from './pathShapes';
 
 export function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
@@ -141,6 +142,43 @@ export function lerpColor(a: string, b: string, t: number): string {
 function lerpPoints(a: number[], b: number[], t: number): number[] {
   if (a.length !== b.length) return t < 0.5 ? a : b;
   return a.map((v, i) => lerp(v, b[i], t));
+}
+
+/** Per-arrow fade alpha across a slide transition.
+ *
+ *  Returns `undefined` when both sides agree (no animation needed — the
+ *  boolean field already carries the right value) or when no easing is set
+ *  (default `const` behaviour: snap at t=0.5). Otherwise eases between 0
+ *  and 1 so the renderer can fade the arrowhead's opacity. */
+function arrowAlpha(
+  a: boolean | undefined,
+  b: boolean | undefined,
+  t: number,
+  easing: EasingType | undefined,
+): number | undefined {
+  if (!easing || easing === 'const') return undefined;
+  if (a === b) return undefined;
+  const aV = a ? 1 : 0;
+  const bV = b ? 1 : 0;
+  return lerpEased(aV, bV, t, easing);
+}
+
+/** Smooth control-point interpolation for path shapes.
+ *
+ *  When source and target have the same number of vertices, each is lerped
+ *  pairwise — exact and cheap. When they differ, we arc-length-resample
+ *  BOTH paths to the larger N first, so a 2-point line morphing into a
+ *  6-point curve eases through equally-spaced intermediate points instead
+ *  of snapping at t=0.5.
+ *
+ *  Easing is applied to t before resampling — callers pass the eased t.
+ */
+function lerpControlPoints(a: number[], b: number[], t: number, closed: boolean): number[] {
+  if (a.length === b.length) return a.map((v, i) => lerp(v, b[i], t));
+  const targetN = Math.max(a.length, b.length) / 2;
+  const aR = resamplePath(a, targetN, closed);
+  const bR = resamplePath(b, targetN, closed);
+  return aR.map((v, i) => lerp(v, bR[i], t));
 }
 
 // Typewriter text interpolation
@@ -382,6 +420,47 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
     const sb = b as ShapeElement;
     const fillT = applyEasing(t, tr.fill);
     const strokeT = applyEasing(t, tr.stroke);
+
+    // Curve-mode morph: if the source and target paths have different
+    // `curve` (e.g. linear ↔ bspline3), snapping at t=0.5 looks abrupt.
+    // When `controlPoints` is animating, sample both paths into dense
+    // polylines, lerp pairwise, and render the in-flight shape as a
+    // plain linear polyline. End states still use the original curve.
+    const aCurve = sa.curve ?? 'linear';
+    const bCurve = sb.curve ?? 'linear';
+    const curvesDiffer = sa.shapeType === 'path' && sb.shapeType === 'path' && aCurve !== bCurve;
+    let nextCurve: ShapeElement['curve'] | undefined = t < 0.5 ? sa.curve : sb.curve;
+    let nextPoints: number[] | undefined;
+    if (sa.points && sb.points) {
+      const ease = tr.controlPoints ?? 'linear';
+      if (curvesDiffer && t > 0 && t < 1) {
+        // Differing curve modes always morph via sampled polylines —
+        // snapping at t=0.5 between a straight polyline and a smooth
+        // B-spline reads as a glitch. We use the explicit controlPoints
+        // easing if set, otherwise plain linear.
+        const aClosed = sa.closed ?? false;
+        const bClosed = sb.closed ?? false;
+        const aSamples = sampledPath(sa.points, aCurve, aClosed);
+        const bSamples = sampledPath(sb.points, bCurve, bClosed);
+        nextPoints = lerpControlPoints(aSamples, bSamples, applyEasing(t, ease), aClosed || bClosed);
+        nextCurve = 'linear';
+      } else if (tr.controlPoints) {
+        nextPoints = lerpControlPoints(sa.points, sb.points, applyEasing(t, ease), sa.closed ?? sb.closed ?? false);
+      } else {
+        nextPoints = lerpPoints(sa.points, sb.points, t);
+      }
+    } else {
+      nextPoints = t < 0.5 ? sa.points : sb.points;
+    }
+
+    // Per-arrow fade alpha. When the matching easing is set AND the
+    // endpoints differ between A and B, we ease a numeric 0↔1 alpha and
+    // attach it as `_startArrowAlpha` / `_endArrowAlpha`; ElementRenderer
+    // honours those over the boolean fields. Without an easing set, the
+    // boolean snaps at t=0.5 (default `const` behaviour).
+    const startArrowAlpha = arrowAlpha(sa.startArrow, sb.startArrow, t, tr.startArrow);
+    const endArrowAlpha = arrowAlpha(sa.endArrow, sb.endArrow, t, tr.endArrow);
+
     return {
       ...base,
       type: 'shape',
@@ -390,10 +469,16 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
       stroke: lerpColor(sa.stroke, sb.stroke, strokeT),
       strokeWidth: lerpEased(sa.strokeWidth, sb.strokeWidth, t, tr.strokeWidth),
       cornerRadius: lerpEased(sa.cornerRadius, sb.cornerRadius, t, tr.cornerRadius),
-      points: sa.points && sb.points ? lerpPoints(sa.points, sb.points, t) : (t < 0.5 ? sa.points : sb.points),
+      points: nextPoints,
+      curve: nextCurve,
+      closed: t < 0.5 ? sa.closed : sb.closed,
+      startArrow: t < 0.5 ? sa.startArrow : sb.startArrow,
+      endArrow: t < 0.5 ? sa.endArrow : sb.endArrow,
+      _startArrowAlpha: startArrowAlpha,
+      _endArrowAlpha: endArrowAlpha,
       startBinding: t < 0.5 ? sa.startBinding : sb.startBinding,
       endBinding: t < 0.5 ? sa.endBinding : sb.endBinding,
-    } as ShapeElement;
+    } as ShapeElement & { _startArrowAlpha?: number; _endArrowAlpha?: number };
   }
 
   // Image elements

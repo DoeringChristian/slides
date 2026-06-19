@@ -2,6 +2,7 @@ import jsPDF from 'jspdf';
 import type { Presentation, Slide, TextElement, ShapeElement, ImageElement, Resource } from '../types/presentation';
 import { SLIDE_WIDTH, SLIDE_HEIGHT, TEXT_BOX_PADDING } from './constants';
 import { parseBlocks, parseInlineSegments, getBlockFontMultiplier } from '../components/canvas/CustomMarkdownRenderer';
+import { pathD, arrowheadPoints, insetEndpoints } from './pathShapes';
 
 // ── Canvas2D-based PDF export ──
 // Renders directly to canvas — no html2canvas, no DOM cloning.
@@ -399,54 +400,53 @@ function drawShapeElement(ctx: CanvasRenderingContext2D, element: ShapeElement) 
       break;
     }
 
-    case 'line': {
+    case 'path': {
       const pts = points ?? [0, 0, width, 0];
+      if (pts.length < 4) break;
+      const closed = element.closed ?? false;
+      const curve = element.curve ?? 'linear';
+      const strokeCol = stroke || fill || '#000';
+      const sw = strokeWidth || (closed ? 0 : 3);
+      // pathD only emits M / L / Z (bsplines are pre-sampled), so we can
+      // mirror it onto a Canvas2D path by walking those commands.
+      const shaftPts = insetEndpoints(pts, !!element.startArrow, !!element.endArrow);
+      const d = pathD(shaftPts, curve, closed);
       ctx.beginPath();
-      ctx.moveTo(x + pts[0], y + pts[1]);
-      ctx.lineTo(x + pts[2], y + pts[3]);
-      ctx.strokeStyle = stroke || fill || '#000';
-      ctx.lineWidth = strokeWidth || 3;
+      for (const cmd of d.split(/(?=[MLZ])/)) {
+        const head = cmd[0];
+        if (head === 'M' || head === 'L') {
+          const [px, py] = cmd.slice(1).trim().split(/\s+/).map(Number);
+          const ax = x + px;
+          const ay = y + py;
+          if (head === 'M') ctx.moveTo(ax, ay);
+          else ctx.lineTo(ax, ay);
+        } else if (head === 'Z') {
+          ctx.closePath();
+        }
+      }
+      if (closed && fill) {
+        ctx.fillStyle = fill;
+        ctx.fill();
+      }
+      ctx.strokeStyle = strokeCol;
+      ctx.lineWidth = sw;
       ctx.lineCap = 'round';
-      ctx.stroke();
-      break;
-    }
-
-    case 'arrow': {
-      const pts = points ?? [0, 0, width, 0];
-      const arrowStroke = stroke || fill || '#000';
-      const arrowWidth = strokeWidth || 3;
-
-      ctx.beginPath();
-      ctx.moveTo(x + pts[0], y + pts[1]);
-      ctx.lineTo(x + pts[2], y + pts[3]);
-      ctx.strokeStyle = arrowStroke;
-      ctx.lineWidth = arrowWidth;
-      ctx.lineCap = 'round';
-      ctx.stroke();
-
-      // Arrowhead
-      const dx = pts[2] - pts[0];
-      const dy = pts[3] - pts[1];
-      const angle = Math.atan2(dy, dx);
-      const headLength = 10;
-      const headWidth = 10;
-      const tip = { x: x + pts[2], y: y + pts[3] };
-      const left = {
-        x: tip.x - headLength * Math.cos(angle) + headWidth / 2 * Math.sin(angle),
-        y: tip.y - headLength * Math.sin(angle) - headWidth / 2 * Math.cos(angle),
+      ctx.lineJoin = 'round';
+      if (sw > 0) ctx.stroke();
+      // Arrowheads at the endpoints.
+      const last = pts.length - 2;
+      const drawHead = (tipX: number, tipY: number, dirX: number, dirY: number) => {
+        const h = arrowheadPoints(tipX, tipY, dirX, dirY);
+        ctx.beginPath();
+        ctx.moveTo(x + h[0], y + h[1]);
+        ctx.lineTo(x + h[2], y + h[3]);
+        ctx.lineTo(x + h[4], y + h[5]);
+        ctx.closePath();
+        ctx.fillStyle = strokeCol;
+        ctx.fill();
       };
-      const right = {
-        x: tip.x - headLength * Math.cos(angle) - headWidth / 2 * Math.sin(angle),
-        y: tip.y - headLength * Math.sin(angle) + headWidth / 2 * Math.cos(angle),
-      };
-
-      ctx.beginPath();
-      ctx.moveTo(tip.x, tip.y);
-      ctx.lineTo(left.x, left.y);
-      ctx.lineTo(right.x, right.y);
-      ctx.closePath();
-      ctx.fillStyle = arrowStroke;
-      ctx.fill();
+      if (element.startArrow) drawHead(pts[0], pts[1], pts[0] - pts[2], pts[1] - pts[3]);
+      if (element.endArrow) drawHead(pts[last], pts[last + 1], pts[last] - pts[last - 2], pts[last + 1] - pts[last - 1]);
       break;
     }
   }

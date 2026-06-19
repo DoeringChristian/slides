@@ -1,6 +1,7 @@
 import React, { memo } from 'react';
 import { SVGTextPaths } from './SVGTextPaths';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
+import { pathD, arrowheadPoints, insetEndpoints } from '../../utils/pathShapes';
 import type { SlideElement, TextElement, ShapeElement, ImageElement, Resource } from '../../types/presentation';
 
 // ============================================================================
@@ -96,74 +97,68 @@ export const RenderShape: React.FC<ShapeProps> = memo(({ element }) => {
       );
     }
 
-    case 'line': {
-      const pts = points ?? [0, 0, width, 0];
-      const lineStroke = stroke || fill || '#000';
-      const lineWidth = strokeWidth || 3;
-      // Rotate around line center, not bounding box center
-      const lineCx = x + (pts[0] + pts[2]) / 2;
-      const lineCy = y + (pts[1] + pts[3]) / 2;
-      const lineTransform = rotation ? `rotate(${rotation}, ${lineCx}, ${lineCy})` : undefined;
+    case 'path': {
+      const pts = points ?? [];
+      if (pts.length < 4) return null;
+      const closed = element.closed ?? false;
+      const curve = element.curve ?? 'linear';
+      // Per-arrow alpha: defaults to the boolean's binary value, but
+      // interpolation can override with a `_startArrowAlpha` / `_endArrowAlpha`
+      // synthetic field to fade the arrow during a slide transition.
+      const animFx = element as ShapeElement & {
+        _startArrowAlpha?: number;
+        _endArrowAlpha?: number;
+      };
+      const startAlpha = animFx._startArrowAlpha ?? (element.startArrow ? 1 : 0);
+      const endAlpha = animFx._endArrowAlpha ?? (element.endArrow ? 1 : 0);
+      const hasStartArrow = startAlpha > 0;
+      const hasEndArrow = endAlpha > 0;
+      // Pull the shaft back from any arrowhead end so it stops at the
+      // triangle base instead of poking through to the tip vertex.
+      const shaftPts = insetEndpoints(pts, hasStartArrow, hasEndArrow);
+      const d = pathD(shaftPts, curve, closed);
+      // Stroke colour falls back to fill or black so a freshly-drawn open
+      // path always renders something visible (it has no fill by default).
+      const strokeCol = strokeAttr === 'none'
+        ? (fillAttr === 'transparent' ? '#000' : fillAttr)
+        : strokeAttr;
+      const strokeW = strokeWidthAttr || (closed ? 0 : 3);
+      const fillCol = closed ? fillAttr : 'none';
+      const last = pts.length - 2;
+      const startHead = hasStartArrow
+        ? arrowheadPoints(pts[0], pts[1], pts[0] - pts[2], pts[1] - pts[3])
+        : null;
+      const endHead = hasEndArrow
+        ? arrowheadPoints(pts[last], pts[last + 1], pts[last] - pts[last - 2], pts[last + 1] - pts[last - 1])
+        : null;
       return (
-        <g transform={lineTransform}>
-          <line
-            x1={x + pts[0]}
-            y1={y + pts[1]}
-            x2={x + pts[2]}
-            y2={y + pts[3]}
-            stroke={lineStroke}
-            strokeWidth={lineWidth}
-            strokeLinecap="round"
-            opacity={opacity}
-            style={{ pointerEvents: 'none' }}
-          />
-        </g>
-      );
-    }
-
-    case 'arrow': {
-      const pts = points ?? [0, 0, width, 0];
-      const arrowStroke = stroke || fill || '#000';
-      const arrowWidth = strokeWidth || 3;
-      const dx = pts[2] - pts[0];
-      const dy = pts[3] - pts[1];
-      const angle = Math.atan2(dy, dx);
-      const headLength = 10;
-      const headWidth = 10;
-      const tip = { x: x + pts[2], y: y + pts[3] };
-      const lineEnd = {
-        x: tip.x - headLength * Math.cos(angle),
-        y: tip.y - headLength * Math.sin(angle),
-      };
-      const left = {
-        x: tip.x - headLength * Math.cos(angle) + headWidth / 2 * Math.sin(angle),
-        y: tip.y - headLength * Math.sin(angle) - headWidth / 2 * Math.cos(angle),
-      };
-      const right = {
-        x: tip.x - headLength * Math.cos(angle) - headWidth / 2 * Math.sin(angle),
-        y: tip.y - headLength * Math.sin(angle) + headWidth / 2 * Math.cos(angle),
-      };
-      // Rotate around line center, not bounding box center
-      const arrowCx = x + (pts[0] + pts[2]) / 2;
-      const arrowCy = y + (pts[1] + pts[3]) / 2;
-      const arrowTransform = rotation ? `rotate(${rotation}, ${arrowCx}, ${arrowCy})` : undefined;
-      return (
-        <g transform={arrowTransform} style={{ pointerEvents: 'none' }}>
-          <line
-            x1={x + pts[0]}
-            y1={y + pts[1]}
-            x2={lineEnd.x}
-            y2={lineEnd.y}
-            stroke={arrowStroke}
-            strokeWidth={arrowWidth}
-            strokeLinecap="round"
-            opacity={opacity}
-          />
-          <polygon
-            points={`${tip.x},${tip.y} ${left.x},${left.y} ${right.x},${right.y}`}
-            fill={arrowStroke}
-            opacity={opacity}
-          />
+        <g transform={transform}>
+          <g transform={`translate(${x}, ${y})`}>
+            <path
+              d={d}
+              fill={fillCol}
+              stroke={strokeCol}
+              strokeWidth={strokeW}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              opacity={opacity}
+              style={{ pointerEvents: 'none' }}
+            />
+            {startHead && (
+              <polygon
+                points={`${startHead[0]},${startHead[1]} ${startHead[2]},${startHead[3]} ${startHead[4]},${startHead[5]}`}
+                fill={strokeCol}
+                opacity={opacity * startAlpha}
+              />
+            )}
+            {endHead && (
+              <polygon
+                points={`${endHead[0]},${endHead[1]} ${endHead[2]},${endHead[3]} ${endHead[4]},${endHead[5]}`}
+                fill={strokeCol}
+                opacity={opacity * endAlpha}
+              />
+            )}
+          </g>
         </g>
       );
     }

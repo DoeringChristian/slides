@@ -158,27 +158,26 @@ function addShapeElement(slide: PptxGenJS.Slide, el: ShapeElement) {
       });
       break;
     }
-    case 'line': {
+    case 'path': {
+      // PPTX export only supports straight lines natively; everything
+      // multi-vertex or curved would need a custGeom, which pptxgenjs
+      // doesn't expose. So we export the 2-vertex linear case as a real
+      // line (with optional arrow ends) and skip the rest — the SVG-based
+      // exporters carry full fidelity.
+      const pts = el.points ?? [0, 0, el.width, 0];
+      const curve = el.curve ?? 'linear';
+      if (pts.length !== 4 || curve !== 'linear') break;
       const strokeColor = el.stroke || el.fill || '#000000';
       slide.addShape('line', {
-        x: x, y: y, w: w, h: h,
-        line: { color: hexWithoutHash(strokeColor), width: el.strokeWidth || 3 },
-        rotate: el.rotation || 0,
-        flipV: el.points ? (el.points[3] - el.points[1]) < 0 : false,
-      });
-      break;
-    }
-    case 'arrow': {
-      const strokeColor = el.stroke || el.fill || '#000000';
-      slide.addShape('line', {
-        x: x, y: y, w: w, h: h,
+        x, y, w, h,
         line: {
           color: hexWithoutHash(strokeColor),
           width: el.strokeWidth || 3,
-          endArrowType: 'triangle',
+          ...(el.endArrow ? { endArrowType: 'triangle' as const } : {}),
+          ...(el.startArrow ? { beginArrowType: 'triangle' as const } : {}),
         },
         rotate: el.rotation || 0,
-        flipV: el.points ? (el.points[3] - el.points[1]) < 0 : false,
+        flipV: (pts[3] - pts[1]) < 0,
       });
       break;
     }

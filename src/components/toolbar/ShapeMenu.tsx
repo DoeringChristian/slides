@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useEditorStore } from '../../store/editorStore';
-import { Square, Circle, Triangle, Star, Minus, MoveRight } from 'lucide-react';
+import { Square, Circle, Triangle, Star, Minus, MoveRight, Hexagon, Spline } from 'lucide-react';
 import type { Tool } from '../../types/presentation';
 
 const shapes: { tool: Tool; icon: React.ReactNode; label: string }[] = [
@@ -10,6 +10,8 @@ const shapes: { tool: Tool; icon: React.ReactNode; label: string }[] = [
   { tool: 'star', icon: <Star size={16} />, label: 'Star' },
   { tool: 'line', icon: <Minus size={16} />, label: 'Line' },
   { tool: 'arrow', icon: <MoveRight size={16} />, label: 'Arrow' },
+  { tool: 'polygon', icon: <Hexagon size={16} />, label: 'Polygon' },
+  { tool: 'bspline', icon: <Spline size={16} />, label: 'B-spline' },
 ];
 
 export const ShapeMenu: React.FC = () => {

@@ -1,4 +1,5 @@
 import type { SlideElement, ShapeElement } from '../types/presentation';
+import { isLinePath } from './pathShapes';
 
 export interface BoundingBox {
   x: number;
@@ -95,7 +96,7 @@ export function getLineCenter(element: ShapeElement): Point {
 export function getElementBounds(element: SlideElement): BoundingBox {
   if (element.type === 'shape') {
     const shape = element as ShapeElement;
-    if (shape.shapeType === 'line' || shape.shapeType === 'arrow') {
+    if (isLinePath(shape)) {
       return getLineBoundingBox(shape);
     }
   }
@@ -109,7 +110,7 @@ export function getElementBounds(element: SlideElement): BoundingBox {
 export function getElementCenter(element: SlideElement): Point {
   if (element.type === 'shape') {
     const shape = element as ShapeElement;
-    if (shape.shapeType === 'line' || shape.shapeType === 'arrow') {
+    if (isLinePath(shape)) {
       return getLineCenter(shape);
     }
   }

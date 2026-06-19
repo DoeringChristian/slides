@@ -11,12 +11,13 @@ import { SVGAlignmentGuides } from './SVGAlignmentGuides';
 import { SVGMarginGuides } from './SVGMarginGuides';
 import { SVGHoverOverlay } from './SVGHoverOverlay';
 import { SVGConnectorHighlight } from './SVGConnectorHighlight';
-import { SVGDrawingPreview } from './SVGDrawingPreview';
+import { SVGDrawingPreview, SVGPolyDraftPreview } from './SVGDrawingPreview';
 import { SVGDragPreview, type DragPreviewState } from './SVGDragPreview';
 import { SVGSelectionDrag } from './SVGSelectionDrag';
 import { SVGSelectionTransformer } from './SVGSelectionTransformer';
 import { SVGPeerSelectionOverlay } from './SVGPeerSelectionOverlay';
 import { SVGLineEndpointHandles } from './SVGLineEndpointHandles';
+import { SVGPolyVertexHandles } from './SVGPolyVertexHandles';
 import { useSVGDrag } from './useSVGDrag';
 import { useSVGDrawing } from './useSVGDrawing';
 import { TextEditOverlay } from '../canvas/TextEditOverlay';
@@ -29,6 +30,7 @@ import { isShiftHeld } from '../../utils/keyboard';
 import { SLIDE_WIDTH, SLIDE_HEIGHT, CANVAS_PADDING } from '../../utils/constants';
 import { loadImageFile, loadPdfFile, loadVideoFile, duplicateElement } from '../../utils/slideFactory';
 import { isPointOnTextContent } from '../../utils/textHitTest';
+import { isLinePath } from '../../utils/pathShapes';
 import type { ShapeElement, TextElement } from '../../types/presentation';
 
 interface Guide {
@@ -108,11 +110,23 @@ export const SVGSlideCanvas: React.FC = () => {
     return slide.elementOrder.map((id) => slide.elements[id]).filter(Boolean);
   }, [slide]);
 
-  // Determine if sole selected element is a visible line/arrow
+  // Sole selected element is a visible 2-vertex linear path (line / arrow).
+  // Gets connector-aware endpoint handles instead of the standard
+  // transformer.
   const soleSelectedLineElement = useMemo(() => {
     if (selectedElementIds.length !== 1 || !slide) return null;
     const el = slide.elements[selectedElementIds[0]];
-    if (el && el.visible && el.type === 'shape' && (el.shapeType === 'line' || el.shapeType === 'arrow')) {
+    if (el && el.visible && el.type === 'shape' && isLinePath(el)) {
+      return el as ShapeElement;
+    }
+    return null;
+  }, [selectedElementIds, slide]);
+
+  // Sole selected multi-vertex / curved path — gets per-vertex handles.
+  const soleSelectedPolyElement = useMemo(() => {
+    if (selectedElementIds.length !== 1 || !slide) return null;
+    const el = slide.elements[selectedElementIds[0]];
+    if (el && el.visible && el.type === 'shape' && el.shapeType === 'path' && !isLinePath(el)) {
       return el as ShapeElement;
     }
     return null;
@@ -127,7 +141,7 @@ export const SVGSlideCanvas: React.FC = () => {
   const dragStartPositions = useRef<Map<string, { x: number; y: number }>>(new Map());
 
   // Drawing hook (pointer-based — mouse, touch, stylus all flow through here)
-  const { drawState, guides: drawingGuides, handlePointerDown: handleDrawPointerDown, handlePointerMove: handleDrawPointerMove, handlePointerUp: handleDrawPointerUp, justFinishedDrawing } = useSVGDrawing();
+  const { drawState, guides: drawingGuides, polyDraft, handlePointerDown: handleDrawPointerDown, handlePointerMove: handleDrawPointerMove, handlePointerUp: handleDrawPointerUp, justFinishedDrawing } = useSVGDrawing();
 
   // Combine drag and drawing guides
   const guides = drawState.isDrawing ? drawingGuides : dragGuides;
@@ -231,7 +245,7 @@ export const SVGSlideCanvas: React.FC = () => {
 
       const newX = startPos.x + snappedDeltaX;
       const newY = startPos.y + snappedDeltaY;
-      const isLine = element.type === 'shape' && ((element as ShapeElement).shapeType === 'line' || (element as ShapeElement).shapeType === 'arrow');
+      const isLine = element.type === 'shape' && isLinePath(element as ShapeElement);
 
       previews.push({
         isDragging: true,
@@ -712,7 +726,7 @@ export const SVGSlideCanvas: React.FC = () => {
     const el = slide?.elements[id];
     if (!el) return;
 
-    const isLine = el.type === 'shape' && ((el as ShapeElement).shapeType === 'line' || (el as ShapeElement).shapeType === 'arrow');
+    const isLine = el.type === 'shape' && isLinePath(el as ShapeElement);
     setTransformPreview({
       isDragging: true,
       elementType: isLine ? 'line' : 'rect',
@@ -1069,12 +1083,15 @@ export const SVGSlideCanvas: React.FC = () => {
           <SVGAlignmentGuides guides={guides} zoom={zoom} />
           <SVGSelectionDrag selectionDrag={selectionDrag} zoom={zoom} />
           <SVGDrawingPreview drawState={drawState} tool={tool} zoom={zoom} />
+          <SVGPolyDraftPreview polyDraft={polyDraft} zoom={zoom} />
           <SVGDragPreview preview={dragPreview} zoom={zoom} />
           <SVGDragPreview preview={transformPreview} zoom={zoom} />
           <SVGPeerSelectionOverlay slideId={activeSlideId || null} elements={elements} zoom={zoom} />
 
-          {/* Selection transformer */}
-          {unlockedSelectedIds.length > 0 && !soleSelectedLineElement && (
+          {/* Selection transformer — suppressed for sole line/arrow (uses
+              endpoint handles instead) and for sole polygon/bspline (uses
+              per-vertex handles instead). */}
+          {unlockedSelectedIds.length > 0 && !soleSelectedLineElement && !soleSelectedPolyElement && (
             <SVGSelectionTransformer
               elements={elements}
               selectedIds={unlockedSelectedIds}
@@ -1093,6 +1110,17 @@ export const SVGSlideCanvas: React.FC = () => {
               locked
               zoom={zoom}
               svgRef={svgRef}
+            />
+          )}
+
+          {/* Polygon / B-spline vertex handles */}
+          {soleSelectedPolyElement && !soleSelectedPolyElement.locked && (
+            <SVGPolyVertexHandles
+              element={soleSelectedPolyElement}
+              zoom={zoom}
+              svgRef={svgRef}
+              onUpdate={(attrs) => activeSlideId && updateElement(activeSlideId, soleSelectedPolyElement.id, attrs)}
+              onTransformStart={handleTransformStart}
             />
           )}
 

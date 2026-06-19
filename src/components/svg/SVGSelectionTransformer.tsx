@@ -5,6 +5,7 @@ import { useEditorStore } from '../../store/editorStore';
 import { computeResizeSnap, type Guide } from '../../hooks/useAlignmentGuides';
 import { getMarginLayout, getMarginBounds } from '../../utils/marginLayouts';
 import { isShiftHeld } from '../../utils/keyboard';
+import { isLinePath } from '../../utils/pathShapes';
 
 interface Props {
   elements: SlideElement[];
@@ -39,8 +40,7 @@ function getLineBoundingBox(element: ShapeElement): { x: number; y: number; widt
 }
 
 function getElementBounds(element: SlideElement): { x: number; y: number; width: number; height: number } {
-  const isLine = element.type === 'shape' &&
-    ((element as ShapeElement).shapeType === 'line' || (element as ShapeElement).shapeType === 'arrow');
+  const isLine = element.type === 'shape' && isLinePath(element as ShapeElement);
 
   if (isLine) {
     return getLineBoundingBox(element as ShapeElement);

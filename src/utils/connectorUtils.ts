@@ -36,8 +36,8 @@ export function getBindingTarget(
 
   for (const el of elements) {
     if (el.id === excludeId) continue;
-    // Only bind to non-line/non-arrow shapes, text, and images
-    if (el.type === 'shape' && (el.shapeType === 'line' || el.shapeType === 'arrow')) continue;
+    // Path shapes (lines, arrows, curves) can't be a binding target themselves.
+    if (el.type === 'shape' && el.shapeType === 'path') continue;
 
     const rotation = el.rotation || 0;
     const origin = getRotationOrigin(el);

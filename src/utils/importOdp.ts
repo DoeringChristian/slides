@@ -298,14 +298,14 @@ export async function importOdp(file: File): Promise<Presentation> {
         const strokeWidthStr = getGraphicPropFromStyle(child, styleMap, 'svg:stroke-width');
         const strokeWidth = strokeWidthStr ? parseDimension(strokeWidthStr) : 3;
 
-        // Check for arrow marker
         const markerEnd = getGraphicPropFromStyle(child, styleMap, 'draw:marker-end');
-        const shapeType = markerEnd ? 'arrow' as const : 'line' as const;
 
         const minX = Math.min(x1, x2);
         const minY = Math.min(y1, y2);
 
-        const el = createShapeElement(shapeType, {
+        const el = createShapeElement('path', {
+          curve: 'linear',
+          endArrow: !!markerEnd,
           x: minX,
           y: minY,
           width: Math.max(Math.abs(x2 - x1), 1),

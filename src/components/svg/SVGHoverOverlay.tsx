@@ -1,6 +1,7 @@
 import React from 'react';
 import { usePresentationStore } from '../../store/presentationStore';
 import { getLineCenter, getElementBounds, getElementCenter } from '../../utils/geometry';
+import { pathD, arrowheadPoints, insetEndpoints, isLinePath } from '../../utils/pathShapes';
 import type { SlideElement, ShapeElement, ImageElement } from '../../types/presentation';
 
 interface Props {
@@ -125,65 +126,43 @@ const GhostShape: React.FC<{ element: ShapeElement }> = ({ element }) => {
         </g>
       );
     }
-    case 'line': {
+    case 'path': {
       const pts = element.points ?? [0, 0, element.width, 0];
-      const lineCenter = getLineCenter(element);
-      const lineTransform = element.rotation ? `rotate(${element.rotation}, ${lineCenter.x}, ${lineCenter.y})` : undefined;
-      return (
-        <g transform={lineTransform}>
-          <line
-            x1={element.x + pts[0]}
-            y1={element.y + pts[1]}
-            x2={element.x + pts[2]}
-            y2={element.y + pts[3]}
-            stroke={element.stroke || element.fill || '#000'}
-            strokeWidth={element.strokeWidth || 3}
-            strokeLinecap="round"
-            style={{ pointerEvents: 'none' }}
-          />
-        </g>
-      );
-    }
-    case 'arrow': {
-      const pts = element.points ?? [0, 0, element.width, 0];
+      if (pts.length < 4) return null;
+      const closed = element.closed ?? false;
+      const curve = element.curve ?? 'linear';
+      const shaftPts = insetEndpoints(pts, !!element.startArrow, !!element.endArrow);
+      const d = pathD(shaftPts, curve, closed);
       const strokeColor = element.stroke || element.fill || '#000';
       const strokeW = element.strokeWidth || 3;
-      const dx = pts[2] - pts[0];
-      const dy = pts[3] - pts[1];
-      const angle = Math.atan2(dy, dx);
-      const headLength = 10;
-      const headWidth = 10;
-      const tip = { x: element.x + pts[2], y: element.y + pts[3] };
-      // Line should stop at the base of the arrowhead
-      const lineEnd = {
-        x: tip.x - headLength * Math.cos(angle),
-        y: tip.y - headLength * Math.sin(angle),
-      };
-      const left = {
-        x: tip.x - headLength * Math.cos(angle) + headWidth / 2 * Math.sin(angle),
-        y: tip.y - headLength * Math.sin(angle) - headWidth / 2 * Math.cos(angle),
-      };
-      const right = {
-        x: tip.x - headLength * Math.cos(angle) - headWidth / 2 * Math.sin(angle),
-        y: tip.y - headLength * Math.sin(angle) + headWidth / 2 * Math.cos(angle),
-      };
-      const lineCenter = getLineCenter(element);
-      const arrowTransform = element.rotation ? `rotate(${element.rotation}, ${lineCenter.x}, ${lineCenter.y})` : undefined;
+      // 2-vertex linear paths rotate around the line midpoint (matches the
+      // ElementRenderer special case); everything else rotates around the
+      // bounding-box centre like a normal shape.
+      const center = isLinePath(element)
+        ? getLineCenter(element)
+        : { x: element.x + element.width / 2, y: element.y + element.height / 2 };
+      const transform = element.rotation ? `rotate(${element.rotation}, ${center.x}, ${center.y})` : undefined;
+      const last = pts.length - 2;
+      const startHead = element.startArrow
+        ? arrowheadPoints(pts[0], pts[1], pts[0] - pts[2], pts[1] - pts[3])
+        : null;
+      const endHead = element.endArrow
+        ? arrowheadPoints(pts[last], pts[last + 1], pts[last] - pts[last - 2], pts[last + 1] - pts[last - 1])
+        : null;
       return (
-        <g transform={arrowTransform} style={{ pointerEvents: 'none' }}>
-          <line
-            x1={element.x + pts[0]}
-            y1={element.y + pts[1]}
-            x2={lineEnd.x}
-            y2={lineEnd.y}
-            stroke={strokeColor}
-            strokeWidth={strokeW}
-            strokeLinecap="round"
-          />
-          <polygon
-            points={`${tip.x},${tip.y} ${left.x},${left.y} ${right.x},${right.y}`}
-            fill={strokeColor}
-          />
+        <g transform={transform} style={{ pointerEvents: 'none' }}>
+          <g transform={`translate(${element.x}, ${element.y})`}>
+            <path
+              d={d}
+              fill={closed ? (element.fill || 'transparent') : 'none'}
+              stroke={strokeColor}
+              strokeWidth={strokeW}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            {startHead && <polygon points={`${startHead[0]},${startHead[1]} ${startHead[2]},${startHead[3]} ${startHead[4]},${startHead[5]}`} fill={strokeColor} />}
+            {endHead && <polygon points={`${endHead[0]},${endHead[1]} ${endHead[2]},${endHead[3]} ${endHead[4]},${endHead[5]}`} fill={strokeColor} />}
+          </g>
         </g>
       );
     }

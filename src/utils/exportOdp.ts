@@ -137,14 +137,20 @@ function buildShapeXml(el: ShapeElement, slideIndex: number, elIndex: number): s
         `<draw:enhanced-geometry svg:viewBox="0 0 21600 21600" draw:type="star5"/>` +
         `</draw:custom-shape>`;
 
-    case 'line': {
+    case 'path': {
       const pts = el.points ?? [0, 0, el.width, 0];
-      return `<draw:line draw:style-name="${styleName}" svg:x1="${cm(el.x + pts[0])}" svg:y1="${cm(el.y + pts[1])}" svg:x2="${cm(el.x + pts[2])}" svg:y2="${cm(el.y + pts[3])}" draw:layer="layout"/>`;
-    }
-
-    case 'arrow': {
-      const pts = el.points ?? [0, 0, el.width, 0];
-      return `<draw:line draw:style-name="${styleName}" svg:x1="${cm(el.x + pts[0])}" svg:y1="${cm(el.y + pts[1])}" svg:x2="${cm(el.x + pts[2])}" svg:y2="${cm(el.y + pts[3])}" draw:layer="layout"/>`;
+      // Two-vertex linear path exports as ODP <draw:line>; everything else
+      // uses <draw:polyline>/<draw:polygon> with comma-separated coords.
+      const isLine2 = (el.curve ?? 'linear') === 'linear' && pts.length === 4;
+      if (isLine2) {
+        return `<draw:line draw:style-name="${styleName}" svg:x1="${cm(el.x + pts[0])}" svg:y1="${cm(el.y + pts[1])}" svg:x2="${cm(el.x + pts[2])}" svg:y2="${cm(el.y + pts[3])}" draw:layer="layout"/>`;
+      }
+      const pointPairs: string[] = [];
+      for (let i = 0; i < pts.length; i += 2) {
+        pointPairs.push(`${Math.round(pts[i] * 100)},${Math.round(pts[i + 1] * 100)}`);
+      }
+      const tag = el.closed ? 'polygon' : 'polyline';
+      return `<draw:${tag} draw:style-name="${styleName}"${posAttrs} svg:width="${w}" svg:height="${h}"${transform} svg:viewBox="0 0 ${Math.round(el.width * 100)} ${Math.round(el.height * 100)}" draw:points="${pointPairs.join(' ')}" draw:layer="layout"/>`;
     }
 
     default:
@@ -156,7 +162,9 @@ function buildShapeStyle(el: ShapeElement, slideIndex: number, elIndex: number):
   const styleName = `gr_s${slideIndex}_e${elIndex}`;
   const hasFill = el.fill && el.fill !== 'transparent' && el.fill !== 'none' && el.fill !== '';
   const hasStroke = el.stroke && el.stroke !== 'none' && el.stroke !== '' && el.strokeWidth > 0;
-  const isLine = el.shapeType === 'line' || el.shapeType === 'arrow';
+  // Path shapes export as ODP strokes (open or closed). They don't carry a
+  // fill unless explicitly closed.
+  const isLine = el.shapeType === 'path' && !el.closed;
 
   let style = `<style:style style:name="${styleName}" style:family="graphic">`;
   style += `<style:graphic-properties `;
@@ -180,8 +188,11 @@ function buildShapeStyle(el: ShapeElement, slideIndex: number, elIndex: number):
     style += `draw:opacity="${Math.round(el.opacity * 100)}%" `;
   }
 
-  // Arrow marker for arrow shape
-  if (el.shapeType === 'arrow') {
+  // Arrow markers on the unified path shape.
+  if (el.shapeType === 'path' && el.startArrow) {
+    style += `draw:marker-start="Arrow" draw:marker-start-width="0.3cm" `;
+  }
+  if (el.shapeType === 'path' && el.endArrow) {
     style += `draw:marker-end="Arrow" draw:marker-end-width="0.3cm" `;
   }
 

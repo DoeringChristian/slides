@@ -147,7 +147,8 @@ export type TransitionGroup =
   | 'position' | 'size' | 'rotation' | 'opacity'
   | 'fill' | 'stroke' | 'strokeWidth' | 'cornerRadius'
   | 'fontSize' | 'color' | 'lineHeight'
-  | 'crop' | 'resource' | 'visibility' | 'content';
+  | 'crop' | 'resource' | 'visibility' | 'content'
+  | 'controlPoints' | 'startArrow' | 'endArrow';
 
 // Per-property-group transition settings
 export interface PropertyTransitions {
@@ -166,6 +167,13 @@ export interface PropertyTransitions {
   resource?: EasingType;      // resourceId (supports dissolve)
   visibility?: EasingType;    // fade-in/fade-out animation
   content?: EasingType;       // text content (typewriter effect)
+  /** Path-shape control points (vertex list). Per-vertex lerp when the
+   *  list shapes match; arc-length resampling falls in when they don't. */
+  controlPoints?: EasingType;
+  /** Per-arrow fade easing. When set, the start/end arrowhead's alpha is
+   *  interpolated 0 ↔ 1 across the slide transition instead of snapping. */
+  startArrow?: EasingType;
+  endArrow?: EasingType;
 
   /** Optional per-easing settings, per group. Read only when the matching
    *  easing field above is set. Unset → all options take their defaults. */
@@ -206,7 +214,20 @@ export interface TextElement extends BaseElement {
   style: TextStyle;
 }
 
-export type ShapeType = 'rect' | 'ellipse' | 'triangle' | 'star' | 'line' | 'arrow';
+/** Shape kinds. `path` covers every vertex-driven shape — line, arrow,
+ *  polyline, polygon, B-spline curve — and is configured by `points`,
+ *  `closed`, `curve`, `startArrow`, `endArrow`. Older decks with the
+ *  individual `line`/`arrow`/`polygon`/`bspline` values are migrated to
+ *  `path` on load (see `utils/migrations.ts`). */
+export type ShapeType = 'rect' | 'ellipse' | 'triangle' | 'star' | 'path';
+
+/** Curve mode for a path shape:
+ *    linear   — straight segments between vertices
+ *    bspline2 — uniform quadratic B-spline through the control points
+ *    bspline3 — uniform cubic B-spline through the control points
+ *  Both B-spline modes interpolate the endpoints (clamped) when the path is
+ *  open and wrap smoothly when closed. */
+export type PathCurve = 'linear' | 'bspline2' | 'bspline3';
 
 export interface ConnectorBinding {
   elementId: string;
@@ -220,7 +241,17 @@ export interface ShapeElement extends BaseElement {
   stroke: string;
   strokeWidth: number;
   cornerRadius: number;
+  /** Path control points: flat [x0,y0,...,xn,yn] (N ≥ 2). All coords are
+   *  RELATIVE to (x,y) so a translation just moves the element. */
   points?: number[];
+  /** Path only: close back to the first vertex (so a closed linear path is a
+   *  polygon, a closed bspline is a smooth loop). */
+  closed?: boolean;
+  /** Path only: smoothing mode through the vertices. Defaults to 'linear'. */
+  curve?: PathCurve;
+  /** Path only: arrowhead at the first / last vertex. */
+  startArrow?: boolean;
+  endArrow?: boolean;
   startBinding?: ConnectorBinding | null;
   endBinding?: ConnectorBinding | null;
 }
@@ -261,7 +292,7 @@ export interface Theme {
   };
 }
 
-export type Tool = 'select' | 'text' | 'rect' | 'ellipse' | 'triangle' | 'star' | 'line' | 'arrow' | 'image';
+export type Tool = 'select' | 'text' | 'rect' | 'ellipse' | 'triangle' | 'star' | 'line' | 'arrow' | 'polygon' | 'bspline' | 'image';
 
 export interface EditorState {
   activeSlideId: string;

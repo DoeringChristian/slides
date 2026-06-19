@@ -7,7 +7,7 @@ import { ShapeMenu as _ShapeMenu } from './ShapeMenu';
 import { duplicateElement, loadImageFile, loadPdfFile } from '../../utils/slideFactory';
 import {
   MousePointer2, Type, Square, Circle, Triangle, Star, Minus, MoveRight,
-  Image, Trash2, Copy, Clipboard, Scissors,
+  Hexagon, Spline, Image, Trash2, Copy, Clipboard, Scissors,
 } from 'lucide-react';
 import type { Tool } from '../../types/presentation';
 
@@ -20,6 +20,8 @@ const tools: { tool: Tool; icon: React.ReactNode; label: string }[] = [
   { tool: 'star', icon: <Star size={16} />, label: 'Star' },
   { tool: 'line', icon: <Minus size={16} />, label: 'Line (L)' },
   { tool: 'arrow', icon: <MoveRight size={16} />, label: 'Arrow (A)' },
+  { tool: 'polygon', icon: <Hexagon size={16} />, label: 'Polygon' },
+  { tool: 'bspline', icon: <Spline size={16} />, label: 'B-spline' },
   { tool: 'image', icon: <Image size={16} />, label: 'Image (I)' },
 ];
 

@@ -198,6 +198,13 @@ export function elementToYMap(el: SlideElement): Y.Map<unknown> {
       m.set('strokeWidth', s.strokeWidth);
       m.set('cornerRadius', s.cornerRadius);
       if (s.points) m.set('points', [...s.points]);
+      // Path-specific fields — without these the Y round-trip silently
+      // drops the curve mode (every B-spline reads back as a polyline),
+      // closed flag, and arrow ends.
+      setIfDefined(m, 'curve', s.curve);
+      setIfDefined(m, 'closed', s.closed);
+      setIfDefined(m, 'startArrow', s.startArrow);
+      setIfDefined(m, 'endArrow', s.endArrow);
       setIfDefined(m, 'startBinding', s.startBinding ? mkScalarMap(s.startBinding) : s.startBinding);
       setIfDefined(m, 'endBinding', s.endBinding ? mkScalarMap(s.endBinding) : s.endBinding);
       return m;

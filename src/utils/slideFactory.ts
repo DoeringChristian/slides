@@ -52,7 +52,10 @@ export function createTextElement(overrides?: Partial<TextElement>): TextElement
 }
 
 export function createShapeElement(shapeType: ShapeType = 'rect', overrides?: Partial<ShapeElement>): ShapeElement {
-  const isLineType = shapeType === 'line' || shapeType === 'arrow';
+  // Stroke-only defaults for path shapes — a freshly-drawn line/polyline
+  // shouldn't ship with a filled body. Once the user toggles `closed` on,
+  // they can pick a fill colour explicitly.
+  const isPath = shapeType === 'path';
   return {
     id: generateId(),
     type: 'shape',
@@ -66,7 +69,7 @@ export function createShapeElement(shapeType: ShapeType = 'rect', overrides?: Pa
     locked: false,
     visible: true,
     ...DEFAULT_SHAPE_PROPS,
-    ...(isLineType ? { strokeWidth: 3, fill: '' } : {}),
+    ...(isPath ? { strokeWidth: 3, fill: '' } : {}),
     ...overrides,
   };
 }

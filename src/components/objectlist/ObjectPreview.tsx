@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Type, Square, Image, Film } from 'lucide-react';
 import { usePresentationStore } from '../../store/presentationStore';
 import { SVGTextPaths } from '../svg/SVGTextPaths';
-import type { SlideElement, ObjectMeta, TextElement } from '../../types/presentation';
+import { RenderShape } from '../svg/ElementRenderer';
+import type { SlideElement, ObjectMeta, TextElement, ShapeElement } from '../../types/presentation';
 
 interface Props {
   element: SlideElement | undefined;
@@ -13,11 +14,6 @@ const FALLBACK_ICONS: Record<string, React.FC<{ size: number; className?: string
   text: Type,
   shape: Square,
   image: Image,
-};
-
-const SHAPE_CLIP_PATHS: Record<string, string> = {
-  triangle: 'polygon(50% 0%, 0% 100%, 100% 100%)',
-  star: 'polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)',
 };
 
 // Cache for video first frames
@@ -112,36 +108,20 @@ export const ObjectPreview: React.FC<Props> = ({ element, objectType }) => {
   }
 
   if (element.type === 'shape') {
-    const { shapeType, fill, stroke, strokeWidth } = element;
-
-    if (shapeType === 'line' || shapeType === 'arrow') {
-      return (
-        <div className="w-full h-full flex items-center justify-center bg-gray-50 p-2">
-          <div
-            className="w-full"
-            style={{
-              height: Math.max(strokeWidth, 2),
-              backgroundColor: stroke || fill || '#666',
-            }}
-          />
-        </div>
-      );
-    }
-
-    const clipPath = SHAPE_CLIP_PATHS[shapeType];
-    const borderRadius = shapeType === 'ellipse' ? '50%' : (shapeType === 'rect' ? element.cornerRadius : 0);
-
+    // Same renderer as the canvas (`RenderShape`). We just zero the element's
+    // (x, y, rotation) so the SVG viewBox can scale-to-fit the tile.
+    const shapeElement = element as ShapeElement;
+    const localElement: ShapeElement = { ...shapeElement, x: 0, y: 0, rotation: 0 };
     return (
-      <div className="w-full h-full flex items-center justify-center bg-gray-50 p-2">
-        <div
-          className="w-3/4 aspect-square"
-          style={{
-            backgroundColor: fill || '#ccc',
-            border: strokeWidth > 0 ? `${Math.max(strokeWidth * 0.3, 1)}px solid ${stroke}` : undefined,
-            borderRadius: clipPath ? undefined : borderRadius,
-            clipPath: clipPath || undefined,
-          }}
-        />
+      <div className="w-full h-full bg-gray-50 overflow-hidden">
+        <svg
+          width="100%"
+          height="100%"
+          viewBox={`0 0 ${shapeElement.width} ${shapeElement.height}`}
+          preserveAspectRatio="xMidYMid meet"
+        >
+          <RenderShape element={localElement} />
+        </svg>
       </div>
     );
   }

@@ -114,6 +114,23 @@ function getPropertyValues(element: SlideElement, group: TransitionGroup): (numb
     case 'resource': return element.type === 'image' ? [(element as ImageElement).resourceId] : [];
     case 'visibility': return [element.visible];
     case 'content': return element.type === 'text' ? [(element as TextElement).text] : [];
+    case 'controlPoints': {
+      // controlPoints drives both the vertex list AND the curve mode — they
+      // morph as one (sample-and-lerp polylines when curves differ). So the
+      // diff has to include `curve` too, otherwise switching curve mode
+      // between slides leaves the transition button hidden.
+      if (element.type !== 'shape') return [];
+      const s = element as ShapeElement;
+      return [
+        s.points ? s.points.join(',') : '',
+        s.curve ?? 'linear',
+        s.closed ? 1 : 0,
+      ];
+    }
+    case 'startArrow':
+      return element.type === 'shape' ? [(element as ShapeElement).startArrow ? 1 : 0] : [];
+    case 'endArrow':
+      return element.type === 'shape' ? [(element as ShapeElement).endArrow ? 1 : 0] : [];
     default: return [];
   }
 }

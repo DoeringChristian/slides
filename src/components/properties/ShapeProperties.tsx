@@ -1,94 +1,83 @@
 import React from 'react';
-import { useMultiSlideUpdate } from '../../store/selectors';
-import { ColorPicker } from '../toolbar/ColorPicker';
-import { TransitionButton } from './TransitionButton';
-import { SlideSyncButton } from './SlideSyncButton';
-import type { ShapeElement } from '../../types/presentation';
+import { PropertyRow } from './PropertyRow';
+import {
+  Property,
+  ColorProperty,
+  NumberProperty,
+  RangeProperty,
+  CheckboxProperty,
+  SelectProperty,
+  ReadoutProperty,
+} from './Property';
+import type { ShapeElement, PathCurve } from '../../types/presentation';
+
+const isRect = (el: ShapeElement) => el.shapeType === 'rect';
+const isPath = (el: ShapeElement) => el.shapeType === 'path';
+
+/**
+ * Property list for shape elements. Each entry is the SINGLE place that
+ * defines a property — label, editor type, animation hook-up, sync set,
+ * visibility. PropertyRow draws the standard header (label + SlideSync +
+ * TransitionIn/Out + KeyframeButtons) automatically from this metadata.
+ */
+const SHAPE_PROPERTIES: Property<ShapeElement>[] = [
+  new ColorProperty<ShapeElement>({ key: 'fill', label: 'Fill', transitionGroup: 'fill' }),
+  new ColorProperty<ShapeElement>({ key: 'stroke', label: 'Stroke', transitionGroup: 'stroke' }),
+  new NumberProperty<ShapeElement>({
+    key: 'strokeWidth', label: 'Stroke Width',
+    transitionGroup: 'strokeWidth', min: 0, max: 20, step: 1,
+  }),
+  new NumberProperty<ShapeElement>({
+    key: 'cornerRadius', label: 'Corner Radius',
+    transitionGroup: 'cornerRadius', min: 0, max: 100, step: 1,
+    visibleFor: isRect,
+  }),
+  new SelectProperty<ShapeElement, PathCurve>({
+    key: 'curve', label: 'Curve',
+    // Curve mode shares the `controlPoints` transition with the vertex
+    // list — interpolation samples both paths into polylines and lerps
+    // them when the curves differ. One easing controls the whole morph.
+    transitionGroup: 'controlPoints',
+    visibleFor: isPath,
+    defaultValue: 'linear',
+    options: [
+      { value: 'linear', label: 'Linear' },
+      { value: 'bspline2', label: 'B-spline (quadratic)' },
+      { value: 'bspline3', label: 'B-spline (cubic)' },
+    ],
+  }),
+  new CheckboxProperty<ShapeElement>({ key: 'closed', label: 'Closed path', visibleFor: isPath }),
+  new CheckboxProperty<ShapeElement>({
+    key: 'startArrow', label: 'Start arrow',
+    transitionGroup: 'startArrow', visibleFor: isPath,
+  }),
+  new CheckboxProperty<ShapeElement>({
+    key: 'endArrow', label: 'End arrow',
+    transitionGroup: 'endArrow', visibleFor: isPath,
+  }),
+  new ReadoutProperty<ShapeElement>({
+    key: 'points', label: 'Control points',
+    transitionGroup: 'controlPoints',
+    // Resets move the curve mode along with the vertices so the path
+    // morphs in one piece.
+    syncFields: ['points', 'curve', 'closed', 'x', 'y', 'width', 'height'],
+    visibleFor: isPath,
+    readout: (el) => String(((el.points?.length ?? 0) / 2) | 0),
+  }),
+  new RangeProperty<ShapeElement>({
+    key: 'opacity', label: 'Opacity',
+    transitionGroup: 'opacity', min: 0, max: 100, scale: 100,
+  }),
+];
 
 interface Props {
   element: ShapeElement;
 }
 
-export const ShapeProperties: React.FC<Props> = ({ element }) => {
-  const update = useMultiSlideUpdate(element.id);
-
-  return (
-    <div className="space-y-3">
-      <div>
-        <div className="flex items-center mb-1">
-          <label className="text-xs text-gray-500">Fill</label>
-          <div className="flex items-center gap-0.5 ml-auto">
-            <SlideSyncButton elementId={element.id} fields={['fill']} />
-            <TransitionButton elementId={element.id} group="fill" direction="in" />
-            <TransitionButton elementId={element.id} group="fill" direction="out" />
-          </div>
-        </div>
-        <ColorPicker color={element.fill} onChange={(fill) => update({ fill })} />
-      </div>
-      <div>
-        <div className="flex items-center mb-1">
-          <label className="text-xs text-gray-500">Stroke</label>
-          <div className="flex items-center gap-0.5 ml-auto">
-            <SlideSyncButton elementId={element.id} fields={['stroke']} />
-            <TransitionButton elementId={element.id} group="stroke" direction="in" />
-            <TransitionButton elementId={element.id} group="stroke" direction="out" />
-          </div>
-        </div>
-        <ColorPicker color={element.stroke} onChange={(stroke) => update({ stroke })} />
-      </div>
-      <div>
-        <div className="flex items-center mb-1">
-          <label className="text-xs text-gray-500">Stroke Width</label>
-          <div className="flex items-center gap-0.5 ml-auto">
-            <SlideSyncButton elementId={element.id} fields={['strokeWidth']} />
-            <TransitionButton elementId={element.id} group="strokeWidth" direction="in" />
-            <TransitionButton elementId={element.id} group="strokeWidth" direction="out" />
-          </div>
-        </div>
-        <input
-          type="number"
-          value={element.strokeWidth}
-          onChange={(e) => update({ strokeWidth: Number(e.target.value) })}
-          min={0} max={20} step={1}
-          className="w-full h-8 text-sm border border-gray-300 rounded px-2"
-        />
-      </div>
-      {element.shapeType === 'rect' && (
-        <div>
-          <div className="flex items-center mb-1">
-            <label className="text-xs text-gray-500">Corner Radius</label>
-            <div className="flex items-center gap-0.5 ml-auto">
-              <SlideSyncButton elementId={element.id} fields={['cornerRadius']} />
-              <TransitionButton elementId={element.id} group="cornerRadius" direction="in" />
-              <TransitionButton elementId={element.id} group="cornerRadius" direction="out" />
-            </div>
-          </div>
-          <input
-            type="number"
-            value={element.cornerRadius}
-            onChange={(e) => update({ cornerRadius: Number(e.target.value) })}
-            min={0} max={100} step={1}
-            className="w-full h-8 text-sm border border-gray-300 rounded px-2"
-          />
-        </div>
-      )}
-      <div>
-        <div className="flex items-center mb-1">
-          <label className="text-xs text-gray-500">Opacity</label>
-          <div className="flex items-center gap-0.5 ml-auto">
-            <SlideSyncButton elementId={element.id} fields={['opacity']} />
-            <TransitionButton elementId={element.id} group="opacity" direction="in" />
-            <TransitionButton elementId={element.id} group="opacity" direction="out" />
-          </div>
-        </div>
-        <input
-          type="range"
-          value={element.opacity * 100}
-          onChange={(e) => update({ opacity: Number(e.target.value) / 100 })}
-          min={0} max={100}
-          className="w-full accent-blue-500"
-        />
-      </div>
-    </div>
-  );
-};
+export const ShapeProperties: React.FC<Props> = ({ element }) => (
+  <div className="space-y-3">
+    {SHAPE_PROPERTIES.map((p) => (
+      <PropertyRow key={p.key} property={p} element={element} />
+    ))}
+  </div>
+);

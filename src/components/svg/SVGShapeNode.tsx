@@ -1,6 +1,7 @@
 import React from 'react';
 import type { ShapeElement } from '../../types/presentation';
 import { RenderShape } from './ElementRenderer';
+import { isLinePath } from '../../utils/pathShapes';
 
 interface Props {
   element: ShapeElement;
@@ -37,9 +38,10 @@ export const SVGShapeNode: React.FC<Props> = React.memo(({
     onDoubleClick,
   };
 
-  // Line and arrow use a different rotation center (line center, not bounding box center)
-  // and need an invisible wider line for easier selection, so handle them separately
-  if (element.shapeType === 'line' || element.shapeType === 'arrow') {
+  // 2-vertex linear path (line / arrow) uses a different rotation center
+  // (line midpoint, not bounding box) and needs an invisible wider line for
+  // easier selection — handle separately from the standard bbox case.
+  if (isLinePath(element)) {
     const pts = element.points ?? [0, 0, element.width, 0];
     const lineCx = element.x + (pts[0] + pts[2]) / 2;
     const lineCy = element.y + (pts[1] + pts[3]) / 2;

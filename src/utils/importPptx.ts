@@ -319,7 +319,7 @@ const SHAPE_MAPPING: Record<string, string> = {
   'ellipse': 'ellipse', 'oval': 'ellipse',
   'triangle': 'triangle', 'rtTriangle': 'triangle',
   'star5': 'star', 'star4': 'star', 'star6': 'star', 'star8': 'star', 'star10': 'star',
-  'line': 'line', 'straightConnector1': 'line',
+  'line': 'path', 'straightConnector1': 'path',
 };
 
 // Process a group shape (p:grpSp) — flatten children into slide-level coordinates
@@ -700,16 +700,18 @@ export async function importPptx(file: File): Promise<Presentation> {
         }
       }
 
-      let shapeType: 'line' | 'arrow' = 'line';
+      let endArrow = false;
       if (ln) {
         const tailEnd = directChild(ln, NS.a, 'tailEnd');
         if (tailEnd) {
           const type = tailEnd.getAttribute('type');
-          if (type && type !== 'none') shapeType = 'arrow';
+          if (type && type !== 'none') endArrow = true;
         }
       }
 
-      elements.push(createShapeElement(shapeType, {
+      elements.push(createShapeElement('path', {
+        curve: 'linear',
+        endArrow,
         x: ex.x,
         y: ex.y,
         width: Math.max(ex.width, 1),

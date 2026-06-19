@@ -1,13 +1,40 @@
 import React, { useState, useRef } from 'react';
-import { Play, Pause, Repeat, VolumeX, Volume2, ArrowLeft, ArrowRight } from 'lucide-react';
+import { Play, Pause, Repeat, VolumeX, Volume2 } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
-import { useMultiSlideUpdate, usePreviousSlideElement, useNextSlideElement } from '../../store/selectors';
+import { useMultiSlideUpdate } from '../../store/selectors';
 import { ResourcePicker } from './ResourcePicker';
-import { TransitionButton } from './TransitionButton';
-import { SlideSyncButton } from './SlideSyncButton';
+import { PropertyRow } from './PropertyRow';
+import { Property, RangeProperty } from './Property';
 import { computeResourceUpdate } from '../../utils/imageUtils';
-import type { ImageElement } from '../../types/presentation';
+import type { ImageElement, TransitionGroup } from '../../types/presentation';
+
+/**
+ * Property for the image/video resource. Custom subclass because copying a
+ * resource between slides isn't a verbatim field copy — `computeResourceUpdate`
+ * also reshapes the bounding box for the new resource's aspect ratio. The
+ * editor body is null; the actual picker button lives outside the row.
+ */
+class ResourceProperty extends Property<ImageElement> {
+  readonly key = 'resourceId';
+  readonly label = 'Resource';
+  override get syncFields(): string[] { return ['resourceId']; }
+  override get transitionGroup(): TransitionGroup { return 'resource'; }
+  override copyFromKeyframe(target: ImageElement, current: ImageElement): Partial<ImageElement> {
+    const resources = usePresentationStore.getState().presentation.resources;
+    const targetResource = target.resourceId ? resources[target.resourceId] : undefined;
+    return computeResourceUpdate(target.resourceId ?? null, targetResource, current);
+  }
+  renderEditor() { return null; }
+}
+
+const IMAGE_PROPERTIES: Property<ImageElement>[] = [
+  new RangeProperty<ImageElement>({
+    key: 'opacity', label: 'Opacity',
+    transitionGroup: 'opacity', min: 0, max: 100, scale: 100,
+  }),
+  new ResourceProperty(),
+];
 
 interface Props {
   element: ImageElement;
@@ -26,100 +53,37 @@ export const ImageProperties: React.FC<Props> = ({ element }) => {
 
   const isVideo = resource?.type === 'video';
 
-  // For reset buttons
-  const prevElement = usePreviousSlideElement(element.id) as ImageElement | undefined;
-  const nextElement = useNextSlideElement(element.id) as ImageElement | undefined;
-  const hasPrevResourceDiff = prevElement && prevElement.resourceId !== element.resourceId;
-  const hasNextResourceDiff = nextElement && nextElement.resourceId !== element.resourceId;
-
-  const resetResourceToPrev = () => {
-    if (!prevElement) return;
-    const prevResource = prevElement.resourceId ? resources[prevElement.resourceId] : undefined;
-    const updates = computeResourceUpdate(prevElement.resourceId ?? null, prevResource, element);
-    updateElement(activeSlideId, element.id, updates);
-  };
-
-  const resetResourceToNext = () => {
-    if (!nextElement) return;
-    const nextResource = nextElement.resourceId ? resources[nextElement.resourceId] : undefined;
-    const updates = computeResourceUpdate(nextElement.resourceId ?? null, nextResource, element);
-    updateElement(activeSlideId, element.id, updates);
-  };
-
   const handleOpenPicker = () => {
-    if (buttonRef.current) {
-      setAnchorRect(buttonRef.current.getBoundingClientRect());
-    }
+    if (buttonRef.current) setAnchorRect(buttonRef.current.getBoundingClientRect());
     setPickerOpen(true);
   };
 
   const handleSelectResource = (resourceId: string | null) => {
-    // Get resources directly from store to avoid stale closure after addResource
+    // Read fresh — addResource may have just landed.
     const currentResources = usePresentationStore.getState().presentation.resources;
     const newResource = resourceId ? currentResources[resourceId] : undefined;
-    const updates = computeResourceUpdate(resourceId, newResource, element);
-    updateElement(activeSlideId, element.id, updates);
+    updateElement(activeSlideId, element.id, computeResourceUpdate(resourceId, newResource, element));
   };
 
   return (
     <div className="space-y-3">
       <div className="text-xs font-medium text-gray-500 uppercase">{isVideo ? 'Video' : 'Image'}</div>
-      <div>
-        <div className="flex items-center mb-1">
-          <label className="text-xs text-gray-500">Opacity</label>
-          <div className="flex items-center gap-0.5 ml-auto">
-            <SlideSyncButton elementId={element.id} fields={['opacity']} />
-            <TransitionButton elementId={element.id} group="opacity" direction="in" />
-            <TransitionButton elementId={element.id} group="opacity" direction="out" />
-          </div>
-        </div>
-        <input
-          type="range"
-          value={element.opacity * 100}
-          onChange={(e) => update({ opacity: Number(e.target.value) / 100 })}
-          min={0} max={100}
-          className="w-full accent-blue-500"
-        />
-      </div>
 
-      <div>
-        <div className="flex items-center mb-1">
-          <label className="text-xs text-gray-500">Resource</label>
-          <div className="flex items-center gap-0.5 ml-auto">
-            <SlideSyncButton elementId={element.id} fields={['resourceId']} />
-            <TransitionButton elementId={element.id} group="resource" direction="in" />
-            <TransitionButton elementId={element.id} group="resource" direction="out" />
-            {hasPrevResourceDiff && (
-              <button
-                onClick={resetResourceToPrev}
-                className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
-                title="Reset to previous keyframe"
-              >
-                <ArrowLeft size={14} />
-              </button>
-            )}
-            {hasNextResourceDiff && (
-              <button
-                onClick={resetResourceToNext}
-                className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
-                title="Reset to next keyframe"
-              >
-                <ArrowRight size={14} />
-              </button>
-            )}
-          </div>
-        </div>
-        {resource && (
-          <div className="text-xs text-gray-400">
-            {isVideo ? 'Video' : 'Original'}: {resource.originalWidth} x {resource.originalHeight}
-            {isVideo && resource.duration && (
-              <span className="ml-2">({Math.round(resource.duration)}s)</span>
-            )}
-          </div>
-        )}
-      </div>
+      {IMAGE_PROPERTIES.map((p) => (
+        <PropertyRow key={p.key} property={p} element={element} />
+      ))}
 
-      {/* Video controls */}
+      {resource && (
+        <div className="text-xs text-gray-400">
+          {isVideo ? 'Video' : 'Original'}: {resource.originalWidth} x {resource.originalHeight}
+          {isVideo && resource.duration && (
+            <span className="ml-2">({Math.round(resource.duration)}s)</span>
+          )}
+        </div>
+      )}
+
+      {/* Video playback toggles — verbs, not animatable values, so kept
+          outside the PropertyRow flow. */}
       {isVideo && (
         <div className="space-y-2 pt-2 border-t border-gray-100">
           <label className="text-xs text-gray-500 block">Video Playback</label>

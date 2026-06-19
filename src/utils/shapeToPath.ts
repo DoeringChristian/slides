@@ -1,6 +1,7 @@
 import type { ShapeElement } from '../types/presentation';
 import type { SvgPath } from '../components/svg/RenderPaths';
 import { pathLengthFor } from './glyphPaths';
+import { pathD, insetEndpoints } from './pathShapes';
 
 /**
  * Convert a ShapeElement to its outline path d-string. Used by the Create
@@ -68,33 +69,37 @@ export function shapeToPathD(shape: ShapeElement): string {
       return segs.join(' ');
     }
 
-    case 'line': {
-      const pts = points ?? [0, 0, w, 0];
-      return `M ${x + pts[0]} ${y + pts[1]} L ${x + pts[2]} ${y + pts[3]}`;
-    }
-
-    case 'arrow': {
-      const pts = points ?? [0, 0, w, 0];
-      const x1 = x + pts[0];
-      const y1 = y + pts[1];
-      const x2 = x + pts[2];
-      const y2 = y + pts[3];
-      const dx = x2 - x1;
-      const dy = y2 - y1;
-      const angle = Math.atan2(dy, dx);
-      const headLen = 10;
-      const headW = 10;
-      const tipX = x2;
-      const tipY = y2;
-      // Pull the shaft back so the head's triangle sits flush at the tip.
-      const lineEndX = tipX - headLen * Math.cos(angle);
-      const lineEndY = tipY - headLen * Math.sin(angle);
-      const leftX = lineEndX + (headW / 2) * Math.sin(angle);
-      const leftY = lineEndY - (headW / 2) * Math.cos(angle);
-      const rightX = lineEndX - (headW / 2) * Math.sin(angle);
-      const rightY = lineEndY + (headW / 2) * Math.cos(angle);
-      // Shaft, then head wings — one continuous path so the pen draws in order.
-      return `M ${x1} ${y1} L ${tipX} ${tipY} M ${leftX} ${leftY} L ${tipX} ${tipY} L ${rightX} ${rightY}`;
+    case 'path': {
+      const pts = points ?? [];
+      if (pts.length < 4) return '';
+      const closed = shape.closed ?? false;
+      const curve = shape.curve ?? 'linear';
+      // Translate the relative vertices into absolute slide-space coords.
+      const abs = pts.map((v, i) => v + (i % 2 === 0 ? x : y));
+      // Shorten the shaft at arrowhead endpoints so the Write/Create pen
+      // doesn't draw through the triangle.
+      const shaftPts = insetEndpoints(abs, !!shape.startArrow, !!shape.endArrow);
+      const main = pathD(shaftPts, curve, closed);
+      // Append the arrowhead wings to the path so the Create pen traces
+      // through them in order. Each wing is a short L-segment from the
+      // outer corner back to the tip.
+      const heads: string[] = [];
+      const addHead = (tipX: number, tipY: number, dxOut: number, dyOut: number) => {
+        const len = Math.hypot(dxOut, dyOut) || 1;
+        const ux = dxOut / len;
+        const uy = dyOut / len;
+        const baseX = tipX - ux * 10;
+        const baseY = tipY - uy * 10;
+        const lx = baseX + uy * 5;
+        const ly = baseY - ux * 5;
+        const rx = baseX - uy * 5;
+        const ry = baseY + ux * 5;
+        heads.push(`M ${lx} ${ly} L ${tipX} ${tipY} L ${rx} ${ry}`);
+      };
+      const last = abs.length - 2;
+      if (shape.startArrow) addHead(abs[0], abs[1], abs[0] - abs[2], abs[1] - abs[3]);
+      if (shape.endArrow) addHead(abs[last], abs[last + 1], abs[last] - abs[last - 2], abs[last + 1] - abs[last - 1]);
+      return [main, ...heads].join(' ');
     }
 
     default:
@@ -122,6 +127,10 @@ function shapeGeometryKey(shape: ShapeElement): string {
     shape.x, shape.y, shape.width, shape.height,
     shape.cornerRadius ?? 0,
     shape.points ? shape.points.join(',') : '',
+    shape.closed ? 1 : 0,
+    shape.curve ?? 'linear',
+    shape.startArrow ? 1 : 0,
+    shape.endArrow ? 1 : 0,
   ].join('|');
 }
 

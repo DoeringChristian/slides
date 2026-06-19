@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-  MousePointer2, Type, Square, Circle, Triangle, Star, Minus, MoveRight, Image, Trash2,
+  MousePointer2, Type, Square, Circle, Triangle, Star, Minus, MoveRight, Hexagon, Spline, Image, Trash2,
 } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
@@ -20,6 +20,8 @@ const TOOLS: { tool: Tool; icon: React.ReactNode; label: string }[] = [
   { tool: 'star', icon: <Star size={20} />, label: 'Star' },
   { tool: 'line', icon: <Minus size={20} />, label: 'Line' },
   { tool: 'arrow', icon: <MoveRight size={20} />, label: 'Arrow' },
+  { tool: 'polygon', icon: <Hexagon size={20} />, label: 'Polygon' },
+  { tool: 'bspline', icon: <Spline size={20} />, label: 'B-spline' },
 ];
 
 export const MobileToolPalette: React.FC = () => {

@@ -1,7 +1,7 @@
 import type { Slide, SlideElement, TextElement, ShapeElement, ImageElement, Resource } from '../types/presentation';
 import { SLIDE_WIDTH, SLIDE_HEIGHT, TEXT_BOX_PADDING } from './constants';
 import { renderMarkdownToHtml } from '../components/canvas/CustomMarkdownRenderer';
-import { getElementCenter } from './geometry';
+import { pathD, arrowheadPoints, insetEndpoints } from './pathShapes';
 
 // Render text element to SVG string
 function renderTextElement(element: TextElement): string {
@@ -97,45 +97,33 @@ function renderShapeElement(element: ShapeElement): string {
       `;
     }
 
-    case 'line': {
-      const pts = points ?? [0, 0, width, 0];
-      const lineStroke = stroke || fill || '#000';
-      const lineWidth = strokeWidth || 3;
-      // Use line center for rotation, not bounding box center
-      const lineCenter = getElementCenter(element);
-      const lineTransform = rotation ? `rotate(${rotation}, ${lineCenter.x}, ${lineCenter.y})` : '';
+    case 'path': {
+      const pts = points ?? [];
+      if (pts.length < 4) return '';
+      const closed = element.closed ?? false;
+      const curve = element.curve ?? 'linear';
+      const shaftPts = insetEndpoints(pts, !!element.startArrow, !!element.endArrow);
+      const d = pathD(shaftPts, curve, closed);
+      const strokeCol = stroke || fill || '#000';
+      const strokeW = strokeWidth || (closed ? 0 : 3);
+      const fillCol = closed ? fillAttr : 'none';
+      const last = pts.length - 2;
+      const startHead = element.startArrow
+        ? arrowheadPoints(pts[0], pts[1], pts[0] - pts[2], pts[1] - pts[3])
+        : null;
+      const endHead = element.endArrow
+        ? arrowheadPoints(pts[last], pts[last + 1], pts[last] - pts[last - 2], pts[last + 1] - pts[last - 1])
+        : null;
+      const headSvg = (h: number[] | null) => h
+        ? `<polygon points="${h[0]},${h[1]} ${h[2]},${h[3]} ${h[4]},${h[5]}" fill="${strokeCol}" opacity="${opacity}" />`
+        : '';
       return `
-        <g transform="${lineTransform}">
-          <line x1="${x + pts[0]}" y1="${y + pts[1]}" x2="${x + pts[2]}" y2="${y + pts[3]}" stroke="${lineStroke}" stroke-width="${lineWidth}" stroke-linecap="round" opacity="${opacity}" />
-        </g>
-      `;
-    }
-
-    case 'arrow': {
-      const pts = points ?? [0, 0, width, 0];
-      const arrowStroke = stroke || fill || '#000';
-      const arrowWidth = strokeWidth || 3;
-      const dx = pts[2] - pts[0];
-      const dy = pts[3] - pts[1];
-      const angle = Math.atan2(dy, dx);
-      const headLength = 10;
-      const headWidth = 10;
-      const tip = { x: x + pts[2], y: y + pts[3] };
-      const left = {
-        x: tip.x - headLength * Math.cos(angle) + headWidth / 2 * Math.sin(angle),
-        y: tip.y - headLength * Math.sin(angle) - headWidth / 2 * Math.cos(angle),
-      };
-      const right = {
-        x: tip.x - headLength * Math.cos(angle) - headWidth / 2 * Math.sin(angle),
-        y: tip.y - headLength * Math.sin(angle) + headWidth / 2 * Math.cos(angle),
-      };
-      // Use line center for rotation, not bounding box center
-      const arrowCenter = getElementCenter(element);
-      const arrowTransform = rotation ? `rotate(${rotation}, ${arrowCenter.x}, ${arrowCenter.y})` : '';
-      return `
-        <g transform="${arrowTransform}">
-          <line x1="${x + pts[0]}" y1="${y + pts[1]}" x2="${x + pts[2]}" y2="${y + pts[3]}" stroke="${arrowStroke}" stroke-width="${arrowWidth}" stroke-linecap="round" opacity="${opacity}" />
-          <polygon points="${tip.x},${tip.y} ${left.x},${left.y} ${right.x},${right.y}" fill="${arrowStroke}" opacity="${opacity}" />
+        <g transform="${transform}">
+          <g transform="translate(${x}, ${y})">
+            <path d="${d}" fill="${fillCol}" stroke="${strokeCol}" stroke-width="${strokeW}" stroke-linecap="round" stroke-linejoin="round" opacity="${opacity}" />
+            ${headSvg(startHead)}
+            ${headSvg(endHead)}
+          </g>
         </g>
       `;
     }

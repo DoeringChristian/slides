@@ -125,21 +125,24 @@ function makeFixture(): Presentation {
         elements: {
           'el-line': {
             id: 'el-line',
-            type: 'shape', shapeType: 'line',
+            type: 'shape', shapeType: 'path',
             x: 200, y: 200, width: 400, height: 0,
             rotation: 0, opacity: 1, locked: false, visible: true,
             fill: '', stroke: '#fff', strokeWidth: 3, cornerRadius: 0,
             points: [0, 0, 400, 0],
+            curve: 'linear',
             startBinding: { elementId: 'el-rect', anchor: 'right' },
             endBinding: null,
           },
           'el-arrow': {
             id: 'el-arrow',
-            type: 'shape', shapeType: 'arrow',
+            type: 'shape', shapeType: 'path',
             x: 600, y: 400, width: 300, height: 50,
             rotation: 0, opacity: 1, locked: false, visible: true,
             fill: '', stroke: '#f97316', strokeWidth: 4, cornerRadius: 0,
             points: [0, 0, 300, 50],
+            curve: 'linear',
+            endArrow: true,
           },
           'el-video': {
             id: 'el-video',
