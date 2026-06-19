@@ -50,10 +50,12 @@ const SHAPE_PROPERTIES: Property<ShapeElement>[] = [
   new CheckboxProperty<ShapeElement>({
     key: 'startArrow', label: 'Start arrow',
     transitionGroup: 'startArrow', visibleFor: isPath,
+    disabledFor: (el) => !!el.closed,
   }),
   new CheckboxProperty<ShapeElement>({
     key: 'endArrow', label: 'End arrow',
     transitionGroup: 'endArrow', visibleFor: isPath,
+    disabledFor: (el) => !!el.closed,
   }),
   new ReadoutProperty<ShapeElement>({
     key: 'points', label: 'Control points',

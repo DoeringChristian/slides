@@ -142,6 +142,7 @@ abstract class BaseProperty<E extends SlideElement, V> extends Property<E> {
   private readonly _transitionGroup?: TransitionGroup;
   private readonly _syncFields?: string[];
   private readonly _visibleFor?: (el: E) => boolean;
+  private readonly _disabledFor?: (el: E) => boolean;
 
   constructor(opts: BaseOpts<E>) {
     super();
@@ -150,11 +151,13 @@ abstract class BaseProperty<E extends SlideElement, V> extends Property<E> {
     this._transitionGroup = opts.transitionGroup;
     this._syncFields = opts.syncFields;
     this._visibleFor = opts.visibleFor;
+    this._disabledFor = opts.disabledFor;
   }
 
   override get syncFields(): string[] { return this._syncFields ?? [this.key]; }
   override get transitionGroup(): TransitionGroup | undefined { return this._transitionGroup; }
   override visibleFor(el: E): boolean { return this._visibleFor ? this._visibleFor(el) : true; }
+  override disabledFor(el: E): boolean { return this._disabledFor ? this._disabledFor(el) : false; }
 
   protected get(el: E): V { return getNested(el, this.key) as V; }
   protected set(el: E, v: V): Partial<E> { return setNestedPartial(el, this.key, v); }
@@ -239,13 +242,15 @@ export class ColorProperty<E extends SlideElement> extends BaseProperty<E, strin
 export class CheckboxProperty<E extends SlideElement> extends BaseProperty<E, boolean | undefined> {
   constructor(opts: BaseOpts<E>) { super(opts); }
   renderEditor({ element, update }: PropertyContext<E>) {
+    const disabled = this.disabledFor(element);
     return (
-      <label className="text-xs text-gray-500 flex items-center gap-2">
+      <label className={`text-xs flex items-center gap-2 ${disabled ? 'text-gray-300' : 'text-gray-500'}`}>
         <input
           type="checkbox"
           checked={this.get(element) ?? false}
+          disabled={disabled}
           onChange={(e) => update(this.set(element, e.target.checked))}
-          className="accent-blue-500"
+          className="accent-blue-500 disabled:opacity-50"
         />
         {this.label}
       </label>
