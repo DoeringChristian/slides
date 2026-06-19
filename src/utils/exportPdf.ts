@@ -407,19 +407,21 @@ function drawShapeElement(ctx: CanvasRenderingContext2D, element: ShapeElement) 
       const curve = element.curve ?? 'linear';
       const strokeCol = stroke || fill || '#000';
       const sw = strokeWidth || (closed ? 0 : 3);
-      // pathD only emits M / L / Z (bsplines are pre-sampled), so we can
-      // mirror it onto a Canvas2D path by walking those commands.
+      // pathD emits M / L / Q / Z (bsplines are pre-sampled to L's). Mirror
+      // each command onto a Canvas2D path.
       const shaftPts = insetEndpoints(pts, !!element.startArrow, !!element.endArrow);
-      const d = pathD(shaftPts, curve, closed);
+      const cornerR = curve === 'linear' ? (element.cornerRadius ?? 0) : 0;
+      const d = pathD(shaftPts, curve, closed, cornerR);
       ctx.beginPath();
-      for (const cmd of d.split(/(?=[MLZ])/)) {
+      for (const cmd of d.split(/(?=[MLQZ])/)) {
         const head = cmd[0];
         if (head === 'M' || head === 'L') {
           const [px, py] = cmd.slice(1).trim().split(/\s+/).map(Number);
-          const ax = x + px;
-          const ay = y + py;
-          if (head === 'M') ctx.moveTo(ax, ay);
-          else ctx.lineTo(ax, ay);
+          if (head === 'M') ctx.moveTo(x + px, y + py);
+          else ctx.lineTo(x + px, y + py);
+        } else if (head === 'Q') {
+          const [cpx, cpy, px, py] = cmd.slice(1).trim().split(/\s+/).map(Number);
+          ctx.quadraticCurveTo(x + cpx, y + cpy, x + px, y + py);
         } else if (head === 'Z') {
           ctx.closePath();
         }

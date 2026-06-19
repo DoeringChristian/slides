@@ -79,7 +79,8 @@ export function shapeToPathD(shape: ShapeElement): string {
       // Shorten the shaft at arrowhead endpoints so the Write/Create pen
       // doesn't draw through the triangle.
       const shaftPts = insetEndpoints(abs, !!shape.startArrow, !!shape.endArrow);
-      const main = pathD(shaftPts, curve, closed);
+      const cornerR = curve === 'linear' ? (shape.cornerRadius ?? 0) : 0;
+      const main = pathD(shaftPts, curve, closed, cornerR);
       // Append the arrowhead wings to the path so the Create pen traces
       // through them in order. Each wing is a short L-segment from the
       // outer corner back to the tip.

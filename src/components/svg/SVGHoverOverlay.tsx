@@ -132,7 +132,8 @@ const GhostShape: React.FC<{ element: ShapeElement }> = ({ element }) => {
       const closed = element.closed ?? false;
       const curve = element.curve ?? 'linear';
       const shaftPts = insetEndpoints(pts, !!element.startArrow, !!element.endArrow);
-      const d = pathD(shaftPts, curve, closed);
+      const cornerR = curve === 'linear' ? (element.cornerRadius ?? 0) : 0;
+      const d = pathD(shaftPts, curve, closed, cornerR);
       const strokeColor = element.stroke || element.fill || '#000';
       const strokeW = element.strokeWidth || 3;
       // 2-vertex linear paths rotate around the line midpoint (matches the

@@ -13,6 +13,13 @@ import type { ShapeElement, PathCurve } from '../../types/presentation';
 
 const isRect = (el: ShapeElement) => el.shapeType === 'rect';
 const isPath = (el: ShapeElement) => el.shapeType === 'path';
+// Rounded-corner row applies to rects and to linear polylines (≥3 verts).
+// B-splines are already smooth, so the property is hidden there.
+const supportsCornerRadius = (el: ShapeElement) =>
+  isRect(el)
+  || (isPath(el)
+      && (el.curve ?? 'linear') === 'linear'
+      && (el.points?.length ?? 0) >= 6);
 
 /**
  * Property list for shape elements. Each entry is the SINGLE place that
@@ -30,7 +37,7 @@ const SHAPE_PROPERTIES: Property<ShapeElement>[] = [
   new NumberProperty<ShapeElement>({
     key: 'cornerRadius', label: 'Corner Radius',
     transitionGroup: 'cornerRadius', min: 0, max: 100, step: 1,
-    visibleFor: isRect,
+    visibleFor: supportsCornerRadius,
   }),
   new SelectProperty<ShapeElement, PathCurve>({
     key: 'curve', label: 'Curve',

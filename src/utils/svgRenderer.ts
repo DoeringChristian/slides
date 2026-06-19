@@ -103,7 +103,8 @@ function renderShapeElement(element: ShapeElement): string {
       const closed = element.closed ?? false;
       const curve = element.curve ?? 'linear';
       const shaftPts = insetEndpoints(pts, !!element.startArrow, !!element.endArrow);
-      const d = pathD(shaftPts, curve, closed);
+      const cornerR = curve === 'linear' ? (element.cornerRadius ?? 0) : 0;
+      const d = pathD(shaftPts, curve, closed, cornerR);
       const strokeCol = stroke || fill || '#000';
       const strokeW = strokeWidth || (closed ? 0 : 3);
       const fillCol = closed ? fillAttr : 'none';

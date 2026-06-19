@@ -35,19 +35,71 @@ export function isPathShape(shape: { shapeType?: string }): boolean {
   return shape.shapeType === 'path';
 }
 
-export function pathD(points: number[], curve: PathCurve, closed: boolean): string {
+export function pathD(points: number[], curve: PathCurve, closed: boolean, cornerRadius = 0): string {
   if (points.length < 4) return '';
-  if (curve === 'linear') return linearPathD(points, closed);
+  if (curve === 'linear') return linearPathD(points, closed, cornerRadius);
   const degree = curve === 'bspline2' ? 2 : 3;
+  // cornerRadius is meaningless for B-splines (the curve is already smooth).
   return bsplinePathD(points, degree, closed);
 }
 
-function linearPathD(points: number[], closed: boolean): string {
-  const cmds: string[] = [`M ${fmt(points[0])} ${fmt(points[1])}`];
-  for (let i = 2; i < points.length; i += 2) {
-    cmds.push(`L ${fmt(points[i])} ${fmt(points[i + 1])}`);
+function linearPathD(points: number[], closed: boolean, cornerRadius = 0): string {
+  if (cornerRadius <= 0 || points.length < 6) {
+    const cmds: string[] = [`M ${fmt(points[0])} ${fmt(points[1])}`];
+    for (let i = 2; i < points.length; i += 2) {
+      cmds.push(`L ${fmt(points[i])} ${fmt(points[i + 1])}`);
+    }
+    if (closed) cmds.push('Z');
+    return cmds.join(' ');
   }
-  if (closed) cmds.push('Z');
+  // Rounded-corner polyline. Each interior vertex's L→L joint becomes
+  // L(a) Q(corner) L(b), with `a` / `b` pulled `r` units toward the
+  // neighbours along the incoming / outgoing edges. `r` clamps to half
+  // the shorter adjacent edge so neighbouring corners can't overlap.
+  const n = points.length / 2;
+  const v = (i: number): Pt => {
+    const idx = ((i % n) + n) % n;
+    return [points[2 * idx], points[2 * idx + 1]];
+  };
+  const cornerOf = (i: number) => {
+    const vi = v(i);
+    const vp = v(i - 1);
+    const vn = v(i + 1);
+    const dxA = vp[0] - vi[0], dyA = vp[1] - vi[1];
+    const dxB = vn[0] - vi[0], dyB = vn[1] - vi[1];
+    const lenA = Math.hypot(dxA, dyA) || 1;
+    const lenB = Math.hypot(dxB, dyB) || 1;
+    const r = Math.min(cornerRadius, lenA / 2, lenB / 2);
+    return {
+      ax: vi[0] + (dxA / lenA) * r,
+      ay: vi[1] + (dyA / lenA) * r,
+      bx: vi[0] + (dxB / lenB) * r,
+      by: vi[1] + (dyB / lenB) * r,
+      vx: vi[0],
+      vy: vi[1],
+    };
+  };
+  const cmds: string[] = [];
+  if (closed) {
+    const c0 = cornerOf(0);
+    cmds.push(`M ${fmt(c0.bx)} ${fmt(c0.by)}`);
+    for (let i = 1; i < n; i++) {
+      const c = cornerOf(i);
+      cmds.push(`L ${fmt(c.ax)} ${fmt(c.ay)}`);
+      cmds.push(`Q ${fmt(c.vx)} ${fmt(c.vy)} ${fmt(c.bx)} ${fmt(c.by)}`);
+    }
+    cmds.push(`L ${fmt(c0.ax)} ${fmt(c0.ay)}`);
+    cmds.push(`Q ${fmt(c0.vx)} ${fmt(c0.vy)} ${fmt(c0.bx)} ${fmt(c0.by)}`);
+    cmds.push('Z');
+  } else {
+    cmds.push(`M ${fmt(points[0])} ${fmt(points[1])}`);
+    for (let i = 1; i < n - 1; i++) {
+      const c = cornerOf(i);
+      cmds.push(`L ${fmt(c.ax)} ${fmt(c.ay)}`);
+      cmds.push(`Q ${fmt(c.vx)} ${fmt(c.vy)} ${fmt(c.bx)} ${fmt(c.by)}`);
+    }
+    cmds.push(`L ${fmt(points[points.length - 2])} ${fmt(points[points.length - 1])}`);
+  }
   return cmds.join(' ');
 }
 
