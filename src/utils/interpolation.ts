@@ -1,6 +1,7 @@
 import type { SlideElement, TextElement, ShapeElement, ImageElement, EasingType } from '../types/presentation';
 import { clamp } from './geometry';
 import { resamplePath, sampledPath } from './pathShapes';
+import type { PathCurve } from '../types/presentation';
 
 export function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
@@ -161,6 +162,17 @@ function arrowAlpha(
   const aV = a ? 1 : 0;
   const bV = b ? 1 : 0;
   return lerpEased(aV, bV, t, easing);
+}
+
+/** Sample a path into a polyline suitable for the smooth curve / closed
+ *  morph. When the source is closed, append the first sample at the end
+ *  so the closing segment becomes an explicit polyline edge — the
+ *  in-flight interpolated shape is rendered as an OPEN polyline, so the
+ *  Z command can't add (or remove) a visible segment mid-transition. */
+function polylineForMorph(points: number[], curve: PathCurve, closed: boolean): number[] {
+  const samples = sampledPath(points, curve, closed);
+  if (closed && samples.length >= 2) return [...samples, samples[0], samples[1]];
+  return samples;
 }
 
 /** Smooth control-point interpolation for path shapes.
@@ -421,31 +433,33 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
     const fillT = applyEasing(t, tr.fill);
     const strokeT = applyEasing(t, tr.stroke);
 
-    // Curve-mode morph: if the source and target paths have different
-    // `curve` (e.g. linear ↔ bspline3), snapping at t=0.5 looks abrupt.
-    // When `controlPoints` is animating, sample both paths into dense
-    // polylines, lerp pairwise, and render the in-flight shape as a
-    // plain linear polyline. End states still use the original curve.
+    // Curve / closed morph: snapping the path shape at t=0.5 looks abrupt
+    // whenever the source and target paths differ in curve mode OR closed
+    // state. We sample both into dense polylines, lerp pairwise, and
+    // render the in-flight shape as a plain LINEAR OPEN polyline — the
+    // closing segment of a closed source is baked into its sample list
+    // (see polylineForMorph), so the renderer doesn't need to draw a Z
+    // that would itself snap on/off mid-transition. End states (t=0, 1)
+    // still use the original curve/closed.
     const aCurve = sa.curve ?? 'linear';
     const bCurve = sb.curve ?? 'linear';
-    const curvesDiffer = sa.shapeType === 'path' && sb.shapeType === 'path' && aCurve !== bCurve;
+    const aClosed = sa.closed ?? false;
+    const bClosed = sb.closed ?? false;
+    const pathsMorph = sa.shapeType === 'path' && sb.shapeType === 'path'
+      && (aCurve !== bCurve || aClosed !== bClosed);
     let nextCurve: ShapeElement['curve'] | undefined = t < 0.5 ? sa.curve : sb.curve;
+    let nextClosed: boolean | undefined = t < 0.5 ? sa.closed : sb.closed;
     let nextPoints: number[] | undefined;
     if (sa.points && sb.points) {
       const ease = tr.controlPoints ?? 'linear';
-      if (curvesDiffer && t > 0 && t < 1) {
-        // Differing curve modes always morph via sampled polylines —
-        // snapping at t=0.5 between a straight polyline and a smooth
-        // B-spline reads as a glitch. We use the explicit controlPoints
-        // easing if set, otherwise plain linear.
-        const aClosed = sa.closed ?? false;
-        const bClosed = sb.closed ?? false;
-        const aSamples = sampledPath(sa.points, aCurve, aClosed);
-        const bSamples = sampledPath(sb.points, bCurve, bClosed);
-        nextPoints = lerpControlPoints(aSamples, bSamples, applyEasing(t, ease), aClosed || bClosed);
+      if (pathsMorph && t > 0 && t < 1) {
+        const aSamples = polylineForMorph(sa.points, aCurve, aClosed);
+        const bSamples = polylineForMorph(sb.points, bCurve, bClosed);
+        nextPoints = lerpControlPoints(aSamples, bSamples, applyEasing(t, ease), false);
         nextCurve = 'linear';
+        nextClosed = false;
       } else if (tr.controlPoints) {
-        nextPoints = lerpControlPoints(sa.points, sb.points, applyEasing(t, ease), sa.closed ?? sb.closed ?? false);
+        nextPoints = lerpControlPoints(sa.points, sb.points, applyEasing(t, ease), aClosed || bClosed);
       } else {
         nextPoints = lerpPoints(sa.points, sb.points, t);
       }
@@ -471,7 +485,7 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
       cornerRadius: lerpEased(sa.cornerRadius, sb.cornerRadius, t, tr.cornerRadius),
       points: nextPoints,
       curve: nextCurve,
-      closed: t < 0.5 ? sa.closed : sb.closed,
+      closed: nextClosed,
       startArrow: t < 0.5 ? sa.startArrow : sb.startArrow,
       endArrow: t < 0.5 ? sa.endArrow : sb.endArrow,
       _startArrowAlpha: startArrowAlpha,
