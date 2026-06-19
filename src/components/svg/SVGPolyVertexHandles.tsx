@@ -1,14 +1,20 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import type { ShapeElement } from '../../types/presentation';
+import type { SlideElement, ShapeElement, ConnectorBinding } from '../../types/presentation';
 import { CANVAS_PADDING } from '../../utils/constants';
 import { pathBounds } from '../../utils/pathShapes';
+import { getBindingTarget, getAnchorPoint } from '../../utils/connectorUtils';
 
 interface Props {
   element: ShapeElement;
+  /** Sibling elements on the same slide; needed so the first/last vertex
+   *  can snap to other shapes' anchors and bind to them. */
+  elements?: SlideElement[];
   zoom: number;
   svgRef?: React.RefObject<SVGSVGElement | null>;
   onUpdate: (attrs: Partial<ShapeElement>) => void;
   onTransformStart?: () => void;
+  /** Highlight a binding-target element while the user drags over it. */
+  onConnectorHighlight?: (elementId: string | null) => void;
 }
 
 const HANDLE_R = 5;
@@ -26,10 +32,12 @@ const COLOR = '#4285f4';
  */
 export const SVGPolyVertexHandles: React.FC<Props> = ({
   element,
+  elements,
   zoom,
   svgRef,
   onUpdate,
   onTransformStart,
+  onConnectorHighlight,
 }) => {
   const points = element.points ?? [];
   const n = points.length / 2;
@@ -63,12 +71,28 @@ export const SVGPolyVertexHandles: React.FC<Props> = ({
 
   useEffect(() => {
     if (!dragging) return;
+    // First / last vertices can bind to another element's anchor (matches
+    // the line/arrow endpoint UX). Interior vertices just move freely.
+    const lastIdx = n - 1;
+    const isEndpoint = dragging.idx === 0 || dragging.idx === lastIdx;
     const onMove = (e: PointerEvent) => {
       e.preventDefault();
       const pos = screenToSVG(e.clientX, e.clientY);
-      // Drag target in absolute slide coords, store as RELATIVE to element.x/y.
-      const localX = pos.x - element.x;
-      const localY = pos.y - element.y;
+      let absX = pos.x;
+      let absY = pos.y;
+      if (isEndpoint && elements) {
+        const target = getBindingTarget({ x: absX, y: absY }, elements, element.id);
+        if (target) {
+          const anchor = elements.find((el) => el.id === target.elementId);
+          const ap = anchor ? getAnchorPoint(anchor, target.anchor) : null;
+          if (ap) { absX = ap.x; absY = ap.y; }
+          onConnectorHighlight?.(target.elementId);
+        } else {
+          onConnectorHighlight?.(null);
+        }
+      }
+      const localX = absX - element.x;
+      const localY = absY - element.y;
       setLivePoints((prev) => {
         if (!prev) return prev;
         const out = prev.slice();
@@ -80,6 +104,7 @@ export const SVGPolyVertexHandles: React.FC<Props> = ({
     const onUp = (e: PointerEvent) => {
       e.preventDefault();
       setDragging(null);
+      onConnectorHighlight?.(null);
       setLivePoints((prev) => {
         if (!prev) return prev;
         // Translate the dragged vertex from element-local to absolute slide
@@ -87,7 +112,23 @@ export const SVGPolyVertexHandles: React.FC<Props> = ({
         // normalized relative points list.
         const abs = prev.map((v, i) => v + (i % 2 === 0 ? element.x : element.y));
         const bounds = pathBounds(abs);
-        onUpdate({ x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height, points: bounds.points });
+        const update: Partial<ShapeElement> = {
+          x: bounds.x, y: bounds.y,
+          width: bounds.width, height: bounds.height,
+          points: bounds.points,
+        };
+        // Snap-bind the dragged endpoint if it landed on another shape's
+        // anchor. The other endpoint's binding is preserved unchanged.
+        if (isEndpoint && elements) {
+          const lastVxIdx = bounds.points.length - 2;
+          const tipX = (dragging.idx === 0 ? bounds.points[0] : bounds.points[lastVxIdx]) + bounds.x;
+          const tipY = (dragging.idx === 0 ? bounds.points[1] : bounds.points[lastVxIdx + 1]) + bounds.y;
+          const target = getBindingTarget({ x: tipX, y: tipY }, elements, element.id);
+          const binding: ConnectorBinding | null = target ?? null;
+          if (dragging.idx === 0) update.startBinding = binding;
+          else update.endBinding = binding;
+        }
+        onUpdate(update);
         return null;
       });
     };
@@ -99,7 +140,7 @@ export const SVGPolyVertexHandles: React.FC<Props> = ({
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-  }, [dragging, element.x, element.y, onUpdate, screenToSVG]);
+  }, [dragging, n, element.id, element.x, element.y, elements, onUpdate, onConnectorHighlight, screenToSVG]);
 
   // Delete the hovered vertex on Backspace / Delete. Keep ≥3 vertices so the
   // shape doesn't degenerate.

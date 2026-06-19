@@ -1117,10 +1117,12 @@ export const SVGSlideCanvas: React.FC = () => {
           {soleSelectedPolyElement && !soleSelectedPolyElement.locked && (
             <SVGPolyVertexHandles
               element={soleSelectedPolyElement}
+              elements={elements}
               zoom={zoom}
               svgRef={svgRef}
               onUpdate={(attrs) => activeSlideId && updateElement(activeSlideId, soleSelectedPolyElement.id, attrs)}
               onTransformStart={handleTransformStart}
+              onConnectorHighlight={setConnectorHighlightId}
             />
           )}
 
