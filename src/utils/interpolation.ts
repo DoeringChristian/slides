@@ -175,6 +175,96 @@ function polylineForMorph(points: number[], curve: PathCurve, closed: boolean): 
   return samples;
 }
 
+/** Cyclically rotate sample list by k (k * 2 in the flat array). */
+function rotateSamples(s: number[], k: number): number[] {
+  const N = s.length / 2;
+  if (N === 0 || k % N === 0) return s.slice();
+  const out = new Array(s.length);
+  for (let i = 0; i < N; i++) {
+    const j = (i + k) % N;
+    out[2 * i] = s[2 * j];
+    out[2 * i + 1] = s[2 * j + 1];
+  }
+  return out;
+}
+
+/** Reverse a sample list end-to-end (used to test reversed traversal). */
+function reverseSamples(s: number[]): number[] {
+  const N = s.length / 2;
+  const out = new Array(s.length);
+  for (let i = 0; i < N; i++) {
+    out[2 * i] = s[2 * (N - 1 - i)];
+    out[2 * i + 1] = s[2 * (N - 1 - i) + 1];
+  }
+  return out;
+}
+
+/** Pick the rotation (and forward/reverse orientation) of `closed` that
+ *  minimizes Σ‖closed[(i+k) mod N] − reference[i]‖² to `reference`. The
+ *  reference side stays put. Forward orientation is tried first so a tie
+ *  resolves to the original winding (no spurious flip). */
+function bestAlignment(closed: number[], reference: number[]): number[] {
+  const N = closed.length / 2;
+  if (N < 2 || reference.length !== closed.length) return closed;
+  let bestCost = Infinity;
+  let bestK = 0;
+  let bestReversed = false;
+  const evaluate = (cand: number[], reversed: boolean) => {
+    for (let k = 0; k < N; k++) {
+      let cost = 0;
+      for (let i = 0; i < N; i++) {
+        const j = (i + k) % N;
+        const dx = cand[2 * j] - reference[2 * i];
+        const dy = cand[2 * j + 1] - reference[2 * i + 1];
+        cost += dx * dx + dy * dy;
+      }
+      if (cost < bestCost) {
+        bestCost = cost;
+        bestK = k;
+        bestReversed = reversed;
+      }
+    }
+  };
+  evaluate(closed, false);
+  evaluate(reverseSamples(closed), true);
+  return rotateSamples(bestReversed ? reverseSamples(closed) : closed, bestK);
+}
+
+/** Align two sampled polylines for a path morph. A closed side has
+ *  cyclic + reflection freedom around its perimeter; it rotates / reverses
+ *  to follow the other side. An open side's endpoints are fixed by user
+ *  intent, so it never moves. When both are closed we only rotate one —
+ *  rotating both by the same offset is a no-op on pairwise distance. */
+function alignForMorph(
+  a: number[], b: number[],
+  aClosed: boolean, bClosed: boolean,
+): { a: number[]; b: number[] } {
+  if (aClosed && !bClosed) return { a: bestAlignment(a, b), b };
+  if (bClosed && !aClosed) return { a, b: bestAlignment(b, a) };
+  if (aClosed && bClosed)  return { a: bestAlignment(a, b), b };
+  return { a, b };
+}
+
+/** Sample-and-lerp morph between two paths of arbitrary curve / closed
+ *  state. Steps: dense-sample each side → resample to a common N →
+ *  cyclic-align the closed side(s) so each sample's travel is minimized
+ *  (this is what stops the "inside-out" sweep when closed ↔ open) →
+ *  pairwise lerp. The result is meant to be rendered as a plain open
+ *  linear polyline. */
+function lerpMorphedPaths(
+  aPoints: number[], aCurve: PathCurve, aClosed: boolean,
+  bPoints: number[], bCurve: PathCurve, bClosed: boolean,
+  t: number,
+): number[] {
+  const aS = polylineForMorph(aPoints, aCurve, aClosed);
+  const bS = polylineForMorph(bPoints, bCurve, bClosed);
+  const N = Math.max(aS.length, bS.length) / 2;
+  const aR = aS.length === 2 * N ? aS : resamplePath(aS, N, false);
+  const bR = bS.length === 2 * N ? bS : resamplePath(bS, N, false);
+  const { a: aAlign, b: bAlign } = alignForMorph(aR, bR, aClosed, bClosed);
+  return aAlign.map((v, i) => lerp(v, bAlign[i], t));
+}
+
 /** Smooth control-point interpolation for path shapes.
  *
  *  When source and target have the same number of vertices, each is lerped
@@ -453,9 +543,11 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
     if (sa.points && sb.points) {
       const ease = tr.controlPoints ?? 'linear';
       if (pathsMorph && t > 0 && t < 1) {
-        const aSamples = polylineForMorph(sa.points, aCurve, aClosed);
-        const bSamples = polylineForMorph(sb.points, bCurve, bClosed);
-        nextPoints = lerpControlPoints(aSamples, bSamples, applyEasing(t, ease), false);
+        nextPoints = lerpMorphedPaths(
+          sa.points, aCurve, aClosed,
+          sb.points, bCurve, bClosed,
+          applyEasing(t, ease),
+        );
         nextCurve = 'linear';
         nextClosed = false;
       } else if (tr.controlPoints) {
