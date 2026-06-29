@@ -88,9 +88,10 @@ export function useSVGDrawing() {
     addElement(activeSlideId, el);
     setSelectedElements([el.id]);
     setPolyDraft(null);
-    setTool('select');
+    // Stay in the drawing tool so the user can place another polygon /
+    // bspline right away without re-picking the tool from the toolbar.
     justFinishedDrawing.current = true;
-  }, [activeSlideId, addElement, setSelectedElements, setTool]);
+  }, [activeSlideId, addElement, setSelectedElements]);
 
   const cancelPolyDraft = useCallback(() => {
     setPolyDraft(null);
@@ -264,11 +265,13 @@ export function useSVGDrawing() {
     setGuides([]);
 
     if (width < 5 && height < 5) {
+      // Click without a drag — too small to materialize anything. Stay
+      // in the drawing tool so the user can try again instead of
+      // dropping back to select.
       setDrawState({
         startX: 0, startY: 0, currentX: 0, currentY: 0, isDrawing: false,
         snappedStartX: 0, snappedStartY: 0, snappedCurrentX: 0, snappedCurrentY: 0,
       });
-      setTool('select');
       return;
     }
 
@@ -301,7 +304,12 @@ export function useSVGDrawing() {
       setSelectedElements([el.id]);
     }
 
-    setTool('select');
+    // Stay in the drawing tool — the user usually wants to keep drawing
+    // shapes of the same type rather than re-pick the tool every time.
+    // Text is the one exception: createTextElement opens the edit
+    // overlay; when the user finishes editing they'll naturally click
+    // elsewhere, and re-entering text mode mid-flow would be jarring.
+    if (tool === 'text') setTool('select');
 
     setDrawState({
       startX: 0, startY: 0, currentX: 0, currentY: 0, isDrawing: false,
