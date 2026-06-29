@@ -26,6 +26,12 @@ interface EditorStore extends EditorState {
   presenterStartTime: number;
   textEditClickPosition: { x: number; y: number } | null;
   selectedSlideIds: string[];
+  /** When on, each element-level edit duplicates the current slide and
+   *  applies the change to the duplicate — so each change becomes its own
+   *  keyframe. See utils/autoDraw.ts for the per-mutation hook and the
+   *  short debounce window that groups bursts of micro-edits. */
+  autoDrawMode: boolean;
+  setAutoDrawMode: (on: boolean) => void;
   setObjectDrawerOpen: (open: boolean) => void;
   setHoveredObjectId: (id: string | null) => void;
   setActiveSlide: (slideId: string) => void;
@@ -79,7 +85,9 @@ export const useEditorStore = create<EditorStore>()((set) => ({
   showSlideNumbers: false,
   standaloneMode: 'off',
   standaloneEditorOrigin: null,
+  autoDrawMode: false,
 
+  setAutoDrawMode: (on) => set({ autoDrawMode: on }),
   setStandaloneMode: (mode, editorOrigin) => set({ standaloneMode: mode, standaloneEditorOrigin: editorOrigin }),
   setObjectDrawerOpen: (open) => set({ objectDrawerOpen: open }),
   setHoveredObjectId: (id) => set({ hoveredObjectId: id }),

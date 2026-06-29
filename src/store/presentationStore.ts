@@ -6,6 +6,7 @@ import { generateId } from '../utils/idGenerator';
 import { createPresentation, createSlide, copySlideAsKeyframe, generateObjectName } from '../utils/slideFactory';
 import { migratePresentation } from '../utils/migrations';
 import { rebindPathToMovedAnchor } from '../utils/connectorUtils';
+import { beforeMutation } from '../utils/autoDraw';
 import { getActiveDoc, runInTxn } from '../collab/yDocAdapter';
 import {
   elementToYMap,
@@ -348,6 +349,7 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       updateSlideBackground: (slideId, background) => {
+        slideId = beforeMutation(slideId);
         const doc = getActiveDoc();
         if (doc) {
           runInTxn(() => {
@@ -668,6 +670,7 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       addElement: (slideId, element) => {
+        slideId = beforeMutation(slideId);
         const doc = getActiveDoc();
         if (doc) {
           runInTxn(() => {
@@ -733,6 +736,7 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       addElements: (slideId, elements) => {
+        slideId = beforeMutation(slideId);
         const doc = getActiveDoc();
         if (doc) {
           if (elements.length === 0) return;
@@ -809,6 +813,7 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       updateElement: (slideId, elementId, changes) => {
+        slideId = beforeMutation(slideId);
         const doc = getActiveDoc();
         if (doc) {
           runInTxn(() => {
@@ -880,6 +885,7 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       updateElements: (slideId, updates) => {
+        slideId = beforeMutation(slideId);
         const doc = getActiveDoc();
         if (doc) {
           runInTxn(() => {
@@ -948,6 +954,7 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       deleteElements: (slideId, elementIds) => {
+        slideId = beforeMutation(slideId);
         const doc = getActiveDoc();
         if (doc) {
           runInTxn(() => {
@@ -1059,6 +1066,7 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       reorderElements: (slideId, elementOrder) => {
+        slideId = beforeMutation(slideId);
         const doc = getActiveDoc();
         if (doc) {
           runInTxn(() => {
@@ -1086,6 +1094,7 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       moveElementForward: (slideId, elementId) => {
+        slideId = beforeMutation(slideId);
         const doc = getActiveDoc();
         if (doc) {
           runInTxn(() => moveInYArray(doc, slideId, elementId, +1));
@@ -1110,6 +1119,7 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       moveElementBackward: (slideId, elementId) => {
+        slideId = beforeMutation(slideId);
         const doc = getActiveDoc();
         if (doc) {
           runInTxn(() => moveInYArray(doc, slideId, elementId, -1));
@@ -1134,6 +1144,7 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       moveElementToFront: (slideId, elementId) => {
+        slideId = beforeMutation(slideId);
         const doc = getActiveDoc();
         if (doc) {
           runInTxn(() => moveInYArray(doc, slideId, elementId, 'front'));
@@ -1155,6 +1166,7 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       moveElementToBack: (slideId, elementId) => {
+        slideId = beforeMutation(slideId);
         const doc = getActiveDoc();
         if (doc) {
           runInTxn(() => moveInYArray(doc, slideId, elementId, 'back'));
@@ -1224,6 +1236,7 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       hideElement: (slideId: string, elementId: string) => {
+        slideId = beforeMutation(slideId);
         const doc = getActiveDoc();
         if (doc) {
           runInTxn(() => {
@@ -1307,6 +1320,7 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       unhideElement: (slideId: string, elementId: string, position?: { x: number; y: number }) => {
+        slideId = beforeMutation(slideId);
         const doc = getActiveDoc();
         if (doc) {
           runInTxn(() => {

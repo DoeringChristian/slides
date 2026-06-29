@@ -3,7 +3,7 @@ import { usePresentationStore } from '../../store/presentationStore';
 import { useEditorStore } from '../../store/editorStore';
 import { useVaultStore } from '../../store/vaultStore';
 import { usePresenterMode } from '../../hooks/usePresenterMode';
-import { Play, Download, FilePlus, Undo2, Redo2, Monitor, ChevronDown, FileDown, Smartphone, Link as LinkIcon } from 'lucide-react';
+import { Play, Download, FilePlus, Undo2, Redo2, Monitor, ChevronDown, FileDown, Smartphone, Link as LinkIcon, Film } from 'lucide-react';
 import { ExportDialog } from '../dialogs/ExportDialog';
 import { ShareDialog } from '../dialogs/ShareDialog';
 import { usePwaInstall } from '../../hooks/usePwaInstall';
@@ -16,6 +16,8 @@ export const Header: React.FC = () => {
   const resetPresentation = usePresentationStore((s) => s.resetPresentation);
   const setPresenting = useEditorStore((s) => s.setPresenting);
   const setPresentingSlideIndex = useEditorStore((s) => s.setPresentingSlideIndex);
+  const autoDrawMode = useEditorStore((s) => s.autoDrawMode);
+  const setAutoDrawMode = useEditorStore((s) => s.setAutoDrawMode);
   const slideOrder = usePresentationStore((s) => s.presentation.slideOrder);
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
 
@@ -144,6 +146,21 @@ export const Header: React.FC = () => {
         </button>
         <button onClick={handleRedo} className="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="Redo (Ctrl+Y)">
           <Redo2 size={18} />
+        </button>
+        <div className="w-px h-6 bg-gray-300 mx-1" />
+        <button
+          onClick={() => setAutoDrawMode(!autoDrawMode)}
+          className={`p-1.5 rounded flex items-center gap-1 ${
+            autoDrawMode
+              ? 'bg-red-50 text-red-600 hover:bg-red-100'
+              : 'hover:bg-gray-100 text-gray-600'
+          }`}
+          title={autoDrawMode
+            ? 'Auto-draw: ON — each change spawns a new slide. Click to turn off.'
+            : 'Auto-draw: OFF — turn on to record each edit as a new keyframe slide.'}
+        >
+          <Film size={18} />
+          {autoDrawMode && <span className="text-xs font-medium">REC</span>}
         </button>
       </div>
 
