@@ -665,6 +665,18 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
   return (t < 0.5 ? { ...a } : { ...b }) as SlideElement;
 }
 
+/** Default visibility easing for an element when no explicit setting is
+ *  present. Path shapes (lines, arrows, polylines, polygons) draw themselves
+ *  on appear via `create`; everything else falls back to a simple linear
+ *  fade. Used by both the interpolator (to actually animate) and the
+ *  TransitionButton (to show the right "current" pill in the picker). */
+export function defaultVisibilityEasing(element: SlideElement | undefined): EasingType {
+  if (element && element.type === 'shape' && (element as ShapeElement).shapeType === 'path') {
+    return 'create';
+  }
+  return 'linear';
+}
+
 /** Try to build a WriteEffect for a visibility transition. Returns null when
  *  the easing isn't one of the new path/wrapper-style animations (fall
  *  through to the existing fade ramp). All these animations span the FULL
@@ -712,7 +724,7 @@ export function interpolateWithVisibility(
   // Forward: appearing element (B) has the transition settings
   // Backward: disappearing element (A, which was B in forward) has the settings
   if (aVisible && !bVisible) {
-    const easing = elA.transitions?.visibility;
+    const easing = elA.transitions?.visibility ?? defaultVisibilityEasing(elA);
     const fx = buildVisibilityFx(easing, elA.transitions?.visibilityOptions, 1 - t, 'out');
     if (fx) {
       return { ...elA, visible: true, _writeFx: fx } as SlideElement & { _writeFx: WriteEffect };
@@ -727,7 +739,7 @@ export function interpolateWithVisibility(
 
   // !aVisible && bVisible
   const target = elB!;
-  const easing = target.transitions?.visibility;
+  const easing = target.transitions?.visibility ?? defaultVisibilityEasing(target);
   const fx = buildVisibilityFx(easing, target.transitions?.visibilityOptions, t, 'in');
   if (fx) {
     return { ...target, visible: true, _writeFx: fx } as SlideElement & { _writeFx: WriteEffect };

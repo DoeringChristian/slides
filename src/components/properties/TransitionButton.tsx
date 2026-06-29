@@ -18,6 +18,7 @@ import type {
   TransitionOptions,
 } from '../../types/presentation';
 import { TransitionPreview } from './TransitionPreview';
+import { defaultVisibilityEasing } from '../../utils/interpolation';
 
 interface Props {
   elementId: string;
@@ -210,7 +211,11 @@ export const TransitionButton: React.FC<Props> = ({
   const transitionElement = isFadeOut ? sourceElement : targetElement;
   const transitionSlideId = isFadeOut ? sourceSlideId : targetSlideId;
 
-  const defaultEasing: EasingType = group === 'resource' ? 'dissolve' : group === 'content' ? 'const' : 'linear';
+  const defaultEasing: EasingType =
+    group === 'resource' ? 'dissolve' :
+    group === 'content' ? 'const' :
+    group === 'visibility' ? defaultVisibilityEasing(transitionElement) :
+    'linear';
   const currentEasing: EasingType = transitionElement?.transitions?.[group] || defaultEasing;
   const optKey = optionsKeyFor(group);
   const currentOptions: TransitionOptions | undefined = optKey
