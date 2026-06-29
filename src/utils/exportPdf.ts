@@ -434,7 +434,13 @@ function drawShapeElement(ctx: CanvasRenderingContext2D, element: ShapeElement) 
       ctx.lineWidth = sw;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
+      // Dash pattern mirrors the on-screen renderer's strokeDashFor.
+      const dash = element.strokeStyle === 'dashed' ? [sw * 3, sw * 2]
+        : element.strokeStyle === 'dotted' ? [0, sw * 2]
+        : [];
+      ctx.setLineDash(dash);
       if (sw > 0) ctx.stroke();
+      ctx.setLineDash([]);
       // Arrowheads at the endpoints.
       const last = pts.length - 2;
       const drawHead = (tipX: number, tipY: number, dirX: number, dirY: number) => {

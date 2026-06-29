@@ -229,6 +229,12 @@ export type ShapeType = 'rect' | 'ellipse' | 'triangle' | 'star' | 'path';
  *  open and wrap smoothly when closed. */
 export type PathCurve = 'linear' | 'bspline2' | 'bspline3';
 
+/** Stroke dash pattern for path shapes (lines, arrows, polylines, polygons).
+ *  `solid` (default) = no dash. `dashed` = medium dashes. `dotted` = short
+ *  dots with round caps. The exact pixel pattern is derived from
+ *  `strokeWidth` in the renderer so it scales with the line. */
+export type StrokeStyle = 'solid' | 'dashed' | 'dotted';
+
 export interface ConnectorBinding {
   elementId: string;
   anchor: 'center' | 'top' | 'bottom' | 'left' | 'right';
@@ -252,6 +258,8 @@ export interface ShapeElement extends BaseElement {
   /** Path only: arrowhead at the first / last vertex. */
   startArrow?: boolean;
   endArrow?: boolean;
+  /** Path only: solid / dashed / dotted stroke. Defaults to 'solid'. */
+  strokeStyle?: StrokeStyle;
   startBinding?: ConnectorBinding | null;
   endBinding?: ConnectorBinding | null;
 }

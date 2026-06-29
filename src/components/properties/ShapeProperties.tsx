@@ -9,7 +9,7 @@ import {
   SelectProperty,
   ReadoutProperty,
 } from './Property';
-import type { ShapeElement, PathCurve } from '../../types/presentation';
+import type { ShapeElement, PathCurve, StrokeStyle } from '../../types/presentation';
 
 const isRect = (el: ShapeElement) => el.shapeType === 'rect';
 const isPath = (el: ShapeElement) => el.shapeType === 'path';
@@ -33,6 +33,19 @@ const SHAPE_PROPERTIES: Property<ShapeElement>[] = [
   new NumberProperty<ShapeElement>({
     key: 'strokeWidth', label: 'Stroke Width',
     transitionGroup: 'strokeWidth', min: 0, max: 20, step: 1,
+  }),
+  new SelectProperty<ShapeElement, StrokeStyle>({
+    key: 'strokeStyle', label: 'Stroke Style',
+    // Lines / arrows / polylines / polygons get the dash control. Filled
+    // rect / ellipse / triangle / star don't usually need it; keeping it
+    // path-only avoids cluttering the rect panel.
+    visibleFor: isPath,
+    defaultValue: 'solid',
+    options: [
+      { value: 'solid', label: 'Solid' },
+      { value: 'dashed', label: 'Dashed' },
+      { value: 'dotted', label: 'Dotted' },
+    ],
   }),
   new NumberProperty<ShapeElement>({
     key: 'cornerRadius', label: 'Corner Radius',

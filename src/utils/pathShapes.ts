@@ -35,6 +35,21 @@ export function isPathShape(shape: { shapeType?: string }): boolean {
   return shape.shapeType === 'path';
 }
 
+/** Stroke-dash pattern for `strokeStyle`. Returned as a space-separated
+ *  string in user-space units that scales with `strokeWidth` — so a thicker
+ *  line gets proportionally longer dashes / gaps. `undefined` for 'solid'
+ *  (or unset), which the renderer maps to no strokeDasharray attribute. */
+export function strokeDashFor(style: string | undefined, strokeWidth: number): string | undefined {
+  const w = Math.max(0.5, strokeWidth);
+  switch (style) {
+    case 'dashed': return `${w * 3} ${w * 2}`;
+    // Dots are rendered with round caps; the dash length is 0 so the cap
+    // *is* the dot, and the gap controls spacing.
+    case 'dotted': return `0 ${w * 2}`;
+    default:       return undefined;
+  }
+}
+
 export function pathD(points: number[], curve: PathCurve, closed: boolean, cornerRadius = 0): string {
   if (points.length < 4) return '';
   if (curve === 'linear') return linearPathD(points, closed, cornerRadius);

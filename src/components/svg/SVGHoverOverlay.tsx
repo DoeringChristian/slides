@@ -1,7 +1,7 @@
 import React from 'react';
 import { usePresentationStore } from '../../store/presentationStore';
 import { getLineCenter, getElementBounds, getElementCenter } from '../../utils/geometry';
-import { pathD, arrowheadPoints, insetEndpoints, isLinePath } from '../../utils/pathShapes';
+import { pathD, arrowheadPoints, insetEndpoints, isLinePath, strokeDashFor } from '../../utils/pathShapes';
 import type { SlideElement, ShapeElement, ImageElement } from '../../types/presentation';
 
 interface Props {
@@ -160,6 +160,7 @@ const GhostShape: React.FC<{ element: ShapeElement }> = ({ element }) => {
               strokeWidth={strokeW}
               strokeLinecap="round"
               strokeLinejoin="round"
+              strokeDasharray={strokeDashFor(element.strokeStyle, strokeW)}
             />
             {startHead && <polygon points={`${startHead[0]},${startHead[1]} ${startHead[2]},${startHead[3]} ${startHead[4]},${startHead[5]}`} fill={strokeColor} />}
             {endHead && <polygon points={`${endHead[0]},${endHead[1]} ${endHead[2]},${endHead[3]} ${endHead[4]},${endHead[5]}`} fill={strokeColor} />}

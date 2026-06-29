@@ -1,7 +1,7 @@
 import React, { memo } from 'react';
 import { SVGTextPaths } from './SVGTextPaths';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
-import { pathD, arrowheadPoints, insetEndpoints } from '../../utils/pathShapes';
+import { pathD, arrowheadPoints, insetEndpoints, strokeDashFor } from '../../utils/pathShapes';
 import type { SlideElement, TextElement, ShapeElement, ImageElement, Resource } from '../../types/presentation';
 
 // ============================================================================
@@ -142,6 +142,7 @@ export const RenderShape: React.FC<ShapeProps> = memo(({ element }) => {
               strokeWidth={strokeW}
               strokeLinecap="round"
               strokeLinejoin="round"
+              strokeDasharray={strokeDashFor(element.strokeStyle, strokeW)}
               opacity={opacity}
               style={{ pointerEvents: 'none' }}
             />

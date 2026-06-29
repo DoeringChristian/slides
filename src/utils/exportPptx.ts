@@ -168,6 +168,9 @@ function addShapeElement(slide: PptxGenJS.Slide, el: ShapeElement) {
       const curve = el.curve ?? 'linear';
       if (pts.length !== 4 || curve !== 'linear') break;
       const strokeColor = el.stroke || el.fill || '#000000';
+      const dashType = el.strokeStyle === 'dashed' ? 'dash' as const
+        : el.strokeStyle === 'dotted' ? 'sysDot' as const
+        : undefined;
       slide.addShape('line', {
         x, y, w, h,
         line: {
@@ -175,6 +178,7 @@ function addShapeElement(slide: PptxGenJS.Slide, el: ShapeElement) {
           width: el.strokeWidth || 3,
           ...(el.endArrow ? { endArrowType: 'triangle' as const } : {}),
           ...(el.startArrow ? { beginArrowType: 'triangle' as const } : {}),
+          ...(dashType ? { dashType } : {}),
         },
         rotate: el.rotation || 0,
         flipV: (pts[3] - pts[1]) < 0,
