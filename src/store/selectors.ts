@@ -120,19 +120,16 @@ export function useAllResources(): Resource[] {
   return useMemo(() => Object.values(resources), [resources]);
 }
 
-// Update an element on the active slide AND all other selected slides that contain it
+/** Per-element update callback used by every property-panel input. Just
+ *  calls `updateElement` on the active slide; the store's mutation
+ *  actions fan changes out to any other selected slides themselves
+ *  (see utils/multiSlide.ts), so this hook doesn't need its own loop
+ *  anymore. */
 export function useMultiSlideUpdate(elementId: string) {
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
-  const selectedSlideIds = useEditorStore((s) => s.selectedSlideIds);
   const updateElement = usePresentationStore((s) => s.updateElement);
-  const slides = usePresentationStore((s) => s.presentation.slides);
 
   return useCallback((changes: Partial<SlideElement>) => {
     updateElement(activeSlideId, elementId, changes);
-    for (const slideId of selectedSlideIds) {
-      if (slideId === activeSlideId) continue;
-      if (!slides[slideId]?.elements[elementId]) continue;
-      updateElement(slideId, elementId, changes);
-    }
-  }, [activeSlideId, selectedSlideIds, slides, elementId, updateElement]);
+  }, [activeSlideId, elementId, updateElement]);
 }

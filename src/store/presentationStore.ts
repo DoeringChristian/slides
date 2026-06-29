@@ -7,6 +7,7 @@ import { createPresentation, createSlide, copySlideAsKeyframe, generateObjectNam
 import { migratePresentation } from '../utils/migrations';
 import { rebindPathToMovedAnchor } from '../utils/connectorUtils';
 import { beforeMutation } from '../utils/autoDraw';
+import { mirrorTargets, withMirroring } from '../utils/multiSlide';
 import { getActiveDoc, runInTxn } from '../collab/yDocAdapter';
 import {
   elementToYMap,
@@ -350,6 +351,12 @@ export const usePresentationStore = create<PresentationStore>()(
 
       updateSlideBackground: (slideId, background) => {
         slideId = beforeMutation(slideId);
+        const __mirrors = mirrorTargets(slideId);
+        withMirroring(() => {
+          for (const mid of __mirrors) {
+            usePresentationStore.getState().updateSlideBackground(mid, background);
+          }
+        });
         const doc = getActiveDoc();
         if (doc) {
           runInTxn(() => {
@@ -814,6 +821,12 @@ export const usePresentationStore = create<PresentationStore>()(
 
       updateElement: (slideId, elementId, changes) => {
         slideId = beforeMutation(slideId);
+        const __mirrors = mirrorTargets(slideId);
+        withMirroring(() => {
+          for (const mid of __mirrors) {
+            usePresentationStore.getState().updateElement(mid, elementId, changes);
+          }
+        });
         const doc = getActiveDoc();
         if (doc) {
           runInTxn(() => {
@@ -886,6 +899,12 @@ export const usePresentationStore = create<PresentationStore>()(
 
       updateElements: (slideId, updates) => {
         slideId = beforeMutation(slideId);
+        const __mirrors = mirrorTargets(slideId);
+        withMirroring(() => {
+          for (const mid of __mirrors) {
+            usePresentationStore.getState().updateElements(mid, updates);
+          }
+        });
         const doc = getActiveDoc();
         if (doc) {
           runInTxn(() => {
@@ -955,6 +974,12 @@ export const usePresentationStore = create<PresentationStore>()(
 
       deleteElements: (slideId, elementIds) => {
         slideId = beforeMutation(slideId);
+        const __mirrors = mirrorTargets(slideId);
+        withMirroring(() => {
+          for (const mid of __mirrors) {
+            usePresentationStore.getState().deleteElements(mid, elementIds);
+          }
+        });
         const doc = getActiveDoc();
         if (doc) {
           runInTxn(() => {
@@ -1095,6 +1120,12 @@ export const usePresentationStore = create<PresentationStore>()(
 
       moveElementForward: (slideId, elementId) => {
         slideId = beforeMutation(slideId);
+        const __mirrors = mirrorTargets(slideId);
+        withMirroring(() => {
+          for (const mid of __mirrors) {
+            usePresentationStore.getState().moveElementForward(mid, elementId);
+          }
+        });
         const doc = getActiveDoc();
         if (doc) {
           runInTxn(() => moveInYArray(doc, slideId, elementId, +1));
@@ -1120,6 +1151,12 @@ export const usePresentationStore = create<PresentationStore>()(
 
       moveElementBackward: (slideId, elementId) => {
         slideId = beforeMutation(slideId);
+        const __mirrors = mirrorTargets(slideId);
+        withMirroring(() => {
+          for (const mid of __mirrors) {
+            usePresentationStore.getState().moveElementBackward(mid, elementId);
+          }
+        });
         const doc = getActiveDoc();
         if (doc) {
           runInTxn(() => moveInYArray(doc, slideId, elementId, -1));
@@ -1145,6 +1182,12 @@ export const usePresentationStore = create<PresentationStore>()(
 
       moveElementToFront: (slideId, elementId) => {
         slideId = beforeMutation(slideId);
+        const __mirrors = mirrorTargets(slideId);
+        withMirroring(() => {
+          for (const mid of __mirrors) {
+            usePresentationStore.getState().moveElementToFront(mid, elementId);
+          }
+        });
         const doc = getActiveDoc();
         if (doc) {
           runInTxn(() => moveInYArray(doc, slideId, elementId, 'front'));
@@ -1167,6 +1210,12 @@ export const usePresentationStore = create<PresentationStore>()(
 
       moveElementToBack: (slideId, elementId) => {
         slideId = beforeMutation(slideId);
+        const __mirrors = mirrorTargets(slideId);
+        withMirroring(() => {
+          for (const mid of __mirrors) {
+            usePresentationStore.getState().moveElementToBack(mid, elementId);
+          }
+        });
         const doc = getActiveDoc();
         if (doc) {
           runInTxn(() => moveInYArray(doc, slideId, elementId, 'back'));
@@ -1237,6 +1286,12 @@ export const usePresentationStore = create<PresentationStore>()(
 
       hideElement: (slideId: string, elementId: string) => {
         slideId = beforeMutation(slideId);
+        const __mirrors = mirrorTargets(slideId);
+        withMirroring(() => {
+          for (const mid of __mirrors) {
+            usePresentationStore.getState().hideElement(mid, elementId);
+          }
+        });
         const doc = getActiveDoc();
         if (doc) {
           runInTxn(() => {
@@ -1321,6 +1376,12 @@ export const usePresentationStore = create<PresentationStore>()(
 
       unhideElement: (slideId: string, elementId: string, position?: { x: number; y: number }) => {
         slideId = beforeMutation(slideId);
+        const __mirrors = mirrorTargets(slideId);
+        withMirroring(() => {
+          for (const mid of __mirrors) {
+            usePresentationStore.getState().unhideElement(mid, elementId, position);
+          }
+        });
         const doc = getActiveDoc();
         if (doc) {
           runInTxn(() => {
