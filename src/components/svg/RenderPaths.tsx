@@ -38,6 +38,12 @@ function writeGlyphFrame(
   lag: number,
   T: number,
   glyphSpan: number,
+  /** When false (open path / no fillable area), the FILL phase keeps the
+   *  stroke at full opacity instead of fading it out. Without this, an
+   *  open line would go invisible at t=1 — there's nothing to fill — and
+   *  reappear one frame later when the steady RenderShape takes over,
+   *  causing a one-frame flicker. */
+  hasFill = true,
 ): { dashOffset: number; fillOpacity: number; strokeOpacity: number } {
   const REVEAL_END = 0.7;
   const startT = glyphIndex * lag;
@@ -46,6 +52,9 @@ function writeGlyphFrame(
   if (localT < REVEAL_END) {
     const ph = localT / REVEAL_END;
     return { dashOffset: pathLength * (1 - ph), fillOpacity: 0, strokeOpacity: 1 };
+  }
+  if (!hasFill) {
+    return { dashOffset: 0, fillOpacity: 0, strokeOpacity: 1 };
   }
   const ph = (localT - REVEAL_END) / (1 - REVEAL_END);
   return { dashOffset: 0, fillOpacity: ph, strokeOpacity: 1 - ph };
@@ -113,9 +122,14 @@ export const RenderPaths: React.FC<RenderPathsProps> = ({ paths, writeFx, stroke
             break;
           case 'write':
           case 'create':
-          default:
-            frame = writeGlyphFrame(p.length, i, lag, T, glyphSpan);
+          default: {
+            // 'none' fill or unset → there's nothing to fill (open path);
+            // tell writeGlyphFrame to hold the stroke through the FILL
+            // window so the line doesn't flash off at the end.
+            const hasFill = !!p.fillColor && p.fillColor !== 'none' && p.fillColor !== 'transparent';
+            frame = writeGlyphFrame(p.length, i, lag, T, glyphSpan, hasFill);
             break;
+          }
         }
         const strokeCol = p.strokeColor ?? p.fillColor;
         return (

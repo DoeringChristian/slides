@@ -153,11 +153,19 @@ export function shapeToSvgPaths(shape: ShapeElement): SvgPath[] {
     entry = { d, length: pathLengthFor(d) };
     geomCache.set(key, entry);
   }
+  // Open paths (line / arrow / unclosed polyline) have no fillable area —
+  // mirror ElementRenderer's `fillCol = closed ? fillAttr : 'none'` so the
+  // Create animation's FILL phase has nothing to fill with. RenderPaths
+  // detects `none` and holds the stroke instead of fading it out, which
+  // would otherwise blink the line off for one frame before the steady
+  // render takes over.
+  const isOpenPath = shape.shapeType === 'path' && !(shape.closed ?? false);
+  const fillColor = isOpenPath ? 'none' : (shape.fill || 'transparent');
   return [{
     d: entry.d,
     transform: '',
     length: entry.length,
-    fillColor: shape.fill || 'transparent',
+    fillColor,
     strokeColor: shape.stroke || shape.fill || '#000',
     nonScalingStroke: false,
   }];
