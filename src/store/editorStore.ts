@@ -1,5 +1,8 @@
 import { create } from 'zustand';
-import type { Tool, SlideElement, EditorState } from '../types/presentation';
+import type {
+  Tool, SlideElement, EditorState,
+  EasingType, TransitionGroup, TransitionOptions,
+} from '../types/presentation';
 import { usePresentationStore } from './presentationStore';
 
 export interface MarginLayout {
@@ -32,6 +35,21 @@ interface EditorStore extends EditorState {
    *  short debounce window that groups bursts of micro-edits. */
   autoDrawMode: boolean;
   setAutoDrawMode: (on: boolean) => void;
+  /** Last easing the user picked for each property group, scoped by
+   *  element type. New elements inherit these as their default
+   *  transitions if the picked easing is applicable (a `create`
+   *  visibility wouldn't follow to a freshly-added text element, for
+   *  example — the helper that applies the defaults filters on
+   *  `visibilityTypesFor`). The sub-options for the picked easing
+   *  travel alongside. */
+  lastEasings: Partial<Record<SlideElement['type'], Partial<Record<TransitionGroup, EasingType>>>>;
+  lastEasingOptions: Partial<Record<SlideElement['type'], { visibility?: TransitionOptions; content?: TransitionOptions }>>;
+  rememberEasing: (
+    elementType: SlideElement['type'],
+    group: TransitionGroup,
+    easing: EasingType,
+    options?: TransitionOptions,
+  ) => void;
   setObjectDrawerOpen: (open: boolean) => void;
   setHoveredObjectId: (id: string | null) => void;
   setActiveSlide: (slideId: string) => void;
@@ -86,8 +104,22 @@ export const useEditorStore = create<EditorStore>()((set) => ({
   standaloneMode: 'off',
   standaloneEditorOrigin: null,
   autoDrawMode: false,
+  lastEasings: {},
+  lastEasingOptions: {},
 
   setAutoDrawMode: (on) => set({ autoDrawMode: on }),
+  rememberEasing: (elementType, group, easing, options) => set((s) => {
+    const byType = { ...s.lastEasings };
+    byType[elementType] = { ...(byType[elementType] || {}), [group]: easing };
+    let nextOptions = s.lastEasingOptions;
+    if (options !== undefined && (group === 'visibility' || group === 'content')) {
+      nextOptions = { ...s.lastEasingOptions };
+      const slot = { ...(nextOptions[elementType] || {}) };
+      slot[group] = options;
+      nextOptions[elementType] = slot;
+    }
+    return { lastEasings: byType, lastEasingOptions: nextOptions };
+  }),
   setStandaloneMode: (mode, editorOrigin) => set({ standaloneMode: mode, standaloneEditorOrigin: editorOrigin }),
   setObjectDrawerOpen: (open) => set({ objectDrawerOpen: open }),
   setHoveredObjectId: (id) => set({ hoveredObjectId: id }),

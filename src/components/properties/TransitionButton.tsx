@@ -253,13 +253,17 @@ export const TransitionButton: React.FC<Props> = ({
     updateElement(transitionSlideId!, elementId, { transitions: next } as Partial<SlideElement>);
   };
 
+  const rememberEasing = useEditorStore((s) => s.rememberEasing);
+
   const handleSelect = (easing: EasingType) => {
     writeNewTransitions((t) => { t[group] = easing; });
+    if (elementType) rememberEasing(elementType, group, easing, currentOptions);
   };
 
   const handleOptionChange = (nextOptions: TransitionOptions) => {
     if (!optKey) return;
     writeNewTransitions((t) => { t[optKey] = nextOptions; });
+    if (elementType) rememberEasing(elementType, group, currentEasing, nextOptions);
   };
 
   return (

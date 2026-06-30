@@ -8,6 +8,7 @@ import { migratePresentation } from '../utils/migrations';
 import { rebindPathToMovedAnchor } from '../utils/connectorUtils';
 import { beforeMutation } from '../utils/autoDraw';
 import { mirrorTargets, withMirroring } from '../utils/multiSlide';
+import { applyStickyDefaults } from '../utils/stickyEasings';
 import { getActiveDoc, runInTxn } from '../collab/yDocAdapter';
 import {
   elementToYMap,
@@ -678,6 +679,9 @@ export const usePresentationStore = create<PresentationStore>()(
 
       addElement: (slideId, element) => {
         slideId = beforeMutation(slideId);
+        // Inherit the user's last-picked easings (applicable ones only).
+        // Anything explicitly set on `element` wins.
+        element = applyStickyDefaults(element);
         const doc = getActiveDoc();
         if (doc) {
           runInTxn(() => {
@@ -744,6 +748,7 @@ export const usePresentationStore = create<PresentationStore>()(
 
       addElements: (slideId, elements) => {
         slideId = beforeMutation(slideId);
+        elements = elements.map(applyStickyDefaults);
         const doc = getActiveDoc();
         if (doc) {
           if (elements.length === 0) return;
