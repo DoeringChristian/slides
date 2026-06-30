@@ -214,6 +214,55 @@ export function insetEndpoints(
   return out;
 }
 
+/** Total arc-length of a path under the given curve mode. Used by the
+ *  tip-riding arrow animation to map a 0..1 progress to a distance along
+ *  the path. */
+export function pathArcLength(points: number[], curve: PathCurve, closed: boolean): number {
+  const samples = sampledPath(points, curve, closed);
+  let total = 0;
+  for (let i = 0; i + 3 < samples.length; i += 2) {
+    total += Math.hypot(samples[i + 2] - samples[i], samples[i + 3] - samples[i + 1]);
+  }
+  if (closed && samples.length >= 4) {
+    total += Math.hypot(samples[0] - samples[samples.length - 2], samples[1] - samples[samples.length - 1]);
+  }
+  return total;
+}
+
+/** Walk the path to the requested arc-length and return the point at
+ *  that distance plus the tangent direction at that point. `targetLen`
+ *  is clamped to [0, total]. Used to position the arrowhead at the
+ *  growing tip during a draw animation. */
+export function pointAtArcLength(
+  points: number[],
+  curve: PathCurve,
+  closed: boolean,
+  targetLen: number,
+): { x: number; y: number; dx: number; dy: number } | null {
+  const samples = sampledPath(points, curve, closed);
+  if (samples.length < 4) return null;
+  // For closed paths, append the first sample to the end so the closing
+  // segment is included in the walk.
+  const walk = closed ? [...samples, samples[0], samples[1]] : samples;
+  let cum = 0;
+  for (let i = 0; i + 3 < walk.length; i += 2) {
+    const x1 = walk[i], y1 = walk[i + 1];
+    const x2 = walk[i + 2], y2 = walk[i + 3];
+    const dx = x2 - x1, dy = y2 - y1;
+    const segLen = Math.hypot(dx, dy);
+    if (cum + segLen >= targetLen) {
+      const f = segLen > 0 ? (targetLen - cum) / segLen : 0;
+      return { x: x1 + dx * f, y: y1 + dy * f, dx, dy };
+    }
+    cum += segLen;
+  }
+  // Past the end → return the last segment's endpoint + its tangent.
+  const n = walk.length;
+  const dx = walk[n - 2] - walk[n - 4];
+  const dy = walk[n - 1] - walk[n - 3];
+  return { x: walk[n - 2], y: walk[n - 1], dx, dy };
+}
+
 /** Triangle points for an arrowhead at (tipX, tipY) pointing along (dx, dy).
  *  Returns a flat `[x0,y0,x1,y1,x2,y2]` array (tip, left, right). */
 export function arrowheadPoints(

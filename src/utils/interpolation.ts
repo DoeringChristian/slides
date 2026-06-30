@@ -75,6 +75,9 @@ export interface WriteEffect {
   /** Iris: optional centre in element-local [0,1] coordinates. */
   cx?: number;
   cy?: number;
+  /** Create: when true, an end-arrowhead rides the growing tip of the
+   *  line instead of being traced last. */
+  tipDraw?: boolean;
   /** Group stagger: per-child time delay (0..1). The parent's interpolation
    *  attaches the same _writeFx to each child but bumps `t` down by
    *  `childIndex * lag`; the per-child renderer then sees a delayed t. */
@@ -693,7 +696,7 @@ function buildVisibilityFx(
     case 'write':       return mk('write');
     case 'typewriter':  return mk('typewriter');
     case 'fadebyglyph': return mk('fadebyglyph');
-    case 'create':      return mk('create');
+    case 'create':      return mk('create',   { tipDraw: options?.create?.tipDraw });
     case 'wipe':        return mk('wipe',    { from: options?.wipe?.from });
     case 'slidein':     return mk('slidein', { from: options?.slidein?.from });
     case 'grow':        return mk('grow',    { anchor: options?.grow?.anchor });

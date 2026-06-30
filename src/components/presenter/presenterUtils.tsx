@@ -4,6 +4,8 @@ import { RenderShape, RenderImage } from '../svg/ElementRenderer';
 import { SVGTextPaths } from '../svg/SVGTextPaths';
 import { RenderPaths } from '../svg/RenderPaths';
 import { shapeToSvgPaths } from '../../utils/shapeToPath';
+import { pathD, insetEndpoints, arrowheadPoints, pathArcLength, pointAtArcLength } from '../../utils/pathShapes';
+import { pathLengthFor } from '../../utils/glyphPaths';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 import { interpolateWithVisibility, lerpColor } from '../../utils/interpolation';
 import type { SlideElement, TextElement, ShapeElement, ImageElement, Slide, Resource } from '../../types/presentation';
@@ -388,11 +390,22 @@ function renderElementInner(
   // perimeter strokes in and the fill ramps via the shared RenderPaths.
   const shapeEl = element as ShapeElement;
   if (fx?.mode === 'create') {
-    const paths = shapeToSvgPaths(shapeEl);
     const strokeWidth = Math.max(1, shapeEl.strokeWidth || 2);
     const cx = shapeEl.x + shapeEl.width / 2;
     const cy = shapeEl.y + shapeEl.height / 2;
     const transform = shapeEl.rotation ? `rotate(${shapeEl.rotation}, ${cx}, ${cy})` : undefined;
+    // Tip-draw branch: an end-arrowed path with `tipDraw: true` draws the
+    // shaft progressively (RenderPaths with no head in the d-string) AND
+    // sticks the arrowhead onto the current tip — so the head appears to
+    // ride along with the growing line instead of materializing last.
+    if (fx.tipDraw && shapeEl.shapeType === 'path' && shapeEl.endArrow) {
+      return (
+        <g key={shapeEl.id} transform={transform} opacity={shapeEl.opacity}>
+          <TipDrawArrow element={shapeEl} fx={fx} strokeWidth={strokeWidth} />
+        </g>
+      );
+    }
+    const paths = shapeToSvgPaths(shapeEl);
     return (
       <g key={shapeEl.id} transform={transform} opacity={shapeEl.opacity}>
         <RenderPaths paths={paths} writeFx={fx} strokeWidth={strokeWidth} />
@@ -401,6 +414,91 @@ function renderElementInner(
   }
   return <RenderShape key={element.id} element={shapeEl} />;
 }
+
+/** Specialised renderer for `create` + `tipDraw`. Builds a shaft-only
+ *  path (no arrowhead L-segments folded in), reveals it through the
+ *  shared writeGlyphFrame timing via RenderPaths, then positions the
+ *  arrowhead at the point along the shaft that matches the current
+ *  reveal progress. Direction comes from the tangent at that point so
+ *  the head's orientation tracks the curve as it rides the tip. */
+const TipDrawArrow: React.FC<{
+  element: ShapeElement;
+  fx: WriteEffect;
+  strokeWidth: number;
+}> = ({ element, fx, strokeWidth }) => {
+  const pts = element.points ?? [];
+  if (pts.length < 4) return null;
+  const closed = element.closed ?? false;
+  const curve = element.curve ?? 'linear';
+  // Inset the end vertex so the shaft stops where the arrowhead's base
+  // will sit. The arrowhead's tip then extends back out to the original
+  // endpoint at the end of the animation — same final geometry as the
+  // steady-state render in ElementRenderer.
+  const shaftPts = insetEndpoints(pts, !!element.startArrow, true);
+  const cornerR = curve === 'linear' ? (element.cornerRadius ?? 0) : 0;
+  const d = pathD(shaftPts, curve, closed, cornerR);
+  const arc = pathArcLength(shaftPts, curve, closed);
+  const strokeColor = element.stroke || element.fill || '#000';
+
+  // Map the WriteEffect's t to the reveal phase exactly like writeGlyphFrame
+  // does so the arrowhead and the dashoffset stay in lockstep.
+  const REVEAL_END = 0.7;
+  const localT = fx.t;
+  const revealPh = Math.max(0, Math.min(1, localT / REVEAL_END));
+  // Where to place the arrowhead. While the reveal is in flight, ride the
+  // tip; once we hit FILL phase, lock the head at the final endpoint so
+  // it doesn't jitter while the stroke fades to fill.
+  const targetLen = revealPh >= 1 ? arc : arc * revealPh;
+  const tip = pointAtArcLength(shaftPts, curve, closed, targetLen);
+  // Final endpoint of the original (un-inset) path — that's where the
+  // arrowhead tip lands at completion.
+  const last = pts.length - 2;
+  let tipX: number, tipY: number, dirX: number, dirY: number;
+  if (revealPh >= 1) {
+    tipX = pts[last]; tipY = pts[last + 1];
+    dirX = pts[last] - pts[last - 2]; dirY = pts[last + 1] - pts[last - 1];
+  } else if (tip) {
+    // Push the tip forward by the head length so the triangle's tip lands
+    // at the position the user expects ("the arrow is HERE"), not its base.
+    const tLen = Math.hypot(tip.dx, tip.dy) || 1;
+    const HEAD = 10;
+    tipX = tip.x + (tip.dx / tLen) * HEAD;
+    tipY = tip.y + (tip.dy / tLen) * HEAD;
+    dirX = tip.dx; dirY = tip.dy;
+  } else {
+    // Degenerate path — bail out, no arrow to draw.
+    return null;
+  }
+  const head = arrowheadPoints(tipX, tipY, dirX, dirY);
+
+  // Cached path length for stroke-dasharray. pathLengthFor measures via a
+  // hidden <path>; ours is just the shaft so it matches `arc` closely
+  // (modulo browser float precision).
+  const length = pathLengthFor(d);
+  const svgPath = {
+    d,
+    transform: `translate(${element.x}, ${element.y})`,
+    length,
+    fillColor: element.closed ? (element.fill || 'transparent') : 'none',
+    strokeColor,
+    nonScalingStroke: false,
+  };
+  return (
+    <>
+      <RenderPaths paths={[svgPath]} writeFx={fx} strokeWidth={strokeWidth} />
+      {/* Arrowhead. Fades in over the first ~5% of the reveal so it
+          doesn't pop into existence at t=0. */}
+      <polygon
+        points={`${head[0]},${head[1]} ${head[2]},${head[3]} ${head[4]},${head[5]}`}
+        transform={`translate(${element.x}, ${element.y})`}
+        fill={strokeColor}
+        // Fade in over the first ~5% of the reveal so the head doesn't
+        // pop in fully formed at t=0; full opacity once it's tracking.
+        opacity={Math.min(1, revealPh * 20)}
+      />
+    </>
+  );
+};
 
 // ============================================================================
 // VideoWithControls - Video element with play/pause button and progress bar

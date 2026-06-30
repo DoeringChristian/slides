@@ -123,6 +123,15 @@ export interface IrisOptions {
   cy?: number;
 }
 
+/** Options for the `create` (outline-trace) easing. */
+export interface CreateOptions {
+  /** When true, an arrowhead at the path's end rides along the growing tip
+   *  of the line instead of being traced last. Has no effect on shapes
+   *  without an end-arrow or on filled shapes (rect / ellipse / triangle /
+   *  star). */
+  tipDraw?: boolean;
+}
+
 /** lagRatio: 0 = all children animate simultaneously; 1 = strict sequence
  *  (each finishes before next starts). Default 0.1 — gentle stagger. */
 export interface StaggerOptions {
@@ -136,6 +145,7 @@ export interface TransitionOptions {
   slidein?: SlideInOptions;
   grow?: GrowOptions;
   iris?: IrisOptions;
+  create?: CreateOptions;
   /** Group-level stagger applies to whichever child-level easing fires. */
   stagger?: StaggerOptions;
 }

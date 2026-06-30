@@ -89,7 +89,7 @@ function visibilityTypesFor(elementType: SlideElement['type'] | undefined): Easi
 // Which easings (per group) expose user-configurable options.
 function easingHasOptions(group: TransitionGroup, easing: EasingType): boolean {
   if (group === 'content' && (easing === 'write' || easing === 'typewriter')) return true;
-  if (group === 'visibility' && (easing === 'wipe' || easing === 'slidein' || easing === 'grow')) return true;
+  if (group === 'visibility' && (easing === 'wipe' || easing === 'slidein' || easing === 'grow' || easing === 'create')) return true;
   return false;
 }
 
@@ -497,6 +497,30 @@ const EasingOptionsPanel: React.FC<{
           ))}
         </div>
       </div>
+    );
+  }
+
+  if (easing === 'create') {
+    const sub = value.create ?? {};
+    const tipDraw = sub.tipDraw ?? false;
+    return (
+      <label className="flex items-start gap-2 text-xs text-gray-700 cursor-pointer px-1">
+        <input
+          type="checkbox"
+          checked={tipDraw}
+          onChange={(e) => onChange({ ...value, create: { ...sub, tipDraw: e.target.checked } })}
+          className="mt-0.5"
+        />
+        <span>
+          <span className="font-medium">Arrowhead rides the tip</span>
+          <br />
+          <span className="text-gray-500">
+            For paths with an end arrow: the arrowhead moves along with the
+            growing tip of the line instead of materialising last. Off:
+            the shaft draws first, then the arrowhead appears.
+          </span>
+        </span>
+      </label>
     );
   }
 
