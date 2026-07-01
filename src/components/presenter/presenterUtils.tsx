@@ -442,8 +442,14 @@ const TipDrawArrow: React.FC<{
 
   // Map the WriteEffect's t to the reveal phase exactly like writeGlyphFrame
   // does so the arrowhead and the dashoffset stay in lockstep.
+  // RenderPaths scales fx.t through `glyphSpan` (0.5) before applying
+  // REVEAL_END (0.7): localT = fx.t / glyphSpan. So the stroke actually
+  // finishes revealing at fx.t = REVEAL_END * glyphSpan = 0.35. Using
+  // fx.t / REVEAL_END here would put the head on a slower clock and it
+  // would visibly trail the growing tip of the shaft.
   const REVEAL_END = 0.7;
-  const localT = fx.t;
+  const GLYPH_SPAN = 0.5;
+  const localT = Math.max(0, Math.min(1, fx.t / GLYPH_SPAN));
   const revealPh = Math.max(0, Math.min(1, localT / REVEAL_END));
   // Where to place the arrowhead. While the reveal is in flight, ride the
   // tip; once we hit FILL phase, lock the head at the final endpoint so
