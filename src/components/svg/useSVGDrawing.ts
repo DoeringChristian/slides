@@ -43,6 +43,7 @@ export function useSVGDrawing() {
   const [guides, setGuides] = useState<Guide[]>([]);
   const [polyDraft, setPolyDraft] = useState<PolyDraftState | null>(null);
   const polyDraftRef = useRef<PolyDraftState | null>(null);
+  // eslint-disable-next-line react-hooks/refs -- latest-value ref pattern: mirrors state for pointer handlers; read only outside render
   polyDraftRef.current = polyDraft;
   const justFinishedDrawing = useRef(false);
 

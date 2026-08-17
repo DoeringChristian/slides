@@ -20,7 +20,7 @@ if (!projectId) {
 const wsUrl = `${serverUrl}/yjs`;
 
 const doc = new Y.Doc();
-const provider = new WebsocketProvider(wsUrl, projectId, doc, { WebSocketPolyfill: (await import('ws')).WebSocket as any });
+const provider = new WebsocketProvider(wsUrl, projectId, doc, { WebSocketPolyfill: (await import('ws')).WebSocket as unknown as typeof WebSocket });
 
 provider.on('status', (e: { status: string }) => {
   console.log(`[smoke] status: ${e.status}`);

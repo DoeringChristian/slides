@@ -31,6 +31,7 @@ export const ObjectPreview: React.FC<Props> = ({ element, objectType }) => {
 
   useEffect(() => {
     if (!isVideo || !resource) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear the stale thumbnail when the element stops being a video; intentional reset
       setVideoThumb(null);
       return;
     }

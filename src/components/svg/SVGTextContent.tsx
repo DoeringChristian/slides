@@ -16,9 +16,6 @@ export const SVGTextContent: React.FC<Props> = memo(({
   opacity = 1,
   clipIdPrefix = 'text-clip',
 }) => {
-  // Don't render SVG text when editing - the HTML editor overlay handles it
-  if (isEditing) return null;
-
   const { text, style, x: elementX, y: elementY, width, height, rotation } = element;
 
   // Build complete HTML content using the shared renderer (zoom=1: SVG handles scaling)
@@ -36,6 +33,9 @@ export const SVGTextContent: React.FC<Props> = memo(({
         return {};
     }
   }, [style.verticalAlign]);
+
+  // Don't render SVG text when editing - the HTML editor overlay handles it
+  if (isEditing) return null;
 
   // Rotation transform
   const cx = elementX + width / 2;

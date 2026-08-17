@@ -1,4 +1,5 @@
-import { defineConfig } from 'vite'
+import { defineConfig, type ViteDevServer } from 'vite'
+import type { IncomingMessage, ServerResponse } from 'http'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import { spawn, ChildProcess } from 'child_process'
@@ -15,9 +16,9 @@ function standaloneTemplateMiddleware() {
   }
   return {
     name: 'standalone-template-middleware',
-    configureServer(server: any) {
+    configureServer(server: ViteDevServer) {
       for (const [route, { file, buildCmd }] of Object.entries(routes)) {
-        server.middlewares.use(route, (_req: any, res: any) => {
+        server.middlewares.use(route, (_req: IncomingMessage, res: ServerResponse) => {
           const fullPath = path.resolve(__dirname, file)
           if (!fs.existsSync(fullPath)) {
             res.statusCode = 404

@@ -37,6 +37,7 @@ export const CropOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
   // Initialize crop state from element
   useEffect(() => {
     if (element && resource) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- seeds the draft crop rect from the element when crop mode opens; runs once per crop session
       setCropState({
         x: element.cropX,
         y: element.cropY,
@@ -255,6 +256,7 @@ export const CropOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     }
   }, [croppingElementId, handleCancel, handleApply]);
 
+  // eslint-disable-next-line react-hooks/refs -- gate on the stage DOM node existing before portaling into it; the node is attached before crop mode can open
   if (!element || !resource || !stageRef.current) return null;
 
   // Scale: screen pixels per original image pixel

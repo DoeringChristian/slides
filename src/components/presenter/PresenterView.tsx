@@ -38,6 +38,7 @@ export const PresenterView: React.FC = () => {
 
   // Sync external presentingSlideIndex -> internal
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync the external presenter index into the internal animation index; intentional one-way sync
     setCurrentIndex(presentingSlideIndex);
   }, [presentingSlideIndex]);
 
@@ -226,6 +227,7 @@ export const PresenterView: React.FC = () => {
   const stageW = SLIDE_WIDTH * scale;
   const stageH = SLIDE_HEIGHT * scale;
 
+  // eslint-disable-next-line react-hooks/refs -- targetIndexRef is set before the animation state that triggers this render; stable for the whole animation
   const targetIdx = targetIndexRef.current;
   const { renderedElements, bgColor } = composeSlideFrame({
     slideA: currentSlide,
@@ -288,6 +290,7 @@ export const PresenterView: React.FC = () => {
               fontVariantNumeric: 'tabular-nums',
             }}
           >
+            {/* eslint-disable-next-line react-hooks/refs -- ref is stable for the whole animation; render is triggered by isAnimating state */}
             {(isAnimating ? targetIndexRef.current : currentIndex) + 1}
           </div>
         )}
@@ -295,6 +298,7 @@ export const PresenterView: React.FC = () => {
 
       {/* Slide counter */}
       <div className="absolute bottom-4 right-4 text-white text-sm opacity-50">
+        {/* eslint-disable-next-line react-hooks/refs -- ref is stable for the whole animation; render is triggered by isAnimating state */}
         {(isAnimating ? targetIndexRef.current : currentIndex) + 1} / {totalSlides}
       </div>
 

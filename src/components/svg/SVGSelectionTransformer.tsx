@@ -247,8 +247,8 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
         const pos = screenToSVG(e.clientX, e.clientY);
         const dx = pos.x - rotating.centerX;
         const dy = pos.y - rotating.centerY;
-        let newAngle = Math.atan2(dy, dx) * 180 / Math.PI;
-        let deltaAngle = newAngle - rotating.startAngle;
+        const newAngle = Math.atan2(dy, dx) * 180 / Math.PI;
+        const deltaAngle = newAngle - rotating.startAngle;
         let finalRotation = rotating.elementRotation + deltaAngle;
 
         // Snap to 15 degree increments only when Ctrl/Cmd held

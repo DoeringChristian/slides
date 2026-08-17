@@ -38,6 +38,7 @@ export interface InlineSegment {
 }
 
 // Parse inline content to extract LaTeX, links, and formatted text segments
+// eslint-disable-next-line react-refresh/only-export-components -- shared parsing/rendering helper exported beside the component; full reload on edit is fine
 export function parseInlineSegments(content: string, sourceOffset: number): InlineSegment[] {
   const segments: InlineSegment[] = [];
 
@@ -193,6 +194,7 @@ export function parseInlineSegments(content: string, sourceOffset: number): Inli
 }
 
 // Parse text into blocks with source position tracking
+// eslint-disable-next-line react-refresh/only-export-components -- shared parsing/rendering helper exported beside the component; full reload on edit is fine
 export function parseBlocks(text: string): ParsedBlock[] {
   const lines = text.split('\n');
   const blocks: ParsedBlock[] = [];
@@ -228,6 +230,7 @@ export function parseBlocks(text: string): ParsedBlock[] {
 }
 
 // Get font size multiplier for block type
+// eslint-disable-next-line react-refresh/only-export-components -- shared parsing/rendering helper exported beside the component; full reload on edit is fine
 export function getBlockFontMultiplier(type: ParsedBlock['type']): number {
   switch (type) {
     case 'h1': return 2;
@@ -281,6 +284,7 @@ function renderBlockAsHtml(block: ParsedBlock, baseFontSize: number, baseFontWei
 // Render the full text as an inner-HTML string for the markdown container.
 // Pass this through dangerouslySetInnerHTML on the container described by
 // containerStyleForMarkdown().
+// eslint-disable-next-line react-refresh/only-export-components -- shared parsing/rendering helper exported beside the component; full reload on edit is fine
 export function renderMarkdownToHtml(text: string, style: TextStyle, zoom: number): string {
   const blocks = parseBlocks(text || '');
   const baseFontSize = style.fontSize * zoom;
@@ -292,6 +296,7 @@ export function renderMarkdownToHtml(text: string, style: TextStyle, zoom: numbe
 // Container style shared by all markdown renderers. The block <div>s already
 // carry font-size/weight/line-height, so the container only carries the
 // element-level style (font family, color, alignment, decoration, etc.).
+// eslint-disable-next-line react-refresh/only-export-components -- shared parsing/rendering helper exported beside the component; full reload on edit is fine
 export function containerStyleForMarkdown(style: TextStyle): React.CSSProperties {
   return {
     fontFamily: style.fontFamily,

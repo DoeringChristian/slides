@@ -36,6 +36,7 @@ export const ShareDialog: React.FC<Props> = ({ isOpen, projectId, onClose }) => 
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- kick off the async share-list fetch when the dialog opens; state lands after the request resolves
     if (isOpen) void refresh();
   }, [isOpen, projectId]);
 

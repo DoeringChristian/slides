@@ -555,12 +555,14 @@ export const SVGSlideCanvas: React.FC = () => {
     setHoveredObjectId(null);
   }, [setHoveredObjectId, coarsePointer]);
 
+  // eslint-disable-next-line react-hooks/immutability -- ref-flag pattern: flags are set on mouseup and consumed by the click that follows; never touched during render
   const handleStageClick = useCallback((e: React.MouseEvent) => {
     if (justFinishedSelectionDrag.current) {
       justFinishedSelectionDrag.current = false;
       return;
     }
     if (justFinishedDrawing.current) {
+      // eslint-disable-next-line react-hooks/immutability -- consuming the drawing-just-finished flag owned by useSVGDrawing; event-handler-only mutation
       justFinishedDrawing.current = false;
       return;
     }
@@ -722,6 +724,7 @@ export const SVGSlideCanvas: React.FC = () => {
 
   const handleTransformEnd = useCallback((id: string, attrs: Record<string, number>) => {
     setTransformPreview(null);
+    // eslint-disable-next-line react-hooks/immutability -- ref-flag pattern: set on transform end, consumed by the following background click; event-handler-only mutation
     justFinishedTransform.current = true;
     if (activeSlideId) {
       updateElement(activeSlideId, id, attrs);

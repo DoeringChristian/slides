@@ -1,5 +1,5 @@
 import JSZip from 'jszip';
-import type { Presentation, SlideBackground, SlideElement } from '../types/presentation';
+import type { Presentation, ShapeType, SlideBackground, SlideElement } from '../types/presentation';
 import { createPresentation, createSlide, createTextElement, createShapeElement, createResource } from './slideFactory';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from './constants';
 import { generateId } from './idGenerator';
@@ -314,7 +314,7 @@ function parseSlideSize(presDoc: Document): { width: number; height: number } {
   return { width: 960, height: 540 };
 }
 
-const SHAPE_MAPPING: Record<string, string> = {
+const SHAPE_MAPPING: Record<string, ShapeType> = {
   'rect': 'rect', 'roundRect': 'rect', 'snip1Rect': 'rect', 'snip2DiagRect': 'rect',
   'ellipse': 'ellipse', 'oval': 'ellipse',
   'triangle': 'triangle', 'rtTriangle': 'triangle',
@@ -418,7 +418,7 @@ function processGroupShape(
         const lnFill = directChild(ln, NS.a, 'solidFill');
         if (lnFill) { const c = parseColor(lnFill); if (c) strokeColor = c; }
       }
-      results.push(createShapeElement(mappedShape as any, {
+      results.push(createShapeElement(mappedShape, {
         x: slideX, y: slideY,
         width: Math.max(slideW, 10), height: Math.max(slideH, 10),
         rotation: xfrmData.rotation,
@@ -579,7 +579,7 @@ export async function importPptx(file: File): Promise<Presentation> {
           const lnFill = directChild(ln, NS.a, 'solidFill');
           if (lnFill) { const c = parseColor(lnFill); if (c) strokeColor = c; }
         }
-        elements.push(createShapeElement(mappedShape as any, {
+        elements.push(createShapeElement(mappedShape, {
           x: extent.x, y: extent.y,
           width: Math.max(extent.width, 10), height: Math.max(extent.height, 10),
           rotation: extent.rotation,

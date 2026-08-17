@@ -221,6 +221,8 @@ export const TransitionButton: React.FC<Props> = ({
     };
   }, [isOpen]);
 
+  const rememberEasing = useEditorStore((s) => s.rememberEasing);
+
   if (!canEdit) return null;
 
   const writeNewTransitions = (mutate: (t: PropertyTransitions) => void) => {
@@ -398,8 +400,10 @@ const PortalPanel: React.FC<{
     };
   }, [reposition]);
 
+  // eslint-disable-next-line react-hooks/immutability -- merge-refs callback ref: writes only happen when React attaches/detaches the DOM node, never during render
   const setRefs = useCallback((el: HTMLDivElement | null) => {
     panelRef.current = el;
+    // eslint-disable-next-line react-hooks/immutability -- forwarding the panel DOM node into the caller-owned menuRef (outside-click detection)
     (menuRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
   }, [menuRef]);
 

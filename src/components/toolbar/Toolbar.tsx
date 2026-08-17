@@ -101,7 +101,7 @@ export const Toolbar: React.FC = () => {
   const handlePaste = () => {
     if (clipboard.length > 0 && activeSlideId) {
       const newIds: string[] = [];
-      clipboard.forEach((el: any) => {
+      clipboard.forEach((el) => {
         const dup = duplicateElement(el);
         addElement(activeSlideId, dup);
         newIds.push(dup.id);

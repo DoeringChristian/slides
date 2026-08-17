@@ -19,10 +19,12 @@ export const NotesEditor: React.FC = () => {
   const [localNotes, setLocalNotes] = useState(slide?.notes ?? '');
   const activeSlideIdRef = useRef(activeSlideId);
   const localNotesRef = useRef(localNotes);
+  // eslint-disable-next-line react-hooks/refs -- latest-value ref pattern: mirrors state for the save-on-unmount handler; read only outside render
   localNotesRef.current = localNotes;
 
   // Sync local state when the slide changes
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reload the draft when the active slide changes; intentional external-source sync
     setLocalNotes(slide?.notes ?? '');
   }, [activeSlideId, slide?.notes]);
 
