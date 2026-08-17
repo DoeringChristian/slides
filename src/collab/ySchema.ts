@@ -123,15 +123,21 @@ function slidesToYMap(slides: Record<string, Slide>): Y.Map<unknown> {
 function templatesToYMap(templates: Record<string, SlideTemplate>): Y.Map<unknown> {
   const m = new Y.Map<unknown>();
   for (const [id, tpl] of Object.entries(templates)) {
-    const t = new Y.Map<unknown>();
-    t.set('id', tpl.id);
-    t.set('name', tpl.name);
-    t.set('elements', elementsToYMap(tpl.elements));
-    t.set('elementOrder', mkArray(tpl.elementOrder));
-    t.set('background', backgroundToYMap(tpl.background));
-    m.set(id, t);
+    m.set(id, templateToYMap(tpl));
   }
   return m;
+}
+
+/** Exported for action code that needs to insert a template subtree matching
+ *  jsonToYDoc's layout (saveAsTemplate). */
+export function templateToYMap(tpl: SlideTemplate): Y.Map<unknown> {
+  const t = new Y.Map<unknown>();
+  t.set('id', tpl.id);
+  t.set('name', tpl.name);
+  t.set('elements', elementsToYMap(tpl.elements));
+  t.set('elementOrder', mkArray(tpl.elementOrder));
+  t.set('background', backgroundToYMap(tpl.background));
+  return t;
 }
 
 /** Exported for action code that needs to insert a full slide subtree
@@ -150,7 +156,9 @@ export function slideToYMap(slide: Slide): Y.Map<unknown> {
   return s;
 }
 
-function backgroundToYMap(bg: SlideBackground): Y.Map<unknown> {
+/** Exported: action code that replaces a slide's background wholesale
+ *  (updateSlideBackground) builds the variant map through here. */
+export function backgroundToYMap(bg: SlideBackground): Y.Map<unknown> {
   // Discriminated union — store the active variant flat as a Y.Map so the
   // type tag + companion fields end up in `.toJSON()`'s output unchanged.
   return mkScalarMap(bg);
@@ -250,7 +258,7 @@ function mkArray<T>(items: readonly T[]): Y.Array<T> {
 /** Y.Map of flat scalar fields — no nested Y types. Round-trips via toJSON.
  *  Accepts any object (interfaces don't get index signatures by default, so
  *  the parameter is widened to `object` and cast on entry). */
-function mkScalarMap(obj: object): Y.Map<unknown> {
+export function mkScalarMap(obj: object): Y.Map<unknown> {
   const m = new Y.Map<unknown>();
   for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
     if (v === undefined) continue;

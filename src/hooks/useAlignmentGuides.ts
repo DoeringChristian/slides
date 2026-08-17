@@ -19,6 +19,41 @@ export interface MarginBounds {
   centerY: number;
 }
 
+interface CandidateLines {
+  verticals: number[];
+  horizontals: number[];
+}
+
+// Candidate snap lines per source: each other element contributes its
+// edges + center, and the margin bounds (when present) act as one more
+// source, checked last.
+function candidateLines(
+  others: ElementBounds[],
+  marginBounds?: MarginBounds | null
+): CandidateLines[] {
+  const candidates: CandidateLines[] = others.map((other) => ({
+    verticals: [other.x, other.x + other.width / 2, other.x + other.width],
+    horizontals: [other.y, other.y + other.height / 2, other.y + other.height],
+  }));
+  if (marginBounds) {
+    candidates.push({
+      verticals: [marginBounds.left, marginBounds.centerX, marginBounds.right],
+      horizontals: [marginBounds.top, marginBounds.centerY, marginBounds.bottom],
+    });
+  }
+  return candidates;
+}
+
+function dedupeGuides(guides: Guide[]): Guide[] {
+  const seen = new Set<string>();
+  return guides.filter((g) => {
+    const key = `${g.type}-${g.position}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export function computeGuides(
   dragged: ElementBounds,
   others: ElementBounds[],
@@ -42,20 +77,10 @@ export function computeGuides(
   let bestDx = threshold + 1;
   let bestDy = threshold + 1;
 
-  for (const other of others) {
-    const otherLeft = other.x;
-    const otherCenterX = other.x + other.width / 2;
-    const otherRight = other.x + other.width;
-    const otherTop = other.y;
-    const otherCenterY = other.y + other.height / 2;
-    const otherBottom = other.y + other.height;
-
-    const otherVerticals = [otherLeft, otherCenterX, otherRight];
-    const otherHorizontals = [otherTop, otherCenterY, otherBottom];
-
+  for (const { verticals, horizontals } of candidateLines(others, marginBounds)) {
     // Check vertical alignments (x-axis)
     for (const dv of dragVerticals) {
-      for (const ov of otherVerticals) {
+      for (const ov of verticals) {
         const dist = Math.abs(dv - ov);
         if (dist <= threshold && dist < bestDx) {
           bestDx = dist;
@@ -69,7 +94,7 @@ export function computeGuides(
 
     // Check horizontal alignments (y-axis)
     for (const dh of dragHorizontals) {
-      for (const oh of otherHorizontals) {
+      for (const oh of horizontals) {
         const dist = Math.abs(dh - oh);
         if (dist <= threshold && dist < bestDy) {
           bestDy = dist;
@@ -82,48 +107,7 @@ export function computeGuides(
     }
   }
 
-  // Check margin bounds if provided
-  if (marginBounds) {
-    const marginVerticals = [marginBounds.left, marginBounds.centerX, marginBounds.right];
-    const marginHorizontals = [marginBounds.top, marginBounds.centerY, marginBounds.bottom];
-
-    for (const dv of dragVerticals) {
-      for (const mv of marginVerticals) {
-        const dist = Math.abs(dv - mv);
-        if (dist <= threshold && dist < bestDx) {
-          bestDx = dist;
-          snapX = dragged.x + (mv - dv);
-        }
-        if (dist <= threshold) {
-          guides.push({ type: 'vertical', position: mv });
-        }
-      }
-    }
-
-    for (const dh of dragHorizontals) {
-      for (const mh of marginHorizontals) {
-        const dist = Math.abs(dh - mh);
-        if (dist <= threshold && dist < bestDy) {
-          bestDy = dist;
-          snapY = dragged.y + (mh - dh);
-        }
-        if (dist <= threshold) {
-          guides.push({ type: 'horizontal', position: mh });
-        }
-      }
-    }
-  }
-
-  // Deduplicate guides
-  const seen = new Set<string>();
-  const uniqueGuides = guides.filter((g) => {
-    const key = `${g.type}-${g.position}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-
-  return { guides: uniqueGuides, snapX, snapY };
+  return { guides: dedupeGuides(guides), snapX, snapY };
 }
 
 /**
@@ -142,11 +126,8 @@ export function computePointSnap(
   let bestDx = threshold + 1;
   let bestDy = threshold + 1;
 
-  for (const other of others) {
-    const otherVerticals = [other.x, other.x + other.width / 2, other.x + other.width];
-    const otherHorizontals = [other.y, other.y + other.height / 2, other.y + other.height];
-
-    for (const ov of otherVerticals) {
+  for (const { verticals, horizontals } of candidateLines(others, marginBounds)) {
+    for (const ov of verticals) {
       const dist = Math.abs(point.x - ov);
       if (dist <= threshold) {
         if (dist < bestDx) { bestDx = dist; snapX = ov; }
@@ -154,7 +135,7 @@ export function computePointSnap(
       }
     }
 
-    for (const oh of otherHorizontals) {
+    for (const oh of horizontals) {
       const dist = Math.abs(point.y - oh);
       if (dist <= threshold) {
         if (dist < bestDy) { bestDy = dist; snapY = oh; }
@@ -163,37 +144,7 @@ export function computePointSnap(
     }
   }
 
-  // Check margin bounds if provided
-  if (marginBounds) {
-    const marginVerticals = [marginBounds.left, marginBounds.centerX, marginBounds.right];
-    const marginHorizontals = [marginBounds.top, marginBounds.centerY, marginBounds.bottom];
-
-    for (const mv of marginVerticals) {
-      const dist = Math.abs(point.x - mv);
-      if (dist <= threshold) {
-        if (dist < bestDx) { bestDx = dist; snapX = mv; }
-        guides.push({ type: 'vertical', position: mv });
-      }
-    }
-
-    for (const mh of marginHorizontals) {
-      const dist = Math.abs(point.y - mh);
-      if (dist <= threshold) {
-        if (dist < bestDy) { bestDy = dist; snapY = mh; }
-        guides.push({ type: 'horizontal', position: mh });
-      }
-    }
-  }
-
-  const seen = new Set<string>();
-  const uniqueGuides = guides.filter((g) => {
-    const key = `${g.type}-${g.position}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-
-  return { guides: uniqueGuides, snapX, snapY };
+  return { guides: dedupeGuides(guides), snapX, snapY };
 }
 
 export function computeResizeSnap(
@@ -224,11 +175,8 @@ export function computeResizeSnap(
   let topSnap: number | null = null;
   let bottomSnap: number | null = null;
 
-  for (const other of others) {
-    const otherVerticals = [other.x, other.x + other.width / 2, other.x + other.width];
-    const otherHorizontals = [other.y, other.y + other.height / 2, other.y + other.height];
-
-    for (const ov of otherVerticals) {
+  for (const { verticals, horizontals } of candidateLines(others, marginBounds)) {
+    for (const ov of verticals) {
       const dLeft = Math.abs(left - ov);
       if (dLeft <= threshold) {
         if (dLeft < bestLeftDist) { bestLeftDist = dLeft; leftSnap = ov; }
@@ -241,7 +189,7 @@ export function computeResizeSnap(
       }
     }
 
-    for (const oh of otherHorizontals) {
+    for (const oh of horizontals) {
       const dTop = Math.abs(top - oh);
       if (dTop <= threshold) {
         if (dTop < bestTopDist) { bestTopDist = dTop; topSnap = oh; }
@@ -255,45 +203,5 @@ export function computeResizeSnap(
     }
   }
 
-  // Check margin bounds if provided
-  if (marginBounds) {
-    const marginVerticals = [marginBounds.left, marginBounds.centerX, marginBounds.right];
-    const marginHorizontals = [marginBounds.top, marginBounds.centerY, marginBounds.bottom];
-
-    for (const mv of marginVerticals) {
-      const dLeft = Math.abs(left - mv);
-      if (dLeft <= threshold) {
-        if (dLeft < bestLeftDist) { bestLeftDist = dLeft; leftSnap = mv; }
-        guides.push({ type: 'vertical', position: mv });
-      }
-      const dRight = Math.abs(right - mv);
-      if (dRight <= threshold) {
-        if (dRight < bestRightDist) { bestRightDist = dRight; rightSnap = mv; }
-        guides.push({ type: 'vertical', position: mv });
-      }
-    }
-
-    for (const mh of marginHorizontals) {
-      const dTop = Math.abs(top - mh);
-      if (dTop <= threshold) {
-        if (dTop < bestTopDist) { bestTopDist = dTop; topSnap = mh; }
-        guides.push({ type: 'horizontal', position: mh });
-      }
-      const dBottom = Math.abs(bottom - mh);
-      if (dBottom <= threshold) {
-        if (dBottom < bestBottomDist) { bestBottomDist = dBottom; bottomSnap = mh; }
-        guides.push({ type: 'horizontal', position: mh });
-      }
-    }
-  }
-
-  const seen = new Set<string>();
-  const uniqueGuides = guides.filter((g) => {
-    const key = `${g.type}-${g.position}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-
-  return { guides: uniqueGuides, leftSnap, rightSnap, topSnap, bottomSnap };
+  return { guides: dedupeGuides(guides), leftSnap, rightSnap, topSnap, bottomSnap };
 }

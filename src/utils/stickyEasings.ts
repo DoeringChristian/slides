@@ -6,6 +6,14 @@ import type {
   TransitionOptions,
 } from '../types/presentation';
 import { useEditorStore } from '../store/editorStore';
+import {
+  TEXT_VISIBILITY_TYPES,
+  SHAPE_VISIBILITY_TYPES,
+  IMAGE_VISIBILITY_TYPES,
+  CONTENT_TYPES,
+  RESOURCE_TYPES,
+  DEFAULT_TYPES as NUMERIC,
+} from './easingCatalog';
 
 /**
  * Sticky animation defaults.
@@ -18,21 +26,14 @@ import { useEditorStore } from '../store/editorStore';
  * example; `write` shouldn't follow to a shape.
  */
 
-// Mirrors the lists in TransitionButton.tsx — keep these in sync if a new
-// easing is added in either place.
-const TEXT_VISIBILITY:  EasingType[] = ['const', 'linear', 'ease', 'write', 'fadebyglyph', 'wipe', 'slidein', 'grow', 'iris'];
-const SHAPE_VISIBILITY: EasingType[] = ['const', 'linear', 'ease', 'create', 'wipe', 'slidein', 'grow', 'iris'];
-const IMAGE_VISIBILITY: EasingType[] = ['const', 'linear', 'ease', 'wipe', 'slidein', 'grow', 'iris'];
-const CONTENT_TYPES:    EasingType[] = ['const', 'dissolve', 'typewriter', 'write', 'fadebyglyph'];
-const RESOURCE_TYPES:   EasingType[] = ['const', 'dissolve', 'fadeinout'];
-const NUMERIC:          EasingType[] = ['const', 'linear', 'ease'];
-
 function applicable(elementType: SlideElement['type'], group: TransitionGroup, easing: EasingType): boolean {
   switch (group) {
     case 'visibility':
-      return (elementType === 'text'  ? TEXT_VISIBILITY
-            : elementType === 'shape' ? SHAPE_VISIBILITY
-            : elementType === 'image' ? IMAGE_VISIBILITY
+      // Other element types (groups) only get plain numeric easings here —
+      // visual wrapper easings shouldn't stick to them.
+      return (elementType === 'text'  ? TEXT_VISIBILITY_TYPES
+            : elementType === 'shape' ? SHAPE_VISIBILITY_TYPES
+            : elementType === 'image' ? IMAGE_VISIBILITY_TYPES
             : NUMERIC).includes(easing);
     case 'content':
       return elementType === 'text' && CONTENT_TYPES.includes(easing);

@@ -18,13 +18,14 @@ import type {
   TransitionOptions,
 } from '../../types/presentation';
 import { TransitionPreview } from './TransitionPreview';
+import { isVisibilityFadeOut, optionsKeyFor } from './transitionSide';
 import { defaultVisibilityEasing } from '../../utils/interpolation';
+import { DEFAULT_TYPES, RESOURCE_TYPES, CONTENT_TYPES, visibilityTypesFor } from '../../utils/easingCatalog';
 
 interface Props {
   elementId: string;
   group: TransitionGroup;
   direction: 'in' | 'out';
-  availableTypes?: EasingType[];
 }
 
 const ICON_SIZE = 14;
@@ -60,31 +61,6 @@ const EASING_LABELS: Record<EasingType, string> = {
   iris: 'Iris',
   fadebyglyph: 'Fade by Glyph',
 };
-
-const DEFAULT_TYPES: EasingType[] = ['const', 'linear', 'ease'];
-const RESOURCE_TYPES: EasingType[] = ['const', 'dissolve', 'fadeinout'];
-
-// Visibility easings differ by element type:
-// - text:  glyph reveal (write/typewriter/fadebyglyph) + visual wrappers
-// - shape: outline create + visual wrappers
-// - image: visual wrappers (no glyphs / no outline trace)
-const TEXT_VISIBILITY_TYPES:  EasingType[] = ['const', 'linear', 'ease', 'write', 'fadebyglyph', 'wipe', 'slidein', 'grow', 'iris'];
-const SHAPE_VISIBILITY_TYPES: EasingType[] = ['const', 'linear', 'ease', 'create', 'wipe', 'slidein', 'grow', 'iris'];
-const IMAGE_VISIBILITY_TYPES: EasingType[] = ['const', 'linear', 'ease', 'wipe', 'slidein', 'grow', 'iris'];
-// Default fall-back covers other element types (e.g. groups) with safe options.
-const FALLBACK_VISIBILITY_TYPES: EasingType[] = ['const', 'linear', 'ease', 'wipe', 'slidein', 'grow', 'iris'];
-
-// Content easings — text only.
-const CONTENT_TYPES: EasingType[] = ['const', 'dissolve', 'typewriter', 'write', 'fadebyglyph'];
-
-function visibilityTypesFor(elementType: SlideElement['type'] | undefined): EasingType[] {
-  switch (elementType) {
-    case 'text':  return TEXT_VISIBILITY_TYPES;
-    case 'shape': return SHAPE_VISIBILITY_TYPES;
-    case 'image': return IMAGE_VISIBILITY_TYPES;
-    default:      return FALLBACK_VISIBILITY_TYPES;
-  }
-}
 
 // Which easings (per group) expose user-configurable options.
 function easingHasOptions(group: TransitionGroup, easing: EasingType): boolean {
@@ -160,17 +136,10 @@ function propertiesDiffer(a: SlideElement | undefined, b: SlideElement | undefin
   return false;
 }
 
-const optionsKeyFor = (group: TransitionGroup): 'contentOptions' | 'visibilityOptions' | null => {
-  if (group === 'content') return 'contentOptions';
-  if (group === 'visibility') return 'visibilityOptions';
-  return null;
-};
-
 export const TransitionButton: React.FC<Props> = ({
   elementId,
   group,
   direction,
-  availableTypes,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -180,6 +149,14 @@ export const TransitionButton: React.FC<Props> = ({
   const slideOrder = usePresentationStore((s) => s.presentation.slideOrder);
   const slides = usePresentationStore((s) => s.presentation.slides);
   const updateElement = usePresentationStore((s) => s.updateElement);
+  // Read this hook unconditionally — it MUST be above the `if (!canEdit)
+  // early return below, or the hook count varies between renders and React
+  // aborts mid-reconcile. That abort leaves fibers half-attached and shows
+  // up downstream as a `removeChild NotFoundError`. `canEdit` flips
+  // transiently while the multi-slide mirror runs (mirror updates the
+  // sibling slide first, so `propertiesDiffer` returns true for one render,
+  // then false the next).
+  const rememberEasing = useEditorStore((s) => s.rememberEasing);
 
   const currentSlideIndex = slideOrder.indexOf(activeSlideId);
   const sourceSlideIndex = direction === 'in' ? currentSlideIndex - 1 : currentSlideIndex;
@@ -196,18 +173,17 @@ export const TransitionButton: React.FC<Props> = ({
   // gets glyph effects, etc.). The element exists on at least one side of
   // the transition.
   const elementType = (sourceElement ?? targetElement)?.type;
-  const types = availableTypes ?? (
+  const types =
     group === 'content' ? CONTENT_TYPES :
     group === 'resource' ? RESOURCE_TYPES :
     group === 'visibility' ? visibilityTypesFor(elementType) :
-    DEFAULT_TYPES
-  );
+    DEFAULT_TYPES;
 
   const differs = propertiesDiffer(sourceElement, targetElement, group);
 
   // Where the transition lives: target by default, source for fade-out
   // visibility changes (because target doesn't exist).
-  const isFadeOut = group === 'visibility' && sourceElement?.visible && !targetElement;
+  const isFadeOut = isVisibilityFadeOut(sourceElement, targetElement, group);
   const transitionElement = isFadeOut ? sourceElement : targetElement;
   const transitionSlideId = isFadeOut ? sourceSlideId : targetSlideId;
 
@@ -252,8 +228,6 @@ export const TransitionButton: React.FC<Props> = ({
     mutate(next);
     updateElement(transitionSlideId!, elementId, { transitions: next } as Partial<SlideElement>);
   };
-
-  const rememberEasing = useEditorStore((s) => s.rememberEasing);
 
   const handleSelect = (easing: EasingType) => {
     writeNewTransitions((t) => { t[group] = easing; });

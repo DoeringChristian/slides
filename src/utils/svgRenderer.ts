@@ -1,7 +1,7 @@
 import type { Slide, SlideElement, TextElement, ShapeElement, ImageElement, Resource } from '../types/presentation';
 import { SLIDE_WIDTH, SLIDE_HEIGHT, TEXT_BOX_PADDING } from './constants';
 import { renderMarkdownToHtml } from '../components/canvas/CustomMarkdownRenderer';
-import { pathD, arrowheadPoints, insetEndpoints } from './pathShapes';
+import { pathD, arrowheadPoints, insetEndpoints, strokeDashFor } from './pathShapes';
 
 // Render text element to SVG string
 function renderTextElement(element: TextElement): string {
@@ -107,6 +107,7 @@ function renderShapeElement(element: ShapeElement): string {
       const d = pathD(shaftPts, curve, closed, cornerR);
       const strokeCol = stroke || fill || '#000';
       const strokeW = strokeWidth || (closed ? 0 : 3);
+      const dash = strokeDashFor(element.strokeStyle, strokeW);
       const fillCol = closed ? fillAttr : 'none';
       const last = pts.length - 2;
       const startHead = element.startArrow
@@ -121,7 +122,7 @@ function renderShapeElement(element: ShapeElement): string {
       return `
         <g transform="${transform}">
           <g transform="translate(${x}, ${y})">
-            <path d="${d}" fill="${fillCol}" stroke="${strokeCol}" stroke-width="${strokeW}" stroke-linecap="round" stroke-linejoin="round" opacity="${opacity}" />
+            <path d="${d}" fill="${fillCol}" stroke="${strokeCol}" stroke-width="${strokeW}"${dash ? ` stroke-dasharray="${dash}"` : ''} stroke-linecap="round" stroke-linejoin="round" opacity="${opacity}" />
             ${headSvg(startHead)}
             ${headSvg(endHead)}
           </g>
@@ -251,20 +252,26 @@ export function svgToDataURL(svgString: string): string {
 }
 
 // Convert SVG to PNG data URL via canvas
-export async function svgToPngDataURL(svgString: string, pixelRatio: number = 2): Promise<string> {
+export async function svgToPngDataURL(
+  svgString: string,
+  options: { width?: number; height?: number; pixelRatio?: number } = {},
+): Promise<string> {
+  const width = options.width ?? SLIDE_WIDTH;
+  const height = options.height ?? SLIDE_HEIGHT;
+  const pixelRatio = options.pixelRatio ?? 2;
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
       const canvas = document.createElement('canvas');
-      canvas.width = SLIDE_WIDTH * pixelRatio;
-      canvas.height = SLIDE_HEIGHT * pixelRatio;
+      canvas.width = width * pixelRatio;
+      canvas.height = height * pixelRatio;
       const ctx = canvas.getContext('2d');
       if (!ctx) {
         reject(new Error('Failed to get canvas context'));
         return;
       }
       ctx.scale(pixelRatio, pixelRatio);
-      ctx.drawImage(img, 0, 0, SLIDE_WIDTH, SLIDE_HEIGHT);
+      ctx.drawImage(img, 0, 0, width, height);
       resolve(canvas.toDataURL('image/png'));
     };
     img.onerror = () => reject(new Error('Failed to load SVG'));

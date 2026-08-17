@@ -30,11 +30,6 @@ export function isLinePath(shape: {
   );
 }
 
-/** Convenience: true for any path-shape element. */
-export function isPathShape(shape: { shapeType?: string }): boolean {
-  return shape.shapeType === 'path';
-}
-
 /** Stroke-dash pattern for `strokeStyle`. Returned as a space-separated
  *  string in user-space units that scales with `strokeWidth` — so a thicker
  *  line gets proportionally longer dashes / gaps. `undefined` for 'solid'
@@ -152,7 +147,11 @@ function bsplineSamples(points: number[], degree: 2 | 3, closed: boolean): numbe
     ? [...pts, ...pts.slice(0, degree)]
     : [...repeat(pts[0], degree), ...pts, ...repeat(pts[n - 1], degree)];
   const samples: number[] = [];
-  const SAMPLES_PER_SEG = 16;
+  // 32 subdivisions per B-spline segment is comfortably smooth at typical
+  // slide zoom levels — at 16 the polyline was visibly faceted on gently
+  // curved paths. Cost is linear in the `d` string length and negligible
+  // for the vertex counts users hand-draw.
+  const SAMPLES_PER_SEG = 32;
   const numSegs = padded.length - degree;
   for (let seg = 0; seg < numSegs; seg++) {
     const controls = padded.slice(seg, seg + degree + 1);

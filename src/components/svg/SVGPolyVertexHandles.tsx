@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import type { SlideElement, ShapeElement, ConnectorBinding } from '../../types/presentation';
-import { CANVAS_PADDING } from '../../utils/constants';
 import { pathBounds, pathD, insetEndpoints } from '../../utils/pathShapes';
+import { useScreenToSVG } from './useScreenToSVG';
 import { getBindingTarget, getAnchorPoint } from '../../utils/connectorUtils';
 
 interface Props {
@@ -48,16 +48,7 @@ export const SVGPolyVertexHandles: React.FC<Props> = ({
 
   const renderPoints = livePoints ?? points;
 
-  const screenToSVG = useCallback((clientX: number, clientY: number) => {
-    if (!svgRef?.current) {
-      return { x: clientX / zoom - CANVAS_PADDING, y: clientY / zoom - CANVAS_PADDING };
-    }
-    const rect = svgRef.current.getBoundingClientRect();
-    return {
-      x: (clientX - rect.left) / zoom - CANVAS_PADDING,
-      y: (clientY - rect.top) / zoom - CANVAS_PADDING,
-    };
-  }, [svgRef, zoom]);
+  const screenToSVG = useScreenToSVG(svgRef, zoom);
 
   const beginDrag = useCallback((idx: number, e: React.PointerEvent) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;

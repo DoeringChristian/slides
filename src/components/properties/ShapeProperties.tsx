@@ -29,7 +29,12 @@ const supportsCornerRadius = (el: ShapeElement) =>
  */
 const SHAPE_PROPERTIES: Property<ShapeElement>[] = [
   new ColorProperty<ShapeElement>({ key: 'fill', label: 'Fill', transitionGroup: 'fill' }),
-  new ColorProperty<ShapeElement>({ key: 'stroke', label: 'Stroke', transitionGroup: 'stroke' }),
+  // Color swatches are narrow — pack stroke onto the same row as fill so the
+  // panel doesn't burn two full rows on two small rectangles.
+  new ColorProperty<ShapeElement>({
+    key: 'stroke', label: 'Stroke', transitionGroup: 'stroke',
+    groupWithPrevious: true,
+  }),
   new NumberProperty<ShapeElement>({
     key: 'strokeWidth', label: 'Stroke Width',
     transitionGroup: 'strokeWidth', min: 0, max: 20, step: 1,
@@ -96,10 +101,36 @@ interface Props {
   element: ShapeElement;
 }
 
+// Fold consecutive properties into groups whenever a property is marked as
+// `groupWithPrevious`. Each returned bucket renders as one horizontal row —
+// single-entry buckets keep the existing full-width look, multi-entry buckets
+// use a grid so the columns share the row's width.
+function groupProperties(props: Property<ShapeElement>[]): Property<ShapeElement>[][] {
+  const groups: Property<ShapeElement>[][] = [];
+  for (const p of props) {
+    if (p.groupWithPrevious && groups.length > 0) {
+      groups[groups.length - 1].push(p);
+    } else {
+      groups.push([p]);
+    }
+  }
+  return groups;
+}
+
 export const ShapeProperties: React.FC<Props> = ({ element }) => (
   <div className="space-y-3">
-    {SHAPE_PROPERTIES.map((p) => (
-      <PropertyRow key={p.key} property={p} element={element} />
-    ))}
+    {groupProperties(SHAPE_PROPERTIES).map((group) => {
+      if (group.length === 1) {
+        const p = group[0];
+        return <PropertyRow key={p.key} property={p} element={element} />;
+      }
+      return (
+        <div key={group.map((p) => p.key).join('|')} className="grid grid-cols-2 gap-3">
+          {group.map((p) => (
+            <PropertyRow key={p.key} property={p} element={element} />
+          ))}
+        </div>
+      );
+    })}
   </div>
 );

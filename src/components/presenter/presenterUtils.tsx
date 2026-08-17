@@ -415,6 +415,11 @@ function renderElementInner(
   return <RenderShape key={element.id} element={shapeEl} />;
 }
 
+/** d-string → measured length. TipDrawArrow renders every animation frame;
+ *  without this, each frame calls pathLengthFor which forces an SVG layout
+ *  via getTotalLength() (same trade-off as geomCache in shapeToPath). */
+const tipDrawLengthCache = new Map<string, number>();
+
 /** Specialised renderer for `create` + `tipDraw`. Builds a shaft-only
  *  path (no arrowhead L-segments folded in), reveals it through the
  *  shared writeGlyphFrame timing via RenderPaths, then positions the
@@ -480,7 +485,11 @@ const TipDrawArrow: React.FC<{
   // Cached path length for stroke-dasharray. pathLengthFor measures via a
   // hidden <path>; ours is just the shaft so it matches `arc` closely
   // (modulo browser float precision).
-  const length = pathLengthFor(d);
+  let length = tipDrawLengthCache.get(d);
+  if (length === undefined) {
+    length = pathLengthFor(d);
+    tipDrawLengthCache.set(d, length);
+  }
   const svgPath = {
     d,
     transform: `translate(${element.x}, ${element.y})`,

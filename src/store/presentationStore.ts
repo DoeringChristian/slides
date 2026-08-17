@@ -7,12 +7,16 @@ import { createPresentation, createSlide, copySlideAsKeyframe, generateObjectNam
 import { migratePresentation } from '../utils/migrations';
 import { rebindPathToMovedAnchor } from '../utils/connectorUtils';
 import { beforeMutation } from '../utils/autoDraw';
+import { lerpAngle } from '../utils/interpolation';
 import { mirrorTargets, withMirroring } from '../utils/multiSlide';
 import { applyStickyDefaults } from '../utils/stickyEasings';
 import { getActiveDoc, runInTxn } from '../collab/yDocAdapter';
 import {
   elementToYMap,
   slideToYMap,
+  templateToYMap,
+  backgroundToYMap,
+  mkScalarMap,
   getYRoot,
   getYSlide,
   getYElement,
@@ -83,6 +87,34 @@ function resourceReferencedInY(doc: Y.Doc, resourceId: string): boolean {
   return false;
 }
 
+/** Strip a no-longer-visible object's element from every slide (elements map
+ *  + elementOrder) and drop its image resource if nothing else references it.
+ *  The caller handles the object-registry deletion itself. */
+function purgeObjectInY(doc: Y.Doc, objectId: string) {
+  const root = getYRoot(doc);
+  const order = (root.get('slideOrder') as Y.Array<string>).toArray();
+  let resourceIdToCheck: string | null = null;
+  for (const sid of order) {
+    const slide = getYSlide(doc, sid);
+    const elements = slide?.get('elements') as Y.Map<Y.Map<unknown>> | undefined;
+    const el = elements?.get(objectId);
+    if (!el) continue;
+    if (el.get('type') === 'image') {
+      const rid = el.get('resourceId');
+      if (typeof rid === 'string') resourceIdToCheck = rid;
+    }
+    elements!.delete(objectId);
+    const elementOrder = slide?.get('elementOrder') as Y.Array<string> | undefined;
+    if (elementOrder) {
+      const idx = elementOrder.toArray().indexOf(objectId);
+      if (idx !== -1) elementOrder.delete(idx, 1);
+    }
+  }
+  if (resourceIdToCheck && !resourceReferencedInY(doc, resourceIdToCheck)) {
+    (root.get('resources') as Y.Map<unknown> | undefined)?.delete(resourceIdToCheck);
+  }
+}
+
 // Helper: propagate partial changes to an element across all slides after fromSlideId
 function propagateToSubsequentSlides(
   slides: Record<string, Slide>,
@@ -143,6 +175,76 @@ function isObjectVisibleAnywhere(slides: Record<string, Slide>, objectId: string
   return false;
 }
 
+/** JSON-side counterpart of purgeObjectInY. Returns fresh slide records with
+ *  the element removed everywhere, plus the image resource that became
+ *  unreferenced (if any). Never mutates the input — callers thread the result
+ *  through their own objects/resources copies. */
+function purgeObjectFromSlides(
+  slides: Record<string, Slide>,
+  objectId: string,
+): { slides: Record<string, Slide>; resourceIdToRemove: string | null } {
+  const cleanedSlides: Record<string, Slide> = {};
+  let resourceIdToCheck: string | null = null;
+
+  for (const [sid, slide] of Object.entries(slides)) {
+    const element = slide.elements[objectId];
+    if (element) {
+      if (element.type === 'image' && 'resourceId' in element && element.resourceId) {
+        resourceIdToCheck = element.resourceId;
+      }
+      const { [objectId]: _removed, ...remainingElements } = slide.elements;
+      cleanedSlides[sid] = {
+        ...slide,
+        elements: remainingElements,
+        elementOrder: slide.elementOrder.filter((id) => id !== objectId),
+      };
+    } else {
+      cleanedSlides[sid] = slide;
+    }
+  }
+
+  // Only report the resource if no other element still references it
+  const resourceIdToRemove =
+    resourceIdToCheck && !isResourceReferencedInSlides(cleanedSlides, resourceIdToCheck)
+      ? resourceIdToCheck
+      : null;
+  return { slides: cleanedSlides, resourceIdToRemove };
+}
+
+/** Build the slide inserted by addSlideWithMode from its neighbours. Shared
+ *  by the Y and Zustand branches — the Y side passes plain-JSON snapshots. */
+function buildSlideWithMode(
+  prevSlide: Slide | null,
+  nextSlide: Slide | null,
+  mode: 'previous' | 'next' | 'interpolate',
+): Slide {
+  if (mode === 'previous' && prevSlide) return copySlideAsKeyframe(prevSlide);
+  if (mode === 'next' && nextSlide) return copySlideAsKeyframe(nextSlide);
+  if (mode === 'interpolate' && prevSlide && nextSlide) {
+    // Start from previous, then lerp numeric properties toward next
+    const newSlide = copySlideAsKeyframe(prevSlide);
+    for (const elId of newSlide.elementOrder) {
+      const elA = prevSlide.elements[elId];
+      const elB = nextSlide.elements[elId];
+      if (elA && elB) {
+        newSlide.elements[elId] = {
+          ...JSON.parse(JSON.stringify(elA)),
+          x: (elA.x + elB.x) / 2,
+          y: (elA.y + elB.y) / 2,
+          width: (elA.width + elB.width) / 2,
+          height: (elA.height + elB.height) / 2,
+          rotation: lerpAngle(elA.rotation, elB.rotation, 0.5),
+          opacity: (elA.opacity + elB.opacity) / 2,
+        } as SlideElement;
+      }
+    }
+    return newSlide;
+  }
+  if (prevSlide) return copySlideAsKeyframe(prevSlide);
+  if (nextSlide) return copySlideAsKeyframe(nextSlide);
+  return createSlide();
+}
+
 interface PresentationStore {
   presentation: Presentation;
 
@@ -165,7 +267,6 @@ interface PresentationStore {
   updateElement: (slideId: string, elementId: string, changes: Partial<SlideElement>) => void;
   updateElements: (slideId: string, updates: Array<{ elementId: string; changes: Partial<SlideElement> }>) => void;
   deleteElements: (slideId: string, elementIds: string[]) => void;
-  reorderElements: (slideId: string, elementOrder: string[]) => void;
   moveElementForward: (slideId: string, elementId: string) => void;
   moveElementBackward: (slideId: string, elementId: string) => void;
   moveElementToFront: (slideId: string, elementId: string) => void;
@@ -173,7 +274,6 @@ interface PresentationStore {
 
   // Resource actions
   addResource: (resource: Resource) => void;
-  removeResource: (resourceId: string) => void;
 
   // Keyframe actions
   hideElement: (slideId: string, elementId: string) => void;
@@ -193,9 +293,53 @@ interface PresentationStore {
 
   // Presentation actions
   updateTitle: (title: string) => void;
-  updateTheme: (theme: Presentation['theme']) => void;
   loadPresentation: (presentation: Presentation) => void;
   resetPresentation: () => void;
+}
+
+type StoreSet = (
+  updater: (state: PresentationStore) => PresentationStore | { presentation: Presentation },
+) => void;
+
+/** Shared implementation of the four z-order actions. The JSON index math is
+ *  computed exactly like moveInYArray (clamp, splice out, splice in) so both
+ *  paths agree — including the early return when the element isn't in the
+ *  order array. */
+function moveElement(set: StoreSet, slideId: string, elementId: string, mode: 1 | -1 | 'front' | 'back') {
+  slideId = beforeMutation(slideId);
+  const __mirrors = mirrorTargets(slideId);
+  withMirroring(() => {
+    for (const mid of __mirrors) {
+      moveElement(set, mid, elementId, mode);
+    }
+  });
+  const doc = getActiveDoc();
+  if (doc) {
+    runInTxn(() => moveInYArray(doc, slideId, elementId, mode));
+    return;
+  }
+  set((state) => {
+    const slide = state.presentation.slides[slideId];
+    if (!slide) return state;
+    const order = [...slide.elementOrder];
+    const idx = order.indexOf(elementId);
+    if (idx === -1) return state;
+    let newIdx: number;
+    if (mode === 'front') newIdx = order.length - 1;
+    else if (mode === 'back') newIdx = 0;
+    else newIdx = idx + mode;
+    newIdx = Math.max(0, Math.min(order.length - 1, newIdx));
+    if (newIdx === idx) return state;
+    order.splice(idx, 1);
+    order.splice(newIdx, 0, elementId);
+    return {
+      presentation: {
+        ...state.presentation,
+        slides: { ...state.presentation.slides, [slideId]: { ...slide, elementOrder: order } },
+        updatedAt: Date.now(),
+      },
+    };
+  });
 }
 
 export const usePresentationStore = create<PresentationStore>()(
@@ -367,9 +511,7 @@ export const usePresentationStore = create<PresentationStore>()(
             // unions; a partial overlay would leak stale fields from the
             // previous variant (e.g. gradient `from`/`to` lingering after
             // switching to a solid color).
-            const bgMap = new Y.Map<unknown>();
-            for (const [k, v] of Object.entries(background)) bgMap.set(k, v);
-            slideMap.set('background', bgMap);
+            slideMap.set('background', backgroundToYMap(background));
             getYRoot(doc).set('updatedAt', Date.now());
           });
           return;
@@ -495,9 +637,8 @@ export const usePresentationStore = create<PresentationStore>()(
         const doc = getActiveDoc();
         if (doc) {
           // Read the neighbour slides out of Y as plain JSON, build the new
-          // Slide using the same JS logic as the Zustand branch below, then
-          // push it back into Y as a Y.Map subtree. Keeps the keyframe
-          // interpolation centralized — no duplicated math.
+          // Slide via buildSlideWithMode (shared with the Zustand branch
+          // below), then push it back into Y as a Y.Map subtree.
           let newSlideId = '';
           runInTxn(() => {
             const root = getYRoot(doc);
@@ -508,42 +649,7 @@ export const usePresentationStore = create<PresentationStore>()(
             const prevSlide = orderArr[afterIndex] ? yDocToJsonSlideOnly(doc, orderArr[afterIndex]) : null;
             const nextSlide = orderArr[afterIndex + 1] ? yDocToJsonSlideOnly(doc, orderArr[afterIndex + 1]) : null;
 
-            let newSlide: Slide;
-            if (mode === 'previous' && prevSlide) {
-              newSlide = copySlideAsKeyframe(prevSlide);
-            } else if (mode === 'next' && nextSlide) {
-              newSlide = copySlideAsKeyframe(nextSlide);
-            } else if (mode === 'interpolate' && prevSlide && nextSlide) {
-              newSlide = copySlideAsKeyframe(prevSlide);
-              for (const elId of newSlide.elementOrder) {
-                const elA = prevSlide.elements[elId];
-                const elB = nextSlide.elements[elId];
-                if (elA && elB) {
-                  newSlide.elements[elId] = {
-                    ...JSON.parse(JSON.stringify(elA)),
-                    x: (elA.x + elB.x) / 2,
-                    y: (elA.y + elB.y) / 2,
-                    width: (elA.width + elB.width) / 2,
-                    height: (elA.height + elB.height) / 2,
-                    rotation: (() => {
-                      let a = ((elA.rotation % 360) + 360) % 360;
-                      const b = ((elB.rotation % 360) + 360) % 360;
-                      let delta = b - a;
-                      if (delta > 180) delta -= 360;
-                      if (delta < -180) delta += 360;
-                      return a + delta * 0.5;
-                    })(),
-                    opacity: (elA.opacity + elB.opacity) / 2,
-                  } as SlideElement;
-                }
-              }
-            } else if (prevSlide) {
-              newSlide = copySlideAsKeyframe(prevSlide);
-            } else if (nextSlide) {
-              newSlide = copySlideAsKeyframe(nextSlide);
-            } else {
-              newSlide = createSlide();
-            }
+            const newSlide = buildSlideWithMode(prevSlide, nextSlide, mode);
 
             slides.set(newSlide.id, slideToYMap(newSlide));
             order.insert(afterIndex + 1, [newSlide.id]);
@@ -555,46 +661,10 @@ export const usePresentationStore = create<PresentationStore>()(
         let newSlideId = '';
         set((state) => {
           const { slideOrder, slides } = state.presentation;
-          const prevSlide = slides[slideOrder[afterIndex]];
-          const nextSlide = slides[slideOrder[afterIndex + 1]];
+          const prevSlide = slides[slideOrder[afterIndex]] ?? null;
+          const nextSlide = slides[slideOrder[afterIndex + 1]] ?? null;
 
-          let newSlide: Slide;
-          if (mode === 'previous' && prevSlide) {
-            newSlide = copySlideAsKeyframe(prevSlide);
-          } else if (mode === 'next' && nextSlide) {
-            newSlide = copySlideAsKeyframe(nextSlide);
-          } else if (mode === 'interpolate' && prevSlide && nextSlide) {
-            // Start from previous, then lerp numeric properties toward next
-            newSlide = copySlideAsKeyframe(prevSlide);
-            for (const elId of newSlide.elementOrder) {
-              const elA = prevSlide.elements[elId];
-              const elB = nextSlide.elements[elId];
-              if (elA && elB) {
-                newSlide.elements[elId] = {
-                  ...JSON.parse(JSON.stringify(elA)),
-                  x: (elA.x + elB.x) / 2,
-                  y: (elA.y + elB.y) / 2,
-                  width: (elA.width + elB.width) / 2,
-                  height: (elA.height + elB.height) / 2,
-                  rotation: (() => {
-                    let a = ((elA.rotation % 360) + 360) % 360;
-                    let b = ((elB.rotation % 360) + 360) % 360;
-                    let delta = b - a;
-                    if (delta > 180) delta -= 360;
-                    if (delta < -180) delta += 360;
-                    return a + delta * 0.5;
-                  })(),
-                  opacity: (elA.opacity + elB.opacity) / 2,
-                } as SlideElement;
-              }
-            }
-          } else if (prevSlide) {
-            newSlide = copySlideAsKeyframe(prevSlide);
-          } else if (nextSlide) {
-            newSlide = copySlideAsKeyframe(nextSlide);
-          } else {
-            newSlide = createSlide();
-          }
+          const newSlide = buildSlideWithMode(prevSlide, nextSlide, mode);
 
           newSlideId = newSlide.id;
           const newOrder = [...slideOrder];
@@ -704,11 +774,7 @@ export const usePresentationStore = create<PresentationStore>()(
                 name: generateObjectName(getObjectSubtype(element), objSnapshot),
                 type: getObjectType(element),
               };
-              const yMeta = new Y.Map<unknown>();
-              yMeta.set('id', meta.id);
-              yMeta.set('name', meta.name);
-              yMeta.set('type', meta.type);
-              objects.set(element.id, yMeta);
+              objects.set(element.id, mkScalarMap(meta));
             }
             getYRoot(doc).set('updatedAt', Date.now());
           });
@@ -774,11 +840,7 @@ export const usePresentationStore = create<PresentationStore>()(
                   type: getObjectType(el),
                 };
                 objSnapshot[el.id] = meta;
-                const yMeta = new Y.Map<unknown>();
-                yMeta.set('id', meta.id);
-                yMeta.set('name', meta.name);
-                yMeta.set('type', meta.type);
-                objects.set(el.id, yMeta);
+                objects.set(el.id, mkScalarMap(meta));
               }
             }
             getYRoot(doc).set('updatedAt', Date.now());
@@ -1001,27 +1063,7 @@ export const usePresentationStore = create<PresentationStore>()(
               if (!objectVisibleAnywhereInY(doc, elementId)) {
                 const objects = root.get('objects') as Y.Map<unknown> | undefined;
                 objects?.delete(elementId);
-                let resourceIdToCheck: string | null = null;
-                const order = (root.get('slideOrder') as Y.Array<string>).toArray();
-                for (const sid of order) {
-                  const slideEls = getYSlide(doc, sid)?.get('elements') as Y.Map<Y.Map<unknown>> | undefined;
-                  const e = slideEls?.get(elementId);
-                  if (e) {
-                    if (e.get('type') === 'image') {
-                      const rid = e.get('resourceId');
-                      if (typeof rid === 'string') resourceIdToCheck = rid;
-                    }
-                    slideEls!.delete(elementId);
-                    const elementOrder = getYSlide(doc, sid)?.get('elementOrder') as Y.Array<string> | undefined;
-                    if (elementOrder) {
-                      const idx = elementOrder.toArray().indexOf(elementId);
-                      if (idx !== -1) elementOrder.delete(idx, 1);
-                    }
-                  }
-                }
-                if (resourceIdToCheck && !resourceReferencedInY(doc, resourceIdToCheck)) {
-                  (root.get('resources') as Y.Map<unknown> | undefined)?.delete(resourceIdToCheck);
-                }
+                purgeObjectInY(doc, elementId);
               }
             }
             root.set('updatedAt', Date.now());
@@ -1057,27 +1099,10 @@ export const usePresentationStore = create<PresentationStore>()(
               const { [elementId]: _removedObject, ...remainingObjects } = objects;
               objects = remainingObjects;
 
-              // Track resource before removing element
-              let resourceIdToCheck: string | null = null;
-              // Remove from all slides
-              for (const [sid, s] of Object.entries(slides)) {
-                const element = s.elements[elementId];
-                if (element) {
-                  if (element.type === 'image' && 'resourceId' in element && element.resourceId) {
-                    resourceIdToCheck = element.resourceId;
-                  }
-                  const { [elementId]: _removed, ...remainingElements } = s.elements;
-                  slides[sid] = {
-                    ...s,
-                    elements: remainingElements,
-                    elementOrder: s.elementOrder.filter((id) => id !== elementId),
-                  };
-                }
-              }
-
-              // Only remove resource if no other element still references it
-              if (resourceIdToCheck && !isResourceReferencedInSlides(slides, resourceIdToCheck)) {
-                const { [resourceIdToCheck]: _removedResource, ...remainingResources } = resources;
+              const purged = purgeObjectFromSlides(slides, elementId);
+              slides = purged.slides;
+              if (purged.resourceIdToRemove) {
+                const { [purged.resourceIdToRemove]: _removedResource, ...remainingResources } = resources;
                 resources = remainingResources;
               }
             }
@@ -1095,151 +1120,13 @@ export const usePresentationStore = create<PresentationStore>()(
         });
       },
 
-      reorderElements: (slideId, elementOrder) => {
-        slideId = beforeMutation(slideId);
-        const doc = getActiveDoc();
-        if (doc) {
-          runInTxn(() => {
-            const order = getYSlide(doc, slideId)?.get('elementOrder') as Y.Array<string> | undefined;
-            if (!order) return;
-            yArrayReplaceAll(order, elementOrder);
-            getYRoot(doc).set('updatedAt', Date.now());
-          });
-          return;
-        }
-        set((state) => {
-          const slide = state.presentation.slides[slideId];
-          if (!slide) return state;
-          return {
-            presentation: {
-              ...state.presentation,
-              slides: {
-                ...state.presentation.slides,
-                [slideId]: { ...slide, elementOrder },
-              },
-              updatedAt: Date.now(),
-            },
-          };
-        });
-      },
+      moveElementForward: (slideId, elementId) => moveElement(set, slideId, elementId, +1),
 
-      moveElementForward: (slideId, elementId) => {
-        slideId = beforeMutation(slideId);
-        const __mirrors = mirrorTargets(slideId);
-        withMirroring(() => {
-          for (const mid of __mirrors) {
-            usePresentationStore.getState().moveElementForward(mid, elementId);
-          }
-        });
-        const doc = getActiveDoc();
-        if (doc) {
-          runInTxn(() => moveInYArray(doc, slideId, elementId, +1));
-          return;
-        }
-        set((state) => {
-          const slide = state.presentation.slides[slideId];
-          if (!slide) return state;
-          const order = [...slide.elementOrder];
-          const idx = order.indexOf(elementId);
-          if (idx < order.length - 1) {
-            [order[idx], order[idx + 1]] = [order[idx + 1], order[idx]];
-          }
-          return {
-            presentation: {
-              ...state.presentation,
-              slides: { ...state.presentation.slides, [slideId]: { ...slide, elementOrder: order } },
-              updatedAt: Date.now(),
-            },
-          };
-        });
-      },
+      moveElementBackward: (slideId, elementId) => moveElement(set, slideId, elementId, -1),
 
-      moveElementBackward: (slideId, elementId) => {
-        slideId = beforeMutation(slideId);
-        const __mirrors = mirrorTargets(slideId);
-        withMirroring(() => {
-          for (const mid of __mirrors) {
-            usePresentationStore.getState().moveElementBackward(mid, elementId);
-          }
-        });
-        const doc = getActiveDoc();
-        if (doc) {
-          runInTxn(() => moveInYArray(doc, slideId, elementId, -1));
-          return;
-        }
-        set((state) => {
-          const slide = state.presentation.slides[slideId];
-          if (!slide) return state;
-          const order = [...slide.elementOrder];
-          const idx = order.indexOf(elementId);
-          if (idx > 0) {
-            [order[idx], order[idx - 1]] = [order[idx - 1], order[idx]];
-          }
-          return {
-            presentation: {
-              ...state.presentation,
-              slides: { ...state.presentation.slides, [slideId]: { ...slide, elementOrder: order } },
-              updatedAt: Date.now(),
-            },
-          };
-        });
-      },
+      moveElementToFront: (slideId, elementId) => moveElement(set, slideId, elementId, 'front'),
 
-      moveElementToFront: (slideId, elementId) => {
-        slideId = beforeMutation(slideId);
-        const __mirrors = mirrorTargets(slideId);
-        withMirroring(() => {
-          for (const mid of __mirrors) {
-            usePresentationStore.getState().moveElementToFront(mid, elementId);
-          }
-        });
-        const doc = getActiveDoc();
-        if (doc) {
-          runInTxn(() => moveInYArray(doc, slideId, elementId, 'front'));
-          return;
-        }
-        set((state) => {
-          const slide = state.presentation.slides[slideId];
-          if (!slide) return state;
-          const order = slide.elementOrder.filter((id) => id !== elementId);
-          order.push(elementId);
-          return {
-            presentation: {
-              ...state.presentation,
-              slides: { ...state.presentation.slides, [slideId]: { ...slide, elementOrder: order } },
-              updatedAt: Date.now(),
-            },
-          };
-        });
-      },
-
-      moveElementToBack: (slideId, elementId) => {
-        slideId = beforeMutation(slideId);
-        const __mirrors = mirrorTargets(slideId);
-        withMirroring(() => {
-          for (const mid of __mirrors) {
-            usePresentationStore.getState().moveElementToBack(mid, elementId);
-          }
-        });
-        const doc = getActiveDoc();
-        if (doc) {
-          runInTxn(() => moveInYArray(doc, slideId, elementId, 'back'));
-          return;
-        }
-        set((state) => {
-          const slide = state.presentation.slides[slideId];
-          if (!slide) return state;
-          const order = slide.elementOrder.filter((id) => id !== elementId);
-          order.unshift(elementId);
-          return {
-            presentation: {
-              ...state.presentation,
-              slides: { ...state.presentation.slides, [slideId]: { ...slide, elementOrder: order } },
-              updatedAt: Date.now(),
-            },
-          };
-        });
-      },
+      moveElementToBack: (slideId, elementId) => moveElement(set, slideId, elementId, 'back'),
 
       addResource: (resource: Resource) => {
         const doc = getActiveDoc();
@@ -1247,9 +1134,7 @@ export const usePresentationStore = create<PresentationStore>()(
           runInTxn(() => {
             const resources = getYRoot(doc).get('resources') as Y.Map<unknown> | undefined;
             if (!resources) return;
-            const yRes = new Y.Map<unknown>();
-            for (const [k, v] of Object.entries(resource)) if (v !== undefined) yRes.set(k, v);
-            resources.set(resource.id, yRes);
+            resources.set(resource.id, mkScalarMap(resource));
             getYRoot(doc).set('updatedAt', Date.now());
           });
           return;
@@ -1261,32 +1146,6 @@ export const usePresentationStore = create<PresentationStore>()(
             updatedAt: Date.now(),
           },
         }));
-      },
-
-      removeResource: (resourceId: string) => {
-        const doc = getActiveDoc();
-        if (doc) {
-          runInTxn(() => {
-            // Only drop if no element still references it. This matches the
-            // Zustand path's expectation that the action is callable from
-            // anywhere without double-checking.
-            if (resourceReferencedInY(doc, resourceId)) return;
-            const resources = getYRoot(doc).get('resources') as Y.Map<unknown> | undefined;
-            resources?.delete(resourceId);
-            getYRoot(doc).set('updatedAt', Date.now());
-          });
-          return;
-        }
-        set((state) => {
-          const { [resourceId]: _removed, ...remaining } = state.presentation.resources;
-          return {
-            presentation: {
-              ...state.presentation,
-              resources: remaining,
-              updatedAt: Date.now(),
-            },
-          };
-        });
       },
 
       hideElement: (slideId: string, elementId: string) => {
@@ -1332,33 +1191,12 @@ export const usePresentationStore = create<PresentationStore>()(
           // Check if object is now invisible in all slides - if so, remove it
           if (!isObjectVisibleAnywhere(slides, elementId)) {
             // Remove object completely
-            const { [elementId]: removedObject, ...remainingObjects } = state.presentation.objects;
+            const { [elementId]: _removedObject, ...remainingObjects } = state.presentation.objects;
 
-            // Remove from all slides
-            const cleanedSlides: Record<string, Slide> = {};
-            let resourceIdToCheck: string | null = null;
-
-            for (const [sid, s] of Object.entries(slides)) {
-              const element = s.elements[elementId];
-              if (element) {
-                if (element.type === 'image' && 'resourceId' in element && element.resourceId) {
-                  resourceIdToCheck = element.resourceId;
-                }
-                const { [elementId]: _removed, ...remainingElements } = s.elements;
-                cleanedSlides[sid] = {
-                  ...s,
-                  elements: remainingElements,
-                  elementOrder: s.elementOrder.filter((id) => id !== elementId),
-                };
-              } else {
-                cleanedSlides[sid] = s;
-              }
-            }
-
-            // Only remove resource if no other element still references it
+            const purged = purgeObjectFromSlides(slides, elementId);
             let resources = state.presentation.resources;
-            if (resourceIdToCheck && !isResourceReferencedInSlides(cleanedSlides, resourceIdToCheck)) {
-              const { [resourceIdToCheck]: _removedResource, ...remainingResources } = resources;
+            if (purged.resourceIdToRemove) {
+              const { [purged.resourceIdToRemove]: _removedResource, ...remainingResources } = resources;
               resources = remainingResources;
             }
 
@@ -1366,7 +1204,7 @@ export const usePresentationStore = create<PresentationStore>()(
               presentation: {
                 ...state.presentation,
                 objects: remainingObjects,
-                slides: cleanedSlides,
+                slides: purged.slides,
                 resources,
                 updatedAt: Date.now(),
               },
@@ -1629,32 +1467,7 @@ export const usePresentationStore = create<PresentationStore>()(
             const objects = root.get('objects') as Y.Map<unknown> | undefined;
             if (!objects?.has(objectId)) return;
             objects.delete(objectId);
-
-            // Strip the element from every slide that has it, tracking a
-            // resource for cleanup.
-            const order = (root.get('slideOrder') as Y.Array<string>).toArray();
-            let resourceIdToCheck: string | null = null;
-            for (const sid of order) {
-              const slide = getYSlide(doc, sid);
-              const elements = slide?.get('elements') as Y.Map<Y.Map<unknown>> | undefined;
-              const el = elements?.get(objectId);
-              if (el) {
-                if (el.get('type') === 'image') {
-                  const rid = el.get('resourceId');
-                  if (typeof rid === 'string') resourceIdToCheck = rid;
-                }
-                elements!.delete(objectId);
-                const elementOrder = slide?.get('elementOrder') as Y.Array<string> | undefined;
-                if (elementOrder) {
-                  const idx = elementOrder.toArray().indexOf(objectId);
-                  if (idx !== -1) elementOrder.delete(idx, 1);
-                }
-              }
-            }
-
-            if (resourceIdToCheck && !resourceReferencedInY(doc, resourceIdToCheck)) {
-              (root.get('resources') as Y.Map<unknown> | undefined)?.delete(resourceIdToCheck);
-            }
+            purgeObjectInY(doc, objectId);
             root.set('updatedAt', Date.now());
           });
           return;
@@ -1664,33 +1477,11 @@ export const usePresentationStore = create<PresentationStore>()(
           const { [objectId]: removedObject, ...remainingObjects } = state.presentation.objects;
           if (!removedObject) return state;
 
-          // Remove from all slides
-          const updatedSlides: Record<string, Slide> = {};
-          let resourceIdToCheck: string | null = null;
-
-          for (const [slideId, slide] of Object.entries(state.presentation.slides)) {
-            const element = slide.elements[objectId];
-            if (element) {
-              // Track resource ID if this is an image element
-              if (element.type === 'image' && 'resourceId' in element && element.resourceId) {
-                resourceIdToCheck = element.resourceId;
-              }
-              // Remove element from this slide
-              const { [objectId]: _removed, ...remainingElements } = slide.elements;
-              updatedSlides[slideId] = {
-                ...slide,
-                elements: remainingElements,
-                elementOrder: slide.elementOrder.filter((id) => id !== objectId),
-              };
-            } else {
-              updatedSlides[slideId] = slide;
-            }
-          }
-
-          // Only remove resource if no other element still references it
+          // Remove from all slides, dropping a now-unreferenced image resource
+          const purged = purgeObjectFromSlides(state.presentation.slides, objectId);
           let resources = state.presentation.resources;
-          if (resourceIdToCheck && !isResourceReferencedInSlides(updatedSlides, resourceIdToCheck)) {
-            const { [resourceIdToCheck]: _removedResource, ...remainingResources } = resources;
+          if (purged.resourceIdToRemove) {
+            const { [purged.resourceIdToRemove]: _removedResource, ...remainingResources } = resources;
             resources = remainingResources;
           }
 
@@ -1698,7 +1489,7 @@ export const usePresentationStore = create<PresentationStore>()(
             presentation: {
               ...state.presentation,
               objects: remainingObjects,
-              slides: updatedSlides,
+              slides: purged.slides,
               resources,
               updatedAt: Date.now(),
             },
@@ -1783,23 +1574,7 @@ export const usePresentationStore = create<PresentationStore>()(
               elementOrder: [...slide.elementOrder],
               background: JSON.parse(JSON.stringify(slide.background)),
             };
-            // Build the template Y.Map by hand (slideToYMap is for slides;
-            // SlideTemplate has the same shape minus the slide-only fields).
-            const tplMap = new Y.Map<unknown>();
-            tplMap.set('id', tpl.id);
-            tplMap.set('name', tpl.name);
-            const tplElements = new Y.Map<unknown>();
-            for (const [eid, el] of Object.entries(tpl.elements)) {
-              tplElements.set(eid, elementToYMap(el));
-            }
-            tplMap.set('elements', tplElements);
-            const tplOrder = new Y.Array<string>();
-            tplOrder.insert(0, tpl.elementOrder);
-            tplMap.set('elementOrder', tplOrder);
-            const tplBg = new Y.Map<unknown>();
-            for (const [k, v] of Object.entries(tpl.background)) tplBg.set(k, v);
-            tplMap.set('background', tplBg);
-            templates.set(tpl.id, tplMap);
+            templates.set(tpl.id, templateToYMap(tpl));
             root.set('updatedAt', Date.now());
           });
           return templateId;
@@ -1871,11 +1646,7 @@ export const usePresentationStore = create<PresentationStore>()(
                   type: getObjectType(el),
                 };
                 objSnapshot[elId] = meta;
-                const yMeta = new Y.Map<unknown>();
-                yMeta.set('id', meta.id);
-                yMeta.set('name', meta.name);
-                yMeta.set('type', meta.type);
-                objects.set(elId, yMeta);
+                objects.set(elId, mkScalarMap(meta));
               }
             }
             root.set('updatedAt', Date.now());
@@ -1974,26 +1745,6 @@ export const usePresentationStore = create<PresentationStore>()(
         }
         set((state) => ({
           presentation: { ...state.presentation, title, updatedAt: Date.now() },
-        }));
-      },
-
-      updateTheme: (theme) => {
-        const doc = getActiveDoc();
-        if (doc) {
-          runInTxn(() => {
-            const themeMap = getYRoot(doc).get('theme') as Y.Map<unknown> | undefined;
-            if (!themeMap) return;
-            themeMap.set('name', theme.name);
-            const colors = themeMap.get('colors') as Y.Map<unknown> | undefined;
-            if (colors) for (const [k, v] of Object.entries(theme.colors)) colors.set(k, v);
-            const fonts = themeMap.get('fonts') as Y.Map<unknown> | undefined;
-            if (fonts) for (const [k, v] of Object.entries(theme.fonts)) fonts.set(k, v);
-            getYRoot(doc).set('updatedAt', Date.now());
-          });
-          return;
-        }
-        set((state) => ({
-          presentation: { ...state.presentation, theme, updatedAt: Date.now() },
         }));
       },
 

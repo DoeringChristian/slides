@@ -26,7 +26,7 @@ import type { SlideElement, TransitionGroup } from '../../types/presentation';
 // Dot-notation field accessors
 // ---------------------------------------------------------------------------
 
-function getNested(obj: unknown, path: string): unknown {
+export function getNested(obj: unknown, path: string): unknown {
   let cur: unknown = obj;
   for (const p of path.split('.')) {
     if (cur == null || typeof cur !== 'object') return undefined;
@@ -38,7 +38,7 @@ function getNested(obj: unknown, path: string): unknown {
 /** Returns a `Partial<E>` that, when shallow-merged onto `el`, sets the
  *  value at `path`. For nested paths the intermediate objects are spread
  *  from the live element so sibling fields aren't lost. */
-function setNestedPartial<E>(el: E, path: string, value: unknown): Partial<E> {
+export function setNestedPartial<E>(el: E, path: string, value: unknown): Partial<E> {
   const parts = path.split('.');
   if (parts.length === 1) {
     return { [parts[0]]: value } as Partial<E>;
@@ -57,7 +57,7 @@ function setNestedPartial<E>(el: E, path: string, value: unknown): Partial<E> {
   return root as Partial<E>;
 }
 
-function defaultEquals(a: unknown, b: unknown): boolean {
+export function defaultEquals(a: unknown, b: unknown): boolean {
   if (typeof a === 'number' && typeof b === 'number') return Math.round(a * 100) === Math.round(b * 100);
   return JSON.stringify(a) === JSON.stringify(b);
 }
@@ -91,6 +91,10 @@ export abstract class Property<E extends SlideElement = SlideElement> {
    *  still shows up, but the value can't be changed. Distinct from
    *  `visibleFor`: hidden vs. shown-but-greyed. */
   disabledFor(_element: E): boolean { return false; }
+
+  /** If true, the containing panel packs this row side-by-side with the
+   *  previous property (see `BaseOpts.groupWithPrevious`). */
+  get groupWithPrevious(): boolean { return false; }
 
   /** Has any of `syncFields` got a different value on `kf` than on the
    *  current element? Drives whether KeyframeButtons shows an arrow. */
@@ -134,6 +138,10 @@ interface BaseOpts<E extends SlideElement> {
   syncFields?: string[];
   visibleFor?: (el: E) => boolean;
   disabledFor?: (el: E) => boolean;
+  /** Render this property's row on the same horizontal line as the previous
+   *  property. Used to pack narrow editors (e.g. fill + stroke color swatches)
+   *  into a single row instead of two half-empty rows. */
+  groupWithPrevious?: boolean;
 }
 
 abstract class BaseProperty<E extends SlideElement, V> extends Property<E> {
@@ -143,6 +151,7 @@ abstract class BaseProperty<E extends SlideElement, V> extends Property<E> {
   private readonly _syncFields?: string[];
   private readonly _visibleFor?: (el: E) => boolean;
   private readonly _disabledFor?: (el: E) => boolean;
+  private readonly _groupWithPrevious?: boolean;
 
   constructor(opts: BaseOpts<E>) {
     super();
@@ -152,12 +161,14 @@ abstract class BaseProperty<E extends SlideElement, V> extends Property<E> {
     this._syncFields = opts.syncFields;
     this._visibleFor = opts.visibleFor;
     this._disabledFor = opts.disabledFor;
+    this._groupWithPrevious = opts.groupWithPrevious;
   }
 
   override get syncFields(): string[] { return this._syncFields ?? [this.key]; }
   override get transitionGroup(): TransitionGroup | undefined { return this._transitionGroup; }
   override visibleFor(el: E): boolean { return this._visibleFor ? this._visibleFor(el) : true; }
   override disabledFor(el: E): boolean { return this._disabledFor ? this._disabledFor(el) : false; }
+  override get groupWithPrevious(): boolean { return this._groupWithPrevious ?? false; }
 
   protected get(el: E): V { return getNested(el, this.key) as V; }
   protected set(el: E, v: V): Partial<E> { return setNestedPartial(el, this.key, v); }
@@ -294,19 +305,10 @@ interface PairOpts<E extends SlideElement> extends BaseOpts<E> {
   round?: boolean;
 }
 
-export class PairNumberProperty<E extends SlideElement> extends Property<E> {
-  readonly key: string;
-  readonly label: string;
+export class PairNumberProperty<E extends SlideElement> extends BaseProperty<E, number> {
   private readonly opts: PairOpts<E>;
-  constructor(opts: PairOpts<E>) {
-    super();
-    this.opts = opts;
-    this.key = opts.key;
-    this.label = opts.label;
-  }
+  constructor(opts: PairOpts<E>) { super(opts); this.opts = opts; }
   override get syncFields(): string[] { return this.opts.syncFields ?? this.opts.keys; }
-  override get transitionGroup() { return this.opts.transitionGroup; }
-  override visibleFor(el: E) { return this.opts.visibleFor ? this.opts.visibleFor(el) : true; }
   renderEditor({ element, update }: PropertyContext<E>) {
     const cells = this.opts.keys.map((k, i) => {
       const v = getNested(element, k) as number;
@@ -335,19 +337,9 @@ interface ReadoutOpts<E extends SlideElement> extends BaseOpts<E> {
   readout?: (el: E) => string;
 }
 
-export class ReadoutProperty<E extends SlideElement> extends Property<E> {
-  readonly key: string;
-  readonly label: string;
+export class ReadoutProperty<E extends SlideElement> extends BaseProperty<E, unknown> {
   private readonly opts: ReadoutOpts<E>;
-  constructor(opts: ReadoutOpts<E>) {
-    super();
-    this.opts = opts;
-    this.key = opts.key;
-    this.label = opts.label;
-  }
-  override get syncFields(): string[] { return this.opts.syncFields ?? [this.key]; }
-  override get transitionGroup() { return this.opts.transitionGroup; }
-  override visibleFor(el: E) { return this.opts.visibleFor ? this.opts.visibleFor(el) : true; }
+  constructor(opts: ReadoutOpts<E>) { super(opts); this.opts = opts; }
   formattedLabel(el: E): string {
     return this.opts.readout ? `${this.label} (${this.opts.readout(el)})` : this.label;
   }
@@ -361,19 +353,9 @@ interface PreviewOpts<E extends SlideElement> extends BaseOpts<E> {
   preview: (el: E) => string;
 }
 
-export class TextPreviewProperty<E extends SlideElement> extends Property<E> {
-  readonly key: string;
-  readonly label: string;
+export class TextPreviewProperty<E extends SlideElement> extends BaseProperty<E, string> {
   private readonly opts: PreviewOpts<E>;
-  constructor(opts: PreviewOpts<E>) {
-    super();
-    this.opts = opts;
-    this.key = opts.key;
-    this.label = opts.label;
-  }
-  override get syncFields(): string[] { return this.opts.syncFields ?? [this.key]; }
-  override get transitionGroup() { return this.opts.transitionGroup; }
-  override visibleFor(el: E) { return this.opts.visibleFor ? this.opts.visibleFor(el) : true; }
+  constructor(opts: PreviewOpts<E>) { super(opts); this.opts = opts; }
   renderEditor({ element }: PropertyContext<E>) {
     return <div className="text-xs text-gray-400 truncate">{this.opts.preview(element)}</div>;
   }

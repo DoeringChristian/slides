@@ -2,11 +2,11 @@ import React, { useState, useEffect, useCallback } from 'react';
 import type { ShapeElement, SlideElement, ConnectorBinding } from '../../types/presentation';
 import { isCtrlHeld, isShiftHeld } from '../../utils/keyboard';
 import { constrainToAngle } from '../../utils/geometry';
-import { CANVAS_PADDING } from '../../utils/constants';
 import { useEditorStore } from '../../store/editorStore';
 import { computePointSnap, type Guide } from '../../hooks/useAlignmentGuides';
 import { getMarginLayout, getMarginBounds } from '../../utils/marginLayouts';
 import { getBindingTarget, getAnchorPoint } from '../../utils/connectorUtils';
+import { useScreenToSVG } from './useScreenToSVG';
 
 interface Props {
   element: ShapeElement;
@@ -51,18 +51,7 @@ export const SVGLineEndpointHandles: React.FC<Props> = ({
 
   const [currentPos, setCurrentPos] = useState<{ x: number; y: number } | null>(null);
 
-  // Convert screen coordinates to SVG coordinates
-  const screenToSVG = useCallback((clientX: number, clientY: number) => {
-    if (!svgRef?.current) {
-      return { x: clientX / zoom - CANVAS_PADDING, y: clientY / zoom - CANVAS_PADDING };
-    }
-    const svg = svgRef.current;
-    const rect = svg.getBoundingClientRect();
-    return {
-      x: (clientX - rect.left) / zoom - CANVAS_PADDING,
-      y: (clientY - rect.top) / zoom - CANVAS_PADDING,
-    };
-  }, [svgRef, zoom]);
+  const screenToSVG = useScreenToSVG(svgRef, zoom);
 
   const handlePointerDown = useCallback((endpoint: 'start' | 'end', e: React.PointerEvent) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;

@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import type { SlideElement, ShapeElement } from '../../types/presentation';
-import { CANVAS_PADDING } from '../../utils/constants';
+import type { SlideElement } from '../../types/presentation';
 import { useEditorStore } from '../../store/editorStore';
 import { computeResizeSnap, type Guide } from '../../hooks/useAlignmentGuides';
 import { getMarginLayout, getMarginBounds } from '../../utils/marginLayouts';
 import { isShiftHeld } from '../../utils/keyboard';
-import { isLinePath } from '../../utils/pathShapes';
+import { getBoundingBox, getElementBounds } from '../../utils/geometry';
+import { useScreenToSVG } from './useScreenToSVG';
 
 interface Props {
   elements: SlideElement[];
@@ -24,53 +24,6 @@ const COLOR_LOCKED = '#dc2626';
 const ANCHOR_SIZE = 10;
 const ROTATION_ANCHOR_OFFSET = 30;
 
-// Calculate bounding box for lines/arrows from their points
-function getLineBoundingBox(element: ShapeElement): { x: number; y: number; width: number; height: number } {
-  const points = element.points ?? [0, 0, element.width, 0];
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-
-  for (let i = 0; i < points.length; i += 2) {
-    minX = Math.min(minX, points[i]);
-    maxX = Math.max(maxX, points[i]);
-    minY = Math.min(minY, points[i + 1]);
-    maxY = Math.max(maxY, points[i + 1]);
-  }
-
-  return { x: element.x + minX, y: element.y + minY, width: maxX - minX, height: maxY - minY };
-}
-
-function getElementBounds(element: SlideElement): { x: number; y: number; width: number; height: number } {
-  const isLine = element.type === 'shape' && isLinePath(element as ShapeElement);
-
-  if (isLine) {
-    return getLineBoundingBox(element as ShapeElement);
-  }
-
-  return { x: element.x, y: element.y, width: element.width, height: element.height };
-}
-
-function getBoundingBox(elements: SlideElement[]): { x: number; y: number; width: number; height: number } {
-  if (elements.length === 0) {
-    return { x: 0, y: 0, width: 0, height: 0 };
-  }
-
-  if (elements.length === 1) {
-    return getElementBounds(elements[0]);
-  }
-
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-
-  for (const el of elements) {
-    const bounds = getElementBounds(el);
-    minX = Math.min(minX, bounds.x);
-    minY = Math.min(minY, bounds.y);
-    maxX = Math.max(maxX, bounds.x + bounds.width);
-    maxY = Math.max(maxY, bounds.y + bounds.height);
-  }
-
-  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-}
-
 export const SVGSelectionTransformer: React.FC<Props> = ({
   elements,
   selectedIds,
@@ -82,19 +35,7 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
   onTransformEnd,
   onGuidesChange,
 }) => {
-  // Convert screen coordinates to SVG coordinates
-  const screenToSVG = useCallback((clientX: number, clientY: number) => {
-    if (!svgRef?.current) {
-      // Fallback: simple zoom division (less accurate but works)
-      return { x: clientX / zoom - CANVAS_PADDING, y: clientY / zoom - CANVAS_PADDING };
-    }
-    const svg = svgRef.current;
-    const rect = svg.getBoundingClientRect();
-    return {
-      x: (clientX - rect.left) / zoom - CANVAS_PADDING,
-      y: (clientY - rect.top) / zoom - CANVAS_PADDING,
-    };
-  }, [svgRef, zoom]);
+  const screenToSVG = useScreenToSVG(svgRef, zoom);
   const [resizing, setResizing] = useState<{
     anchor: string;
     startX: number;
@@ -134,7 +75,7 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
 
   const selectedElements = elements.filter((el) => selectedIds.includes(el.id));
 
-  const bounds = getBoundingBox(selectedElements);
+  const bounds = getBoundingBox(selectedElements.map(getElementBounds));
   const singleElement = selectedElements.length === 1 ? selectedElements[0] : null;
   const rotation = singleElement?.rotation || 0;
 
@@ -374,13 +315,10 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
     { name: 'top-right', x: bounds.x + bounds.width, y: bounds.y, cursor: 'nesw-resize' },
     { name: 'middle-left', x: bounds.x, y: bounds.y + bounds.height / 2, cursor: 'ew-resize' },
     { name: 'middle-right', x: bounds.x + bounds.width, y: bounds.y + bounds.height / 2, cursor: 'ew-resize' },
-    { name: 'bottom-left', x: bounds.x, y: bounds.y + bounds.width, cursor: 'nesw-resize' },
+    { name: 'bottom-left', x: bounds.x, y: bounds.y + bounds.height, cursor: 'nesw-resize' },
     { name: 'bottom-center', x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height, cursor: 'ns-resize' },
     { name: 'bottom-right', x: bounds.x + bounds.width, y: bounds.y + bounds.height, cursor: 'nwse-resize' },
   ];
-
-  // Fix bottom-left y coordinate
-  anchors[5].y = bounds.y + bounds.height;
 
   return (
     <g className="selection-transformer" transform={transform}>

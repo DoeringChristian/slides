@@ -2,7 +2,7 @@ import jsPDF from 'jspdf';
 import type { Presentation, Slide, TextElement, ShapeElement, ImageElement, Resource } from '../types/presentation';
 import { SLIDE_WIDTH, SLIDE_HEIGHT, TEXT_BOX_PADDING } from './constants';
 import { parseBlocks, parseInlineSegments, getBlockFontMultiplier } from '../components/canvas/CustomMarkdownRenderer';
-import { pathD, arrowheadPoints, insetEndpoints } from './pathShapes';
+import { pathD, arrowheadPoints, insetEndpoints, strokeDashFor } from './pathShapes';
 
 // ── Canvas2D-based PDF export ──
 // Renders directly to canvas — no html2canvas, no DOM cloning.
@@ -23,10 +23,15 @@ async function preloadResources(
   resources: Record<string, Resource>,
 ): Promise<Map<string, HTMLImageElement>> {
   const usedIds = new Set<string>();
+  const map = new Map<string, HTMLImageElement>();
+  const promises: Promise<void>[] = [];
+
   for (const slide of slides) {
     // Background images
     if (slide.background.type === 'image' && slide.background.src) {
-      usedIds.add('bg:' + slide.id);
+      promises.push(
+        loadImage(slide.background.src).then(img => { map.set('bg:' + slide.id, img); }).catch(() => {}),
+      );
     }
     for (const id of slide.elementOrder) {
       const el = slide.elements[id];
@@ -36,22 +41,7 @@ async function preloadResources(
     }
   }
 
-  const map = new Map<string, HTMLImageElement>();
-  const promises: Promise<void>[] = [];
-
-  for (const slide of slides) {
-    if (slide.background.type === 'image' && slide.background.src) {
-      const key = 'bg:' + slide.id;
-      if (!map.has(key)) {
-        promises.push(
-          loadImage(slide.background.src).then(img => { map.set(key, img); }).catch(() => {}),
-        );
-      }
-    }
-  }
-
   for (const rid of usedIds) {
-    if (rid.startsWith('bg:')) continue;
     const r = resources[rid];
     if (r && r.type === 'image') {
       promises.push(
@@ -286,6 +276,18 @@ function drawTextElement(ctx: CanvasRenderingContext2D, element: TextElement) {
 }
 
 // ── Shape rendering ──
+function fillAndStroke(ctx: CanvasRenderingContext2D, fillColor: string, strokeColor: string, sw: number) {
+  if (fillColor !== 'transparent' && fillColor !== 'none') {
+    ctx.fillStyle = fillColor;
+    ctx.fill();
+  }
+  if (strokeColor !== 'none' && sw > 0) {
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth = sw;
+    ctx.stroke();
+  }
+}
+
 function drawShapeElement(ctx: CanvasRenderingContext2D, element: ShapeElement) {
   const { x, y, width, height, rotation, opacity, fill, stroke, strokeWidth, shapeType, cornerRadius, points } = element;
 
@@ -323,15 +325,7 @@ function drawShapeElement(ctx: CanvasRenderingContext2D, element: ShapeElement) 
         ctx.rect(x, y, width, height);
       }
       ctx.closePath();
-      if (fillColor !== 'transparent' && fillColor !== 'none') {
-        ctx.fillStyle = fillColor;
-        ctx.fill();
-      }
-      if (strokeColor !== 'none' && sw > 0) {
-        ctx.strokeStyle = strokeColor;
-        ctx.lineWidth = sw;
-        ctx.stroke();
-      }
+      fillAndStroke(ctx, fillColor, strokeColor, sw);
       break;
     }
 
@@ -339,15 +333,7 @@ function drawShapeElement(ctx: CanvasRenderingContext2D, element: ShapeElement) 
       ctx.beginPath();
       ctx.ellipse(cx, cy, width / 2, height / 2, 0, 0, Math.PI * 2);
       ctx.closePath();
-      if (fillColor !== 'transparent' && fillColor !== 'none') {
-        ctx.fillStyle = fillColor;
-        ctx.fill();
-      }
-      if (strokeColor !== 'none' && sw > 0) {
-        ctx.strokeStyle = strokeColor;
-        ctx.lineWidth = sw;
-        ctx.stroke();
-      }
+      fillAndStroke(ctx, fillColor, strokeColor, sw);
       break;
     }
 
@@ -363,15 +349,7 @@ function drawShapeElement(ctx: CanvasRenderingContext2D, element: ShapeElement) 
       ctx.lineTo(pts[1][0], pts[1][1]);
       ctx.lineTo(pts[2][0], pts[2][1]);
       ctx.closePath();
-      if (fillColor !== 'transparent' && fillColor !== 'none') {
-        ctx.fillStyle = fillColor;
-        ctx.fill();
-      }
-      if (strokeColor !== 'none' && sw > 0) {
-        ctx.strokeStyle = strokeColor;
-        ctx.lineWidth = sw;
-        ctx.stroke();
-      }
+      fillAndStroke(ctx, fillColor, strokeColor, sw);
       break;
     }
 
@@ -388,15 +366,7 @@ function drawShapeElement(ctx: CanvasRenderingContext2D, element: ShapeElement) 
         else ctx.lineTo(px, py);
       }
       ctx.closePath();
-      if (fillColor !== 'transparent' && fillColor !== 'none') {
-        ctx.fillStyle = fillColor;
-        ctx.fill();
-      }
-      if (strokeColor !== 'none' && sw > 0) {
-        ctx.strokeStyle = strokeColor;
-        ctx.lineWidth = sw;
-        ctx.stroke();
-      }
+      fillAndStroke(ctx, fillColor, strokeColor, sw);
       break;
     }
 
@@ -434,11 +404,8 @@ function drawShapeElement(ctx: CanvasRenderingContext2D, element: ShapeElement) 
       ctx.lineWidth = sw;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
-      // Dash pattern mirrors the on-screen renderer's strokeDashFor.
-      const dash = element.strokeStyle === 'dashed' ? [sw * 3, sw * 2]
-        : element.strokeStyle === 'dotted' ? [0, sw * 2]
-        : [];
-      ctx.setLineDash(dash);
+      const dashStr = strokeDashFor(element.strokeStyle, sw);
+      ctx.setLineDash(dashStr ? dashStr.split(' ').map(Number) : []);
       if (sw > 0) ctx.stroke();
       ctx.setLineDash([]);
       // Arrowheads at the endpoints.

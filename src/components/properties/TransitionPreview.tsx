@@ -8,6 +8,7 @@ import type {
   TransitionOptions,
 } from '../../types/presentation';
 import { usePresentationStore } from '../../store/presentationStore';
+import { isVisibilityFadeOut, optionsKeyFor } from './transitionSide';
 import { composeSlideFrame, renderPresenterElement } from '../presenter/presenterUtils';
 
 // ---------------------------------------------------------------------------
@@ -90,11 +91,8 @@ export const TransitionPreview: React.FC<Props> = ({
   // Decide which side carries the transition. For a visibility fade-OUT the
   // source element holds the easing (the target is gone); everywhere else it's
   // the target.
-  const isFadeOut = group === 'visibility' && Boolean(sourceElement?.visible) && !targetElement;
-  const optionsKey: 'visibilityOptions' | 'contentOptions' | null =
-    group === 'visibility' ? 'visibilityOptions' :
-    group === 'content' ? 'contentOptions' :
-    null;
+  const isFadeOut = isVisibilityFadeOut(sourceElement, targetElement, group);
+  const optionsKey = optionsKeyFor(group);
 
   const withEasing = (el: SlideElement | undefined): SlideElement | undefined => {
     if (!el) return el;

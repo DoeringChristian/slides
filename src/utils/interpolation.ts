@@ -91,7 +91,7 @@ function lerpEased(a: number, b: number, t: number, easing: EasingType | undefin
 }
 
 // Lerp angles via the shortest path (handles wrapping around 360°)
-function lerpAngle(a: number, b: number, t: number): number {
+export function lerpAngle(a: number, b: number, t: number): number {
   // Normalize both to [0, 360)
   a = ((a % 360) + 360) % 360;
   b = ((b % 360) + 360) % 360;

@@ -26,22 +26,12 @@ export function getBoundingBox(boxes: BoundingBox[]): BoundingBox {
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
 }
 
-export function boxesIntersect(a: BoundingBox, b: BoundingBox): boolean {
-  return !(a.x + a.width < b.x || b.x + b.width < a.x ||
-           a.y + a.height < b.y || b.y + b.height < a.y);
-}
-
 export function snapToGrid(value: number, gridSize: number): number {
   return Math.round(value / gridSize) * gridSize;
 }
 
 export function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
-}
-
-/** Snap angle to nearest increment (in degrees). */
-export function snapAngle(degrees: number, increment: number = 15): number {
-  return Math.round(degrees / increment) * increment;
 }
 
 /** Constrain a point so the angle from `base` to `point` is a multiple of `increment` degrees. */
@@ -118,13 +108,4 @@ export function getElementCenter(element: SlideElement): Point {
     x: element.x + element.width / 2,
     y: element.y + element.height / 2,
   };
-}
-
-/**
- * Build SVG rotation transform string for an element.
- */
-export function getSVGRotationTransform(element: SlideElement): string | undefined {
-  if (!element.rotation) return undefined;
-  const center = getElementCenter(element);
-  return `rotate(${element.rotation}, ${center.x}, ${center.y})`;
 }

@@ -88,10 +88,9 @@ export function useSVGDrawing() {
     addElement(activeSlideId, el);
     setSelectedElements([el.id]);
     setPolyDraft(null);
-    // Stay in the drawing tool so the user can place another polygon /
-    // bspline right away without re-picking the tool from the toolbar.
+    setTool('select');
     justFinishedDrawing.current = true;
-  }, [activeSlideId, addElement, setSelectedElements]);
+  }, [activeSlideId, addElement, setSelectedElements, setTool]);
 
   const cancelPolyDraft = useCallback(() => {
     setPolyDraft(null);
@@ -266,8 +265,8 @@ export function useSVGDrawing() {
 
     if (width < 5 && height < 5) {
       // Click without a drag — too small to materialize anything. Stay
-      // in the drawing tool so the user can try again instead of
-      // dropping back to select.
+      // in the drawing tool so the user can try again; we only reset to
+      // select when a shape was actually committed.
       setDrawState({
         startX: 0, startY: 0, currentX: 0, currentY: 0, isDrawing: false,
         snappedStartX: 0, snappedStartY: 0, snappedCurrentX: 0, snappedCurrentY: 0,
@@ -304,12 +303,11 @@ export function useSVGDrawing() {
       setSelectedElements([el.id]);
     }
 
-    // Stay in the drawing tool — the user usually wants to keep drawing
-    // shapes of the same type rather than re-pick the tool every time.
-    // Text is the one exception: createTextElement opens the edit
-    // overlay; when the user finishes editing they'll naturally click
-    // elsewhere, and re-entering text mode mid-flow would be jarring.
-    if (tool === 'text') setTool('select');
+    // Drop back to select after any successful shape commit — the text
+    // branch above has already opened the edit overlay via
+    // setEditingTextId, so switching the tool here doesn't interfere
+    // with that.
+    setTool('select');
 
     setDrawState({
       startX: 0, startY: 0, currentX: 0, currentY: 0, isDrawing: false,

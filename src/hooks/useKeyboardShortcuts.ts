@@ -135,6 +135,15 @@ export function useKeyboardShortcuts() {
         // Instead, handle paste logic directly here using navigator.clipboard.
         const activeId = editor.getState().activeSlideId;
 
+        const pasteInternal = () => {
+          const internalClipboard = editor.getState().clipboard;
+          if (internalClipboard.length > 0) {
+            const duplicates = internalClipboard.map((el) => duplicateElement(el));
+            store.getState().addElements(activeId, duplicates);
+            editor.getState().setSelectedElements(duplicates.map((el) => el.id));
+          }
+        };
+
         // Try to read files from clipboard (images)
         if (navigator.clipboard && navigator.clipboard.read) {
           navigator.clipboard.read().then(async (clipboardItems) => {
@@ -161,32 +170,17 @@ export function useKeyboardShortcuts() {
                 const blob = await item.getType('text/plain');
                 const text = await blob.text();
                 if (text === INTERNAL_MARKER) {
-                  const internalClipboard = editor.getState().clipboard;
-                  if (internalClipboard.length > 0) {
-                    const duplicates = internalClipboard.map((el) => duplicateElement(el));
-                    store.getState().addElements(activeId, duplicates);
-                    editor.getState().setSelectedElements(duplicates.map((el) => el.id));
-                  }
+                  pasteInternal();
                 }
               }
             }
           }).catch(() => {
             // Permission denied or not supported — fall back to internal clipboard
-            const internalClipboard = editor.getState().clipboard;
-            if (internalClipboard.length > 0) {
-              const duplicates = internalClipboard.map((el) => duplicateElement(el));
-              store.getState().addElements(activeId, duplicates);
-              editor.getState().setSelectedElements(duplicates.map((el) => el.id));
-            }
+            pasteInternal();
           });
         } else {
           // Fallback for browsers without clipboard API
-          const internalClipboard = editor.getState().clipboard;
-          if (internalClipboard.length > 0) {
-            const duplicates = internalClipboard.map((el) => duplicateElement(el));
-            store.getState().addElements(activeId, duplicates);
-            editor.getState().setSelectedElements(duplicates.map((el) => el.id));
-          }
+          pasteInternal();
         }
         return;
       }
@@ -201,15 +195,21 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      // Tool hotkeys
+      // Tool hotkeys. Plain letters, no modifiers — see Toolbar.tsx for the
+      // matching tooltips shown to users.
       if (!ctrl && !isInput) {
         switch (e.key.toLowerCase()) {
           case 'v': editor.getState().setTool('select'); break;
           case 't': editor.getState().setTool('text'); break;
           case 'r': editor.getState().setTool('rect'); break;
           case 'e': editor.getState().setTool('ellipse'); break;
+          case 'y': editor.getState().setTool('triangle'); break;
+          case 's': editor.getState().setTool('star'); break;
           case 'l': editor.getState().setTool('line'); break;
           case 'a': editor.getState().setTool('arrow'); break;
+          case 'g': editor.getState().setTool('polygon'); break;
+          case 'p': editor.getState().setTool('bspline'); break;
+          case 'i': editor.getState().setTool('image'); break;
         }
       }
 

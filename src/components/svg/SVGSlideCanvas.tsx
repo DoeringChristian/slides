@@ -31,11 +31,26 @@ import { SLIDE_WIDTH, SLIDE_HEIGHT, CANVAS_PADDING } from '../../utils/constants
 import { loadImageFile, loadPdfFile, loadVideoFile, duplicateElement } from '../../utils/slideFactory';
 import { isPointOnTextContent } from '../../utils/textHitTest';
 import { isLinePath } from '../../utils/pathShapes';
-import type { ShapeElement, TextElement } from '../../types/presentation';
+import type { ShapeElement, SlideElement, TextElement } from '../../types/presentation';
 
 interface Guide {
   type: 'horizontal' | 'vertical';
   position: number;
+}
+
+// Transform a slide-space point into an element's local coordinates (handle rotation)
+function toLocalPoint(el: SlideElement, pos: { x: number; y: number }): { x: number; y: number } {
+  const centerX = el.x + el.width / 2;
+  const centerY = el.y + el.height / 2;
+  const relCenterX = pos.x - centerX;
+  const relCenterY = pos.y - centerY;
+  const radians = -(el.rotation || 0) * Math.PI / 180;
+  const cos = Math.cos(radians);
+  const sin = Math.sin(radians);
+  return {
+    x: relCenterX * cos - relCenterY * sin + el.width / 2,
+    y: relCenterX * sin + relCenterY * cos + el.height / 2,
+  };
 }
 
 export const SVGSlideCanvas: React.FC = () => {
@@ -189,6 +204,42 @@ export const SVGSlideCanvas: React.FC = () => {
     }
   }, [activeSlideId, setSelectedElements]);
 
+  // Snap a dragged element's position to grid and alignment guides. Returns
+  // the position unchanged (with no guides) when snapping is off or the
+  // element is missing.
+  const computeDragSnap = useCallback((id: string, x: number, y: number): { snappedX: number; snappedY: number; guides: Guide[] } => {
+    const el = slide?.elements[id];
+    const { snapToGrid: snappingEnabled, showGrid: isGridVisible, gridSize: grid, marginLayoutId: currentMarginLayoutId } = useEditorStore.getState();
+    // Shift key disables snapping for precise placement
+    const effectiveSnapping = snappingEnabled && !isShiftHeld();
+    if (!effectiveSnapping || !el) return { snappedX: x, snappedY: y, guides: [] };
+
+    const marginLayout = getMarginLayout(currentMarginLayoutId);
+    const marginBounds = marginLayout ? getMarginBounds(marginLayout) : null;
+
+    // Filter out all elements being dragged for guide computation
+    const draggedIds = new Set(dragStartPositions.current.keys());
+    const others = elements
+      .filter((e) => !draggedIds.has(e.id) && e.visible)
+      .map((e) => ({ x: e.x, y: e.y, width: e.width, height: e.height }));
+
+    // Compute guides based on the dragged element
+    const dragged = { x, y, width: el.width, height: el.height };
+    const result = computeGuides(dragged, others, 5, marginBounds);
+
+    let snappedX = x;
+    let snappedY = y;
+
+    if (isGridVisible) {
+      snappedX = snapToGridFn(x, grid);
+      snappedY = snapToGridFn(y, grid);
+    }
+    if (result.snapX !== null) snappedX = result.snapX;
+    if (result.snapY !== null) snappedY = result.snapY;
+
+    return { snappedX, snappedY, guides: result.guides };
+  }, [slide, elements]);
+
   const handleDragMove = useCallback((id: string, x: number, y: number) => {
     // Any actual movement cancels the long-press timer — drag and long-press
     // are mutually exclusive.
@@ -204,34 +255,8 @@ export const SVGSlideCanvas: React.FC = () => {
     const originalPos = dragStartPositions.current.get(id);
     if (!originalPos) return;
 
-    const { snapToGrid: snappingEnabled, showGrid: isGridVisible, gridSize: grid, marginLayoutId: currentMarginLayoutId } = useEditorStore.getState();
-    // Shift key disables snapping for precise placement
-    const effectiveSnapping = snappingEnabled && !isShiftHeld();
-    const marginLayout = getMarginLayout(currentMarginLayoutId);
-    const marginBounds = marginLayout ? getMarginBounds(marginLayout) : null;
-
-    // Filter out all elements being dragged for guide computation
-    const draggedIds = new Set(dragStartPositions.current.keys());
-    const others = elements
-      .filter((e) => !draggedIds.has(e.id) && e.visible)
-      .map((e) => ({ x: e.x, y: e.y, width: e.width, height: e.height }));
-
-    // Compute guides based on the dragged element
-    const dragged = { x, y, width: el.width, height: el.height };
-    const result = computeGuides(dragged, others, 5, marginBounds);
-    setDragGuides(effectiveSnapping ? result.guides : []);
-
-    let snappedX = x;
-    let snappedY = y;
-
-    if (effectiveSnapping) {
-      if (isGridVisible) {
-        snappedX = snapToGridFn(x, grid);
-        snappedY = snapToGridFn(y, grid);
-      }
-      if (result.snapX !== null) snappedX = result.snapX;
-      if (result.snapY !== null) snappedY = result.snapY;
-    }
+    const { snappedX, snappedY, guides: snapGuides } = computeDragSnap(id, x, y);
+    setDragGuides(snapGuides);
 
     // Calculate snapped delta
     const snappedDeltaX = snappedX - originalPos.x;
@@ -260,7 +285,7 @@ export const SVGSlideCanvas: React.FC = () => {
     }
 
     setDragPreview(previews.length > 0 ? previews : null);
-  }, [slide, elements, cancelElementLongPress]);
+  }, [slide, computeDragSnap, cancelElementLongPress]);
 
   const justFinishedElementDrag = useRef(false);
 
@@ -307,33 +332,7 @@ export const SVGSlideCanvas: React.FC = () => {
       return;
     }
 
-    const { snapToGrid: snappingEnabled, showGrid: isGridVisible, gridSize: grid, marginLayoutId: currentMarginLayoutId } = useEditorStore.getState();
-    // Shift key disables snapping for precise placement
-    const effectiveSnapping = snappingEnabled && !isShiftHeld();
-    const marginLayout = getMarginLayout(currentMarginLayoutId);
-    const marginBounds = marginLayout ? getMarginBounds(marginLayout) : null;
-    const el = slide.elements[id];
-
-    let snappedX = x;
-    let snappedY = y;
-
-    if (effectiveSnapping && el) {
-      // Filter out all elements being dragged for guide computation
-      const draggedIds = new Set(dragStartPositions.current.keys());
-      const dragged = { x, y, width: el.width, height: el.height };
-      const others = elements
-        .filter((e) => !draggedIds.has(e.id) && e.visible)
-        .map((e) => ({ x: e.x, y: e.y, width: e.width, height: e.height }));
-      const result = computeGuides(dragged, others, 5, marginBounds);
-
-      if (isGridVisible) {
-        snappedX = snapToGridFn(x, grid);
-        snappedY = snapToGridFn(y, grid);
-      }
-
-      if (result.snapX !== null) snappedX = result.snapX;
-      if (result.snapY !== null) snappedY = result.snapY;
-    }
+    const { snappedX, snappedY } = computeDragSnap(id, x, y);
 
     // Calculate snapped delta
     const snappedDeltaX = snappedX - originalPos.x;
@@ -360,7 +359,7 @@ export const SVGSlideCanvas: React.FC = () => {
     }
 
     dragStartPositions.current.clear();
-  }, [activeSlideId, updateElements, slide, elements, setEditingTextId, cancelElementLongPress]);
+  }, [activeSlideId, updateElements, slide, computeDragSnap, setEditingTextId, cancelElementLongPress]);
 
   const { handlePointerDown: handleElementPointerDown } = useSVGDrag({
     zoom,
@@ -467,20 +466,7 @@ export const SVGSlideCanvas: React.FC = () => {
       // If on border, exit edit mode and allow drag to start
       if (isTextElement && clickedElement) {
         const pos = screenToSVG(e.clientX, e.clientY);
-
-        // Transform click to local coordinates (handle rotation)
-        const centerX = clickedElement.x + clickedElement.width / 2;
-        const centerY = clickedElement.y + clickedElement.height / 2;
-        const relCenterX = pos.x - centerX;
-        const relCenterY = pos.y - centerY;
-        const rotation = clickedElement.rotation || 0;
-        const radians = -rotation * Math.PI / 180;
-        const cos = Math.cos(radians);
-        const sin = Math.sin(radians);
-        const unrotatedRelX = relCenterX * cos - relCenterY * sin;
-        const unrotatedRelY = relCenterX * sin + relCenterY * cos;
-        const localX = unrotatedRelX + clickedElement.width / 2;
-        const localY = unrotatedRelY + clickedElement.height / 2;
+        const { x: localX, y: localY } = toLocalPoint(clickedElement, pos);
 
         if (!isPointOnTextContent(clickedElement as TextElement, { x: localX, y: localY })) {
           // Click is on border, not text - exit edit mode and start drag
@@ -515,16 +501,7 @@ export const SVGSlideCanvas: React.FC = () => {
       // Store click info for potential edit-mode entry on mouseup (no drag)
       if (isTextElement && clickedElement) {
         const pos = screenToSVG(e.clientX, e.clientY);
-        const centerX = clickedElement.x + clickedElement.width / 2;
-        const centerY = clickedElement.y + clickedElement.height / 2;
-        const relCenterX = pos.x - centerX;
-        const relCenterY = pos.y - centerY;
-        const rotation = clickedElement.rotation || 0;
-        const radians = -rotation * Math.PI / 180;
-        const cos = Math.cos(radians);
-        const sin = Math.sin(radians);
-        const localX = relCenterX * cos - relCenterY * sin + clickedElement.width / 2;
-        const localY = relCenterX * sin + relCenterY * cos + clickedElement.height / 2;
+        const { x: localX, y: localY } = toLocalPoint(clickedElement, pos);
 
         if (isPointOnTextContent(clickedElement as TextElement, { x: localX, y: localY })) {
           // Click is in the overflow region (below element bounds) — enter edit mode directly

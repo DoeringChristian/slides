@@ -11,17 +11,18 @@ import {
 } from 'lucide-react';
 import type { Tool } from '../../types/presentation';
 
+// Keep shortcut letters in sync with the switch in `useKeyboardShortcuts.ts`.
 const tools: { tool: Tool; icon: React.ReactNode; label: string }[] = [
   { tool: 'select', icon: <MousePointer2 size={16} />, label: 'Select (V)' },
   { tool: 'text', icon: <Type size={16} />, label: 'Text (T)' },
   { tool: 'rect', icon: <Square size={16} />, label: 'Rectangle (R)' },
   { tool: 'ellipse', icon: <Circle size={16} />, label: 'Ellipse (E)' },
-  { tool: 'triangle', icon: <Triangle size={16} />, label: 'Triangle' },
-  { tool: 'star', icon: <Star size={16} />, label: 'Star' },
+  { tool: 'triangle', icon: <Triangle size={16} />, label: 'Triangle (Y)' },
+  { tool: 'star', icon: <Star size={16} />, label: 'Star (S)' },
   { tool: 'line', icon: <Minus size={16} />, label: 'Line (L)' },
   { tool: 'arrow', icon: <MoveRight size={16} />, label: 'Arrow (A)' },
-  { tool: 'polygon', icon: <Hexagon size={16} />, label: 'Polygon' },
-  { tool: 'bspline', icon: <Spline size={16} />, label: 'B-spline' },
+  { tool: 'polygon', icon: <Hexagon size={16} />, label: 'Polygon (G)' },
+  { tool: 'bspline', icon: <Spline size={16} />, label: 'B-spline (P)' },
   { tool: 'image', icon: <Image size={16} />, label: 'Image (I)' },
 ];
 

@@ -3,7 +3,6 @@ import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useMultiSlideUpdate } from '../../store/selectors';
 import { ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Lock, Unlock, Eye, EyeOff } from 'lucide-react';
-import { TransitionButton } from './TransitionButton';
 import { PropertyRow } from './PropertyRow';
 import { Property, PairNumberProperty, NumberProperty } from './Property';
 import type { SlideElement } from '../../types/presentation';
@@ -75,6 +74,9 @@ export const ArrangePanel: React.FC<Props> = ({ element }) => {
         </button>
       </div>
 
+      {/* Visibility toggle (verb). The appear / disappear transition icons
+          used to sit in this row's right side but were hoisted next to the
+          element type label at the top of the panel. */}
       <div className="flex items-center">
         <button
           onClick={() => update({ visible: !element.visible })}
@@ -83,10 +85,6 @@ export const ArrangePanel: React.FC<Props> = ({ element }) => {
           {element.visible ? <Eye size={12} /> : <EyeOff size={12} />}
           {element.visible ? 'Visible' : 'Hidden'}
         </button>
-        <div className="flex items-center gap-0.5 ml-auto">
-          <TransitionButton elementId={element.id} group="visibility" direction="in" />
-          <TransitionButton elementId={element.id} group="visibility" direction="out" />
-        </div>
       </div>
     </div>
   );

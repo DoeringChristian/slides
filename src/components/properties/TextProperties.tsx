@@ -1,5 +1,6 @@
 import React from 'react';
 import { PropertyRow } from './PropertyRow';
+import { PanelHeader } from './PanelHeader';
 import {
   Property,
   ColorProperty,
@@ -15,11 +16,14 @@ import type { TextElement } from '../../types/presentation';
  * Property list for text elements. Nested style.* fields use dot-notation
  * keys — Property's read/write helpers walk the path and spread sibling
  * style fields so partial updates don't drop unrelated style keys.
+ *
+ * The `content` (text-change) and `visibility` (appear / disappear)
+ * transitions have been hoisted out of the body rows and live next to
+ * the TEXT type label in the header — see below.
  */
 const TEXT_PROPERTIES: Property<TextElement>[] = [
   new TextPreviewProperty<TextElement>({
     key: 'text', label: 'Content',
-    transitionGroup: 'content',
     preview: (el) => {
       const t = el.text ?? '';
       return t ? t.slice(0, 50) + (t.length > 50 ? '…' : '') : '(empty)';
@@ -55,7 +59,7 @@ interface Props {
 
 export const TextProperties: React.FC<Props> = ({ element }) => (
   <div className="space-y-3">
-    <div className="text-xs font-medium text-gray-500 uppercase">Text</div>
+    <PanelHeader label="Text" elementId={element.id} groups={['visibility', 'content']} />
     {TEXT_PROPERTIES.map((p) => (
       <PropertyRow key={p.key} property={p} element={element} />
     ))}

@@ -5,21 +5,25 @@ import { usePresentationStore } from '../../store/presentationStore';
 import { useMultiSlideUpdate } from '../../store/selectors';
 import { ResourcePicker } from './ResourcePicker';
 import { PropertyRow } from './PropertyRow';
+import { PanelHeader } from './PanelHeader';
 import { Property, RangeProperty } from './Property';
 import { computeResourceUpdate } from '../../utils/imageUtils';
-import type { ImageElement, TransitionGroup } from '../../types/presentation';
+import type { ImageElement } from '../../types/presentation';
 
 /**
  * Property for the image/video resource. Custom subclass because copying a
  * resource between slides isn't a verbatim field copy — `computeResourceUpdate`
  * also reshapes the bounding box for the new resource's aspect ratio. The
  * editor body is null; the actual picker button lives outside the row.
+ *
+ * The `resource` transition (content-change: dissolve / fadeinout) has been
+ * hoisted next to the IMAGE / VIDEO type label — see the header block below —
+ * so `transitionGroup` is intentionally omitted here.
  */
 class ResourceProperty extends Property<ImageElement> {
   readonly key = 'resourceId';
   readonly label = 'Resource';
   override get syncFields(): string[] { return ['resourceId']; }
-  override get transitionGroup(): TransitionGroup { return 'resource'; }
   override copyFromKeyframe(target: ImageElement, current: ImageElement): Partial<ImageElement> {
     const resources = usePresentationStore.getState().presentation.resources;
     const targetResource = target.resourceId ? resources[target.resourceId] : undefined;
@@ -67,7 +71,11 @@ export const ImageProperties: React.FC<Props> = ({ element }) => {
 
   return (
     <div className="space-y-3">
-      <div className="text-xs font-medium text-gray-500 uppercase">{isVideo ? 'Video' : 'Image'}</div>
+      <PanelHeader
+        label={isVideo ? 'Video' : 'Image'}
+        elementId={element.id}
+        groups={['visibility', 'resource']}
+      />
 
       {IMAGE_PROPERTIES.map((p) => (
         <PropertyRow key={p.key} property={p} element={element} />

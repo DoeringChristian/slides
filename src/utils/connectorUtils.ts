@@ -40,27 +40,14 @@ export function getBindingTarget(
     // Path shapes (lines, arrows, curves) can't be a binding target themselves.
     if (el.type === 'shape' && el.shapeType === 'path') continue;
 
-    const rotation = el.rotation || 0;
-    const origin = getRotationOrigin(el);
-
-    // Define anchor points in local (unrotated) coordinates
-    const cx = el.x + el.width / 2;
-    const cy = el.y + el.height / 2;
-    const localAnchors: Array<{ anchor: ConnectorBinding['anchor']; x: number; y: number }> = [
-      { anchor: 'center', x: cx, y: cy },
-      { anchor: 'top', x: cx, y: el.y },
-      { anchor: 'bottom', x: cx, y: el.y + el.height },
-      { anchor: 'left', x: el.x, y: cy },
-      { anchor: 'right', x: el.x + el.width, y: cy },
-    ];
-
-    // Rotate anchor points around the element's rotation origin
-    for (const a of localAnchors) {
-      const rotated = rotatePoint(a.x, a.y, origin.x, origin.y, rotation);
-      const dist = Math.sqrt((point.x - rotated.x) ** 2 + (point.y - rotated.y) ** 2);
+    const anchors: ConnectorBinding['anchor'][] = ['center', 'top', 'bottom', 'left', 'right'];
+    for (const anchor of anchors) {
+      const pt = getAnchorPoint(el, anchor);
+      if (!pt) continue;
+      const dist = Math.hypot(point.x - pt.x, point.y - pt.y);
       if (dist < bestDist) {
         bestDist = dist;
-        bestBinding = { elementId: el.id, anchor: a.anchor };
+        bestBinding = { elementId: el.id, anchor };
       }
     }
   }

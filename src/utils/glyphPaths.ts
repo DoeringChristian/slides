@@ -223,8 +223,3 @@ export function textToGlyphPaths(
 
   return { glyphs, endX: x };
 }
-
-export function clearGlyphPathCache(): void {
-  glyphCache.clear();
-  fontCache.clear();
-}

@@ -8,6 +8,7 @@ import { ShapeProperties } from './ShapeProperties';
 import { ImageProperties } from './ImageProperties';
 import { SlideProperties } from './SlideProperties';
 import { ArrangePanel } from './ArrangePanel';
+import { PanelHeader } from './PanelHeader';
 
 export const PropertiesPanel: React.FC = () => {
   const selected = useSelectedElements();
@@ -29,31 +30,34 @@ export const PropertiesPanel: React.FC = () => {
     <div className="w-64 bg-white border-l border-gray-200 flex flex-col shrink-0 overflow-y-auto">
       {showHeader && (
         <div className="p-3 border-b border-gray-200">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-gray-500 uppercase">
-              {element ? element.type : 'Slide'}
-            </span>
-            <div className="flex items-center gap-0.5">
-              {hasPrevDiff && (
-                <button
-                  onClick={() => resetElementToKeyframe(activeSlideId, element.id)}
-                  className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
-                  title="Reset to previous keyframe"
-                >
-                  <ArrowLeft size={14} />
-                </button>
-              )}
-              {hasNextDiff && (
-                <button
-                  onClick={() => resetElementToNextKeyframe(activeSlideId, element.id)}
-                  className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
-                  title="Reset to next keyframe"
-                >
-                  <ArrowRight size={14} />
-                </button>
-              )}
-            </div>
-          </div>
+          {/* Shapes / groups have no "content" concept, so only the
+              visibility (appear / disappear) transition is hoisted next
+              to the type label. Text / image render their own header
+              with content + visibility icons in their own components. */}
+          <PanelHeader
+            label={element ? element.type : 'Slide'}
+            elementId={element?.id}
+            groups={element ? ['visibility'] : []}
+          >
+            {hasPrevDiff && (
+              <button
+                onClick={() => resetElementToKeyframe(activeSlideId, element.id)}
+                className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+                title="Reset to previous keyframe"
+              >
+                <ArrowLeft size={14} />
+              </button>
+            )}
+            {hasNextDiff && (
+              <button
+                onClick={() => resetElementToNextKeyframe(activeSlideId, element.id)}
+                className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
+                title="Reset to next keyframe"
+              >
+                <ArrowRight size={14} />
+              </button>
+            )}
+          </PanelHeader>
         </div>
       )}
 

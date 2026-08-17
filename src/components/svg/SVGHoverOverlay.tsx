@@ -1,7 +1,7 @@
 import React from 'react';
 import { usePresentationStore } from '../../store/presentationStore';
-import { getLineCenter, getElementBounds, getElementCenter } from '../../utils/geometry';
-import { pathD, arrowheadPoints, insetEndpoints, isLinePath, strokeDashFor } from '../../utils/pathShapes';
+import { getElementBounds, getElementCenter } from '../../utils/geometry';
+import { RenderShape } from './ElementRenderer';
 import type { SlideElement, ShapeElement, ImageElement } from '../../types/presentation';
 
 interface Props {
@@ -53,126 +53,6 @@ const GhostImage: React.FC<{ element: ImageElement }> = ({ element }) => {
   );
 };
 
-const GhostShape: React.FC<{ element: ShapeElement }> = ({ element }) => {
-  // Rotate around the center of the element
-  const cx = element.x + element.width / 2;
-  const cy = element.y + element.height / 2;
-  const transform = element.rotation ? `rotate(${element.rotation}, ${cx}, ${cy})` : undefined;
-
-  const commonProps = {
-    fill: element.fill || 'transparent',
-    stroke: element.stroke || 'none',
-    strokeWidth: element.strokeWidth || 0,
-    style: { pointerEvents: 'none' as const },
-  };
-
-  switch (element.shapeType) {
-    case 'rect':
-      return (
-        <g transform={transform}>
-          <rect
-            x={element.x}
-            y={element.y}
-            width={element.width}
-            height={element.height}
-            rx={element.cornerRadius || 0}
-            ry={element.cornerRadius || 0}
-            {...commonProps}
-          />
-        </g>
-      );
-    case 'ellipse':
-      return (
-        <g transform={transform}>
-          <ellipse
-            cx={element.x + element.width / 2}
-            cy={element.y + element.height / 2}
-            rx={element.width / 2}
-            ry={element.height / 2}
-            {...commonProps}
-          />
-        </g>
-      );
-    case 'triangle': {
-      const tcx = element.x + element.width / 2;
-      const tcy = element.y + element.height / 2;
-      const r = Math.min(element.width, element.height) / 2;
-      const points = [
-        [tcx, tcy - r],
-        [tcx - r * Math.cos(Math.PI / 6), tcy + r * Math.sin(Math.PI / 6)],
-        [tcx + r * Math.cos(Math.PI / 6), tcy + r * Math.sin(Math.PI / 6)],
-      ];
-      const d = `M ${points[0][0]} ${points[0][1]} L ${points[1][0]} ${points[1][1]} L ${points[2][0]} ${points[2][1]} Z`;
-      return (
-        <g transform={transform}>
-          <path d={d} {...commonProps} />
-        </g>
-      );
-    }
-    case 'star': {
-      const scx = element.x + element.width / 2;
-      const scy = element.y + element.height / 2;
-      const outerR = Math.min(element.width, element.height) / 2;
-      const innerR = outerR / 2;
-      const starPoints: string[] = [];
-      for (let i = 0; i < 10; i++) {
-        const r = i % 2 === 0 ? outerR : innerR;
-        const angle = (i * Math.PI) / 5 - Math.PI / 2;
-        starPoints.push(`${scx + r * Math.cos(angle)},${scy + r * Math.sin(angle)}`);
-      }
-      return (
-        <g transform={transform}>
-          <polygon points={starPoints.join(' ')} {...commonProps} />
-        </g>
-      );
-    }
-    case 'path': {
-      const pts = element.points ?? [0, 0, element.width, 0];
-      if (pts.length < 4) return null;
-      const closed = element.closed ?? false;
-      const curve = element.curve ?? 'linear';
-      const shaftPts = insetEndpoints(pts, !!element.startArrow, !!element.endArrow);
-      const cornerR = curve === 'linear' ? (element.cornerRadius ?? 0) : 0;
-      const d = pathD(shaftPts, curve, closed, cornerR);
-      const strokeColor = element.stroke || element.fill || '#000';
-      const strokeW = element.strokeWidth || 3;
-      // 2-vertex linear paths rotate around the line midpoint (matches the
-      // ElementRenderer special case); everything else rotates around the
-      // bounding-box centre like a normal shape.
-      const center = isLinePath(element)
-        ? getLineCenter(element)
-        : { x: element.x + element.width / 2, y: element.y + element.height / 2 };
-      const transform = element.rotation ? `rotate(${element.rotation}, ${center.x}, ${center.y})` : undefined;
-      const last = pts.length - 2;
-      const startHead = element.startArrow
-        ? arrowheadPoints(pts[0], pts[1], pts[0] - pts[2], pts[1] - pts[3])
-        : null;
-      const endHead = element.endArrow
-        ? arrowheadPoints(pts[last], pts[last + 1], pts[last] - pts[last - 2], pts[last + 1] - pts[last - 1])
-        : null;
-      return (
-        <g transform={transform} style={{ pointerEvents: 'none' }}>
-          <g transform={`translate(${element.x}, ${element.y})`}>
-            <path
-              d={d}
-              fill={closed ? (element.fill || 'transparent') : 'none'}
-              stroke={strokeColor}
-              strokeWidth={strokeW}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeDasharray={strokeDashFor(element.strokeStyle, strokeW)}
-            />
-            {startHead && <polygon points={`${startHead[0]},${startHead[1]} ${startHead[2]},${startHead[3]} ${startHead[4]},${startHead[5]}`} fill={strokeColor} />}
-            {endHead && <polygon points={`${endHead[0]},${endHead[1]} ${endHead[2]},${endHead[3]} ${endHead[4]},${endHead[5]}`} fill={strokeColor} />}
-          </g>
-        </g>
-      );
-    }
-    default:
-      return null;
-  }
-};
-
 const GhostElement: React.FC<{ element: SlideElement }> = ({ element }) => {
   if (element.type === 'text') {
     // Text ghost - just a simple rect since actual text is rendered via HTML overlay
@@ -195,7 +75,10 @@ const GhostElement: React.FC<{ element: SlideElement }> = ({ element }) => {
   }
 
   if (element.type === 'shape') {
-    return <GhostShape element={element as ShapeElement} />;
+    // The ghost renders only for elements hidden on the slide; RenderShape
+    // early-returns on !visible, so force it on (the wrapping ghost-opacity
+    // group supplies the faded look).
+    return <RenderShape element={{ ...(element as ShapeElement), visible: true, opacity: 1 }} />;
   }
 
   if (element.type === 'image') {

@@ -36,7 +36,6 @@ export function useSVGDrag(options: UseSVGDragOptions) {
     currentY: 0,
   });
 
-  const isDraggingRef = useRef(false);
   const pointerIdRef = useRef<number | null>(null);
 
   const handlePointerDown = useCallback((
@@ -51,7 +50,6 @@ export function useSVGDrag(options: UseSVGDragOptions) {
     e.preventDefault();
     e.stopPropagation();
     pointerIdRef.current = e.pointerId;
-    isDraggingRef.current = true;
     // Capture on the originating element so subsequent moves/up reach us
     // regardless of where the pointer goes (e.g. outside the SVG).
     try {
@@ -71,9 +69,6 @@ export function useSVGDrag(options: UseSVGDragOptions) {
       currentY: elementY,
     });
   }, [onDragStart]);
-
-  // Back-compat alias for any existing callers using the old name.
-  const handleMouseDown = handlePointerDown;
 
   useEffect(() => {
     if (!dragState.isDragging) return;
@@ -127,7 +122,6 @@ export function useSVGDrag(options: UseSVGDragOptions) {
         onDragEnd?.(dragState.elementId, finalX, finalY);
       }
 
-      isDraggingRef.current = false;
       pointerIdRef.current = null;
       setDragState({
         isDragging: false,
@@ -154,10 +148,5 @@ export function useSVGDrag(options: UseSVGDragOptions) {
     };
   }, [dragState, zoom, onDragMove, onDragEnd]);
 
-  return {
-    dragState,
-    handlePointerDown,
-    handleMouseDown,
-    isDragging: isDraggingRef.current,
-  };
+  return { handlePointerDown };
 }
