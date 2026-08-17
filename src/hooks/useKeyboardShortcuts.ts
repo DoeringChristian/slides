@@ -46,14 +46,14 @@ export function useKeyboardShortcuts() {
         e.preventDefault();
         const yMgr = getActiveUndoManager();
         if (yMgr) yMgr.undo();
-        else (store as any).temporal?.getState()?.undo();
+        else store.temporal.getState().undo();
         return;
       }
       if (ctrl && (key === 'y' || (key === 'z' && e.shiftKey))) {
         e.preventDefault();
         const yMgr = getActiveUndoManager();
         if (yMgr) yMgr.redo();
-        else (store as any).temporal?.getState()?.redo();
+        else store.temporal.getState().redo();
         return;
       }
 
@@ -237,19 +237,19 @@ export function useKeyboardShortcuts() {
             e.preventDefault();
             store.getState().updateElement(activeSlideId, textEl.id, {
               style: { ...textEl.style, fontWeight: textEl.style.fontWeight === 'bold' ? 'normal' : 'bold' },
-            } as any);
+            } as Partial<import('../types/presentation').TextElement>);
           }
           if (e.key === 'i') {
             e.preventDefault();
             store.getState().updateElement(activeSlideId, textEl.id, {
               style: { ...textEl.style, fontStyle: textEl.style.fontStyle === 'italic' ? 'normal' : 'italic' },
-            } as any);
+            } as Partial<import('../types/presentation').TextElement>);
           }
           if (e.key === 'u') {
             e.preventDefault();
             store.getState().updateElement(activeSlideId, textEl.id, {
               style: { ...textEl.style, textDecoration: textEl.style.textDecoration === 'underline' ? 'none' : 'underline' },
-            } as any);
+            } as Partial<import('../types/presentation').TextElement>);
           }
         }
       }

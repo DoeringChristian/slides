@@ -622,7 +622,7 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
 
     if (resourceChanges) {
       switch (resourceEasing) {
-        case 'dissolve':
+        case 'dissolve': {
           // True dissolve: both images blend with curves that minimize lightening
           // Using sqrt curves: combined alpha stays above 0.9 throughout
           // sqrt(t) + sqrt(1-t) * (1 - sqrt(t)) ≈ 0.91 at midpoint
@@ -638,6 +638,7 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
             cropHeight: ia.cropHeight,
           };
           break;
+        }
 
         case 'fadeinout':
           // Fade out first half, fade in second half

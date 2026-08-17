@@ -1,5 +1,5 @@
 import React from 'react';
-import { motion } from 'framer-motion';
+import { motion, type TargetAndTransition } from 'framer-motion';
 
 interface Props {
   type: string;
@@ -9,7 +9,7 @@ interface Props {
 }
 
 export const SlideTransition: React.FC<Props> = ({ type, duration, children, slideKey }) => {
-  const variants: Record<string, any> = {
+  const variants: Record<string, { initial: TargetAndTransition; animate: TargetAndTransition }> = {
     none: { initial: {}, animate: {} },
     fade: { initial: { opacity: 0 }, animate: { opacity: 1 } },
     'slide-left': { initial: { x: '100%' }, animate: { x: 0 } },

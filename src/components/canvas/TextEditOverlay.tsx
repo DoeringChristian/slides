@@ -44,6 +44,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
   const slide = useActiveSlide();
 
   const editorRef = useRef<HTMLDivElement>(null);
+  // eslint-disable-next-line react-hooks/purity -- captures the mount timestamp once; the useRef initializer only runs on mount
   const mountTimeRef = useRef(Date.now());
   const editingTextIdRef = useRef<string | null>(null);
   const activeSlideIdRef = useRef<string>(activeSlideId);
@@ -60,8 +61,10 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
   // capturing a stale closure.
   const [liveText, setLiveText] = useState('');
   const liveTextRef = useRef('');
+  // eslint-disable-next-line react-hooks/refs -- latest-value ref pattern: mirrors state for event handlers; read only outside render
   liveTextRef.current = liveText;
 
+  // eslint-disable-next-line react-hooks/refs -- latest-value ref pattern: mirrors state for event handlers; read only outside render
   activeSlideIdRef.current = activeSlideId;
 
   // Save text back to the store whenever editingTextId changes away.
@@ -501,6 +504,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     setEditingTextId(null);
   }, [updateElement, setEditingTextId, getTextFromEditor]);
 
+  // eslint-disable-next-line react-hooks/refs -- gate on the stage DOM node existing before portaling into it; the node is attached before text editing can start
   if (!textElement || !stageRef.current) return null;
 
   const { style } = textElement;

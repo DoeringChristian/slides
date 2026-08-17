@@ -47,8 +47,6 @@ export const SVGTextPaths: React.FC<Props> = memo(({
   rawLineIndices,
   onLayout,
 }) => {
-  if (isEditing) return null;
-
   const { style, x: elementX, y: elementY, width, height, rotation } = element;
   const padding = TEXT_BOX_PADDING;
   const bottomOverflow = 500;
@@ -88,6 +86,10 @@ export const SVGTextPaths: React.FC<Props> = memo(({
     );
     return () => { cancelled = true; };
   }, [layoutPromise]);
+
+  // Don't render SVG text when editing — the HTML editor overlay handles it.
+  // (Checked after the hooks so hook order stays stable if isEditing toggles.)
+  if (isEditing) return null;
 
   if (failed) {
     return (

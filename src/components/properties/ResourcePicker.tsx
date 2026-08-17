@@ -30,6 +30,7 @@ const ResourceThumbnail: React.FC<{ resource: Resource; isSelected: boolean; onC
 
     // Check cache first
     if (videoFrameCache[resource.id]) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- serve the cached video frame synchronously instead of re-extracting it; intentional cache fast-path
       setVideoThumb(videoFrameCache[resource.id]);
       return;
     }

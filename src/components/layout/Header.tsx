@@ -78,11 +78,11 @@ export const Header: React.FC = () => {
   };
 
   const handleUndo = () => {
-    (usePresentationStore as any).temporal?.getState()?.undo();
+    usePresentationStore.temporal.getState().undo();
   };
 
   const handleRedo = () => {
-    (usePresentationStore as any).temporal?.getState()?.redo();
+    usePresentationStore.temporal.getState().redo();
   };
 
   return (

@@ -158,6 +158,7 @@ export function useSVGDrag(options: UseSVGDragOptions) {
     dragState,
     handlePointerDown,
     handleMouseDown,
+    // eslint-disable-next-line react-hooks/refs -- exposes the drag flag to callers; drags always trigger re-renders via store updates, so the snapshot stays fresh
     isDragging: isDraggingRef.current,
   };
 }

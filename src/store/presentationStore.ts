@@ -526,7 +526,7 @@ export const usePresentationStore = create<PresentationStore>()(
                     width: (elA.width + elB.width) / 2,
                     height: (elA.height + elB.height) / 2,
                     rotation: (() => {
-                      let a = ((elA.rotation % 360) + 360) % 360;
+                      const a = ((elA.rotation % 360) + 360) % 360;
                       const b = ((elB.rotation % 360) + 360) % 360;
                       let delta = b - a;
                       if (delta > 180) delta -= 360;
@@ -577,8 +577,8 @@ export const usePresentationStore = create<PresentationStore>()(
                   width: (elA.width + elB.width) / 2,
                   height: (elA.height + elB.height) / 2,
                   rotation: (() => {
-                    let a = ((elA.rotation % 360) + 360) % 360;
-                    let b = ((elB.rotation % 360) + 360) % 360;
+                    const a = ((elA.rotation % 360) + 360) % 360;
+                    const b = ((elB.rotation % 360) + 360) % 360;
                     let delta = b - a;
                     if (delta > 180) delta -= 360;
                     if (delta < -180) delta += 360;
@@ -926,7 +926,7 @@ export const usePresentationStore = create<PresentationStore>()(
           const slide = state.presentation.slides[slideId];
           if (!slide) return state;
 
-          let updatedElements = { ...slide.elements };
+          const updatedElements = { ...slide.elements };
 
           // Apply all updates
           for (const { elementId, changes } of updates) {
@@ -1393,7 +1393,7 @@ export const usePresentationStore = create<PresentationStore>()(
             const slideMap = getYSlide(doc, slideId);
             if (!slideMap) return;
 
-            let elMap = getYElement(doc, slideId, elementId);
+            const elMap = getYElement(doc, slideId, elementId);
             if (elMap) {
               elMap.set('visible', true);
               if (position) {
@@ -1737,7 +1737,7 @@ export const usePresentationStore = create<PresentationStore>()(
           // Build the changes object from the source element
           const changes: Partial<SlideElement> = {};
           for (const prop of properties) {
-            (changes as any)[prop] = sourceElement[prop];
+            (changes as Record<string, unknown>)[prop] = sourceElement[prop];
           }
 
           // Apply to all target slides

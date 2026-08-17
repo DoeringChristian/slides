@@ -50,6 +50,7 @@ function useSharedAnimationTick(active: boolean): number {
   const [t, setT] = useState(0);
   useEffect(() => {
     if (!active) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- rewind the preview to t=0 when it deactivates; intentional reset of shared-tick state
       setT(0);
       return;
     }

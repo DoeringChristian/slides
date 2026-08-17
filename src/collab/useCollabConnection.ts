@@ -52,6 +52,7 @@ export function useCollabConnection({ projectId, serverUrl, identity, shareToken
 
   useEffect(() => {
     if (!projectId || !serverUrl) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional reset of connection state when leaving server mode; runs once per project/url change
       setState(INITIAL);
       return;
     }

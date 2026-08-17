@@ -93,6 +93,7 @@ export const PresenterControlPanel: React.FC = () => {
   }, [isPresenterMode]);
 
   // Calculate elapsed time
+  // eslint-disable-next-line react-hooks/purity -- elapsed-clock display; a ticking timer re-renders this component every second, so Date.now() here is the intended data source
   const elapsedTime = presenterStartTime > 0 ? Math.floor((Date.now() - presenterStartTime) / 1000) : 0;
 
   const totalSlides = slideOrder.length;

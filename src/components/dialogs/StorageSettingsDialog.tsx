@@ -27,6 +27,7 @@ export const StorageSettingsDialog: React.FC<Props> = ({ isOpen, onClose }) => {
 
   useEffect(() => {
     if (serverUrl) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync the input field with the persisted server URL when it changes externally
       setInputServerUrl(serverUrl);
     }
   }, [serverUrl]);

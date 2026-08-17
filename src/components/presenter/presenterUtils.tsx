@@ -127,6 +127,7 @@ function wrapVisualFx(
 type ImageElementWithDissolve = ImageElement & { _dissolveSource?: CrossfadeSource };
 
 // Get slide background color
+// eslint-disable-next-line react-refresh/only-export-components -- shared presenter helper exported beside components; full reload on edit is fine
 export function getSlideBackground(slide: Slide): string {
   return slide.background.type === 'solid' ? slide.background.color : '#ffffff';
 }
@@ -135,6 +136,7 @@ export function getSlideBackground(slide: Slide): string {
  *  slide or the in-flight interpolation between two. PresenterView and
  *  AudienceView both feed slides through this so transitions, z-order merging,
  *  and dissolve behavior stay identical across editor + remote views. */
+// eslint-disable-next-line react-refresh/only-export-components -- shared presenter helper exported beside components; full reload on edit is fine
 export function composeSlideFrame(args: {
   slideA: Slide;
   slideB: Slide | null;
@@ -178,6 +180,7 @@ export function composeSlideFrame(args: {
 // For backward animation: use source's order, fading-in elements at end
 //   - Elements disappearing (source-only) stay at their original z-position
 //   - Elements appearing (target-only) fade in from below
+// eslint-disable-next-line react-refresh/only-export-components -- shared presenter helper exported beside components; full reload on edit is fine
 export function mergeElementOrders(sourceSlide: Slide | null, targetSlide: Slide | null, isForward: boolean = true): string[] {
   if (!targetSlide && !sourceSlide) return [];
   if (!targetSlide) return sourceSlide!.elementOrder;
@@ -265,6 +268,7 @@ export const PresenterTextElement: React.FC<PresenterTextElementProps> = ({ elem
 // for embedding in a single SVG composition root. The caller (PresenterView /
 // AudienceView) wraps all elements in one <svg viewBox="0 0 SLIDE_WIDTH
 // SLIDE_HEIGHT">. Z-order is document order; no per-element wrapper.
+// eslint-disable-next-line react-refresh/only-export-components -- shared presenter helper exported beside components; full reload on edit is fine
 export function renderPresenterElement(
   element: SlideElement,
   resources: Record<string, Resource>,

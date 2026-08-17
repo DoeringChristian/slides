@@ -8,6 +8,7 @@ import { ProjectCard, NewProjectCard } from './ProjectCard';
 import { generateThumbnail } from '../../utils/thumbnailGenerator';
 import { StorageSettingsDialog } from './StorageSettingsDialog';
 import { getStorageClient } from '../../utils/storageClient';
+import type { Presentation } from '../../types/presentation';
 import { useJoinedProjects, removeJoinedProject } from '../../store/joinedStore';
 
 export const ProjectPickerDialog: React.FC = () => {
@@ -44,7 +45,7 @@ export const ProjectPickerDialog: React.FC = () => {
       for (const project of projects) {
         if (!project.thumbnailDataUrl) {
           try {
-            let data: any = null;
+            let data: Presentation | null = null;
 
             if (storageMode === 'filesystem' && vaultHandle) {
               // Load from filesystem

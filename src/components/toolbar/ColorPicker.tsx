@@ -15,6 +15,7 @@ export const ColorPicker: React.FC<Props> = ({ color, onChange, label = 'Color',
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync the hex text field when the color changes from outside the picker
     setHexInput(color);
   }, [color]);
 
