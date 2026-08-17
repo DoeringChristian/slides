@@ -31,3 +31,6 @@ inkwell/
 *.njsproj
 *.sln
 *.sw?
+
+# Claude agent worktrees/session data
+.claude/

@@ -1,4 +1,5 @@
 import { defineConfig, type ViteDevServer } from 'vite'
+import { configDefaults } from 'vitest/config'
 import type { IncomingMessage, ServerResponse } from 'http'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
@@ -136,6 +137,11 @@ export default defineConfig(({ command }) => {
     // Base path for GitHub Pages - use repo name as base
     // Change 'slides' to your actual repository name if different
     base: command === 'build' ? '/slides/' : '/',
+    // Agent worktrees under .claude/ and the vendored inkwell prototype carry
+    // their own copies of the suites — don't double-run them.
+    test: {
+      exclude: [...configDefaults.exclude, '**/.claude/**', 'inkwell/**'],
+    },
     define: {
       __SLIDES_STANDALONE_BUILD__: 'false',
       __SLIDES_EDITOR_ORIGIN__: JSON.stringify(process.env.VITE_EDITOR_ORIGIN || 'https://doeringc.ch/slides'),

@@ -221,8 +221,6 @@ export const TransitionButton: React.FC<Props> = ({
     };
   }, [isOpen]);
 
-  const rememberEasing = useEditorStore((s) => s.rememberEasing);
-
   if (!canEdit) return null;
 
   const writeNewTransitions = (mutate: (t: PropertyTransitions) => void) => {

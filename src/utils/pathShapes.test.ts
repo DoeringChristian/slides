@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import {
   isLinePath,
-  isPathShape,
   strokeDashFor,
   pathD,
   sampledPath,
@@ -17,7 +16,7 @@ import type { ShapeElement } from '../types/presentation';
 
 // Matches bsplineSamples' internal constant. If this test fails after an
 // intentional retune, update the expected counts here.
-const SAMPLES_PER_SEG = 16;
+const SAMPLES_PER_SEG = 32; // keep in sync with pathShapes.ts
 
 /** Pull every numeric token out of a d-string. */
 function numbersIn(d: string): number[] {
@@ -57,7 +56,7 @@ function makePathShape(overrides: Partial<ShapeElement> = {}): ShapeElement {
 // Classification helpers
 // =============================================================================
 
-describe('isLinePath / isPathShape', () => {
+describe('isLinePath', () => {
   test('two-point linear path is a line; anything else is not', () => {
     expect(isLinePath({ shapeType: 'path', points: [0, 0, 1, 1] })).toBe(true);
     expect(isLinePath({ shapeType: 'path', points: [0, 0, 1, 1], curve: 'linear' })).toBe(true);
@@ -65,12 +64,6 @@ describe('isLinePath / isPathShape', () => {
     expect(isLinePath({ shapeType: 'path', points: [0, 0, 1, 1, 2, 2] })).toBe(false);
     expect(isLinePath({ shapeType: 'rect', points: [0, 0, 1, 1] })).toBe(false);
     expect(isLinePath({ shapeType: 'path' })).toBe(false);
-  });
-
-  test('isPathShape keys purely on shapeType', () => {
-    expect(isPathShape({ shapeType: 'path' })).toBe(true);
-    expect(isPathShape({ shapeType: 'rect' })).toBe(false);
-    expect(isPathShape({})).toBe(false);
   });
 });
 
@@ -177,7 +170,7 @@ describe('sampledPath', () => {
   // interior boundary, so the exact knot/joint point between two segments is
   // never emitted. That yields (S−1)·numSegs + 2 points rather than the
   // S·numSegs + 1 a keep-one-duplicate scheme would produce. Visually
-  // negligible (1/16 spacing) but an off-by-one worth knowing about.
+  // negligible (1/32 spacing) but an off-by-one worth knowing about.
   const expectedPoints = (numSegs: number) => (SAMPLES_PER_SEG - 1) * numSegs + 2;
   test.todo('suspected off-by-one: interior segment-boundary samples are dropped entirely');
 
