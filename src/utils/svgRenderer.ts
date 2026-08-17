@@ -1,7 +1,29 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import type { Slide, SlideElement, TextElement, ShapeElement, ImageElement, Resource } from '../types/presentation';
 import { SLIDE_WIDTH, SLIDE_HEIGHT, TEXT_BOX_PADDING } from './constants';
 import { renderMarkdownToHtml } from '../components/canvas/CustomMarkdownRenderer';
-import { pathD, arrowheadPoints, insetEndpoints, strokeDashFor } from './pathShapes';
+import { RenderShape } from '../components/svg/ElementRenderer';
+
+// ── String-assembled SVG for raster export (PNG download, thumbnails) ──
+//
+// The assembled <svg> is loaded into an <img> and drawn onto a canvas
+// (see exportImage.ts / thumbnailGenerator.ts / svgToPngDataURL below).
+// That "SVG as image" rasterization path constrains what we can emit:
+//
+//   * SHAPES delegate to the shared React leaf renderer `RenderShape`
+//     (the same component the editor canvas, presenter, and previews use)
+//     via renderToStaticMarkup — pure SVG markup, drops straight into the
+//     string. Shape features can no longer drift between editor and export.
+//   * TEXT stays a <foreignObject> with the markdown-rendered HTML: the
+//     shared `SVGTextPaths` lays out glyphs asynchronously in effects
+//     (font fetch + measurement), which a static, synchronous string render
+//     can't wait for. foreignObject HTML does rasterize in the SVG→<img>
+//     path, so this produces correct output.
+//   * IMAGES stay SVG <image> tags: `RenderImage` emits HTML <img>/<video>
+//     inside a foreignObject, and external media inside a foreignObject
+//     does NOT load when the SVG is rasterized through an <img>. Videos
+//     can't rasterize at all and become a placeholder rect.
 
 // Render text element to SVG string
 function renderTextElement(element: TextElement): string {
@@ -35,108 +57,13 @@ function renderTextElement(element: TextElement): string {
   `;
 }
 
-// Render shape element to SVG string
+// Render shape element to SVG string — DELEGATED to the shared editor
+// renderer. RenderShape is pure SVG (no foreignObject, no effects), so its
+// static markup drops straight into the assembled string. Do NOT re-add
+// hand-rolled shape branches here; that fork is how dashed strokes once
+// exported as solid.
 function renderShapeElement(element: ShapeElement): string {
-  const { x, y, width, height, rotation, opacity, fill, stroke, strokeWidth, shapeType, cornerRadius, points } = element;
-
-  const cx = x + width / 2;
-  const cy = y + height / 2;
-  const transform = rotation ? `rotate(${rotation}, ${cx}, ${cy})` : '';
-
-  const fillAttr = fill || 'transparent';
-  const strokeAttr = stroke || 'none';
-  const strokeWidthAttr = strokeWidth || 0;
-
-  switch (shapeType) {
-    case 'rect':
-      return `
-        <g transform="${transform}">
-          <rect x="${x}" y="${y}" width="${width}" height="${height}" rx="${cornerRadius || 0}" ry="${cornerRadius || 0}" fill="${fillAttr}" stroke="${strokeAttr}" stroke-width="${strokeWidthAttr}" opacity="${opacity}" />
-        </g>
-      `;
-
-    case 'ellipse':
-      return `
-        <g transform="${transform}">
-          <ellipse cx="${x + width / 2}" cy="${y + height / 2}" rx="${width / 2}" ry="${height / 2}" fill="${fillAttr}" stroke="${strokeAttr}" stroke-width="${strokeWidthAttr}" opacity="${opacity}" />
-        </g>
-      `;
-
-    case 'triangle': {
-      const tcx = x + width / 2;
-      const tcy = y + height / 2;
-      const r = Math.min(width, height) / 2;
-      const pts = [
-        [tcx, tcy - r],
-        [tcx - r * Math.cos(Math.PI / 6), tcy + r * Math.sin(Math.PI / 6)],
-        [tcx + r * Math.cos(Math.PI / 6), tcy + r * Math.sin(Math.PI / 6)],
-      ];
-      const d = `M ${pts[0][0]} ${pts[0][1]} L ${pts[1][0]} ${pts[1][1]} L ${pts[2][0]} ${pts[2][1]} Z`;
-      return `
-        <g transform="${transform}">
-          <path d="${d}" fill="${fillAttr}" stroke="${strokeAttr}" stroke-width="${strokeWidthAttr}" opacity="${opacity}" />
-        </g>
-      `;
-    }
-
-    case 'star': {
-      const scx = x + width / 2;
-      const scy = y + height / 2;
-      const outerR = Math.min(width, height) / 2;
-      const innerR = outerR / 2;
-      const starPoints: string[] = [];
-      for (let i = 0; i < 10; i++) {
-        const r = i % 2 === 0 ? outerR : innerR;
-        const angle = (i * Math.PI) / 5 - Math.PI / 2;
-        starPoints.push(`${scx + r * Math.cos(angle)},${scy + r * Math.sin(angle)}`);
-      }
-      return `
-        <g transform="${transform}">
-          <polygon points="${starPoints.join(' ')}" fill="${fillAttr}" stroke="${strokeAttr}" stroke-width="${strokeWidthAttr}" opacity="${opacity}" />
-        </g>
-      `;
-    }
-
-    case 'path': {
-      const pts = points ?? [];
-      if (pts.length < 4) return '';
-      const closed = element.closed ?? false;
-      const curve = element.curve ?? 'linear';
-      const shaftPts = insetEndpoints(pts, !!element.startArrow, !!element.endArrow);
-      const cornerR = curve === 'linear' ? (element.cornerRadius ?? 0) : 0;
-      const d = pathD(shaftPts, curve, closed, cornerR);
-      const strokeCol = stroke || fill || '#000';
-      const strokeW = strokeWidth || (closed ? 0 : 3);
-      const dash = strokeDashFor(element.strokeStyle, strokeW);
-      const fillCol = closed ? fillAttr : 'none';
-      const last = pts.length - 2;
-      const startHead = element.startArrow
-        ? arrowheadPoints(pts[0], pts[1], pts[0] - pts[2], pts[1] - pts[3])
-        : null;
-      const endHead = element.endArrow
-        ? arrowheadPoints(pts[last], pts[last + 1], pts[last] - pts[last - 2], pts[last + 1] - pts[last - 1])
-        : null;
-      const headSvg = (h: number[] | null) => h
-        ? `<polygon points="${h[0]},${h[1]} ${h[2]},${h[3]} ${h[4]},${h[5]}" fill="${strokeCol}" opacity="${opacity}" />`
-        : '';
-      return `
-        <g transform="${transform}">
-          <g transform="translate(${x}, ${y})">
-            <path d="${d}" fill="${fillCol}" stroke="${strokeCol}" stroke-width="${strokeW}"${dash ? ` stroke-dasharray="${dash}"` : ''} stroke-linecap="round" stroke-linejoin="round" opacity="${opacity}" />
-            ${headSvg(startHead)}
-            ${headSvg(endHead)}
-          </g>
-        </g>
-      `;
-    }
-
-    default:
-      return `
-        <g transform="${transform}">
-          <rect x="${x}" y="${y}" width="${width}" height="${height}" fill="${fillAttr}" stroke="${strokeAttr}" stroke-width="${strokeWidthAttr}" opacity="${opacity}" />
-        </g>
-      `;
-  }
+  return renderToStaticMarkup(createElement(RenderShape, { element }));
 }
 
 // Render image element to SVG string

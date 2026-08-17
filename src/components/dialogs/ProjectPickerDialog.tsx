@@ -5,7 +5,10 @@ import { usePresentationStore } from '../../store/presentationStore';
 import { useEditorStore } from '../../store/editorStore';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { ProjectCard, NewProjectCard } from './ProjectCard';
-import { generateThumbnail } from '../../utils/thumbnailGenerator';
+// NOTE: thumbnailGenerator is imported lazily at the call sites below. It
+// pulls in svgRenderer → react-dom/server (shape markup now comes from the
+// shared RenderShape via renderToStaticMarkup), which must stay out of the
+// main editor chunk — same treatment as the export utilities.
 import { StorageSettingsDialog } from './StorageSettingsDialog';
 import { getStorageClient } from '../../utils/storageClient';
 import { useJoinedProjects, removeJoinedProject } from '../../store/joinedStore';
@@ -64,6 +67,7 @@ export const ProjectPickerDialog: React.FC = () => {
             if (data && data.slideOrder && data.slideOrder.length > 0 && data.slides) {
               const firstSlide = data.slides[data.slideOrder[0]];
               if (firstSlide) {
+                const { generateThumbnail } = await import('../../utils/thumbnailGenerator');
                 const thumbnail = await generateThumbnail(firstSlide, data.resources || {});
                 updateThumbnail(project.id, thumbnail);
               }
@@ -126,6 +130,7 @@ export const ProjectPickerDialog: React.FC = () => {
       let thumbnail: string | undefined;
       if (firstSlide) {
         try {
+          const { generateThumbnail } = await import('../../utils/thumbnailGenerator');
           thumbnail = await generateThumbnail(firstSlide, presentation.resources || {});
         } catch {
           // Thumbnail generation can fail (e.g. foreignObject in SVG); continue without it
