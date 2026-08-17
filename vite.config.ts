@@ -125,15 +125,22 @@ function editorPwa() {
 }
 
 // https://vite.dev/config/
-export default defineConfig(({ command }) => ({
-  // Base path for GitHub Pages - use repo name as base
-  // Change 'slides' to your actual repository name if different
-  base: command === 'build' ? '/slides/' : '/',
-  define: {
-    __SLIDES_STANDALONE_BUILD__: 'false',
-    __SLIDES_EDITOR_ORIGIN__: JSON.stringify(process.env.VITE_EDITOR_ORIGIN || 'https://doeringc.ch/slides'),
-  },
-  plugins: command === 'serve'
-    ? [react(), backendServer(), standaloneTemplateMiddleware()]
-    : [react(), editorPwa()],
-}))
+export default defineConfig(({ command }) => {
+  // Vitest boots an internal Vite dev server (command === 'serve') to
+  // transform test modules, which would run configureServer hooks and spawn
+  // the backend — leaving a child process that keeps the test run from
+  // exiting. Dev-server-only plugins are for `npm run dev`, not tests.
+  const isVitest = !!process.env.VITEST;
+  return {
+    // Base path for GitHub Pages - use repo name as base
+    // Change 'slides' to your actual repository name if different
+    base: command === 'build' ? '/slides/' : '/',
+    define: {
+      __SLIDES_STANDALONE_BUILD__: 'false',
+      __SLIDES_EDITOR_ORIGIN__: JSON.stringify(process.env.VITE_EDITOR_ORIGIN || 'https://doeringc.ch/slides'),
+    },
+    plugins: command === 'serve'
+      ? [react(), ...(isVitest ? [] : [backendServer(), standaloneTemplateMiddleware()])]
+      : [react(), editorPwa()],
+  }
+})
