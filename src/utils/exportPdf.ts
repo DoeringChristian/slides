@@ -3,6 +3,7 @@ import type { Presentation, Slide, TextElement, ShapeElement, ImageElement, Reso
 import { SLIDE_WIDTH, SLIDE_HEIGHT, TEXT_BOX_PADDING } from './constants';
 import { parseBlocks, parseInlineSegments, getBlockFontMultiplier } from '../components/canvas/CustomMarkdownRenderer';
 import { pathD, arrowheadPoints, insetEndpoints, strokeDashFor } from './pathShapes';
+import { shapeToPathD } from './shapeToPath';
 
 // ── Canvas2D-based PDF export ──
 // Renders directly to canvas — no html2canvas, no DOM cloning.
@@ -276,20 +277,29 @@ function drawTextElement(ctx: CanvasRenderingContext2D, element: TextElement) {
 }
 
 // ── Shape rendering ──
-function fillAndStroke(ctx: CanvasRenderingContext2D, fillColor: string, strokeColor: string, sw: number) {
+//
+// GEOMETRY IS NOT DEFINED HERE. All shape outlines come from the same
+// sources the editor renderer uses — `shapeToPathD` (rect / ellipse /
+// triangle / star) and `pathD` + `insetEndpoints` + `arrowheadPoints`
+// (path shapes) — consumed on the canvas via `new Path2D(d)`. Canvas2D
+// accepts full SVG path syntax in the Path2D constructor, and this file
+// draws into a plain HTMLCanvasElement (jsPDF only receives the finished
+// canvas raster via addImage), so Path2D support is the browser's, not
+// jsPDF's. Never re-derive shape math here.
+function fillAndStroke(ctx: CanvasRenderingContext2D, path: Path2D, fillColor: string, strokeColor: string, sw: number) {
   if (fillColor !== 'transparent' && fillColor !== 'none') {
     ctx.fillStyle = fillColor;
-    ctx.fill();
+    ctx.fill(path);
   }
   if (strokeColor !== 'none' && sw > 0) {
     ctx.strokeStyle = strokeColor;
     ctx.lineWidth = sw;
-    ctx.stroke();
+    ctx.stroke(path);
   }
 }
 
 function drawShapeElement(ctx: CanvasRenderingContext2D, element: ShapeElement) {
-  const { x, y, width, height, rotation, opacity, fill, stroke, strokeWidth, shapeType, cornerRadius, points } = element;
+  const { x, y, width, height, rotation, opacity, fill, stroke, strokeWidth, shapeType, points } = element;
 
   ctx.save();
   ctx.globalAlpha *= opacity;
@@ -303,126 +313,55 @@ function drawShapeElement(ctx: CanvasRenderingContext2D, element: ShapeElement) 
     ctx.translate(-cx, -cy);
   }
 
-  const fillColor = fill || 'transparent';
-  const strokeColor = stroke || 'none';
-  const sw = strokeWidth || 0;
-
-  switch (shapeType) {
-    case 'rect': {
-      const r = cornerRadius || 0;
-      ctx.beginPath();
-      if (r > 0) {
-        ctx.moveTo(x + r, y);
-        ctx.lineTo(x + width - r, y);
-        ctx.quadraticCurveTo(x + width, y, x + width, y + r);
-        ctx.lineTo(x + width, y + height - r);
-        ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
-        ctx.lineTo(x + r, y + height);
-        ctx.quadraticCurveTo(x, y + height, x, y + height - r);
-        ctx.lineTo(x, y + r);
-        ctx.quadraticCurveTo(x, y, x + r, y);
-      } else {
-        ctx.rect(x, y, width, height);
-      }
-      ctx.closePath();
-      fillAndStroke(ctx, fillColor, strokeColor, sw);
-      break;
-    }
-
-    case 'ellipse': {
-      ctx.beginPath();
-      ctx.ellipse(cx, cy, width / 2, height / 2, 0, 0, Math.PI * 2);
-      ctx.closePath();
-      fillAndStroke(ctx, fillColor, strokeColor, sw);
-      break;
-    }
-
-    case 'triangle': {
-      const r = Math.min(width, height) / 2;
-      const pts = [
-        [cx, cy - r],
-        [cx - r * Math.cos(Math.PI / 6), cy + r * Math.sin(Math.PI / 6)],
-        [cx + r * Math.cos(Math.PI / 6), cy + r * Math.sin(Math.PI / 6)],
-      ];
-      ctx.beginPath();
-      ctx.moveTo(pts[0][0], pts[0][1]);
-      ctx.lineTo(pts[1][0], pts[1][1]);
-      ctx.lineTo(pts[2][0], pts[2][1]);
-      ctx.closePath();
-      fillAndStroke(ctx, fillColor, strokeColor, sw);
-      break;
-    }
-
-    case 'star': {
-      const outerR = Math.min(width, height) / 2;
-      const innerR = outerR / 2;
-      ctx.beginPath();
-      for (let i = 0; i < 10; i++) {
-        const r = i % 2 === 0 ? outerR : innerR;
-        const angle = (i * Math.PI) / 5 - Math.PI / 2;
-        const px = cx + r * Math.cos(angle);
-        const py = cy + r * Math.sin(angle);
-        if (i === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-      }
-      ctx.closePath();
-      fillAndStroke(ctx, fillColor, strokeColor, sw);
-      break;
-    }
-
-    case 'path': {
-      const pts = points ?? [0, 0, width, 0];
-      if (pts.length < 4) break;
+  if (shapeType === 'path') {
+    // Path shapes are handled apart from shapeToPathD because its 'path'
+    // branch appends arrowhead PEN strokes (for the Create animation's
+    // outline trace); the export needs the shaft stroked/dash-patterned and
+    // the arrowheads as separately FILLED triangles — exactly what the
+    // shared RenderShape does in SVG.
+    const pts = points ?? [];
+    if (pts.length >= 4) {
       const closed = element.closed ?? false;
       const curve = element.curve ?? 'linear';
       const strokeCol = stroke || fill || '#000';
       const sw = strokeWidth || (closed ? 0 : 3);
-      // pathD emits M / L / Q / Z (bsplines are pre-sampled to L's). Mirror
-      // each command onto a Canvas2D path.
       const shaftPts = insetEndpoints(pts, !!element.startArrow, !!element.endArrow);
       const cornerR = curve === 'linear' ? (element.cornerRadius ?? 0) : 0;
-      const d = pathD(shaftPts, curve, closed, cornerR);
-      ctx.beginPath();
-      for (const cmd of d.split(/(?=[MLQZ])/)) {
-        const head = cmd[0];
-        if (head === 'M' || head === 'L') {
-          const [px, py] = cmd.slice(1).trim().split(/\s+/).map(Number);
-          if (head === 'M') ctx.moveTo(x + px, y + py);
-          else ctx.lineTo(x + px, y + py);
-        } else if (head === 'Q') {
-          const [cpx, cpy, px, py] = cmd.slice(1).trim().split(/\s+/).map(Number);
-          ctx.quadraticCurveTo(x + cpx, y + cpy, x + px, y + py);
-        } else if (head === 'Z') {
-          ctx.closePath();
-        }
-      }
+      // Same d-string RenderShape puts into the editor SVG. Points are
+      // relative to (x, y), so translate the canvas like the SVG's
+      // translate(x, y) group.
+      const shaft = new Path2D(pathD(shaftPts, curve, closed, cornerR));
+      ctx.translate(x, y);
       if (closed && fill) {
         ctx.fillStyle = fill;
-        ctx.fill();
+        ctx.fill(shaft);
       }
-      ctx.strokeStyle = strokeCol;
-      ctx.lineWidth = sw;
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      const dashStr = strokeDashFor(element.strokeStyle, sw);
-      ctx.setLineDash(dashStr ? dashStr.split(' ').map(Number) : []);
-      if (sw > 0) ctx.stroke();
-      ctx.setLineDash([]);
-      // Arrowheads at the endpoints.
+      if (sw > 0) {
+        ctx.strokeStyle = strokeCol;
+        ctx.lineWidth = sw;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        const dashStr = strokeDashFor(element.strokeStyle, sw);
+        ctx.setLineDash(dashStr ? dashStr.split(' ').map(Number) : []);
+        ctx.stroke(shaft);
+        ctx.setLineDash([]);
+      }
+      // Arrowheads at the ORIGINAL (un-inset) endpoints.
       const last = pts.length - 2;
       const drawHead = (tipX: number, tipY: number, dirX: number, dirY: number) => {
         const h = arrowheadPoints(tipX, tipY, dirX, dirY);
-        ctx.beginPath();
-        ctx.moveTo(x + h[0], y + h[1]);
-        ctx.lineTo(x + h[2], y + h[3]);
-        ctx.lineTo(x + h[4], y + h[5]);
-        ctx.closePath();
         ctx.fillStyle = strokeCol;
-        ctx.fill();
+        ctx.fill(new Path2D(`M ${h[0]} ${h[1]} L ${h[2]} ${h[3]} L ${h[4]} ${h[5]} Z`));
       };
       if (element.startArrow) drawHead(pts[0], pts[1], pts[0] - pts[2], pts[1] - pts[3]);
       if (element.endArrow) drawHead(pts[last], pts[last + 1], pts[last] - pts[last - 2], pts[last + 1] - pts[last - 1]);
-      break;
+    }
+  } else {
+    // rect / ellipse / triangle / star: one Path2D from the shared
+    // d-string builder (absolute slide coordinates, no extra transform).
+    const d = shapeToPathD(element);
+    if (d) {
+      fillAndStroke(ctx, new Path2D(d), fill || 'transparent', stroke || 'none', strokeWidth || 0);
     }
   }
 
