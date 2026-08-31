@@ -10,15 +10,9 @@ import { usePresentationStore } from './store/presentationStore';
 import { useVaultStore } from './store/vaultStore';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useIsMobile } from './hooks/useIsMobile';
-import { useIdentity } from './hooks/useIdentity';
-import { useCollabConnection } from './collab/useCollabConnection';
-import { useYToStoreSync } from './collab/yToStoreSync';
-import { useAwarenessPublish } from './collab/useAwarenessPublish';
-import { setActiveAwareness } from './collab/activeAwareness';
-import { setActiveDoc } from './collab/yDocAdapter';
-import { createUndoManagerFor, setActiveUndoManager } from './collab/activeUndo';
+import { useProjectCollab } from './hooks/useProjectCollab';
 import { readStandaloneBoot, applyStandaloneBoot } from './utils/standaloneBoot';
-import { addJoinedProject, getJoinedProject } from './store/joinedStore';
+import { addJoinedProject } from './store/joinedStore';
 import { setStorageConfig } from './utils/storageClient';
 
 // Check if this is the audience window
@@ -76,53 +70,8 @@ function App() {
   const scheduleSave = useVaultStore((s) => s.scheduleSave);
   const openProject = useVaultStore((s) => s.openProject);
   const storageMode = useVaultStore((s) => s.storageMode);
-  const serverUrl = useVaultStore((s) => s.serverUrl);
 
-  // Collab connection — only opens a WS when the active project lives on
-  // the server. Hook is a no-op (returns INITIAL) for local/filesystem modes,
-  // and lazily code-splits yjs + y-websocket internally so non-collab users
-  // never pay the bundle cost.
-  const identity = useIdentity();
-  const activeJoined = activeProjectId ? getJoinedProject(activeProjectId) : undefined;
-  const collab = useCollabConnection({
-    projectId: storageMode === 'server' && activeProjectId ? activeProjectId : null,
-    serverUrl: storageMode === 'server' ? serverUrl : null,
-    identity,
-    shareToken: activeJoined?.token,
-  });
-
-  // Phase 4 visibility — log peer changes during early testing. The UI piece
-  // moves to phase 7 (header avatars + selection outlines).
-  useEffect(() => {
-    if (!collab.ready) return;
-    console.log(`[collab] connected as ${identity.name} (${identity.userId}); ${collab.peerCount} peer(s)`);
-  }, [collab.ready, collab.peerCount, identity.name, identity.userId]);
-  useEffect(() => {
-    if (collab.error) console.error(`[collab] ${collab.error}`);
-  }, [collab.error]);
-
-  // Phase 5: register the active doc so mutating actions in presentationStore
-  // can route through Y, and run the sync hook to mirror Y updates back into
-  // Zustand. Phase 8: build a Y.UndoManager scoped to local edits and
-  // register it for useHistory to pick up.
-  useEffect(() => {
-    setActiveDoc(collab.doc);
-    if (collab.doc) {
-      setActiveUndoManager(createUndoManagerFor(collab.doc));
-    }
-    return () => {
-      setActiveDoc(null);
-      setActiveUndoManager(null);
-    };
-  }, [collab.doc]);
-  // Phase 7: register the awareness so the header, slide panel, and canvas
-  // can read peer state without prop-drilling.
-  useEffect(() => {
-    setActiveAwareness(collab.awareness);
-    return () => setActiveAwareness(null);
-  }, [collab.awareness]);
-  useYToStoreSync(collab.doc);
-  useAwarenessPublish(collab.awareness);
+  const collab = useProjectCollab({ disabled: isAudienceMode || !!standaloneBoot });
 
   // For audience mode: request presentation data from main window
   useEffect(() => {

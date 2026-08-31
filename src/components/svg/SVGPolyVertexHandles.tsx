@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import type { SlideElement, ShapeElement, ConnectorBinding } from '../../types/presentation';
 import { pathBounds, pathD, insetEndpoints } from '../../utils/pathShapes';
 import { useScreenToSVG } from './useScreenToSVG';
@@ -39,7 +39,7 @@ export const SVGPolyVertexHandles: React.FC<Props> = ({
   onTransformStart,
   onConnectorHighlight,
 }) => {
-  const points = element.points ?? [];
+  const points = useMemo(() => element.points ?? [], [element.points]);
   const n = points.length / 2;
 
   const [dragging, setDragging] = useState<{ idx: number } | null>(null);

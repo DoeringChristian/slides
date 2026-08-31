@@ -11,9 +11,6 @@ import type {
   EasingType,
   PropertyTransitions,
   SlideElement,
-  TextElement,
-  ShapeElement,
-  ImageElement,
   TransitionGroup,
   TransitionOptions,
 } from '../../types/presentation';
@@ -21,6 +18,7 @@ import { TransitionPreview } from './TransitionPreview';
 import { isVisibilityFadeOut, optionsKeyFor } from './transitionSide';
 import { defaultVisibilityEasing } from '../../utils/interpolation';
 import { DEFAULT_TYPES, RESOURCE_TYPES, CONTENT_TYPES, visibilityTypesFor } from '../../utils/easingCatalog';
+import { EASING_LABELS, easingHasOptions, transitionPropertiesDiffer } from '../../utils/transitionProperties';
 
 interface Props {
   elementId: string;
@@ -45,96 +43,6 @@ const EASING_ICONS: Record<EasingType, React.ReactNode> = {
   iris: <Circle size={ICON_SIZE} />,
   fadebyglyph: <Sparkles size={ICON_SIZE} />,
 };
-
-const EASING_LABELS: Record<EasingType, string> = {
-  const: 'Constant',
-  linear: 'Linear',
-  ease: 'Ease',
-  dissolve: 'Dissolve',
-  fadeinout: 'Fade In/Out',
-  typewriter: 'Typewriter',
-  write: 'Write',
-  create: 'Create',
-  wipe: 'Wipe',
-  slidein: 'Slide In',
-  grow: 'Grow',
-  iris: 'Iris',
-  fadebyglyph: 'Fade by Glyph',
-};
-
-// Which easings (per group) expose user-configurable options.
-function easingHasOptions(group: TransitionGroup, easing: EasingType): boolean {
-  if (group === 'content' && (easing === 'write' || easing === 'typewriter')) return true;
-  if (group === 'visibility' && (easing === 'wipe' || easing === 'slidein' || easing === 'grow' || easing === 'create')) return true;
-  return false;
-}
-
-function getPropertyValues(element: SlideElement, group: TransitionGroup): (number | string | boolean | null | undefined)[] {
-  switch (group) {
-    case 'position': return [element.x, element.y];
-    case 'size': return [element.width, element.height];
-    case 'rotation': return [element.rotation];
-    case 'opacity': return [element.opacity];
-    case 'fill': return element.type === 'shape' ? [(element as ShapeElement).fill] : [];
-    case 'stroke': return element.type === 'shape' ? [(element as ShapeElement).stroke] : [];
-    case 'strokeWidth': return element.type === 'shape' ? [(element as ShapeElement).strokeWidth] : [];
-    case 'cornerRadius': return element.type === 'shape' ? [(element as ShapeElement).cornerRadius] : [];
-    case 'fontSize': return element.type === 'text' ? [(element as TextElement).style.fontSize] : [];
-    case 'color': return element.type === 'text' ? [(element as TextElement).style.color] : [];
-    case 'lineHeight': return element.type === 'text' ? [(element as TextElement).style.lineHeight] : [];
-    case 'crop': return element.type === 'image' ? [
-      (element as ImageElement).cropX,
-      (element as ImageElement).cropY,
-      (element as ImageElement).cropWidth,
-      (element as ImageElement).cropHeight,
-    ] : [];
-    case 'resource': return element.type === 'image' ? [(element as ImageElement).resourceId] : [];
-    case 'visibility': return [element.visible];
-    case 'content': return element.type === 'text' ? [(element as TextElement).text] : [];
-    case 'controlPoints': {
-      // controlPoints drives both the vertex list AND the curve mode — they
-      // morph as one (sample-and-lerp polylines when curves differ). So the
-      // diff has to include `curve` too, otherwise switching curve mode
-      // between slides leaves the transition button hidden.
-      if (element.type !== 'shape') return [];
-      const s = element as ShapeElement;
-      return [
-        s.points ? s.points.join(',') : '',
-        s.curve ?? 'linear',
-        s.closed ? 1 : 0,
-      ];
-    }
-    case 'startArrow':
-      return element.type === 'shape' ? [(element as ShapeElement).startArrow ? 1 : 0] : [];
-    case 'endArrow':
-      return element.type === 'shape' ? [(element as ShapeElement).endArrow ? 1 : 0] : [];
-    default: return [];
-  }
-}
-
-function propertiesDiffer(a: SlideElement | undefined, b: SlideElement | undefined, group: TransitionGroup): boolean {
-  if (group === 'visibility') {
-    const aVisible = a?.visible ?? false;
-    const bVisible = b?.visible ?? false;
-    const aExists = !!a;
-    const bExists = !!b;
-    return (aExists && aVisible) !== (bExists && bVisible);
-  }
-  if (!a || !b) return false;
-  const valsA = getPropertyValues(a, group);
-  const valsB = getPropertyValues(b, group);
-  if (valsA.length !== valsB.length) return false;
-  for (let i = 0; i < valsA.length; i++) {
-    const valA = valsA[i];
-    const valB = valsB[i];
-    if (typeof valA === 'number' && typeof valB === 'number') {
-      if (Math.round(valA) !== Math.round(valB)) return true;
-    } else if (valA !== valB) {
-      return true;
-    }
-  }
-  return false;
-}
 
 export const TransitionButton: React.FC<Props> = ({
   elementId,
@@ -179,7 +87,7 @@ export const TransitionButton: React.FC<Props> = ({
     group === 'visibility' ? visibilityTypesFor(elementType) :
     DEFAULT_TYPES;
 
-  const differs = propertiesDiffer(sourceElement, targetElement, group);
+  const differs = transitionPropertiesDiffer(sourceElement, targetElement, group);
 
   // Where the transition lives: target by default, source for fade-out
   // visibility changes (because target doesn't exist).
