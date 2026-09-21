@@ -11,10 +11,13 @@ import { lerpAngle } from '../utils/interpolation';
 import { mirrorTargets, withMirroring } from '../utils/multiSlide';
 import { applyStickyDefaults } from '../utils/stickyEasings';
 import {
+  collectGhostObjectIds,
   isObjectVisibleAnywhere,
+  isResourceReferencedInSlides,
   objectSubtypeForElement,
   objectTypeForElement,
   purgeObjectFromSlides,
+  repairPresentation,
 } from '../utils/presentationCleanup';
 import { getActiveDoc, runInTxn } from '../collab/yDocAdapter';
 import {
@@ -30,7 +33,12 @@ import {
   yArrayReplaceAll,
   applyChangesToYElement,
 } from '../collab/ySchema';
-import { objectVisibleAnywhereInY, purgeObjectInY } from '../collab/yCleanup';
+import {
+  objectExistsAnywhereInY,
+  objectVisibleAnywhereInY,
+  purgeObjectInY,
+  resourceReferencedInY,
+} from '../collab/yCleanup';
 
 // Collab helpers — small adapters over the Y schema so the actions below can
 // stay close to their original shape. All `getYxxx` returns either a Y type
@@ -294,21 +302,76 @@ export const usePresentationStore = create<PresentationStore>()(
             const order = root.get('slideOrder') as Y.Array<string> | undefined;
             if (!slides || !order) return;
             if (order.length <= 1) return; // refuse to delete the last slide
+
+            // Remember which resources the doomed slide referenced so they
+            // can be freed below if this was their last reference.
+            const doomedResourceIds = new Set<string>();
+            const doomedElements = getYSlide(doc, slideId)?.get('elements') as
+              | Y.Map<Y.Map<unknown>>
+              | undefined;
+            if (doomedElements) {
+              for (const el of doomedElements.values()) {
+                if (el.get('type') !== 'image') continue;
+                const rid = el.get('resourceId');
+                if (typeof rid === 'string' && rid) doomedResourceIds.add(rid);
+              }
+            }
+
             slides.delete(slideId);
             const idx = order.toArray().indexOf(slideId);
             if (idx !== -1) order.delete(idx, 1);
+
+            // GC: registry entries whose object no longer exists on any slide
+            // would otherwise linger as "ghost" rows in the objects bar.
+            const objects = root.get('objects') as Y.Map<unknown> | undefined;
+            if (objects) {
+              for (const objectId of [...objects.keys()]) {
+                if (!objectExistsAnywhereInY(doc, objectId)) objects.delete(objectId);
+              }
+            }
+            // …and resources only the deleted slide referenced leak the same way.
+            const resources = root.get('resources') as Y.Map<unknown> | undefined;
+            if (resources) {
+              for (const rid of doomedResourceIds) {
+                if (!resourceReferencedInY(doc, rid)) resources.delete(rid);
+              }
+            }
             root.set('updatedAt', Date.now());
           });
           return;
         }
         set((state) => {
           if (state.presentation.slideOrder.length <= 1) return state;
+          const removedSlide = state.presentation.slides[slideId];
           const { [slideId]: _removed, ...remainingSlides } = state.presentation.slides;
+
+          // GC: drop registry entries whose object no longer exists on any
+          // slide ("ghost" objects in the objects bar).
+          let objects = state.presentation.objects;
+          const ghostIds = collectGhostObjectIds(remainingSlides, objects);
+          if (ghostIds.length > 0) {
+            objects = { ...objects };
+            for (const id of ghostIds) delete objects[id];
+          }
+
+          // …and free resources only the deleted slide referenced.
+          let resources = state.presentation.resources;
+          if (removedSlide) {
+            for (const element of Object.values(removedSlide.elements)) {
+              if (element.type !== 'image' || !element.resourceId) continue;
+              if (isResourceReferencedInSlides(remainingSlides, element.resourceId)) continue;
+              const { [element.resourceId]: _removedResource, ...remainingResources } = resources;
+              resources = remainingResources;
+            }
+          }
+
           return {
             presentation: {
               ...state.presentation,
               slides: remainingSlides,
               slideOrder: state.presentation.slideOrder.filter((id) => id !== slideId),
+              objects,
+              resources,
               updatedAt: Date.now(),
             },
           };
@@ -1634,7 +1697,9 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       loadPresentation: (presentation) => {
-        set({ presentation: migratePresentation(presentation) });
+        // Repair after migration heals decks corrupted before deleteSlide
+        // learned to GC ghost registry entries / orphaned resources.
+        set({ presentation: repairPresentation(migratePresentation(presentation)) });
       },
 
       resetPresentation: () => {

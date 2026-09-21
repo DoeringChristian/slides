@@ -392,6 +392,13 @@ const cases: Array<{ name: string; action: Action }> = [
     action: (s) => s.deleteSlide('s2'),
   },
   {
+    name: 'deleteSlide (GC — slide-only objects leave the registry, orphaned resource dropped)',
+    action: (s) => {
+      s.deleteSlide('s2'); // el-box/el-conn only lived here; el-img keyframe 1 of 2
+      s.deleteSlide('s3'); // el-img's last keyframe (res-1) + el-solo
+    },
+  },
+  {
     name: 'deleteSlide (refuses to delete the last slide)',
     action: (s) => {
       s.deleteSlide('s1');
@@ -497,6 +504,72 @@ const cases: Array<{ name: string; action: Action }> = [
 describe('dual-path equivalence (local JSON vs collab Y.Doc)', () => {
   test.each(cases)('$name', ({ action }) => {
     expectEquivalent(action);
+  });
+});
+
+// =============================================================================
+// deleteSlide object/resource GC (the "ghost objects" fix) — the equivalence
+// table already pins Y ≡ JSON; these tests pin the actual GC outcome on each
+// path so the equivalence can't be satisfied by both paths leaking alike.
+// =============================================================================
+
+describe('deleteSlide object/resource GC', () => {
+  const action: Action = (s) => {
+    s.deleteSlide('s2');
+    s.deleteSlide('s3');
+  };
+
+  test.each([
+    ['local JSON path', runLocal],
+    ['collab Y path', runCollab],
+  ] as const)('%s drops ghost registry entries and the orphaned image resource', (_name, run) => {
+    const result = run(action);
+    expect(Object.keys(result.slides)).toEqual(['s1']);
+    // Objects whose only keyframes lived on the deleted slides are GC'd…
+    for (const id of ['el-box', 'el-conn', 'el-img', 'el-solo']) {
+      expect(result.objects[id]).toBeUndefined();
+    }
+    // …while objects still present on s1 survive.
+    for (const id of ['el-text', 'el-rect', 'el-extra']) {
+      expect(result.objects[id]).toBeDefined();
+    }
+    // res-1 was only referenced by el-img (s2 + s3) — orphaned, dropped.
+    expect(result.resources['res-1']).toBeUndefined();
+    // res-2 was never referenced by a deleted slide; deleteSlide only audits
+    // resources the removed slide referenced, so it stays (load-time repair
+    // is the pass that sweeps fully-unreferenced resources).
+    expect(result.resources['res-2']).toBeDefined();
+  });
+});
+
+// =============================================================================
+// Load-time repair pass — loadPresentation heals decks corrupted before
+// deleteSlide learned to GC (ghost registry entries, unreferenced resources).
+// =============================================================================
+
+describe('loadPresentation repair pass', () => {
+  test('a synthetic ghost registry entry and an unreferenced resource are dropped on load', () => {
+    setActiveDoc(null);
+    const corrupted = makeFixture();
+    // Ghost: in the registry, present on no slide (pre-fix deleteSlide relic).
+    corrupted.objects['el-ghost'] = { id: 'el-ghost', name: 'Ghost', type: 'shape' };
+
+    usePresentationStore.getState().loadPresentation(corrupted);
+    const loaded = usePresentationStore.getState().presentation;
+
+    expect(loaded.objects['el-ghost']).toBeUndefined();
+    // res-2 is referenced by no slide in the fixture — the repair sweeps it.
+    expect(loaded.resources['res-2']).toBeUndefined();
+    // Real objects and referenced resources survive.
+    for (const id of ['el-text', 'el-rect', 'el-extra', 'el-box', 'el-conn', 'el-img', 'el-solo']) {
+      expect(loaded.objects[id]).toBeDefined();
+    }
+    expect(loaded.resources['res-1']).toBeDefined();
+
+    // Idempotent: re-loading the repaired deck changes nothing.
+    usePresentationStore.getState().loadPresentation(JSON.parse(JSON.stringify(loaded)));
+    const reloaded = usePresentationStore.getState().presentation;
+    expect(reloaded).toEqual(loaded);
   });
 });
 

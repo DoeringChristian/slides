@@ -6,6 +6,13 @@ export function objectVisibleAnywhereInY(doc: Y.Doc, elementId: string): boolean
   return order.some((slideId) => getYElement(doc, slideId, elementId)?.get('visible') === true);
 }
 
+/** Presence, NOT visibility: Y twin of objectExistsAnywhere — true when any
+ *  slide's elements map contains the id, even if hidden everywhere. */
+export function objectExistsAnywhereInY(doc: Y.Doc, objectId: string): boolean {
+  const order = (getYRoot(doc).get('slideOrder') as Y.Array<string>).toArray();
+  return order.some((slideId) => getYElement(doc, slideId, objectId) !== undefined);
+}
+
 export function resourceReferencedInY(doc: Y.Doc, resourceId: string): boolean {
   const order = (getYRoot(doc).get('slideOrder') as Y.Array<string>).toArray();
   for (const slideId of order) {

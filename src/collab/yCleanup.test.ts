@@ -1,10 +1,16 @@
 import { describe, expect, test } from 'vitest';
 import * as Y from 'yjs';
 import { jsonToYDoc, yDocToJson, getYElement, getYRoot } from './ySchema';
-import { objectVisibleAnywhereInY, purgeObjectInY, resourceReferencedInY } from './yCleanup';
+import {
+  objectExistsAnywhereInY,
+  objectVisibleAnywhereInY,
+  purgeObjectInY,
+  resourceReferencedInY,
+} from './yCleanup';
 import {
   isObjectVisibleAnywhere,
   isResourceReferencedInSlides,
+  objectExistsAnywhere,
   purgeObjectFromSlides,
 } from '../utils/presentationCleanup';
 import type {
@@ -169,6 +175,26 @@ describe('objectVisibleAnywhereInY ≡ isObjectVisibleAnywhere', () => {
     expect(objectVisibleAnywhereInY(doc, 'rect')).toBe(false);
     expect(objectVisibleAnywhereInY(doc, 'img1')).toBe(true);
     expect(objectVisibleAnywhereInY(doc, 'nonexistent')).toBe(false);
+  });
+});
+
+describe('objectExistsAnywhereInY ≡ objectExistsAnywhere', () => {
+  test('agrees for present, hidden-everywhere-but-present and ghost objects', () => {
+    const fixture = makePresentation({
+      s1: slide('s1', { text, rect: { ...rect, visible: false } }),
+      s2: slide('s2', { rect: { ...rect, visible: false } }),
+    });
+    // A ghost registry entry: in `objects`, on no slide (pre-fix deleteSlide).
+    fixture.objects['ghost'] = { id: 'ghost', name: 'Ghost', type: 'shape' };
+    const doc = jsonToYDoc(fixture);
+
+    for (const id of ['text', 'rect', 'ghost', 'nonexistent']) {
+      expect(objectExistsAnywhereInY(doc, id)).toBe(objectExistsAnywhere(fixture.slides, id));
+    }
+    // Sanity-pin: presence, NOT visibility — the everywhere-hidden rect exists.
+    expect(objectExistsAnywhereInY(doc, 'rect')).toBe(true);
+    expect(objectVisibleAnywhereInY(doc, 'rect')).toBe(false);
+    expect(objectExistsAnywhereInY(doc, 'ghost')).toBe(false);
   });
 });
 

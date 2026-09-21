@@ -1,12 +1,15 @@
 import { describe, expect, test } from 'vitest';
 import {
+  collectGhostObjectIds,
   isObjectVisibleAnywhere,
   isResourceReferencedInSlides,
+  objectExistsAnywhere,
   objectSubtypeForElement,
   objectTypeForElement,
   purgeObjectFromSlides,
+  repairPresentation,
 } from './presentationCleanup';
-import type { ImageElement, ShapeElement, Slide, TextElement } from '../types/presentation';
+import type { ImageElement, Presentation, ShapeElement, Slide, TextElement } from '../types/presentation';
 
 const base = {
   x: 0,
@@ -101,5 +104,150 @@ describe('presentationCleanup', () => {
 
     const finalPurge = purgeObjectFromSlides(purged.slides, 'other');
     expect(finalPurge.resourceIdToRemove).toBe('res-a');
+  });
+
+  test('objectExistsAnywhere reports presence, not visibility', () => {
+    const slides = {
+      s1: slide('s1', { rect: { ...rect, visible: false }, text }),
+      s2: slide('s2', { rect: { ...rect, visible: false } }),
+    };
+    // Hidden on every slide it appears on — still PRESENT.
+    expect(objectExistsAnywhere(slides, 'rect')).toBe(true);
+    expect(isObjectVisibleAnywhere(slides, 'rect')).toBe(false);
+    expect(objectExistsAnywhere(slides, 'text')).toBe(true);
+    // Never present on any slide.
+    expect(objectExistsAnywhere(slides, 'ghost')).toBe(false);
+  });
+
+  test('collectGhostObjectIds returns exactly the registry ids with zero occurrences', () => {
+    const slides = {
+      s1: slide('s1', { rect: { ...rect, visible: false } }),
+      s2: slide('s2', { text }),
+    };
+    const objects = {
+      rect: { id: 'rect', name: 'Rect', type: 'shape' as const },
+      text: { id: 'text', name: 'Text', type: 'text' as const },
+      ghost: { id: 'ghost', name: 'Ghost', type: 'shape' as const },
+      'ghost-img': { id: 'ghost-img', name: 'Ghost image', type: 'image' as const },
+    };
+    expect(collectGhostObjectIds(slides, objects).sort()).toEqual(['ghost', 'ghost-img']);
+    expect(collectGhostObjectIds(slides, { rect: objects.rect })).toEqual([]);
+  });
+});
+
+describe('repairPresentation (load-time ghost repair)', () => {
+  function makePresentation(
+    slides: Record<string, Slide>,
+    objects: Presentation['objects'],
+    resources: Presentation['resources'] = {},
+    templates: Presentation['templates'] = {},
+  ): Presentation {
+    return {
+      id: 'deck',
+      title: 'Repair deck',
+      slides,
+      slideOrder: Object.keys(slides),
+      objects,
+      resources,
+      templates,
+      theme: {
+        name: 'Default',
+        colors: {
+          primary: '#3b82f6', secondary: '#1e40af', accent: '#f97316',
+          background: '#ffffff', text: '#111111', heading: '#000000',
+        },
+        fonts: { heading: 'Inter', body: 'system-ui' },
+      },
+      width: 1920,
+      height: 1080,
+      createdAt: 1_700_000_000_000,
+      updatedAt: 1_700_000_001_000,
+    };
+  }
+
+  const res = (id: string) => ({
+    id, name: `${id}.png`, type: 'image' as const,
+    src: `data:image/png;base64,${id}`, originalWidth: 10, originalHeight: 10,
+  });
+
+  test('drops ghost registry entries and unreferenced resources', () => {
+    const corrupted = makePresentation(
+      { s1: slide('s1', { text, img1: image('img1', 'res-a') }) },
+      {
+        text: { id: 'text', name: 'Text', type: 'text' },
+        img1: { id: 'img1', name: 'Image', type: 'image' },
+        ghost: { id: 'ghost', name: 'Ghost', type: 'shape' },
+      },
+      { 'res-a': res('res-a'), 'res-leak': res('res-leak') },
+    );
+
+    const repaired = repairPresentation(corrupted);
+    expect(repaired.objects['ghost']).toBeUndefined();
+    expect(repaired.objects['text']).toBeDefined();
+    expect(repaired.objects['img1']).toBeDefined();
+    expect(repaired.resources['res-leak']).toBeUndefined();
+    expect(repaired.resources['res-a']).toBeDefined();
+    // Slides are untouched — the repair only prunes registry + resources.
+    expect(repaired.slides).toBe(corrupted.slides);
+  });
+
+  test('keeps a registry entry whose element is merely hidden everywhere', () => {
+    const deck = makePresentation(
+      { s1: slide('s1', { rect: { ...rect, visible: false } }) },
+      { rect: { id: 'rect', name: 'Rect', type: 'shape' } },
+    );
+    expect(repairPresentation(deck).objects['rect']).toBeDefined();
+  });
+
+  test('keeps a resource that only a template references', () => {
+    const deck = makePresentation(
+      { s1: slide('s1', { text }) },
+      { text: { id: 'text', name: 'Text', type: 'text' } },
+      { 'res-tpl': res('res-tpl') },
+      {
+        'tpl-1': {
+          id: 'tpl-1',
+          name: 'Template',
+          elements: { 'tpl-img': image('tpl-img', 'res-tpl') },
+          elementOrder: ['tpl-img'],
+          background: { type: 'solid', color: '#fff' },
+        },
+      },
+    );
+    expect(repairPresentation(deck).resources['res-tpl']).toBeDefined();
+  });
+
+  test('is idempotent and returns a clean deck by reference', () => {
+    const clean = makePresentation(
+      { s1: slide('s1', { text }) },
+      { text: { id: 'text', name: 'Text', type: 'text' } },
+    );
+    expect(repairPresentation(clean)).toBe(clean);
+
+    const corrupted = makePresentation(
+      { s1: slide('s1', { text }) },
+      {
+        text: { id: 'text', name: 'Text', type: 'text' },
+        ghost: { id: 'ghost', name: 'Ghost', type: 'shape' },
+      },
+      { 'res-leak': res('res-leak') },
+    );
+    const once = repairPresentation(corrupted);
+    expect(repairPresentation(once)).toBe(once);
+    expect(once).not.toBe(corrupted);
+
+    // Explicitly out of scope: elements present in `elements` but missing
+    // from `elementOrder` are left alone (pending product decision).
+    const missingFromOrder = makePresentation(
+      { s1: slide('s1', { text, rect }, ['text']) },
+      {
+        text: { id: 'text', name: 'Text', type: 'text' },
+        rect: { id: 'rect', name: 'Rect', type: 'shape' },
+      },
+    );
+    const out = repairPresentation(missingFromOrder);
+    expect(out).toBe(missingFromOrder);
+    expect(out.slides.s1.elements['rect']).toBeDefined();
+    expect(out.slides.s1.elementOrder).toEqual(['text']);
   });
 });
