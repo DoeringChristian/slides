@@ -10,6 +10,7 @@ import { beforeMutation } from '../utils/autoDraw';
 import { lerpAngle } from '../utils/interpolation';
 import { mirrorTargets, withMirroring } from '../utils/multiSlide';
 import { areSlidesContiguous, groupsToDissolve } from '../utils/presenterAdvance';
+import { canMergeObjects, mergeObjectInSlides } from '../utils/mergeObjects';
 import { applyStickyDefaults } from '../utils/stickyEasings';
 import {
   collectGhostObjectIds,
@@ -184,6 +185,15 @@ interface PresentationStore {
   resetElementToNextKeyframe: (slideId: string, elementId: string) => void;
   renameObject: (objectId: string, name: string) => void;
   removeObject: (objectId: string) => void;
+  /** Merge object `sourceId` into `targetId`: every keyframe of the source
+   *  is re-identified under the target's id so playback morphs between what
+   *  were two objects. Conflicts resolve TARGET-WINS (on slides where both
+   *  exist the source's element is dropped; those slide ids are returned).
+   *  Connector bindings and bound-text containerIds pointing at the source
+   *  are remapped deck-wide; the source's registry entry is removed (the
+   *  target keeps its id/name/type). No-op (`merged: false`) when the ids
+   *  are equal, the source exists nowhere, or either id is a group element. */
+  mergeObjects: (targetId: string, sourceId: string) => { merged: boolean; droppedOnSlides: string[] };
 
   // Multi-slide sync actions
   syncElementToSlides: (sourceSlideId: string, elementId: string, targetSlideIds: string[], properties: (keyof SlideElement)[]) => void;
@@ -1696,6 +1706,107 @@ export const usePresentationStore = create<PresentationStore>()(
             },
           };
         });
+      },
+
+      mergeObjects: (targetId: string, sourceId: string) => {
+        const doc = getActiveDoc();
+        if (doc) {
+          const result = { merged: false, droppedOnSlides: [] as string[] };
+          runInTxn(() => {
+            const root = getYRoot(doc);
+            const order = (root.get('slideOrder') as Y.Array<string> | undefined)?.toArray();
+            if (!order) return;
+
+            // Snapshot every slide as plain JSON for the guard and the
+            // per-slide merge decisions (same inputs the JSON path sees).
+            const slidesJson: Record<string, Slide> = {};
+            for (const sid of order) {
+              const snap = yDocToJsonSlideOnly(doc, sid);
+              if (snap) slidesJson[sid] = snap;
+            }
+            if (!canMergeObjects(slidesJson, targetId, sourceId)) return;
+
+            // Pass 1 — per slide containing the source: conflict → delete
+            // the source element + its order entry (target wins); otherwise
+            // move it under the target id (embedded id rewritten, order
+            // entry replaced in place). Y.Text subtree recreation for the
+            // moved element is accepted precedent.
+            for (const sid of order) {
+              const snap = slidesJson[sid];
+              const src = snap?.elements[sourceId];
+              if (!src) continue;
+              const slideMap = getYSlide(doc, sid);
+              const elements = slideMap?.get('elements') as Y.Map<unknown> | undefined;
+              const elementOrder = slideMap?.get('elementOrder') as Y.Array<string> | undefined;
+              if (!elements || !elementOrder) continue;
+              elements.delete(sourceId);
+              if (snap.elements[targetId]) {
+                const idx = elementOrder.toArray().indexOf(sourceId);
+                if (idx !== -1) elementOrder.delete(idx, 1);
+                result.droppedOnSlides.push(sid);
+              } else {
+                const mergedJson = {
+                  ...(JSON.parse(JSON.stringify(src)) as SlideElement),
+                  id: targetId,
+                } as SlideElement;
+                elements.set(targetId, elementToYMap(mergedJson));
+                yArrayReplaceAll(
+                  elementOrder,
+                  snap.elementOrder.map((id) => (id === sourceId ? targetId : id)),
+                );
+              }
+            }
+
+            // Pass 2 — deck-wide reference remap: connector bindings and
+            // bound-text containerIds that pointed at the source follow the
+            // target (also on conflict slides, where the source was dropped).
+            for (const sid of order) {
+              const elements = getYSlide(doc, sid)?.get('elements') as
+                | Y.Map<Y.Map<unknown>>
+                | undefined;
+              if (!elements) continue;
+              for (const elMap of elements.values()) {
+                const type = elMap.get('type');
+                if (type === 'text') {
+                  if (elMap.get('containerId') === sourceId) elMap.set('containerId', targetId);
+                } else if (type === 'shape') {
+                  for (const key of ['startBinding', 'endBinding'] as const) {
+                    const binding = elMap.get(key);
+                    if (binding instanceof Y.Map && binding.get('elementId') === sourceId) {
+                      const json = binding.toJSON() as Record<string, unknown>;
+                      elMap.set(key, mkScalarMap({ ...json, elementId: targetId }));
+                    }
+                  }
+                }
+              }
+            }
+
+            // Registry: the source's entry goes; the target keeps its
+            // id/name/ObjectMeta.type untouched.
+            (root.get('objects') as Y.Map<unknown> | undefined)?.delete(sourceId);
+            root.set('updatedAt', Date.now());
+            result.merged = true;
+          });
+          return result;
+        }
+        const result = { merged: false, droppedOnSlides: [] as string[] };
+        set((state) => {
+          const { slides, slideOrder, objects } = state.presentation;
+          if (!canMergeObjects(slides, targetId, sourceId)) return state;
+          const res = mergeObjectInSlides(slides, targetId, sourceId, slideOrder);
+          const { [sourceId]: _removedMeta, ...remainingObjects } = objects;
+          result.merged = true;
+          result.droppedOnSlides = res.droppedOnSlides;
+          return {
+            presentation: {
+              ...state.presentation,
+              slides: res.slides,
+              objects: remainingObjects,
+              updatedAt: Date.now(),
+            },
+          };
+        });
+        return result;
       },
 
       syncElementToSlides: (sourceSlideId: string, elementId: string, targetSlideIds: string[], properties: (keyof SlideElement)[]) => {

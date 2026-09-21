@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useState, useRef, useEffect } from 'react';
 import { ChevronDown, ChevronUp, Layers } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
@@ -17,6 +17,7 @@ export const ObjectListDrawer: React.FC = () => {
   const hideElement = usePresentationStore((s) => s.hideElement);
   const unhideElement = usePresentationStore((s) => s.unhideElement);
   const removeObject = usePresentationStore((s) => s.removeObject);
+  const mergeObjects = usePresentationStore((s) => s.mergeObjects);
 
   const objects = useAllObjects();
   const slide = useActiveSlide();
@@ -67,6 +68,33 @@ export const ObjectListDrawer: React.FC = () => {
     [activeSlideId, hideElement, unhideElement, selectedElementIds, setSelectedElements],
   );
 
+  // Transient notice for target-wins conflict resolution during a merge.
+  const [mergeNotice, setMergeNotice] = useState<string | null>(null);
+  const noticeTimer = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
+  }, []);
+
+  // Merge SOURCE (the row the picker was opened from) INTO the picked TARGET.
+  const handleMergeInto = useCallback(
+    (sourceId: string, targetId: string) => {
+      const target = objects.find((o) => o.id === targetId);
+      const result = mergeObjects(targetId, sourceId);
+      if (!result.merged) return;
+      // The two objects are one identity now — select the survivor.
+      setSelectedElements([targetId]);
+      if (result.droppedOnSlides.length > 0) {
+        const n = result.droppedOnSlides.length;
+        setMergeNotice(
+          `Kept “${target?.name ?? 'target'}” on ${n} conflicting slide${n === 1 ? '' : 's'}`,
+        );
+        if (noticeTimer.current !== null) window.clearTimeout(noticeTimer.current);
+        noticeTimer.current = window.setTimeout(() => setMergeNotice(null), 5000);
+      }
+    },
+    [mergeObjects, objects, setSelectedElements],
+  );
+
   const handleDelete = useCallback(
     (objectId: string) => {
       // Deselect the element before removing
@@ -92,6 +120,13 @@ export const ObjectListDrawer: React.FC = () => {
         </span>
       </button>
 
+      {/* Transient merge-conflict notice */}
+      {mergeNotice && (
+        <div className="px-3 py-1 text-xs text-amber-700 bg-amber-50 border-t border-amber-200">
+          {mergeNotice}
+        </div>
+      )}
+
       {/* Collapsible content */}
       {objectDrawerOpen && (
         <div className="max-h-[220px] overflow-y-auto border-t border-gray-100">
@@ -112,6 +147,8 @@ export const ObjectListDrawer: React.FC = () => {
                     isVisibleOnSlide={isVisibleOnSlide}
                     isSelected={isSelected}
                     isHovered={isHovered}
+                    mergeCandidates={listedObjects.filter((o) => o.id !== obj.id)}
+                    onMergeInto={(targetId) => handleMergeInto(obj.id, targetId)}
                     onSelect={() => {
                       if (isVisibleOnSlide) {
                         setSelectedElements([obj.id]);

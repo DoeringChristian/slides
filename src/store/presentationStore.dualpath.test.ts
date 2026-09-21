@@ -1103,3 +1103,144 @@ describe('WS-2 Phase 4 bound text (dual-path)', () => {
     expect(dupBox.x).not.toBeCloseTo(movedBox.x);
   });
 });
+
+// =============================================================================
+// WS-3 Phase 3: mergeObjects (dual-path) — merging object SOURCE into TARGET
+// re-identifies the source's keyframes under the target's id; conflicts
+// resolve target-wins; bindings + bound-text containerIds remap deck-wide;
+// the source's registry entry is dropped.
+//
+// Fixture recap: el-rect s1-only; el-solo s3-only; el-text s1+s2; el-box
+// s2-only; el-conn s2 with startBinding → el-box; el-img s2(hidden)+s3.
+// =============================================================================
+
+describe('WS-3 Phase 3 mergeObjects (dual-path)', () => {
+  const mergeCases: Array<{ name: string; action: Action }> = [
+    {
+      name: 'disjoint merge (el-rect@s1 into el-solo@s3) — keyframes re-identified',
+      action: (s) => { s.mergeObjects('el-solo', 'el-rect'); },
+    },
+    {
+      name: 'conflict merge (el-text into el-box) — target wins on s2, moves on s1',
+      action: (s) => { s.mergeObjects('el-box', 'el-text'); },
+    },
+    {
+      name: 'binding rewrite (el-box into el-solo) — el-conn re-points at el-solo',
+      action: (s) => { s.mergeObjects('el-solo', 'el-box'); },
+    },
+    {
+      name: 'bound-label containerId remap (label on el-box, el-box merged into el-solo)',
+      action: (s) => {
+        s.addElement('s2', textEl('el-lbl', {
+          containerId: 'el-box', text: 'Label', width: 184, height: 40, x: 608, y: 430,
+          style: { ...baseStyle, align: 'center', verticalAlign: 'middle' },
+        }));
+        s.mergeObjects('el-solo', 'el-box');
+      },
+    },
+    {
+      name: 'guard no-op: source === target',
+      action: (s) => { s.mergeObjects('el-text', 'el-text'); },
+    },
+    {
+      name: 'guard no-op: source exists on no slide',
+      action: (s) => { s.mergeObjects('el-text', 'el-ghost'); },
+    },
+  ];
+
+  test.each(mergeCases)('$name', ({ action }) => {
+    expectEquivalent(action);
+  });
+
+  // Pinned outcomes — equivalence alone could be satisfied by both paths
+  // doing nothing; these pin the actual merge result on each path.
+
+  test.each([
+    ['local JSON path', runLocal],
+    ['collab Y path', runCollab],
+  ] as const)('%s: conflict merge keeps the target keyframe, moves the disjoint one, cleans the registry', (_name, run) => {
+    const out = run((s) => { s.mergeObjects('el-box', 'el-text'); });
+
+    // s1 (el-text only): moved under the target id, embedded id rewritten,
+    // z-position preserved (el-text was first in the order).
+    const moved = out.slides.s1.elements['el-box'] as TextElement;
+    expect(out.slides.s1.elements['el-text']).toBeUndefined();
+    expect(moved.id).toBe('el-box');
+    expect(moved.type).toBe('text');
+    expect(moved.text).toBe('Text el-text');
+    expect(out.slides.s1.elementOrder).toEqual(['el-box', 'el-rect', 'el-extra']);
+
+    // s2 (both existed): TARGET WINS — the rect keyframe survives, the
+    // source's element + order entry are dropped.
+    const kept = out.slides.s2.elements['el-box'] as ShapeElement;
+    expect(out.slides.s2.elements['el-text']).toBeUndefined();
+    expect(kept.type).toBe('shape');
+    expect(kept.x).toBe(600);
+    expect(out.slides.s2.elementOrder).toEqual(['el-box', 'el-conn', 'el-img']);
+
+    // Registry: source entry gone; target keeps its id/name/type.
+    expect(out.objects['el-text']).toBeUndefined();
+    expect(out.objects['el-box']).toEqual({ id: 'el-box', name: 'Rectangle 2', type: 'shape' });
+  });
+
+  test.each([
+    ['local JSON path', runLocal],
+    ['collab Y path', runCollab],
+  ] as const)('%s: merging the bound target remaps el-conn\'s binding and a bound label\'s containerId', (_name, run) => {
+    const out = run((s) => {
+      s.addElement('s2', textEl('el-lbl', {
+        containerId: 'el-box', text: 'Label', width: 184, height: 40, x: 608, y: 430,
+        style: { ...baseStyle, align: 'center', verticalAlign: 'middle' },
+      }));
+      s.mergeObjects('el-solo', 'el-box');
+    });
+
+    // el-box's s2 keyframe now lives under el-solo, in el-box's old z-slot.
+    const movedBox = out.slides.s2.elements['el-solo'] as ShapeElement;
+    expect(out.slides.s2.elements['el-box']).toBeUndefined();
+    expect(movedBox.id).toBe('el-solo');
+    expect(movedBox.x).toBe(600);
+    expect(out.slides.s2.elementOrder).toEqual(['el-text', 'el-solo', 'el-conn', 'el-img', 'el-lbl']);
+    // el-solo's own s3 keyframe (the star) is untouched.
+    expect((out.slides.s3.elements['el-solo'] as ShapeElement).shapeType).toBe('star');
+
+    // Connector binding re-points at the surviving identity.
+    const conn = out.slides.s2.elements['el-conn'] as ShapeElement;
+    expect(conn.startBinding).toEqual({ elementId: 'el-solo', anchor: 'left' });
+    expect(conn.endBinding).toBeNull();
+
+    // Bound label follows the re-identified container.
+    expect((out.slides.s2.elements['el-lbl'] as TextElement).containerId).toBe('el-solo');
+
+    // Registry cleanup: el-box gone, el-solo keeps its meta.
+    expect(out.objects['el-box']).toBeUndefined();
+    expect(out.objects['el-solo']).toEqual({ id: 'el-solo', name: 'Star 1', type: 'shape' });
+  });
+
+  test('return-value parity: merged flag + droppedOnSlides agree across both paths', () => {
+    let localRet: { merged: boolean; droppedOnSlides: string[] } | undefined;
+    let collabRet: { merged: boolean; droppedOnSlides: string[] } | undefined;
+
+    runLocal((s) => { localRet = s.mergeObjects('el-box', 'el-text'); });
+    runCollab((s) => { collabRet = s.mergeObjects('el-box', 'el-text'); });
+    expect(localRet).toEqual({ merged: true, droppedOnSlides: ['s2'] });
+    expect(collabRet).toEqual(localRet);
+
+    // Disjoint merge: no drops.
+    runLocal((s) => { localRet = s.mergeObjects('el-solo', 'el-rect'); });
+    runCollab((s) => { collabRet = s.mergeObjects('el-solo', 'el-rect'); });
+    expect(localRet).toEqual({ merged: true, droppedOnSlides: [] });
+    expect(collabRet).toEqual(localRet);
+
+    // Guarded no-ops report merged: false on both paths.
+    runLocal((s) => { localRet = s.mergeObjects('el-text', 'el-text'); });
+    runCollab((s) => { collabRet = s.mergeObjects('el-text', 'el-text'); });
+    expect(localRet).toEqual({ merged: false, droppedOnSlides: [] });
+    expect(collabRet).toEqual(localRet);
+
+    runLocal((s) => { localRet = s.mergeObjects('el-text', 'el-ghost'); });
+    runCollab((s) => { collabRet = s.mergeObjects('el-text', 'el-ghost'); });
+    expect(localRet).toEqual({ merged: false, droppedOnSlides: [] });
+    expect(collabRet).toEqual(localRet);
+  });
+});

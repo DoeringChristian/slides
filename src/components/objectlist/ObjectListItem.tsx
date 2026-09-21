@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback } from 'react';
 import { Eye, EyeOff, Type, X } from 'lucide-react';
 import type { ObjectMeta, SlideElement } from '../../types/presentation';
 import { ObjectPreview } from './ObjectPreview';
+import { MergeIntoButton } from './MergeIntoButton';
 
 interface Props {
   object: ObjectMeta;
@@ -12,10 +13,14 @@ interface Props {
   isVisibleOnSlide: boolean;
   isSelected: boolean;
   isHovered: boolean;
+  /** The OTHER listed objects — candidate merge targets for "Merge into…". */
+  mergeCandidates: ObjectMeta[];
   onSelect: () => void;
   onRename: (name: string) => void;
   onToggleVisibility: () => void;
   onDelete: () => void;
+  /** Merge THIS row's object into the picked target. */
+  onMergeInto: (targetId: string) => void;
   onHover: () => void;
   onHoverEnd: () => void;
 }
@@ -27,10 +32,12 @@ export const ObjectListItem: React.FC<Props> = ({
   isVisibleOnSlide,
   isSelected,
   isHovered,
+  mergeCandidates,
   onSelect,
   onRename,
   onToggleVisibility,
   onDelete,
+  onMergeInto,
   onHover,
   onHoverEnd,
 }) => {
@@ -103,6 +110,14 @@ export const ObjectListItem: React.FC<Props> = ({
         >
           <X size={12} className="text-gray-500 hover:text-red-600" />
         </button>
+        {/* Merge-into overlay */}
+        {mergeCandidates.length > 0 && (
+          <MergeIntoButton
+            object={object}
+            candidates={mergeCandidates}
+            onMergeInto={onMergeInto}
+          />
+        )}
         {/* Visibility toggle overlay */}
         <button
           onClick={handleVisibilityClick}
