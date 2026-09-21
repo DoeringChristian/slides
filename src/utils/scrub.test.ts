@@ -48,6 +48,22 @@ describe('applyScrubDelta — clamping', () => {
   });
 });
 
+describe('applyScrubDelta — scrubStep overrides step for drags', () => {
+  it('uses scrubStep per pixel when given', () => {
+    expect(runSequence(0, [{ dx: 10 }], { step: 1, scrubStep: 0.2 })).toBeCloseTo(2, 10);
+  });
+
+  it('falls back to step when scrubStep is absent', () => {
+    expect(runSequence(0, [{ dx: 10 }], { step: 0.5 })).toBeCloseTo(5, 10);
+  });
+
+  it('fine factor applies on top of scrubStep', () => {
+    expect(
+      runSequence(0, [{ dx: 10, fine: true }], { step: 1, scrubStep: 0.2 }),
+    ).toBeCloseTo(0.2, 10);
+  });
+});
+
 describe('applyScrubDelta — fine factor toggling mid-sequence', () => {
   it('Shift pressed halfway: coarse pixels count coarse, fine pixels fine', () => {
     // 10 coarse px + 10 fine px at step 1, default fineFactor 0.1 → +10 + 1.
@@ -99,6 +115,70 @@ describe('commitValue', () => {
   it('clamps before rounding', () => {
     expect(commitValue(25.7, { max: 20, precision: 0 })).toBe(20);
     expect(commitValue(-3.2, { min: 0, precision: 0 })).toBe(0);
+  });
+});
+
+describe('commitValue — Ctrl snapping', () => {
+  it('snaps to whole values with snap 1', () => {
+    expect(commitValue(10.4, {}, 1)).toBe(10);
+    expect(commitValue(10.6, {}, 1)).toBe(11);
+    expect(commitValue(-2.6, {}, 1)).toBe(-3);
+  });
+
+  it('snaps to an arbitrary multiple', () => {
+    expect(commitValue(10.3, {}, 0.5)).toBe(10.5);
+    expect(commitValue(17, {}, 15)).toBe(15);
+  });
+
+  it('produces dust-free multiples (0.1 grid)', () => {
+    // 0.34999… / 0.1 → 3.4999…; naive round-and-multiply would return
+    // 0.30000000000000004.
+    expect(commitValue(0.34999999, {}, 0.1)).toBe(0.3);
+    expect(commitValue(0.25, {}, 0.1)).toBe(0.3);
+  });
+
+  it('replaces precision rounding (the multiple is the grid)', () => {
+    // precision 2 would give 10.26; snap wins.
+    expect(commitValue(10.26, { precision: 2 }, 1)).toBe(10);
+    // precision 1 would re-round 10.25 → 10.3, breaking the 0.25 grid.
+    expect(commitValue(10.3, { precision: 1 }, 0.25)).toBe(10.25);
+  });
+
+  it('clamps after snapping — bounds win even off-grid', () => {
+    expect(commitValue(0.2, { min: 0.1 }, 1)).toBe(0.1);
+    expect(commitValue(20.6, { max: 20.4 }, 1)).toBe(20); // clamp → 20.4 → snap → 20
+    expect(commitValue(-5, { min: 0 }, 1)).toBe(0);
+  });
+
+  it('does not snap when the parameter is absent (regression)', () => {
+    expect(commitValue(10.4, {})).toBe(10.4);
+  });
+});
+
+describe('Ctrl snapping mid-sequence (preview path)', () => {
+  it('draft accumulates unrounded while previews snap; releasing Ctrl returns to the exact position', () => {
+    const spec: ScrubSpec = { step: 1 };
+    let v = applyScrubDelta(0, 3.4, spec, false); // 3.4
+    // Ctrl pressed: the previewed value snaps, the draft is untouched.
+    expect(commitValue(v, spec, 1)).toBe(3);
+    v = applyScrubDelta(v, 0.2, spec, false); // ~3.6
+    expect(commitValue(v, spec, 1)).toBe(4);
+    // Ctrl released: preview is the raw accumulator again.
+    expect(commitValue(v, spec)).toBeCloseTo(3.6, 10);
+  });
+
+  it('ctrl+shift: fine accumulation, then snap at commit', () => {
+    const spec: ScrubSpec = { step: 1 };
+    // 16 fine px at default fineFactor 0.1 → draft 1.6.
+    const draft = runSequence(0, [{ dx: 8, fine: true }, { dx: 8, fine: true }], spec);
+    expect(draft).toBeCloseTo(1.6, 10);
+    expect(commitValue(draft, spec, 1)).toBe(2);
+  });
+
+  it('snap respects clamping mid-drag', () => {
+    const spec: ScrubSpec = { step: 1, min: 0, max: 10 };
+    const draft = runSequence(9, [{ dx: 5 }], spec); // clamped to 10
+    expect(commitValue(draft, spec, 3)).toBe(9); // 10 → nearest multiple of 3 in range
   });
 });
 

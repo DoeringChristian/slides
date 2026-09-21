@@ -6,10 +6,10 @@ import {
   ColorProperty,
   NumberProperty,
   RangeProperty,
-  SelectProperty,
+  PreviewSelectProperty,
   TextPreviewProperty,
 } from './Property';
-import { FONT_FAMILIES, FONT_SIZES } from '../../utils/constants';
+import { FONT_FAMILIES } from '../../utils/constants';
 import type { TextElement } from '../../types/presentation';
 
 /**
@@ -29,15 +29,25 @@ const TEXT_PROPERTIES: Property<TextElement>[] = [
       return t ? t.slice(0, 50) + (t.length > 50 ? '…' : '') : '(empty)';
     },
   }),
-  new SelectProperty<TextElement, string>({
+  new PreviewSelectProperty<TextElement, string>({
     key: 'style.fontFamily', label: 'Font',
-    options: FONT_FAMILIES.map((f) => ({ value: f, label: f })),
+    // Each tile's specimen is rendered IN the font it picks — the preview
+    // is the real CSS font-family, nothing re-derived. Two columns: the
+    // family names are long.
+    columns: 2,
+    options: FONT_FAMILIES.map((f) => ({
+      value: f, label: f,
+      preview: () => (
+        <div className="text-base leading-none" style={{ fontFamily: f }}>Ag</div>
+      ),
+    })),
   }),
-  new SelectProperty<TextElement, number>({
+  new NumberProperty<TextElement>({
+    // Was a fixed-list SelectProperty; a scrub field covers the in-between
+    // sizes too. 0.5/px drag with whole-number commits; arrows step by 1.
     key: 'style.fontSize', label: 'Size',
     transitionGroup: 'fontSize',
-    options: FONT_SIZES.map((s) => ({ value: s, label: String(s) })),
-    parse: Number,
+    min: 6, max: 200, step: 1, scrubStep: 0.5, precision: 0,
   }),
   new ColorProperty<TextElement>({
     key: 'style.color', label: 'Color',
@@ -45,7 +55,10 @@ const TEXT_PROPERTIES: Property<TextElement>[] = [
   }),
   new NumberProperty<TextElement>({
     key: 'style.lineHeight', label: 'Line Height',
-    transitionGroup: 'lineHeight', min: 0.5, max: 3, step: 0.1,
+    // 0.02/px: a full drag spans ~2 units of the 0.5–3 range instead of
+    // racing through it; arrows keep the 0.1 step.
+    transitionGroup: 'lineHeight', min: 0.5, max: 3,
+    step: 0.1, scrubStep: 0.02, precision: 2,
   }),
   new RangeProperty<TextElement>({
     key: 'opacity', label: 'Opacity',

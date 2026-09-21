@@ -29,7 +29,9 @@ const FontSizeInput: React.FC<{
       <ScrubInput
         compact
         value={element.style.fontSize}
-        spec={{ min: 6, max: 200, step: 1, precision: 0 }}
+        // Same sensitivity as the Size row in TextProperties: 0.5/px drag,
+        // arrows step by 1, whole-number commits.
+        spec={{ min: 6, max: 200, step: 1, scrubStep: 0.5, precision: 0 }}
         onScrubStart={scrub.begin}
         onPreview={(v) => scrub.preview(changesFor(v))}
         onCommit={(v) => scrub.end(changesFor(v))}

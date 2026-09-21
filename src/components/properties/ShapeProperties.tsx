@@ -7,12 +7,13 @@ import {
   RangeProperty,
   CheckboxProperty,
   SelectProperty,
+  PreviewSelectProperty,
   ReadoutProperty,
   type PropertyContext,
 } from './Property';
 import type { ShapeElement, ConnectorBinding, PathCurve, StrokeStyle, ArrowheadType, TransitionGroup } from '../../types/presentation';
 import { bindingFor, resolveBinding, isPinnedBinding } from '../../utils/connectorUtils';
-import { pathBounds, catmullTangents, arrowheadGeometry } from '../../utils/pathShapes';
+import { pathBounds, catmullTangents, arrowheadGeometry, strokeDashFor } from '../../utils/pathShapes';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useEditorStore } from '../../store/editorStore';
 import { IconSelect, type IconSelectOption } from '../controls/IconSelect';
@@ -182,6 +183,24 @@ function headPreview(type: ArrowheadType, end: 'start' | 'end'): React.ReactNode
   );
 }
 
+/** Tile preview for one stroke style: a real line sample drawn with the
+ *  SAME `strokeDashFor` helper the canvas renderer applies (round caps too,
+ *  matching RenderPaths) — the preview can't drift from what a pick does.
+ *  Fixed 2px sample width keeps every tile legible regardless of the
+ *  element's own stroke width. */
+function strokeStylePreview(style: StrokeStyle): React.ReactNode {
+  const SW = 2;
+  return (
+    <svg width={44} height={8} viewBox="0 0 44 8" aria-hidden="true">
+      <line
+        x1={3} y1={4} x2={41} y2={4}
+        stroke="currentColor" strokeWidth={SW} strokeLinecap="round"
+        strokeDasharray={strokeDashFor(style, SW)}
+      />
+    </svg>
+  );
+}
+
 interface ArrowheadOpts {
   key: 'startHead' | 'endHead';
   label: string;
@@ -242,19 +261,23 @@ const SHAPE_PROPERTIES: Property<ShapeElement>[] = [
   }),
   new NumberProperty<ShapeElement>({
     key: 'strokeWidth', label: 'Stroke Width',
-    transitionGroup: 'strokeWidth', min: 0, max: 20, step: 1,
+    // Gentle drag (0.2/px → a full drag spans the whole 0–20 range) with
+    // one-decimal commits; arrow keys still step by 1.
+    transitionGroup: 'strokeWidth', min: 0, max: 20,
+    step: 1, scrubStep: 0.2, precision: 1,
   }),
-  new SelectProperty<ShapeElement, StrokeStyle>({
+  new PreviewSelectProperty<ShapeElement, StrokeStyle>({
     key: 'strokeStyle', label: 'Stroke Style',
     // Lines / arrows / polylines / polygons get the dash control. Filled
     // rect / ellipse / triangle / star don't usually need it; keeping it
     // path-only avoids cluttering the rect panel.
     visibleFor: isPath,
     defaultValue: 'solid',
+    columns: 3,
     options: [
-      { value: 'solid', label: 'Solid' },
-      { value: 'dashed', label: 'Dashed' },
-      { value: 'dotted', label: 'Dotted' },
+      { value: 'solid', label: 'Solid', preview: () => strokeStylePreview('solid') },
+      { value: 'dashed', label: 'Dashed', preview: () => strokeStylePreview('dashed') },
+      { value: 'dotted', label: 'Dotted', preview: () => strokeStylePreview('dotted') },
     ],
   }),
   new NumberProperty<ShapeElement>({

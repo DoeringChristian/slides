@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { usePointerDrag } from '../../hooks/usePointerDrag';
-import { isShiftHeld } from '../../utils/keyboard';
+import { isCtrlHeld, isShiftHeld } from '../../utils/keyboard';
 import { DRAG_SLOP_MOUSE, DRAG_SLOP_TOUCH } from '../../utils/constants';
 import {
   applyScrubDelta,
@@ -20,7 +20,11 @@ import {
  * a ref (per-move math) and is mirrored to state for display — the store is
  * untouched until release, when `onCommit` fires exactly once with the
  * committed (clamped + precision-rounded) value. Shift toggles fine
- * scrubbing mid-drag (`isShiftHeld` polled per move). Escape or a
+ * scrubbing mid-drag (`isShiftHeld` polled per move); Ctrl (also polled per
+ * move) snaps the previewed/committed value to the nearest whole value —
+ * or `spec.ctrlSnap` multiple — while the unrounded accumulator keeps
+ * running underneath, so Ctrl+Shift means "fine scrub, then snap" and
+ * releasing Ctrl returns to the exact drag position. Escape or a
  * pointercancel cancels the scrub without committing.
  *
  * Optional live-preview protocol (see useScrubCommit): when wired, crossing
@@ -110,6 +114,10 @@ export const ScrubInput: React.FC<ScrubInputProps> = ({
   const closingEditRef = useRef(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
+  // Snap multiple to apply RIGHT NOW: Ctrl held → ctrlSnap (default whole
+  // values), otherwise no snapping. Polled per move / at release.
+  const ctrlSnapNow = () => (isCtrlHeld() ? specRef.current.ctrlSnap ?? 1 : undefined);
+
   const dragHandlers = usePointerDrag({
     onStart: (e) => {
       if (disabledRef.current) return false;
@@ -136,10 +144,15 @@ export const ScrubInput: React.FC<ScrubInputProps> = ({
       lastDxRef.current = d.dx;
       // Poll Shift per move so fine mode can toggle mid-drag.
       draftRef.current = applyScrubDelta(draftRef.current, dx, specRef.current, isShiftHeld());
-      setScrubDraft(draftRef.current);
-      // Live preview with the value a release right now would commit; the
-      // unrounded accumulator stays in draftRef.
-      onPreviewRef.current?.(commitValue(draftRef.current, specRef.current));
+      // Ctrl (polled per move, like Shift) snaps the previewed value to the
+      // nearest ctrlSnap multiple (default: whole values). Only the shown /
+      // previewed value snaps — the unrounded accumulator stays in draftRef,
+      // so releasing Ctrl returns to the exact drag position.
+      const snap = ctrlSnapNow();
+      const preview = commitValue(draftRef.current, specRef.current, snap);
+      setScrubDraft(snap !== undefined ? preview : draftRef.current);
+      // Live preview with the value a release right now would commit.
+      onPreviewRef.current?.(preview);
     },
     onEnd: (e) => {
       const phase = phaseRef.current;
@@ -161,7 +174,9 @@ export const ScrubInput: React.FC<ScrubInputProps> = ({
         return;
       }
       if (phase === 'scrubbing' && !cancelled) {
-        const committed = commitValue(draftRef.current, specRef.current);
+        // Ctrl state at release decides whether the commit snaps — matching
+        // the last previewed value the user saw.
+        const committed = commitValue(draftRef.current, specRef.current, ctrlSnapNow());
         if (committed !== startValueRef.current) onCommitRef.current(committed);
         // Net-zero scrub: nothing to commit, but a live session must still
         // unwind (it previewed intermediate values while history was paused).

@@ -2,6 +2,7 @@ import React from 'react';
 import { ColorPicker } from '../toolbar/ColorPicker';
 import { Toggle } from '../controls/Toggle';
 import { SelectControl } from '../controls/SelectControl';
+import { PreviewSelect } from '../controls/PreviewSelect';
 // Scrub-capable editor bodies (NumberEditor/PairEditor/RangeEditor) live in
 // their own components-only module: renderEditor is a class method and
 // can't call hooks, so the scrubbing classes return these components and
@@ -200,6 +201,11 @@ interface NumberOpts<T extends object> extends BaseOpts<T> {
   min?: number;
   max?: number;
   step?: number;
+  /** Drag-only step override (value per horizontal pixel); arrow keys keep
+   *  `step`. See ScrubSpec.scrubStep. */
+  scrubStep?: number;
+  /** Ctrl-during-scrub snap multiple; default 1 (whole values). */
+  ctrlSnap?: number;
   /** Legacy whole-number rounding (good for x/y; off for opacity).
    *  Equivalent to `precision: 0`; kept so existing panels don't churn. */
   round?: boolean;
@@ -214,12 +220,15 @@ interface NumberOpts<T extends object> extends BaseOpts<T> {
 
 /** Legacy `round: true` maps to `precision: 0`; explicit precision wins. */
 function scrubSpecFrom(opts: {
-  min?: number; max?: number; step?: number; round?: boolean; precision?: number;
+  min?: number; max?: number; step?: number; scrubStep?: number;
+  round?: boolean; precision?: number; ctrlSnap?: number;
 }): ScrubSpec {
   return {
     min: opts.min,
     max: opts.max,
     step: opts.step,
+    scrubStep: opts.scrubStep,
+    ctrlSnap: opts.ctrlSnap,
     precision: opts.precision ?? (opts.round ? 0 : undefined),
   };
 }
@@ -329,6 +338,40 @@ export class SelectProperty<T extends object = SlideElement, V extends string | 
   }
 }
 
+interface PreviewSelectOpts<T extends object, V extends string | number> extends BaseOpts<T> {
+  /** `preview` is a render function over the current element, so a tile can
+   *  reflect live element state (e.g. a dash pattern at the element's own
+   *  stroke width) — pass `() => node` when the preview is static. */
+  options: Array<{ value: V; label: string; preview: (el: T) => React.ReactNode }>;
+  defaultValue?: V;
+  /** Grid width of the tile grid. Default 3; use 2 for long labels. */
+  columns?: number;
+}
+
+/** Exclusive choice rendered as a PreviewSelect tile grid instead of a
+ *  native dropdown — each option shows what picking it actually looks like
+ *  (a dashed line sample, a font specimen, …). Values stay typed end to
+ *  end, so no `parse` round-trip is needed (unlike SelectProperty, whose
+ *  native <select> forces strings). */
+export class PreviewSelectProperty<T extends object = SlideElement, V extends string | number = string> extends BaseProperty<T, V> {
+  private readonly opts: PreviewSelectOpts<T, V>;
+  constructor(opts: PreviewSelectOpts<T, V>) { super(opts); this.opts = opts; }
+  renderEditor({ element, update }: PropertyContext<T>) {
+    const v = (this.get(element) ?? this.opts.defaultValue) as V;
+    return (
+      <PreviewSelect<V>
+        options={this.opts.options.map((o) => ({
+          value: o.value, label: o.label, preview: o.preview(element),
+        }))}
+        value={v}
+        onChange={(nv) => update(this.set(element, nv))}
+        columns={this.opts.columns}
+        disabled={this.disabledFor(element)}
+      />
+    );
+  }
+}
+
 /** Two side-by-side number inputs (Position X/Y, Size W/H). The two fields
  *  share one transition group and one sync set so they animate as a unit. */
 interface PairOpts<T extends object> extends BaseOpts<T> {
@@ -340,6 +383,8 @@ interface PairOpts<T extends object> extends BaseOpts<T> {
   min?: number;
   max?: number;
   step?: number;
+  scrubStep?: number;
+  ctrlSnap?: number;
   precision?: number;
 }
 
