@@ -235,9 +235,12 @@ export type ShapeType = 'rect' | 'ellipse' | 'triangle' | 'star' | 'path';
  *    linear   — straight segments between vertices
  *    bspline2 — uniform quadratic B-spline through the control points
  *    bspline3 — uniform cubic B-spline through the control points
+ *    bezier   — cubic Bézier chain through the vertices with editable
+ *               per-vertex tangent handles (`ShapeElement.tangents`)
  *  Both B-spline modes interpolate the endpoints (clamped) when the path is
- *  open and wrap smoothly when closed. */
-export type PathCurve = 'linear' | 'bspline2' | 'bspline3';
+ *  open and wrap smoothly when closed. Bézier always passes through every
+ *  vertex; missing tangents fall back to Catmull-Rom estimates. */
+export type PathCurve = 'linear' | 'bspline2' | 'bspline3' | 'bezier';
 
 /** Stroke dash pattern for path shapes (lines, arrows, polylines, polygons).
  *  `solid` (default) = no dash. `dashed` = medium dashes. `dotted` = short
@@ -292,6 +295,15 @@ export interface ShapeElement extends BaseElement {
   closed?: boolean;
   /** Path only: smoothing mode through the vertices. Defaults to 'linear'. */
   curve?: PathCurve;
+  /** Bézier only: per-vertex tangent handles, flat
+   *  [inDx0,inDy0,outDx0,outDy0, inDx1,…] — 4 entries PER VERTEX, each
+   *  RELATIVE to its vertex (same coordinate space as `points`, so they
+   *  translate with the element and ride along when a vertex moves).
+   *  A segment whose adjoining out/in handles are all zero renders
+   *  straight. Missing or length-mismatched arrays fall back to
+   *  Catmull-Rom-estimated tangents (`catmullTangents`), so a bare
+   *  curve switch still looks smooth. Ignored for non-bezier curves. */
+  tangents?: number[];
   /** Path only: arrowhead at the first / last vertex. */
   startArrow?: boolean;
   endArrow?: boolean;

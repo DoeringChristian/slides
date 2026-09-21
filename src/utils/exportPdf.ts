@@ -330,7 +330,7 @@ function drawShapeElement(ctx: CanvasRenderingContext2D, element: ShapeElement) 
       // Same d-string RenderShape puts into the editor SVG. Points are
       // relative to (x, y), so translate the canvas like the SVG's
       // translate(x, y) group.
-      const shaft = new Path2D(pathD(shaftPts, curve, closed, cornerR));
+      const shaft = new Path2D(pathD(shaftPts, curve, closed, cornerR, element.tangents));
       ctx.translate(x, y);
       if (closed && fill) {
         ctx.fillStyle = fill;

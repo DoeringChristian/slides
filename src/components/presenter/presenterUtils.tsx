@@ -445,8 +445,8 @@ const TipDrawArrow: React.FC<{
   // steady-state render in ElementRenderer.
   const shaftPts = insetEndpoints(pts, !!element.startArrow, true);
   const cornerR = curve === 'linear' ? (element.cornerRadius ?? 0) : 0;
-  const d = pathD(shaftPts, curve, closed, cornerR);
-  const arc = pathArcLength(shaftPts, curve, closed);
+  const d = pathD(shaftPts, curve, closed, cornerR, element.tangents);
+  const arc = pathArcLength(shaftPts, curve, closed, element.tangents);
   const strokeColor = element.stroke || element.fill || '#000';
 
   // Map the WriteEffect's t to the reveal phase exactly like writeGlyphFrame
@@ -464,7 +464,7 @@ const TipDrawArrow: React.FC<{
   // tip; once we hit FILL phase, lock the head at the final endpoint so
   // it doesn't jitter while the stroke fades to fill.
   const targetLen = revealPh >= 1 ? arc : arc * revealPh;
-  const tip = pointAtArcLength(shaftPts, curve, closed, targetLen);
+  const tip = pointAtArcLength(shaftPts, curve, closed, targetLen, element.tangents);
   // Final endpoint of the original (un-inset) path — that's where the
   // arrowhead tip lands at completion.
   const last = pts.length - 2;

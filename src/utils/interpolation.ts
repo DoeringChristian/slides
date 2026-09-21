@@ -1,6 +1,6 @@
 import type { SlideElement, TextElement, ShapeElement, ImageElement, EasingType } from '../types/presentation';
 import { clamp } from './geometry';
-import { resamplePath, sampledPath } from './pathShapes';
+import { resamplePath, sampledPath, catmullTangents } from './pathShapes';
 import type { PathCurve } from '../types/presentation';
 
 export function lerp(a: number, b: number, t: number): number {
@@ -172,10 +172,19 @@ function arrowAlpha(
  *  so the closing segment becomes an explicit polyline edge — the
  *  in-flight interpolated shape is rendered as an OPEN polyline, so the
  *  Z command can't add (or remove) a visible segment mid-transition. */
-function polylineForMorph(points: number[], curve: PathCurve, closed: boolean): number[] {
-  const samples = sampledPath(points, curve, closed);
+function polylineForMorph(points: number[], curve: PathCurve, closed: boolean, tangents?: number[]): number[] {
+  const samples = sampledPath(points, curve, closed, tangents);
   if (closed && samples.length >= 2) return [...samples, samples[0], samples[1]];
   return samples;
+}
+
+/** Tangent list a bezier keyframe actually renders with: stored tangents
+ *  when they match the vertex count, Catmull-Rom estimates otherwise —
+ *  mirrors pathD's fallback so the lerp starts/ends on what's on screen. */
+function renderedTangents(points: number[], tangents: number[] | undefined, closed: boolean): number[] {
+  return tangents && tangents.length === points.length * 2
+    ? tangents
+    : catmullTangents(points, closed);
 }
 
 /** Cyclically rotate sample list by k (k * 2 in the flat array). */
@@ -255,12 +264,12 @@ function alignForMorph(
  *  pairwise lerp. The result is meant to be rendered as a plain open
  *  linear polyline. */
 function lerpMorphedPaths(
-  aPoints: number[], aCurve: PathCurve, aClosed: boolean,
-  bPoints: number[], bCurve: PathCurve, bClosed: boolean,
+  aPoints: number[], aCurve: PathCurve, aClosed: boolean, aTangents: number[] | undefined,
+  bPoints: number[], bCurve: PathCurve, bClosed: boolean, bTangents: number[] | undefined,
   t: number,
 ): number[] {
-  const aS = polylineForMorph(aPoints, aCurve, aClosed);
-  const bS = polylineForMorph(bPoints, bCurve, bClosed);
+  const aS = polylineForMorph(aPoints, aCurve, aClosed, aTangents);
+  const bS = polylineForMorph(bPoints, bCurve, bClosed, bTangents);
   const N = Math.max(aS.length, bS.length) / 2;
   const aR = aS.length === 2 * N ? aS : resamplePath(aS, N, false);
   const bR = bS.length === 2 * N ? bS : resamplePath(bS, N, false);
@@ -538,25 +547,47 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
     const bCurve = sb.curve ?? 'linear';
     const aClosed = sa.closed ?? false;
     const bClosed = sb.closed ?? false;
+    // Bezier pair-lerp: both sides bezier with equal vertex count (and the
+    // same closed state) lerp `tangents` pairwise alongside `points` under
+    // the controlPoints group — exact and cheap, like same-N point lists.
+    // Any other bezier combination (count mismatch, bezier ↔ other curve)
+    // falls into the sampled-morph path below, which works because
+    // sampledPath knows bezier.
+    const aIsBezier = aCurve === 'bezier';
+    const bIsBezier = bCurve === 'bezier';
+    const bezierPairLerp = aIsBezier && bIsBezier
+      && !!sa.points && !!sb.points && sa.points.length === sb.points.length
+      && aClosed === bClosed;
     const pathsMorph = sa.shapeType === 'path' && sb.shapeType === 'path'
-      && (aCurve !== bCurve || aClosed !== bClosed);
+      && (aCurve !== bCurve || aClosed !== bClosed
+        || ((aIsBezier || bIsBezier) && !bezierPairLerp));
     let nextCurve: ShapeElement['curve'] | undefined = t < 0.5 ? sa.curve : sb.curve;
     let nextClosed: boolean | undefined = t < 0.5 ? sa.closed : sb.closed;
     let nextPoints: number[] | undefined;
+    let nextTangents: number[] | undefined = t < 0.5 ? sa.tangents : sb.tangents;
     if (sa.points && sb.points) {
       const ease = tr.controlPoints ?? 'linear';
       if (pathsMorph && t > 0 && t < 1) {
         nextPoints = lerpMorphedPaths(
-          sa.points, aCurve, aClosed,
-          sb.points, bCurve, bClosed,
+          sa.points, aCurve, aClosed, sa.tangents,
+          sb.points, bCurve, bClosed, sb.tangents,
           applyEasing(t, ease),
         );
         nextCurve = 'linear';
         nextClosed = false;
-      } else if (tr.controlPoints) {
-        nextPoints = lerpControlPoints(sa.points, sb.points, applyEasing(t, ease), aClosed || bClosed);
+        nextTangents = undefined;
       } else {
-        nextPoints = lerpPoints(sa.points, sb.points, t);
+        const easedT = tr.controlPoints ? applyEasing(t, ease) : t;
+        nextPoints = tr.controlPoints
+          ? lerpControlPoints(sa.points, sb.points, easedT, aClosed || bClosed)
+          : lerpPoints(sa.points, sb.points, t);
+        if (bezierPairLerp) {
+          // Lerp against the tangents each keyframe RENDERS with (stored or
+          // Catmull-Rom fallback) so missing arrays animate smoothly too.
+          const aTan = renderedTangents(sa.points, sa.tangents, aClosed);
+          const bTan = renderedTangents(sb.points, sb.tangents, bClosed);
+          nextTangents = aTan.map((v, i) => lerp(v, bTan[i], easedT));
+        }
       }
     } else {
       nextPoints = t < 0.5 ? sa.points : sb.points;
@@ -581,6 +612,7 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
       points: nextPoints,
       curve: nextCurve,
       closed: nextClosed,
+      tangents: nextTangents,
       startArrow: t < 0.5 ? sa.startArrow : sb.startArrow,
       endArrow: t < 0.5 ? sa.endArrow : sb.endArrow,
       _startArrowAlpha: startArrowAlpha,

@@ -402,6 +402,101 @@ describe('path shape interpolation', () => {
     expect(at1.points).toEqual(sb.points);
   });
 
+  test('both bezier with equal vertex count: tangents lerp pairwise alongside points', () => {
+    const sa = makeShape({
+      shapeType: 'path', curve: 'bezier',
+      points: [0, 0, 100, 0],
+      tangents: [0, 0, 0, -30, 0, -30, 0, 0],
+    });
+    const sb = makeShape({
+      shapeType: 'path', curve: 'bezier',
+      points: [0, 0, 100, 100],
+      tangents: [0, 0, 0, -10, 20, -10, 0, 0],
+    });
+    const mid = interpolateElement(sa, sb, 0.5) as ShapeElement;
+    expect(mid.curve).toBe('bezier');
+    expect(mid.points).toEqual([0, 0, 100, 50]);
+    expect(mid.tangents).toEqual([0, 0, 0, -20, 10, -20, 0, 0]);
+    // Endpoints are exact.
+    expect((interpolateElement(sa, sb, 0) as ShapeElement).tangents).toEqual(sa.tangents);
+    expect((interpolateElement(sa, sb, 1) as ShapeElement).tangents).toEqual(sb.tangents);
+  });
+
+  test('bezier pair lerp honours the controlPoints easing', () => {
+    const sa = makeShape({
+      shapeType: 'path', curve: 'bezier',
+      points: [0, 0, 100, 0],
+      tangents: [0, 0, 0, -30, 0, -30, 0, 0],
+    });
+    const sb = makeShape({
+      shapeType: 'path', curve: 'bezier',
+      points: [0, 0, 100, 0],
+      tangents: [0, 0, 0, -10, 0, -10, 0, 0],
+      transitions: { controlPoints: 'const' },
+    });
+    // 'const' snaps: before the midpoint the source tangents hold.
+    const early = interpolateElement(sa, sb, 0.3) as ShapeElement;
+    expect(early.tangents).toEqual(sa.tangents);
+    const late = interpolateElement(sa, sb, 0.7) as ShapeElement;
+    expect(late.tangents).toEqual(sb.tangents);
+  });
+
+  test('a bezier side missing tangents lerps against its Catmull-Rom fallback', () => {
+    const pts = [0, 0, 100, 0, 100, 100];
+    const sa = makeShape({ shapeType: 'path', curve: 'bezier', points: pts });
+    const sb = makeShape({
+      shapeType: 'path', curve: 'bezier', points: pts,
+      tangents: new Array(12).fill(0),
+    });
+    const mid = interpolateElement(sa, sb, 0.5) as ShapeElement;
+    // Halfway between the Catmull estimate and zero.
+    expect(mid.tangents![6]).toBeCloseTo((50 / 3) / 2); // v1 outDx: (100−0)/6 → half
+    expect(mid.tangents![7]).toBeCloseTo((50 / 3) / 2);
+  });
+
+  test('bezier → linear morph goes through the sampled open-polyline path', () => {
+    const sa = makeShape({
+      shapeType: 'path', curve: 'bezier',
+      points: [0, 0, 100, 0],
+      tangents: [0, 0, 0, -30, 0, -30, 0, 0],
+    });
+    const sb = makeShape({ shapeType: 'path', curve: 'linear', points: [0, 0, 100, 0] });
+    const mid = interpolateElement(sa, sb, 0.5) as ShapeElement;
+    // In-flight rendering contract: plain open linear polyline, no tangents.
+    expect(mid.curve).toBe('linear');
+    expect(mid.closed).toBe(false);
+    expect(mid.tangents).toBeUndefined();
+    expect(mid.points!.length).toBeGreaterThan(4);
+    // The bulge is half-decayed at the arc-length midpoint (y ≈ −11.25).
+    const minY = Math.min(...mid.points!.filter((_, i) => i % 2 === 1));
+    expect(minY).toBeLessThan(-5);
+    expect(minY).toBeGreaterThan(-22.5);
+    // End states are exact.
+    const at0 = interpolateElement(sa, sb, 0) as ShapeElement;
+    expect(at0.curve).toBe('bezier');
+    expect(at0.points).toEqual(sa.points);
+    expect(at0.tangents).toEqual(sa.tangents);
+    const at1 = interpolateElement(sa, sb, 1) as ShapeElement;
+    expect(at1.curve).toBe('linear');
+    expect(at1.points).toEqual(sb.points);
+  });
+
+  test('bezier ↔ bezier with differing vertex counts falls into the sampled morph', () => {
+    const sa = makeShape({
+      shapeType: 'path', curve: 'bezier',
+      points: [0, 0, 100, 0],
+    });
+    const sb = makeShape({
+      shapeType: 'path', curve: 'bezier',
+      points: [0, 0, 100, 0, 100, 100],
+    });
+    const mid = interpolateElement(sa, sb, 0.5) as ShapeElement;
+    expect(mid.curve).toBe('linear');
+    expect(mid.closed).toBe(false);
+    expect(mid.tangents).toBeUndefined();
+    expect(mid.points!.length).toBeGreaterThan(4);
+  });
+
   test('endArrow easing produces a numeric _endArrowAlpha; without easing it snaps', () => {
     const sa = makeShape({ shapeType: 'path', points: [0, 0, 100, 0], endArrow: false });
     const sbEased = makeShape({ shapeType: 'path', points: [0, 0, 100, 0], endArrow: true, transitions: { endArrow: 'linear' } });

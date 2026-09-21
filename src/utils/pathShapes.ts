@@ -45,12 +45,122 @@ export function strokeDashFor(style: string | undefined, strokeWidth: number): s
   }
 }
 
-export function pathD(points: number[], curve: PathCurve, closed: boolean, cornerRadius = 0): string {
+export function pathD(
+  points: number[],
+  curve: PathCurve,
+  closed: boolean,
+  cornerRadius = 0,
+  tangents?: number[],
+): string {
   if (points.length < 4) return '';
   if (curve === 'linear') return linearPathD(points, closed, cornerRadius);
+  // cornerRadius is meaningless for B-splines / béziers (already smooth).
+  if (curve === 'bezier') return bezierPathD(points, effectiveTangents(points, tangents, closed), closed);
   const degree = curve === 'bspline2' ? 2 : 3;
-  // cornerRadius is meaningless for B-splines (the curve is already smooth).
   return bsplinePathD(points, degree, closed);
+}
+
+/** Tangent list actually used for a bezier path: the stored `tangents` when
+ *  it matches the vertex count (4 entries per vertex), otherwise Catmull-Rom
+ *  estimates — so a bare `curve: 'bezier'` switch renders smooth. */
+function effectiveTangents(points: number[], tangents: number[] | undefined, closed: boolean): number[] {
+  return tangents && tangents.length === points.length * 2
+    ? tangents
+    : catmullTangents(points, closed);
+}
+
+/** Catmull-Rom tangent estimates for a vertex list, in the flat per-vertex
+ *  [inDx,inDy,outDx,outDy] layout of `ShapeElement.tangents`. The out
+ *  handle of vertex i is (p[i+1] − p[i−1]) / 6 (the standard Catmull-Rom →
+ *  cubic-Bézier conversion, m/3 with m = the central difference / 2); the
+ *  in handle is its mirror. Open endpoints use one-sided differences;
+ *  closed paths wrap. Used as the default when a path is converted to
+ *  `curve: 'bezier'` and as the render-time fallback for missing tangents. */
+export function catmullTangents(points: number[], closed: boolean): number[] {
+  const n = points.length / 2;
+  const out: number[] = [];
+  if (n < 2) {
+    for (let i = 0; i < n; i++) out.push(0, 0, 0, 0);
+    return out;
+  }
+  const px = (i: number) => points[2 * (((i % n) + n) % n)];
+  const py = (i: number) => points[2 * (((i % n) + n) % n) + 1];
+  for (let i = 0; i < n; i++) {
+    let mx: number, my: number;
+    if (!closed && i === 0) {
+      mx = (px(1) - px(0)) / 2;
+      my = (py(1) - py(0)) / 2;
+    } else if (!closed && i === n - 1) {
+      mx = (px(n - 1) - px(n - 2)) / 2;
+      my = (py(n - 1) - py(n - 2)) / 2;
+    } else {
+      mx = (px(i + 1) - px(i - 1)) / 2;
+      my = (py(i + 1) - py(i - 1)) / 2;
+    }
+    // `|| 0` normalizes -0 (from negating a zero difference) to +0 so the
+    // straight-segment detection and serialized JSON stay clean.
+    out.push(-mx / 3 || 0, -my / 3 || 0, mx / 3 || 0, my / 3 || 0);
+  }
+  return out;
+}
+
+/** Cubic-Bézier d-string: one C segment per vertex pair (vertex i's out
+ *  handle → vertex i+1's in handle), wrapping back to vertex 0 when closed.
+ *  A segment whose adjoining handles are all zero emits a plain L so it
+ *  renders (and exports) as an exact straight line. */
+function bezierPathD(points: number[], tangents: number[], closed: boolean): string {
+  const n = points.length / 2;
+  const cmds: string[] = [`M ${fmt(points[0])} ${fmt(points[1])}`];
+  const segs = closed ? n : n - 1;
+  for (let s = 0; s < segs; s++) {
+    const i = s;
+    const j = (s + 1) % n;
+    const qx = points[2 * j], qy = points[2 * j + 1];
+    const outX = tangents[4 * i + 2], outY = tangents[4 * i + 3];
+    const inX = tangents[4 * j], inY = tangents[4 * j + 1];
+    if (outX === 0 && outY === 0 && inX === 0 && inY === 0) {
+      cmds.push(`L ${fmt(qx)} ${fmt(qy)}`);
+    } else {
+      const px = points[2 * i], py = points[2 * i + 1];
+      cmds.push(
+        `C ${fmt(px + outX)} ${fmt(py + outY)} ${fmt(qx + inX)} ${fmt(qy + inY)} ${fmt(qx)} ${fmt(qy)}`,
+      );
+    }
+  }
+  if (closed) cmds.push('Z');
+  return cmds.join(' ');
+}
+
+/** Sample a bezier chain into a flat polyline: 32 de-Casteljau samples per
+ *  segment (mirrors the B-spline SAMPLES_PER_SEG constant), with every
+ *  vertex emitted EXACTLY (segment boundaries push the endpoint verbatim,
+ *  no floating-point drift). Open: (n−1)·32 + 1 points; closed adds the
+ *  wrap segment and ends back on vertex 0. */
+function bezierSamples(points: number[], tangents: number[], closed: boolean): number[] {
+  const n = points.length / 2;
+  if (n < 2) return points.slice();
+  const S = 32; // keep in sync with SAMPLES_PER_SEG
+  const segs = closed ? n : n - 1;
+  const out: number[] = [points[0], points[1]];
+  for (let s = 0; s < segs; s++) {
+    const i = s;
+    const j = (s + 1) % n;
+    const p0x = points[2 * i], p0y = points[2 * i + 1];
+    const p3x = points[2 * j], p3y = points[2 * j + 1];
+    const p1x = p0x + tangents[4 * i + 2], p1y = p0y + tangents[4 * i + 3];
+    const p2x = p3x + tangents[4 * j], p2y = p3y + tangents[4 * j + 1];
+    for (let k = 1; k < S; k++) {
+      const t = k / S;
+      const u = 1 - t;
+      const b0 = u * u * u, b1 = 3 * u * u * t, b2 = 3 * u * t * t, b3 = t * t * t;
+      out.push(
+        b0 * p0x + b1 * p1x + b2 * p2x + b3 * p3x,
+        b0 * p0y + b1 * p1y + b2 * p2y + b3 * p3y,
+      );
+    }
+    out.push(p3x, p3y); // exact endpoint
+  }
+  return out;
 }
 
 function linearPathD(points: number[], closed: boolean, cornerRadius = 0): string {
@@ -167,9 +277,15 @@ function bsplineSamples(points: number[], degree: 2 | 3, closed: boolean): numbe
 }
 
 /** Public sampler: returns the polyline approximation of a path for any
- *  curve mode. Linear paths pass through; bsplines are sampled. */
-export function sampledPath(points: number[], curve: PathCurve, closed: boolean): number[] {
+ *  curve mode. Linear paths pass through; bsplines and béziers are
+ *  sampled (béziers honour `tangents`, falling back to Catmull-Rom
+ *  estimates exactly like `pathD`). */
+export function sampledPath(points: number[], curve: PathCurve, closed: boolean, tangents?: number[]): number[] {
   if (curve === 'linear') return points.slice();
+  if (curve === 'bezier') {
+    if (points.length < 4) return points.slice();
+    return bezierSamples(points, effectiveTangents(points, tangents, closed), closed);
+  }
   const degree = curve === 'bspline2' ? 2 : 3;
   return bsplineSamples(points, degree, closed);
 }
@@ -216,8 +332,8 @@ export function insetEndpoints(
 /** Total arc-length of a path under the given curve mode. Used by the
  *  tip-riding arrow animation to map a 0..1 progress to a distance along
  *  the path. */
-export function pathArcLength(points: number[], curve: PathCurve, closed: boolean): number {
-  const samples = sampledPath(points, curve, closed);
+export function pathArcLength(points: number[], curve: PathCurve, closed: boolean, tangents?: number[]): number {
+  const samples = sampledPath(points, curve, closed, tangents);
   let total = 0;
   for (let i = 0; i + 3 < samples.length; i += 2) {
     total += Math.hypot(samples[i + 2] - samples[i], samples[i + 3] - samples[i + 1]);
@@ -237,8 +353,9 @@ export function pointAtArcLength(
   curve: PathCurve,
   closed: boolean,
   targetLen: number,
+  tangents?: number[],
 ): { x: number; y: number; dx: number; dy: number } | null {
-  const samples = sampledPath(points, curve, closed);
+  const samples = sampledPath(points, curve, closed, tangents);
   if (samples.length < 4) return null;
   // For closed paths, append the first sample to the end so the closing
   // segment is included in the walk.
@@ -302,6 +419,41 @@ export function pathBounds(points: number[]): {
     if (px > maxX) maxX = px;
     if (py < minY) minY = py;
     if (py > maxY) maxY = py;
+  }
+  const translated: number[] = [];
+  for (let i = 0; i < points.length; i += 2) {
+    translated.push(points[i] - minX, points[i + 1] - minY);
+  }
+  return {
+    x: minX,
+    y: minY,
+    width: Math.max(1, maxX - minX),
+    height: Math.max(1, maxY - minY),
+    points: translated,
+  };
+}
+
+/** Curve-aware bounding box for a vertex list. Non-bezier curves keep the
+ *  historical control-point bounds (B-splines stay inside their control
+ *  hull, so those were already conservative-correct). Bézier curves can
+ *  bulge OUTSIDE their vertex bbox — tangent handles pull the curve out —
+ *  so their box is computed from the sampled polyline. The returned
+ *  `points` are the CONTROL vertices translated so the box's (x, y) is the
+ *  new element position (tangents are vertex-relative and need no shift). */
+export function pathBoundsFor(
+  points: number[],
+  curve: PathCurve,
+  closed: boolean,
+  tangents?: number[],
+): { x: number; y: number; width: number; height: number; points: number[] } {
+  if (curve !== 'bezier' || points.length < 4) return pathBounds(points);
+  const samples = sampledPath(points, 'bezier', closed, tangents);
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (let i = 0; i < samples.length; i += 2) {
+    if (samples[i] < minX) minX = samples[i];
+    if (samples[i] > maxX) maxX = samples[i];
+    if (samples[i + 1] < minY) minY = samples[i + 1];
+    if (samples[i + 1] > maxY) maxY = samples[i + 1];
   }
   const translated: number[] = [];
   for (let i = 0; i < points.length; i += 2) {

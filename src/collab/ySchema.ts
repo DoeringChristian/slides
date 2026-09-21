@@ -210,6 +210,7 @@ export function elementToYMap(el: SlideElement): Y.Map<unknown> {
       // drops the curve mode (every B-spline reads back as a polyline),
       // closed flag, and arrow ends.
       setIfDefined(m, 'curve', s.curve);
+      setIfDefined(m, 'tangents', s.tangents ? [...s.tangents] : undefined);
       setIfDefined(m, 'closed', s.closed);
       setIfDefined(m, 'startArrow', s.startArrow);
       setIfDefined(m, 'endArrow', s.endArrow);

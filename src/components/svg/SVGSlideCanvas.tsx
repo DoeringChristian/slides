@@ -16,8 +16,8 @@ import { SVGDragPreview, type DragPreviewState } from './SVGDragPreview';
 import { SVGSelectionDrag } from './SVGSelectionDrag';
 import { SVGSelectionTransformer } from './SVGSelectionTransformer';
 import { SVGPeerSelectionOverlay } from './SVGPeerSelectionOverlay';
-import { SVGLineEndpointHandles } from './SVGLineEndpointHandles';
-import { SVGPolyVertexHandles } from './SVGPolyVertexHandles';
+import { SVGPathHandles } from './SVGPathHandles';
+import { SVGCornerRadiusHandle } from './SVGCornerRadiusHandle';
 import { useSVGDrag } from './useSVGDrag';
 import { useSVGDrawing } from './useSVGDrawing';
 import { TextEditOverlay } from '../canvas/TextEditOverlay';
@@ -121,26 +121,30 @@ export const SVGSlideCanvas: React.FC = () => {
     return slide.elementOrder.map((id) => slide.elements[id]).filter(Boolean);
   }, [slide]);
 
-  // Sole selected element is a visible 2-vertex linear path (line / arrow).
-  // Gets connector-aware endpoint handles instead of the standard
-  // transformer.
-  const soleSelectedLineElement = useMemo(() => {
+  // Sole selected visible path shape (2-point lines are just degenerate
+  // polys) — gets the unified vertex/endpoint/tangent handles instead of
+  // the standard transformer.
+  const soleSelectedPathElement = useMemo(() => {
     if (selectedElementIds.length !== 1 || !slide) return null;
     const el = slide.elements[selectedElementIds[0]];
-    if (el && el.visible && el.type === 'shape' && isLinePath(el)) {
+    if (el && el.visible && el.type === 'shape' && (el as ShapeElement).shapeType === 'path') {
       return el as ShapeElement;
     }
     return null;
   }, [selectedElementIds, slide]);
 
-  // Sole selected multi-vertex / curved path — gets per-vertex handles.
-  const soleSelectedPolyElement = useMemo(() => {
+  // Sole selected unlocked shape that supports the on-canvas corner-radius
+  // handle: rects, and closed LINEAR paths (cornerRadius is forced to 0 for
+  // every other configuration).
+  const soleSelectedCornerElement = useMemo(() => {
     if (selectedElementIds.length !== 1 || !slide) return null;
     const el = slide.elements[selectedElementIds[0]];
-    if (el && el.visible && el.type === 'shape' && el.shapeType === 'path' && !isLinePath(el)) {
-      return el as ShapeElement;
-    }
-    return null;
+    if (!el || !el.visible || el.locked || el.type !== 'shape') return null;
+    const s = el as ShapeElement;
+    const closedLinearPath = s.shapeType === 'path'
+      && (s.closed ?? false)
+      && (s.curve ?? 'linear') === 'linear';
+    return s.shapeType === 'rect' || closedLinearPath ? s : null;
   }, [selectedElementIds, slide]);
 
   const justFinishedSelectionDrag = useRef(false);
@@ -766,12 +770,12 @@ export const SVGSlideCanvas: React.FC = () => {
     }
   }, [activeSlideId, updateElement]);
 
-  // Line endpoint update handler
-  const handleLineUpdate = useCallback((attrs: Partial<ShapeElement>) => {
-    if (activeSlideId && soleSelectedLineElement) {
-      updateElement(activeSlideId, soleSelectedLineElement.id, attrs);
+  // Path handle update handler (vertex / tangent / binding commits).
+  const handlePathUpdate = useCallback((attrs: Partial<ShapeElement>) => {
+    if (activeSlideId && soleSelectedPathElement) {
+      updateElement(activeSlideId, soleSelectedPathElement.id, attrs);
     }
-  }, [activeSlideId, soleSelectedLineElement, updateElement]);
+  }, [activeSlideId, soleSelectedPathElement, updateElement]);
 
   // Drag and drop handlers
   const handleDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
@@ -1103,10 +1107,9 @@ export const SVGSlideCanvas: React.FC = () => {
           <SVGDragPreview preview={transformPreview} zoom={zoom} />
           <SVGPeerSelectionOverlay slideId={activeSlideId || null} elements={elements} zoom={zoom} />
 
-          {/* Selection transformer — suppressed for sole line/arrow (uses
-              endpoint handles instead) and for sole polygon/bspline (uses
-              per-vertex handles instead). */}
-          {unlockedSelectedIds.length > 0 && !soleSelectedLineElement && !soleSelectedPolyElement && (
+          {/* Selection transformer — suppressed for a sole selected path
+              shape (it gets the unified vertex/endpoint handles instead). */}
+          {unlockedSelectedIds.length > 0 && !soleSelectedPathElement && (
             <SVGSelectionTransformer
               elements={elements}
               selectedIds={unlockedSelectedIds}
@@ -1128,30 +1131,30 @@ export const SVGSlideCanvas: React.FC = () => {
             />
           )}
 
-          {/* Polygon / B-spline vertex handles */}
-          {soleSelectedPolyElement && !soleSelectedPolyElement.locked && (
-            <SVGPolyVertexHandles
-              element={soleSelectedPolyElement}
+          {/* Unified path handles (lines, arrows, polylines, polygons,
+              B-splines, béziers — vertex / midpoint / endpoint / tangent). */}
+          {soleSelectedPathElement && !soleSelectedPathElement.locked && (
+            <SVGPathHandles
+              key={soleSelectedPathElement.id}
+              element={soleSelectedPathElement}
               elements={elements}
               zoom={zoom}
               svgRef={svgRef}
-              onUpdate={(attrs) => activeSlideId && updateElement(activeSlideId, soleSelectedPolyElement.id, attrs)}
+              onUpdate={handlePathUpdate}
               onTransformStart={handleTransformStart}
+              onGuidesChange={setDragGuides}
               onConnectorHighlight={setConnectorHighlightId}
             />
           )}
 
-          {/* Line/Arrow endpoint handles */}
-          {soleSelectedLineElement && !soleSelectedLineElement.locked && (
-            <SVGLineEndpointHandles
-              element={soleSelectedLineElement}
-              elements={elements}
+          {/* Corner-radius handle (rects + closed linear paths). */}
+          {soleSelectedCornerElement && (
+            <SVGCornerRadiusHandle
+              element={soleSelectedCornerElement}
               zoom={zoom}
               svgRef={svgRef}
-              onUpdate={handleLineUpdate}
+              onUpdate={(attrs) => activeSlideId && updateElement(activeSlideId, soleSelectedCornerElement.id, attrs)}
               onTransformStart={handleTransformStart}
-              onGuidesChange={setDragGuides}
-              onConnectorHighlight={setConnectorHighlightId}
             />
           )}
 

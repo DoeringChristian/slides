@@ -117,7 +117,7 @@ export const RenderShape: React.FC<ShapeProps> = memo(({ element }) => {
       // triangle base instead of poking through to the tip vertex.
       const shaftPts = insetEndpoints(pts, hasStartArrow, hasEndArrow);
       const cornerR = curve === 'linear' ? (element.cornerRadius ?? 0) : 0;
-      const d = pathD(shaftPts, curve, closed, cornerR);
+      const d = pathD(shaftPts, curve, closed, cornerR, element.tangents);
       // Stroke colour falls back to fill or black so a freshly-drawn open
       // path always renders something visible (it has no fill by default).
       const strokeCol = strokeAttr === 'none'

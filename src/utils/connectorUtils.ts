@@ -5,7 +5,7 @@ import type {
   BindingMode,
   BindingAnchor,
 } from '../types/presentation';
-import { pathBounds } from './pathShapes';
+import { pathBoundsFor } from './pathShapes';
 
 export interface Pt { x: number; y: number }
 
@@ -550,7 +550,9 @@ export function rebindAfterElementsMoved(
       abs[last + 1] = p.y;
     }
 
-    const b = pathBounds(abs);
+    // Curve-aware bounds: bezier tangent bulges count toward the box
+    // (identical to pathBounds for every other curve mode).
+    const b = pathBoundsFor(abs, shape.curve ?? 'linear', shape.closed ?? false, shape.tangents);
     results.push({
       elementId: elId,
       changes: { x: b.x, y: b.y, width: b.width, height: b.height, points: b.points },

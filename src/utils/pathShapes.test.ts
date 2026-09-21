@@ -9,7 +9,9 @@ import {
   pointAtArcLength,
   arrowheadPoints,
   pathBounds,
+  pathBoundsFor,
   resamplePath,
+  catmullTangents,
 } from './pathShapes';
 import { shapeToPathD } from './shapeToPath';
 import type { ShapeElement } from '../types/presentation';
@@ -151,6 +153,87 @@ describe('pathD (bspline)', () => {
 });
 
 // =============================================================================
+// pathD — bezier chains emit cubic C segments
+// =============================================================================
+
+describe('catmullTangents', () => {
+  test('layout is 4 entries per vertex: [inDx,inDy,outDx,outDy]', () => {
+    const tan = catmullTangents([0, 0, 100, 0, 100, 100], false);
+    expect(tan.length).toBe(12);
+  });
+
+  test('interior tangent is the central difference / 6, in mirrors out', () => {
+    const tan = catmullTangents([0, 0, 100, 0, 100, 100], false);
+    // Vertex 1: m = (p2 − p0) / 2 = (50, 50); out = m/3, in = −m/3.
+    expect(tan.slice(4, 8)).toEqual([-50 / 3, -50 / 3, 50 / 3, 50 / 3]);
+  });
+
+  test('open endpoints use one-sided differences', () => {
+    const tan = catmullTangents([0, 0, 100, 0], false);
+    // Vertex 0: m = (p1 − p0)/2 = (50, 0) → out (50/3, 0).
+    expect(tan.slice(0, 4)).toEqual([-50 / 3, 0, 50 / 3, 0]);
+    // Vertex 1 (last): m = (p1 − p0)/2 too.
+    expect(tan.slice(4, 8)).toEqual([-50 / 3, 0, 50 / 3, 0]);
+  });
+
+  test('closed paths wrap the central difference cyclically', () => {
+    const square = [0, 0, 100, 0, 100, 100, 0, 100];
+    const tan = catmullTangents(square, true);
+    // Vertex 0: m = (p1 − p3)/2 = ((100,0) − (0,100))/2 = (50, −50).
+    expect(tan.slice(0, 4)).toEqual([-50 / 3, 50 / 3, 50 / 3, -50 / 3]);
+  });
+
+  test('fewer than two vertices yields zero tangents', () => {
+    expect(catmullTangents([5, 5], false)).toEqual([0, 0, 0, 0]);
+  });
+});
+
+describe('pathD (bezier)', () => {
+  // Two-vertex path with explicit tangents: out of v0 = (0, −30),
+  // in of v1 = (0, −30) → a symmetric upward bulge.
+  const pts = [0, 0, 100, 0];
+  const tan = [0, 0, 0, -30, 0, -30, 0, 0];
+
+  test('golden: one C segment per vertex pair using out → in handles', () => {
+    expect(pathD(pts, 'bezier', false, 0, tan))
+      .toBe('M 0.00 0.00 C 0.00 -30.00 100.00 -30.00 100.00 0.00');
+  });
+
+  test('closed path wraps a segment back to vertex 0 and appends Z', () => {
+    const tri = [0, 0, 100, 0, 50, 80];
+    const t = catmullTangents(tri, true);
+    const d = pathD(tri, 'bezier', true, 0, t);
+    expect(countCmd(d, 'C')).toBe(3); // n segments, incl. the wrap
+    expect(d.endsWith('Z')).toBe(true);
+  });
+
+  test('segment with all-zero adjoining handles renders as a straight L', () => {
+    // v1's out handle and v2's in handle are zero → second segment is an L.
+    const p = [0, 0, 100, 0, 200, 0];
+    const t = [0, 0, 0, -30, 0, -30, 0, 0, 0, 0, 0, 0];
+    const d = pathD(p, 'bezier', false, 0, t);
+    expect(countCmd(d, 'C')).toBe(1);
+    expect(countCmd(d, 'L')).toBe(1);
+    expect(d.endsWith('L 200.00 0.00')).toBe(true);
+  });
+
+  test('missing tangents fall back to Catmull-Rom estimates', () => {
+    const p = [0, 0, 100, 0, 100, 100];
+    expect(pathD(p, 'bezier', false))
+      .toBe(pathD(p, 'bezier', false, 0, catmullTangents(p, false)));
+    // Length-mismatched arrays are treated as missing too.
+    expect(pathD(p, 'bezier', false, 0, [1, 2, 3, 4]))
+      .toBe(pathD(p, 'bezier', false));
+  });
+
+  test('cornerRadius is ignored for bezier (no Q commands)', () => {
+    const p = [0, 0, 100, 0, 100, 100];
+    expect(pathD(p, 'bezier', false, 25, catmullTangents(p, false)))
+      .toBe(pathD(p, 'bezier', false, 0, catmullTangents(p, false)));
+  });
+});
+
+// =============================================================================
 // sampledPath — B-spline sampling
 // =============================================================================
 
@@ -227,6 +310,71 @@ describe('sampledPath', () => {
   test('two-point open spline degrades to the raw polyline', () => {
     const line = [0, 0, 100, 0];
     expect(sampledPath(line, 'bspline2', false)).toEqual(line);
+  });
+
+  test('bezier: 32 samples per segment, open = (n−1)·32 + 1 points', () => {
+    const p = [0, 0, 100, 0, 200, 50];
+    const out = sampledPath(p, 'bezier', false, catmullTangents(p, false));
+    expect(out.length).toBe(((3 - 1) * SAMPLES_PER_SEG + 1) * 2);
+  });
+
+  test('bezier: closed adds the wrap segment (n·32 + 1 points), ends on v0', () => {
+    const p = [0, 0, 100, 0, 50, 80];
+    const out = sampledPath(p, 'bezier', true, catmullTangents(p, true));
+    expect(out.length).toBe((3 * SAMPLES_PER_SEG + 1) * 2);
+    expect(out[out.length - 2]).toBe(0);
+    expect(out[out.length - 1]).toBe(0);
+  });
+
+  test('bezier: every vertex is emitted EXACTLY at its segment boundary', () => {
+    const p = [0, 0, 100, 0, 200, 50];
+    const out = sampledPath(p, 'bezier', false, catmullTangents(p, false));
+    for (let v = 0; v < 3; v++) {
+      expect(out[2 * v * SAMPLES_PER_SEG]).toBe(p[2 * v]);
+      expect(out[2 * v * SAMPLES_PER_SEG + 1]).toBe(p[2 * v + 1]);
+    }
+  });
+
+  test('bezier: interior samples follow the cubic (midpoint of a symmetric bulge)', () => {
+    // out(v0) = (0,−30), in(v1) = (0,−30): at t=0.5 the cubic sits at
+    // y = (3/8)·(−30)·2 · … = −22.5, x = 50 by symmetry.
+    const out = sampledPath([0, 0, 100, 0], 'bezier', false, [0, 0, 0, -30, 0, -30, 0, 0]);
+    const mid = SAMPLES_PER_SEG; // t = 16/32 … index 16 → flat offset 32
+    expect(out[mid]).toBeCloseTo(50);
+    expect(out[mid + 1]).toBeCloseTo(-22.5);
+  });
+
+  test('bezier without tangents falls back to Catmull-Rom estimates', () => {
+    const p = [0, 0, 100, 0, 100, 100];
+    expect(sampledPath(p, 'bezier', false))
+      .toEqual(sampledPath(p, 'bezier', false, catmullTangents(p, false)));
+  });
+});
+
+// =============================================================================
+// pathBoundsFor — curve-aware bounds (bezier bulges count)
+// =============================================================================
+
+describe('pathBoundsFor', () => {
+  test('non-bezier curves delegate to control-point bounds', () => {
+    expect(pathBoundsFor([10, 20, 110, 70], 'linear', false))
+      .toEqual(pathBounds([10, 20, 110, 70]));
+    expect(pathBoundsFor([0, 0, 50, 100, 100, 0], 'bspline2', false))
+      .toEqual(pathBounds([0, 0, 50, 100, 100, 0]));
+  });
+
+  test('bezier bounds include the tangent bulge outside the vertex bbox', () => {
+    const b = pathBoundsFor([0, 0, 100, 0], 'bezier', false, [0, 0, 0, -30, 0, -30, 0, 0]);
+    // The curve bulges up to y = −22.5 → box top moves above the vertices.
+    expect(b.y).toBeCloseTo(-22.5);
+    expect(b.height).toBeCloseTo(22.5);
+    expect(b.width).toBeCloseTo(100);
+    // Translated CONTROL vertices (not samples), shifted by the box origin.
+    expect(b.points.length).toBe(4);
+    expect(b.points[0]).toBeCloseTo(0);
+    expect(b.points[1]).toBeCloseTo(22.5);
+    expect(b.points[2]).toBeCloseTo(100);
+    expect(b.points[3]).toBeCloseTo(22.5);
   });
 });
 

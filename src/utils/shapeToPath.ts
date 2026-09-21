@@ -80,7 +80,8 @@ export function shapeToPathD(shape: ShapeElement): string {
       // doesn't draw through the triangle.
       const shaftPts = insetEndpoints(abs, !!shape.startArrow, !!shape.endArrow);
       const cornerR = curve === 'linear' ? (shape.cornerRadius ?? 0) : 0;
-      const main = pathD(shaftPts, curve, closed, cornerR);
+      // Tangents are vertex-relative, so they need no abs translation.
+      const main = pathD(shaftPts, curve, closed, cornerR, shape.tangents);
       // Append the arrowhead wings to the path so the Create pen traces
       // through them in order. Each wing is a short L-segment from the
       // outer corner back to the tip.
@@ -128,6 +129,7 @@ function shapeGeometryKey(shape: ShapeElement): string {
     shape.x, shape.y, shape.width, shape.height,
     shape.cornerRadius ?? 0,
     shape.points ? shape.points.join(',') : '',
+    shape.tangents ? shape.tangents.join(',') : '',
     shape.closed ? 1 : 0,
     shape.curve ?? 'linear',
     shape.startArrow ? 1 : 0,
