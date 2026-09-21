@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type { SlideElement, ShapeElement, ConnectorBinding } from '../../types/presentation';
 import { pathBounds, pathD, insetEndpoints } from '../../utils/pathShapes';
 import { useScreenToSVG } from './useScreenToSVG';
@@ -44,6 +44,10 @@ export const SVGPolyVertexHandles: React.FC<Props> = ({
 
   const [dragging, setDragging] = useState<{ idx: number } | null>(null);
   const [livePoints, setLivePoints] = useState<number[] | null>(null);
+  // Ref mirror of livePoints: the commit on pointerup must read the final
+  // vertex list and call onUpdate OUTSIDE any setState updater — React 19
+  // StrictMode double-invokes updaters, which would double the store write.
+  const livePointsRef = useRef<number[] | null>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
   const renderPoints = livePoints ?? points;
@@ -57,6 +61,7 @@ export const SVGPolyVertexHandles: React.FC<Props> = ({
     try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* */ }
     onTransformStart?.();
     setDragging({ idx });
+    livePointsRef.current = points.slice();
     setLivePoints(points.slice());
   }, [points, onTransformStart]);
 
@@ -84,44 +89,48 @@ export const SVGPolyVertexHandles: React.FC<Props> = ({
       }
       const localX = absX - element.x;
       const localY = absY - element.y;
-      setLivePoints((prev) => {
-        if (!prev) return prev;
+      const prev = livePointsRef.current;
+      if (prev) {
         const out = prev.slice();
         out[2 * dragging.idx] = localX;
         out[2 * dragging.idx + 1] = localY;
-        return out;
-      });
+        livePointsRef.current = out;
+        setLivePoints(out);
+      }
     };
     const onUp = (e: PointerEvent) => {
       e.preventDefault();
       setDragging(null);
       onConnectorHighlight?.(null);
-      setLivePoints((prev) => {
-        if (!prev) return prev;
-        // Translate the dragged vertex from element-local to absolute slide
-        // coords, then re-derive the element's (x, y, width, height) and a
-        // normalized relative points list.
-        const abs = prev.map((v, i) => v + (i % 2 === 0 ? element.x : element.y));
-        const bounds = pathBounds(abs);
-        const update: Partial<ShapeElement> = {
-          x: bounds.x, y: bounds.y,
-          width: bounds.width, height: bounds.height,
-          points: bounds.points,
-        };
-        // Snap-bind the dragged endpoint if it landed on another shape's
-        // anchor. The other endpoint's binding is preserved unchanged.
-        if (isEndpoint && elements) {
-          const lastVxIdx = bounds.points.length - 2;
-          const tipX = (dragging.idx === 0 ? bounds.points[0] : bounds.points[lastVxIdx]) + bounds.x;
-          const tipY = (dragging.idx === 0 ? bounds.points[1] : bounds.points[lastVxIdx + 1]) + bounds.y;
-          const target = getBindingTarget({ x: tipX, y: tipY }, elements, element.id);
-          const binding: ConnectorBinding | null = target ?? null;
-          if (dragging.idx === 0) update.startBinding = binding;
-          else update.endBinding = binding;
-        }
-        onUpdate(update);
-        return null;
-      });
+      // Commit from the ref, NOT inside a setState updater — React 19
+      // StrictMode double-invokes updaters, which would write to the store
+      // twice (double undo entry / double collab op).
+      const finalPoints = livePointsRef.current;
+      livePointsRef.current = null;
+      setLivePoints(null);
+      if (!finalPoints) return;
+      // Translate the dragged vertex from element-local to absolute slide
+      // coords, then re-derive the element's (x, y, width, height) and a
+      // normalized relative points list.
+      const abs = finalPoints.map((v, i) => v + (i % 2 === 0 ? element.x : element.y));
+      const bounds = pathBounds(abs);
+      const update: Partial<ShapeElement> = {
+        x: bounds.x, y: bounds.y,
+        width: bounds.width, height: bounds.height,
+        points: bounds.points,
+      };
+      // Snap-bind the dragged endpoint if it landed on another shape's
+      // anchor. The other endpoint's binding is preserved unchanged.
+      if (isEndpoint && elements) {
+        const lastVxIdx = bounds.points.length - 2;
+        const tipX = (dragging.idx === 0 ? bounds.points[0] : bounds.points[lastVxIdx]) + bounds.x;
+        const tipY = (dragging.idx === 0 ? bounds.points[1] : bounds.points[lastVxIdx + 1]) + bounds.y;
+        const target = getBindingTarget({ x: tipX, y: tipY }, elements, element.id);
+        const binding: ConnectorBinding | null = target ?? null;
+        if (dragging.idx === 0) update.startBinding = binding;
+        else update.endBinding = binding;
+      }
+      onUpdate(update);
     };
     window.addEventListener('pointermove', onMove, { passive: false });
     window.addEventListener('pointerup', onUp, { passive: false });

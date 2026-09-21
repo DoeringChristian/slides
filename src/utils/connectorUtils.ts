@@ -37,6 +37,10 @@ export function getBindingTarget(
 
   for (const el of elements) {
     if (el.id === excludeId) continue;
+    // Invisible elements would make "ghost" bind targets the user can't see;
+    // locked elements are excluded from every other interaction, so they
+    // shouldn't silently capture connector endpoints either.
+    if (el.visible === false || el.locked) continue;
     // Path shapes (lines, arrows, curves) can't be a binding target themselves.
     if (el.type === 'shape' && el.shapeType === 'path') continue;
 
@@ -135,4 +139,98 @@ export function rebindPathToMovedAnchor(
 
   const b = pathBounds(abs);
   return { x: b.x, y: b.y, width: b.width, height: b.height, points: b.points };
+}
+
+/** Geometry patch produced by the shared rebind pass. */
+export interface RebindResult {
+  elementId: string;
+  changes: { x: number; y: number; width: number; height: number; points: number[] };
+}
+
+/**
+ * THE rebind pass: after some elements moved / resized / rotated, recompute
+ * every bound path on the slide so its endpoints keep tracking their anchors.
+ *
+ * `elements` must be the POST-move slide snapshot (anchor geometry already
+ * updated); `movedIds` is the set of elements whose geometry changed this
+ * mutation. Moved elements themselves are skipped — a dragged connector keeps
+ * its own points; only connectors bound TO a moved element are recomputed.
+ *
+ * One shared implementation for all four store call sites (updateElement /
+ * updateElements × Y / JSON) — the two paths MUST stay semantically
+ * equivalent, so neither is allowed to inline its own variant of this loop.
+ *
+ * Tolerates stale `elementOrder` ids (missing element ⇒ skipped) and
+ * non-shape elements.
+ */
+export function rebindAfterElementsMoved(
+  elements: Record<string, SlideElement>,
+  elementOrder: readonly string[],
+  movedIds: ReadonlySet<string>,
+): RebindResult[] {
+  const results: RebindResult[] = [];
+  if (movedIds.size === 0) return results;
+
+  for (const elId of elementOrder) {
+    if (movedIds.has(elId)) continue;
+    const el = elements[elId];
+    if (!el || el.type !== 'shape') continue;
+
+    // Apply anchors successively so a path bound to TWO moved elements
+    // (start → A, end → B) tracks both in one pass.
+    let shape = el as ShapeElement;
+    let changed = false;
+    for (const movedId of movedIds) {
+      const rebound = rebindPathToMovedAnchor(shape, movedId, elements);
+      if (rebound) {
+        shape = { ...shape, ...rebound };
+        changed = true;
+      }
+    }
+    if (changed && shape.points) {
+      results.push({
+        elementId: elId,
+        changes: {
+          x: shape.x, y: shape.y,
+          width: shape.width, height: shape.height,
+          points: shape.points,
+        },
+      });
+    }
+  }
+  return results;
+}
+
+/**
+ * Bind-while-drawing commit helper (pure, DOM-free): given a freshly drawn
+ * path's vertices in ABSOLUTE slide coords, find binding targets for the
+ * first and last vertex, snap those vertices onto the matched anchor points,
+ * and return the adjusted vertices plus the bindings to store.
+ *
+ * The caller decides whether to call at all (Meta/Cmd held ⇒ binding
+ * suppressed) and re-derives x/y/width/height from the returned vertices
+ * via `pathBounds`.
+ */
+export function bindDraftEndpoints(
+  absPoints: number[],
+  elements: SlideElement[],
+  threshold?: number,
+): { absPoints: number[]; startBinding: ConnectorBinding | null; endBinding: ConnectorBinding | null } {
+  const out = absPoints.slice();
+  let startBinding: ConnectorBinding | null = null;
+  let endBinding: ConnectorBinding | null = null;
+  if (out.length >= 4) {
+    const last = out.length - 2;
+    startBinding = getBindingTarget({ x: out[0], y: out[1] }, elements, '', threshold);
+    if (startBinding) {
+      const pt = getAnchorPoint(elements.find((el) => el.id === startBinding!.elementId)!, startBinding.anchor);
+      if (pt) { out[0] = pt.x; out[1] = pt.y; }
+    }
+    endBinding = getBindingTarget({ x: out[last], y: out[last + 1] }, elements, '', threshold);
+    if (endBinding) {
+      const pt = getAnchorPoint(elements.find((el) => el.id === endBinding!.elementId)!, endBinding.anchor);
+      if (pt) { out[last] = pt.x; out[last + 1] = pt.y; }
+    }
+  }
+  return { absPoints: out, startBinding, endBinding };
 }

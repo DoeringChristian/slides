@@ -1,11 +1,11 @@
 import { create } from 'zustand';
 import { temporal } from 'zundo';
 import * as Y from 'yjs';
-import type { Presentation, Slide, SlideElement, ShapeElement, ObjectMeta, SlideTemplate, Resource } from '../types/presentation';
+import type { Presentation, Slide, SlideElement, ObjectMeta, SlideTemplate, Resource } from '../types/presentation';
 import { generateId } from '../utils/idGenerator';
 import { createPresentation, createSlide, copySlideAsKeyframe, generateObjectName } from '../utils/slideFactory';
 import { migratePresentation } from '../utils/migrations';
-import { rebindPathToMovedAnchor } from '../utils/connectorUtils';
+import { rebindAfterElementsMoved } from '../utils/connectorUtils';
 import { beforeMutation } from '../utils/autoDraw';
 import { lerpAngle } from '../utils/interpolation';
 import { mirrorTargets, withMirroring } from '../utils/multiSlide';
@@ -861,14 +861,9 @@ export const usePresentationStore = create<PresentationStore>()(
             if (!moved) return;
             const slide = yDocToJsonSlideOnly(doc, slideId);
             if (!slide) return;
-            for (const elId of slide.elementOrder) {
-              if (elId === elementId) continue;
-              const el = slide.elements[elId];
-              if (!el || el.type !== 'shape') continue;
-              const rebound = rebindPathToMovedAnchor(el as ShapeElement, elementId, slide.elements);
-              if (!rebound) continue;
-              const connMap = getYElement(doc, slideId, elId);
-              if (connMap) applyChangesToYElement(connMap, rebound);
+            for (const rebound of rebindAfterElementsMoved(slide.elements, slide.elementOrder, new Set([elementId]))) {
+              const connMap = getYElement(doc, slideId, rebound.elementId);
+              if (connMap) applyChangesToYElement(connMap, rebound.changes);
             }
           });
           return;
@@ -885,13 +880,8 @@ export const usePresentationStore = create<PresentationStore>()(
           // If a non-connector element moved or rotated, update any
           // connectors bound to it.
           if (changes.x !== undefined || changes.y !== undefined || changes.width !== undefined || changes.height !== undefined || changes.rotation !== undefined) {
-            for (const elId of slide.elementOrder) {
-              if (elId === elementId) continue;
-              const el = updatedElements[elId];
-              if (el.type !== 'shape') continue;
-              const rebound = rebindPathToMovedAnchor(el as ShapeElement, elementId, updatedElements);
-              if (!rebound) continue;
-              updatedElements[elId] = { ...(el as ShapeElement), ...rebound } as SlideElement;
+            for (const rebound of rebindAfterElementsMoved(updatedElements, slide.elementOrder, new Set([elementId]))) {
+              updatedElements[rebound.elementId] = { ...updatedElements[rebound.elementId], ...rebound.changes } as SlideElement;
             }
           }
 
@@ -928,6 +918,26 @@ export const usePresentationStore = create<PresentationStore>()(
               applyChangesToYElement(elMap, changes as Record<string, unknown>);
             }
             getYRoot(doc).set('updatedAt', Date.now());
+
+            // Rebind bound connectors after the batch, exactly like the JSON
+            // fallback below: snapshot the slide POST-change, run the shared
+            // rebind pass over every element that moved, and write the
+            // recomputed connector geometry back through Y. Both paths must
+            // agree or peers diverge.
+            const movedElementIds = new Set(
+              updates
+                .filter(u => u.changes.x !== undefined || u.changes.y !== undefined ||
+                            u.changes.width !== undefined || u.changes.height !== undefined ||
+                            u.changes.rotation !== undefined)
+                .map(u => u.elementId)
+            );
+            if (movedElementIds.size === 0) return;
+            const slide = yDocToJsonSlideOnly(doc, slideId);
+            if (!slide) return;
+            for (const rebound of rebindAfterElementsMoved(slide.elements, slide.elementOrder, movedElementIds)) {
+              const connMap = getYElement(doc, slideId, rebound.elementId);
+              if (connMap) applyChangesToYElement(connMap, rebound.changes);
+            }
           });
           return;
         }
@@ -952,22 +962,8 @@ export const usePresentationStore = create<PresentationStore>()(
               .map(u => u.elementId)
           );
 
-          if (movedElementIds.size > 0) {
-            for (const elId of slide.elementOrder) {
-              if (movedElementIds.has(elId)) continue;
-              const el = updatedElements[elId];
-              if (el.type !== 'shape') continue;
-              const shape = el as ShapeElement;
-              // Check against every moved anchor. The helper bails on any
-              // anchor it doesn't recognise, so iterating is cheap.
-              for (const movedId of movedElementIds) {
-                const rebound = rebindPathToMovedAnchor(shape, movedId, updatedElements);
-                if (rebound) {
-                  updatedElements[elId] = { ...shape, ...rebound } as SlideElement;
-                  break;
-                }
-              }
-            }
+          for (const rebound of rebindAfterElementsMoved(updatedElements, slide.elementOrder, movedElementIds)) {
+            updatedElements[rebound.elementId] = { ...updatedElements[rebound.elementId], ...rebound.changes } as SlideElement;
           }
 
           return {

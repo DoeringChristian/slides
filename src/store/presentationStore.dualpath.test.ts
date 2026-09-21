@@ -319,6 +319,25 @@ const cases: Array<{ name: string; action: Action }> = [
     ]),
   },
   {
+    // Promoted from the "known divergences" block: the Y branch used to skip
+    // the connector rebind pass entirely (the main collab pinning bug).
+    name: 'updateElements moves bound target → connector rebinds identically both paths',
+    action: (s) => s.updateElements('s2', [{ elementId: 'el-box', changes: { x: 660, y: 460 } }]),
+  },
+  {
+    name: 'updateElements (stale elementOrder id + moved anchor — missing element tolerated)',
+    action: (s) => s.updateElements('s2', [
+      { elementId: 'el-box', changes: { x: 610, y: 410 } },
+      { elementId: 'el-gone', changes: { x: 1, y: 2 } },
+    ]),
+  },
+  {
+    name: 'updateElements (whole-arrow drag clears stale bindings)',
+    action: (s) => s.updateElements('s2', [
+      { elementId: 'el-conn', changes: { x: 320, y: 470, startBinding: null, endBinding: null } as Partial<SlideElement> },
+    ]),
+  },
+  {
     name: 'deleteElements (terminal — element only on this slide, full purge)',
     action: (s) => s.deleteElements('s1', ['el-rect']),
   },
@@ -574,6 +593,38 @@ describe('loadPresentation repair pass', () => {
 });
 
 // =============================================================================
+// updateElements connector rebind (the collab pinning fix) — the equivalence
+// table already pins Y ≡ JSON for this action; these tests pin the actual
+// rebind outcome on each path so the equivalence can't be satisfied by both
+// paths skipping the rebind alike.
+// =============================================================================
+
+describe('updateElements connector rebind', () => {
+  const action: Action = (s) =>
+    s.updateElements('s2', [{ elementId: 'el-box', changes: { x: 660, y: 460 } }]);
+
+  test.each([
+    ['local JSON path', runLocal],
+    ['collab Y path', runCollab],
+  ] as const)('%s re-pins the bound connector to the moved anchor', (_name, run) => {
+    const result = run(action);
+    const conn = result.slides.s2.elements['el-conn'] as ShapeElement;
+    // el-conn: x=300 y=450, points [0,0,150,0,300,0] → absolute vertices
+    // (300,450), (450,450), (600,450); startBinding → el-box 'left'.
+    // el-box moved to (660,460), w=200 h=100 → left anchor = (660, 510).
+    const abs = (conn.points ?? []).map((v, i) => v + (i % 2 === 0 ? conn.x : conn.y));
+    // Start vertex tracks the anchor…
+    expect(abs.slice(0, 2)).toEqual([660, 510]);
+    // …and the interior + end vertices keep their absolute positions (the
+    // multi-vertex path is preserved, not truncated to a 2-point line).
+    expect(abs.slice(2)).toEqual([450, 450, 600, 450]);
+    // Bindings themselves are untouched by the rebind pass.
+    expect(conn.startBinding).toEqual({ elementId: 'el-box', anchor: 'left' });
+    expect(conn.endBinding).toBeNull();
+  });
+});
+
+// =============================================================================
 // Known divergences.
 //
 // These tests pin the CURRENT observable behavior of each path where the two
@@ -608,41 +659,10 @@ describe('known dual-path divergences (documented, intentional or pending fix)',
     expect(collabStyle).toEqual({ ...baseStyle, color: '#123456' });
   });
 
-  test('updateElements moving a connector anchor: JSON path rebinds bound paths, Y path does not', () => {
-    // updateElement's Y branch replays the connector rebinding, but
-    // updateElements' Y branch only applies the raw changes — bound paths are
-    // left stale in collab mode.
-    const fixture = makeFixture();
-    const action: Action = (s) =>
-      s.updateElements('s2', [{ elementId: 'el-box', changes: { x: 660, y: 460 } }]);
-    const local = runLocal(action);
-    const collab = runCollab(action);
-
-    const fixtureConn = fixture.slides.s2.elements['el-conn'] as ShapeElement;
-    const localConn = local.slides.s2.elements['el-conn'] as ShapeElement;
-    const collabConn = collab.slides.s2.elements['el-conn'] as ShapeElement;
-
-    // JSON path rebound the connector (geometry changed).
-    expect({
-      x: localConn.x, y: localConn.y,
-      width: localConn.width, height: localConn.height,
-      points: localConn.points,
-    }).not.toEqual({
-      x: fixtureConn.x, y: fixtureConn.y,
-      width: fixtureConn.width, height: fixtureConn.height,
-      points: fixtureConn.points,
-    });
-    // Y path left the connector untouched.
-    expect({
-      x: collabConn.x, y: collabConn.y,
-      width: collabConn.width, height: collabConn.height,
-      points: collabConn.points,
-    }).toEqual({
-      x: fixtureConn.x, y: fixtureConn.y,
-      width: fixtureConn.width, height: fixtureConn.height,
-      points: fixtureConn.points,
-    });
-  });
+  // (updateElements' Y-branch rebind hole was closed — both branches now run
+  // the shared rebindAfterElementsMoved pass — and the case was promoted into
+  // the equivalence table above. The "updateElements connector rebind" block
+  // below pins the actual rebind outcome on each path.)
 
   test('updateSlideAutoAdvance without a delay: JSON path defaults autoAdvanceDelay to 0, Y path leaves it absent', () => {
     // s1 has no autoAdvanceDelay. The JSON branch writes

@@ -148,8 +148,10 @@ export const SVGSlideCanvas: React.FC = () => {
   // Track initial positions of all selected elements for multi-element drag
   const dragStartPositions = useRef<Map<string, { x: number; y: number }>>(new Map());
 
-  // Drawing hook (pointer-based — mouse, touch, stylus all flow through here)
-  const { drawState, guides: drawingGuides, polyDraft, handlePointerDown: handleDrawPointerDown, handlePointerMove: handleDrawPointerMove, handlePointerUp: handleDrawPointerUp, justFinishedDrawing } = useSVGDrawing();
+  // Drawing hook (pointer-based — mouse, touch, stylus all flow through here).
+  // Gets the connector-highlight setter so bind-while-drawing can outline the
+  // shape a line/arrow endpoint is about to bind to.
+  const { drawState, guides: drawingGuides, polyDraft, handlePointerDown: handleDrawPointerDown, handlePointerMove: handleDrawPointerMove, handlePointerUp: handleDrawPointerUp, justFinishedDrawing } = useSVGDrawing(setConnectorHighlightId);
 
   // Combine drag and drawing guides
   const guides = drawState.isDrawing ? drawingGuides : dragGuides;
@@ -341,7 +343,7 @@ export const SVGSlideCanvas: React.FC = () => {
     const snappedDeltaY = snappedY - originalPos.y;
 
     // Collect all updates for batch operation (single undo entry)
-    const updates: Array<{ elementId: string; changes: { x: number; y: number } }> = [];
+    const updates: Array<{ elementId: string; changes: Partial<ShapeElement> & { x: number; y: number } }> = [];
     for (const [elementId, startPos] of dragStartPositions.current) {
       const element = slide.elements[elementId];
       if (!element) continue;
@@ -351,7 +353,21 @@ export const SVGSlideCanvas: React.FC = () => {
 
       // Only include if position actually changed
       if (newX !== element.x || newY !== element.y) {
-        updates.push({ elementId, changes: { x: newX, y: newY } });
+        const changes: Partial<ShapeElement> & { x: number; y: number } = { x: newX, y: newY };
+        // Dragging a whole bound arrow tears its endpoints off their anchors,
+        // so the bindings are stale — without clearing them, the endpoint
+        // teleports back the next time the bound-to element moves.
+        // (Phase 1 refines this to keep a binding whose endpoint is still
+        // within the bind threshold.)
+        if (
+          element.type === 'shape' &&
+          (element as ShapeElement).shapeType === 'path' &&
+          ((element as ShapeElement).startBinding || (element as ShapeElement).endBinding)
+        ) {
+          changes.startBinding = null;
+          changes.endBinding = null;
+        }
+        updates.push({ elementId, changes });
       }
     }
 

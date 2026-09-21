@@ -4,9 +4,10 @@ import { usePresentationStore } from '../../store/presentationStore';
 import { createTextElement, createShapeElement } from '../../utils/slideFactory';
 import { computePointSnap, guideKey, type Guide } from '../../hooks/useAlignmentGuides';
 import { getMarginLayout, getMarginBounds } from '../../utils/marginLayouts';
-import { isShiftHeld } from '../../utils/keyboard';
+import { isShiftHeld, isMetaHeld } from '../../utils/keyboard';
 import { pathBounds } from '../../utils/pathShapes';
-import type { PathCurve } from '../../types/presentation';
+import { getBindingTarget, getAnchorPoint, bindDraftEndpoints } from '../../utils/connectorUtils';
+import type { PathCurve, ConnectorBinding, SlideElement } from '../../types/presentation';
 
 /** Click within this many slide units of the first vertex while drafting a
  *  polygon / bspline closes the path. Matches typical SVG editors. */
@@ -35,7 +36,9 @@ export interface PolyDraftState {
 }
 
 // Drawing hook — pointer-event based so it works for mouse, touch, and stylus.
-export function useSVGDrawing() {
+// `onConnectorHighlight` outlines the element a drawn line/arrow endpoint
+// would bind to (SVGSlideCanvas renders SVGConnectorHighlight from it).
+export function useSVGDrawing(onConnectorHighlight?: (elementId: string | null) => void) {
   const [drawState, setDrawState] = useState<DrawState>({
     startX: 0, startY: 0, currentX: 0, currentY: 0, isDrawing: false,
     snappedStartX: 0, snappedStartY: 0, snappedCurrentX: 0, snappedCurrentY: 0,
@@ -46,6 +49,10 @@ export function useSVGDrawing() {
   // eslint-disable-next-line react-hooks/refs -- latest-value ref pattern: mirrors state for pointer handlers; read only outside render
   polyDraftRef.current = polyDraft;
   const justFinishedDrawing = useRef(false);
+  // Binding the START of a drag-created line/arrow picked up at pointerdown.
+  // Kept in a ref so pointermove can preserve the anchor-snapped start point
+  // instead of re-running the grid/alignment snap over it every frame.
+  const startBindingRef = useRef<ConnectorBinding | null>(null);
 
   const tool = useEditorStore((s) => s.tool);
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
@@ -69,6 +76,14 @@ export function useSVGDrawing() {
     return { others, marginBounds, snappingEnabled: true };
   }, [activeSlideId]);
 
+  /** Slide elements in z-order — binding-target candidates for connector
+   *  endpoints (getBindingTarget filters invisible/locked/path itself). */
+  const getSlideElements = useCallback((): SlideElement[] => {
+    const slide = usePresentationStore.getState().presentation.slides[activeSlideId];
+    if (!slide) return [];
+    return slide.elementOrder.map((id) => slide.elements[id]).filter(Boolean);
+  }, [activeSlideId]);
+
   const commitPolyDraft = useCallback((closed = false) => {
     const draft = polyDraftRef.current;
     if (!draft || draft.vertices.length < 4) {
@@ -76,7 +91,18 @@ export function useSVGDrawing() {
       setTool('select');
       return;
     }
-    const bounds = pathBounds(draft.vertices);
+    // Bind the first/last vertex to a nearby shape anchor (open paths only —
+    // a closed loop has no endpoints). Meta/Cmd suppresses binding.
+    let vertices = draft.vertices;
+    let startBinding: ConnectorBinding | null = null;
+    let endBinding: ConnectorBinding | null = null;
+    if (!closed && !isMetaHeld()) {
+      const bound = bindDraftEndpoints(vertices, getSlideElements());
+      vertices = bound.absPoints;
+      startBinding = bound.startBinding;
+      endBinding = bound.endBinding;
+    }
+    const bounds = pathBounds(vertices);
     const el = createShapeElement('path', {
       x: bounds.x,
       y: bounds.y,
@@ -85,13 +111,15 @@ export function useSVGDrawing() {
       points: bounds.points,
       curve: draft.curve,
       closed,
+      startBinding,
+      endBinding,
     });
     addElement(activeSlideId, el);
     setSelectedElements([el.id]);
     setPolyDraft(null);
     setTool('select');
     justFinishedDrawing.current = true;
-  }, [activeSlideId, addElement, setSelectedElements, setTool]);
+  }, [activeSlideId, addElement, setSelectedElements, setTool, getSlideElements]);
 
   const cancelPolyDraft = useCallback(() => {
     setPolyDraft(null);
@@ -168,19 +196,42 @@ export function useSVGDrawing() {
       return;
     }
 
-    setGuides(startSnap.guides);
+    let startX = snappedStartX;
+    let startY = snappedStartY;
+    let startGuides = startSnap.guides;
+
+    // Line/arrow: the START point can bind to a shape anchor right away.
+    // The anchor wins over grid/alignment snap; Meta/Cmd suppresses the
+    // target search entirely.
+    startBindingRef.current = null;
+    if ((tool === 'line' || tool === 'arrow') && !e.metaKey) {
+      const target = getBindingTarget(pos, getSlideElements(), '');
+      if (target) {
+        const anchorEl = getSlideElements().find((el) => el.id === target.elementId);
+        const ap = anchorEl ? getAnchorPoint(anchorEl, target.anchor) : null;
+        if (ap) {
+          startX = ap.x;
+          startY = ap.y;
+          startGuides = [];
+          startBindingRef.current = target;
+          onConnectorHighlight?.(target.elementId);
+        }
+      }
+    }
+
+    setGuides(startGuides);
     setDrawState({
       startX: pos.x,
       startY: pos.y,
       currentX: pos.x,
       currentY: pos.y,
       isDrawing: true,
-      snappedStartX,
-      snappedStartY,
-      snappedCurrentX: snappedStartX,
-      snappedCurrentY: snappedStartY,
+      snappedStartX: startX,
+      snappedStartY: startY,
+      snappedCurrentX: startX,
+      snappedCurrentY: startY,
     });
-  }, [tool, getSnapContext, commitPolyDraft]);
+  }, [tool, getSnapContext, commitPolyDraft, getSlideElements, onConnectorHighlight]);
 
   const handlePointerMove = useCallback((
     e: React.PointerEvent,
@@ -215,13 +266,29 @@ export function useSVGDrawing() {
 
     const { others, marginBounds, snappingEnabled } = getSnapContext();
 
-    if (snappingEnabled) {
-      const currentSnap = computePointSnap(pos, others, 5, marginBounds);
-      const snappedCurrentX = currentSnap.snapX ?? pos.x;
-      const snappedCurrentY = currentSnap.snapY ?? pos.y;
+    // Line/arrow: the moving END can bind to a shape anchor. The anchor wins
+    // over grid/alignment snap; Meta/Cmd suppresses the target search.
+    let endBindingSnap: { x: number; y: number; elementId: string } | null = null;
+    if (tool === 'line' || tool === 'arrow') {
+      const target = e.metaKey ? null : getBindingTarget(pos, getSlideElements(), '');
+      if (target) {
+        const anchorEl = getSlideElements().find((el) => el.id === target.elementId);
+        const ap = anchorEl ? getAnchorPoint(anchorEl, target.anchor) : null;
+        if (ap) endBindingSnap = { x: ap.x, y: ap.y, elementId: target.elementId };
+      }
+      onConnectorHighlight?.(endBindingSnap ? endBindingSnap.elementId : null);
+    }
 
-      const startSnap = computePointSnap({ x: drawState.startX, y: drawState.startY }, others, 5, marginBounds);
-      const allGuides = [...startSnap.guides, ...currentSnap.guides];
+    // A bound start point stays glued to its anchor — don't re-snap it.
+    const startBound = startBindingRef.current !== null;
+
+    if (snappingEnabled) {
+      const currentSnap = endBindingSnap ? null : computePointSnap(pos, others, 5, marginBounds);
+      const snappedCurrentX = endBindingSnap ? endBindingSnap.x : (currentSnap?.snapX ?? pos.x);
+      const snappedCurrentY = endBindingSnap ? endBindingSnap.y : (currentSnap?.snapY ?? pos.y);
+
+      const startSnap = startBound ? null : computePointSnap({ x: drawState.startX, y: drawState.startY }, others, 5, marginBounds);
+      const allGuides = [...(startSnap?.guides ?? []), ...(currentSnap?.guides ?? [])];
       const seen = new Set<string>();
       const uniqueGuides = allGuides.filter((g) => {
         const key = guideKey(g);
@@ -237,8 +304,8 @@ export function useSVGDrawing() {
         currentY: pos.y,
         snappedCurrentX,
         snappedCurrentY,
-        snappedStartX: startSnap.snapX ?? s.startX,
-        snappedStartY: startSnap.snapY ?? s.startY,
+        snappedStartX: startBound ? s.snappedStartX : (startSnap?.snapX ?? s.startX),
+        snappedStartY: startBound ? s.snappedStartY : (startSnap?.snapY ?? s.startY),
       }));
     } else {
       setGuides([]);
@@ -246,13 +313,13 @@ export function useSVGDrawing() {
         ...s,
         currentX: pos.x,
         currentY: pos.y,
-        snappedCurrentX: pos.x,
-        snappedCurrentY: pos.y,
-        snappedStartX: s.startX,
-        snappedStartY: s.startY,
+        snappedCurrentX: endBindingSnap ? endBindingSnap.x : pos.x,
+        snappedCurrentY: endBindingSnap ? endBindingSnap.y : pos.y,
+        snappedStartX: startBound ? s.snappedStartX : s.startX,
+        snappedStartY: startBound ? s.snappedStartY : s.startY,
       }));
     }
-  }, [drawState.isDrawing, drawState.startX, drawState.startY, getSnapContext]);
+  }, [drawState.isDrawing, drawState.startX, drawState.startY, getSnapContext, tool, getSlideElements, onConnectorHighlight]);
 
   const handlePointerUp = useCallback(() => {
     if (!drawState.isDrawing) return;
@@ -263,11 +330,13 @@ export function useSVGDrawing() {
     const height = Math.abs(drawState.snappedCurrentY - drawState.snappedStartY);
 
     setGuides([]);
+    onConnectorHighlight?.(null);
 
     if (width < 5 && height < 5) {
       // Click without a drag — too small to materialize anything. Stay
       // in the drawing tool so the user can try again; we only reset to
       // select when a shape was actually committed.
+      startBindingRef.current = null;
       setDrawState({
         startX: 0, startY: 0, currentX: 0, currentY: 0, isDrawing: false,
         snappedStartX: 0, snappedStartY: 0, snappedCurrentX: 0, snappedCurrentY: 0,
@@ -285,16 +354,32 @@ export function useSVGDrawing() {
     } else if (tool === 'line' || tool === 'arrow') {
       // Line/arrow are drag-to-create path shapes: 2 vertices, linear curve,
       // optional endArrow. Closed/start-arrow are off; toggle via panel.
+      // Endpoints near a shape anchor bind to it (the live preview already
+      // snapped them there); Meta/Cmd held at release suppresses binding.
+      let sx = drawState.snappedStartX;
+      let sy = drawState.snappedStartY;
+      let ex = drawState.snappedCurrentX;
+      let ey = drawState.snappedCurrentY;
+      let startBinding: ConnectorBinding | null = null;
+      let endBinding: ConnectorBinding | null = null;
+      if (!isMetaHeld()) {
+        const bound = bindDraftEndpoints([sx, sy, ex, ey], getSlideElements());
+        [sx, sy, ex, ey] = bound.absPoints as [number, number, number, number];
+        startBinding = bound.startBinding;
+        endBinding = bound.endBinding;
+      }
       const el = createShapeElement('path', {
-        x: drawState.snappedStartX,
-        y: drawState.snappedStartY,
-        width,
-        height,
-        points: [0, 0, drawState.snappedCurrentX - drawState.snappedStartX, drawState.snappedCurrentY - drawState.snappedStartY],
+        x: sx,
+        y: sy,
+        width: Math.abs(ex - sx),
+        height: Math.abs(ey - sy),
+        points: [0, 0, ex - sx, ey - sy],
         curve: 'linear',
         closed: false,
         startArrow: false,
         endArrow: tool === 'arrow',
+        startBinding,
+        endBinding,
       });
       addElement(activeSlideId, el);
       setSelectedElements([el.id]);
@@ -310,11 +395,12 @@ export function useSVGDrawing() {
     // with that.
     setTool('select');
 
+    startBindingRef.current = null;
     setDrawState({
       startX: 0, startY: 0, currentX: 0, currentY: 0, isDrawing: false,
       snappedStartX: 0, snappedStartY: 0, snappedCurrentX: 0, snappedCurrentY: 0,
     });
-  }, [drawState, tool, activeSlideId, addElement, setTool, setSelectedElements, setEditingTextId]);
+  }, [drawState, tool, activeSlideId, addElement, setTool, setSelectedElements, setEditingTextId, getSlideElements, onConnectorHighlight]);
 
   return {
     drawState,
