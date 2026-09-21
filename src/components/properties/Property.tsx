@@ -1,5 +1,8 @@
 import React from 'react';
 import { ColorPicker } from '../toolbar/ColorPicker';
+import { ScrubInput } from '../controls/ScrubInput';
+import { ScrubPair } from '../controls/ScrubPair';
+import type { ScrubSpec } from '../../utils/scrub';
 import type { SlideElement, TransitionGroup } from '../../types/presentation';
 
 /**
@@ -182,24 +185,38 @@ interface NumberOpts<E extends SlideElement> extends BaseOpts<E> {
   min?: number;
   max?: number;
   step?: number;
-  /** Round the display value (good for x/y; off for opacity). */
+  /** Legacy whole-number rounding (good for x/y; off for opacity).
+   *  Equivalent to `precision: 0`; kept so existing panels don't churn. */
   round?: boolean;
+  /** Decimal places rounded to at commit. Overrides `round`. */
+  precision?: number;
+  /** Display-only suffix, e.g. '°' or 'px'. */
+  unit?: string;
+}
+
+/** Legacy `round: true` maps to `precision: 0`; explicit precision wins. */
+function scrubSpecFrom(opts: {
+  min?: number; max?: number; step?: number; round?: boolean; precision?: number;
+}): ScrubSpec {
+  return {
+    min: opts.min,
+    max: opts.max,
+    step: opts.step,
+    precision: opts.precision ?? (opts.round ? 0 : undefined),
+  };
 }
 
 export class NumberProperty<E extends SlideElement> extends BaseProperty<E, number> {
   private readonly opts: NumberOpts<E>;
   constructor(opts: NumberOpts<E>) { super(opts); this.opts = opts; }
   renderEditor({ element, update }: PropertyContext<E>) {
-    const v = this.get(element);
     return (
-      <input
-        type="number"
-        value={this.opts.round ? Math.round(v) : v}
-        min={this.opts.min}
-        max={this.opts.max}
-        step={this.opts.step}
-        onChange={(e) => update(this.set(element, Number(e.target.value)))}
-        className="w-full h-8 text-sm border border-gray-300 rounded px-2"
+      <ScrubInput
+        value={this.get(element)}
+        onCommit={(v) => update(this.set(element, v))}
+        spec={scrubSpecFrom(this.opts)}
+        unit={this.opts.unit}
+        disabled={this.disabledFor(element)}
       />
     );
   }
@@ -302,7 +319,13 @@ export class SelectProperty<E extends SlideElement, V extends string | number = 
 interface PairOpts<E extends SlideElement> extends BaseOpts<E> {
   keys: [string, string];
   labels: [string, string];
+  /** Legacy whole-number rounding; equivalent to `precision: 0`. */
   round?: boolean;
+  /** Shared across both axes (previously accepted-but-ignored). */
+  min?: number;
+  max?: number;
+  step?: number;
+  precision?: number;
 }
 
 export class PairNumberProperty<E extends SlideElement> extends BaseProperty<E, number> {
@@ -310,21 +333,20 @@ export class PairNumberProperty<E extends SlideElement> extends BaseProperty<E, 
   constructor(opts: PairOpts<E>) { super(opts); this.opts = opts; }
   override get syncFields(): string[] { return this.opts.syncFields ?? this.opts.keys; }
   renderEditor({ element, update }: PropertyContext<E>) {
-    const cells = this.opts.keys.map((k, i) => {
-      const v = getNested(element, k) as number;
-      return (
-        <div key={k}>
-          <label className="text-xs text-gray-500 block mb-1">{this.opts.labels[i]}</label>
-          <input
-            type="number"
-            value={this.opts.round ? Math.round(v) : v}
-            onChange={(ev) => update(setNestedPartial(element, k, Number(ev.target.value)))}
-            className="w-full h-7 text-xs border border-gray-300 rounded px-2"
-          />
-        </div>
-      );
-    });
-    return <div className="grid grid-cols-2 gap-2">{cells}</div>;
+    const spec = scrubSpecFrom(this.opts);
+    return (
+      <ScrubPair
+        values={[
+          getNested(element, this.opts.keys[0]) as number,
+          getNested(element, this.opts.keys[1]) as number,
+        ]}
+        labels={this.opts.labels}
+        specs={[spec, spec]}
+        onCommit={(i, v) => update(setNestedPartial(element, this.opts.keys[i], v))}
+        compact
+        disabled={this.disabledFor(element)}
+      />
+    );
   }
 }
 

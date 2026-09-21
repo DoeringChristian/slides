@@ -50,3 +50,12 @@ export const FONT_FAMILIES = [
 ];
 
 export const FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 48, 56, 64, 72, 96];
+
+// Google Slides–style drag slop: pointer-down only ARMS a gesture; nothing
+// happens until the pointer travels this many *screen* pixels (zoom-
+// independent) from the down point. Below the threshold, release is a plain
+// click and no move is ever committed. Touch gets a wider slop to absorb
+// finger jitter, matching the 8px long-press cancel radius used elsewhere.
+// Shared by canvas element drags (useSVGDrag) and scrub inputs (ScrubInput).
+export const DRAG_SLOP_MOUSE = 4;
+export const DRAG_SLOP_TOUCH = 8;

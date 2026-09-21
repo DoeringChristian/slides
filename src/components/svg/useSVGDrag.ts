@@ -1,14 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { isCtrlHeld } from '../../utils/keyboard';
-
-// Google Slides–style drag slop: pointer-down only ARMS a drag; nothing moves
-// until the pointer travels this many *screen* pixels (zoom-independent) from
-// the down point. Below the threshold, release is a plain click and no move is
-// ever committed — which is what keeps a click from nudging (or grid-snapping)
-// the element. Touch gets a wider slop to absorb finger jitter, matching the
-// 8px long-press cancel radius used elsewhere.
-const DRAG_SLOP_MOUSE = 4;
-const DRAG_SLOP_TOUCH = 8;
+import { DRAG_SLOP_MOUSE, DRAG_SLOP_TOUCH } from '../../utils/constants';
 
 interface DragState {
   phase: 'idle' | 'armed' | 'dragging';
