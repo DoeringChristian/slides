@@ -17,7 +17,7 @@ import type {
 import { TransitionPreview } from './TransitionPreview';
 import { isVisibilityFadeOut, optionsKeyFor } from './transitionSide';
 import { defaultVisibilityEasing } from '../../utils/interpolation';
-import { DEFAULT_TYPES, RESOURCE_TYPES, CONTENT_TYPES, visibilityTypesFor } from '../../utils/easingCatalog';
+import { DEFAULT_TYPES, RESOURCE_TYPES, CONTENT_TYPES, MORPH_TYPES, visibilityTypesFor } from '../../utils/easingCatalog';
 import { EASING_LABELS, easingHasOptions, transitionPropertiesDiffer } from '../../utils/transitionProperties';
 
 interface Props {
@@ -85,6 +85,7 @@ export const TransitionButton: React.FC<Props> = ({
     group === 'content' ? CONTENT_TYPES :
     group === 'resource' ? RESOURCE_TYPES :
     group === 'visibility' ? visibilityTypesFor(elementType) :
+    group === 'morph' ? MORPH_TYPES :
     DEFAULT_TYPES;
 
   const differs = transitionPropertiesDiffer(sourceElement, targetElement, group);
@@ -98,6 +99,8 @@ export const TransitionButton: React.FC<Props> = ({
   const defaultEasing: EasingType =
     group === 'resource' ? 'dissolve' :
     group === 'content' ? 'const' :
+    // Unset morph = the historical hard cut, which 'const' reproduces.
+    group === 'morph' ? 'const' :
     group === 'visibility' ? defaultVisibilityEasing(transitionElement) :
     'linear';
   const currentEasing: EasingType = transitionElement?.transitions?.[group] || defaultEasing;

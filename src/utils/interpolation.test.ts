@@ -222,6 +222,27 @@ describe('interpolateElement endpoints', () => {
     expect(interpolateElement(s, txt, 0.49).type).toBe('shape');
     expect(interpolateElement(s, txt, 0.5).type).toBe('text');
   });
+
+  test('mismatched element types still lerp position/size/rotation/opacity', () => {
+    // The frozen hard-cut used to return a or b wholesale; base properties
+    // must ALWAYS interpolate under their own group easings.
+    const s = makeShape({ x: 0, y: 0, width: 100, height: 50, opacity: 1, rotation: 0 });
+    const txt = makeText({ x: 10, y: 20, width: 300, height: 80, opacity: 0.5, rotation: 90 });
+    const early = interpolateElement(s, txt, 0.3);
+    expect(early.type).toBe('shape');
+    expect(early.x).toBeCloseTo(3);
+    expect(early.y).toBeCloseTo(6);
+    expect(early.width).toBeCloseTo(160);
+    expect(early.opacity).toBeCloseTo(0.85);
+    expect(early.rotation).toBeCloseTo(27);
+    const late = interpolateElement(s, txt, 0.7);
+    expect(late.type).toBe('text');
+    expect(late.x).toBeCloseTo(7);
+    // Position easing on the target side governs the cross-type base lerp too.
+    const txtEased = makeText({ x: 10, transitions: { position: 'const' } });
+    expect(interpolateElement(s, txtEased, 0.3).x).toBe(0);
+    expect(interpolateElement(s, txtEased, 0.7).x).toBe(10);
+  });
 });
 
 // =============================================================================
@@ -533,6 +554,151 @@ describe('path shape interpolation', () => {
     expect(mid._startArrowAlpha).toBeCloseTo(0.25);
     expect(mid.startHead).toBe('bar'); // the incoming glyph, not 'none'
     expect(mid._endArrowAlpha).toBeUndefined();
+  });
+});
+
+// =============================================================================
+// Universal morphs — shape↔shape (automatic) and text↔shape (_morphFx)
+// =============================================================================
+
+describe('shape↔shape cross-shapeType morph (automatic)', () => {
+  const rect = makeShape({ x: 0, y: 0, width: 100, height: 50, fill: '#000000', stroke: '#000000' });
+  const star = makeShape({
+    id: 'el-shape', shapeType: 'star', x: 40, y: 10, width: 60, height: 60,
+    fill: '#ffffff', stroke: '#ffffff',
+  });
+
+  test('mid-flight frame is a synthetic closed linear path with morphed points', () => {
+    const mid = interpolateElement(rect, star, 0.5) as ShapeElement;
+    expect(mid.type).toBe('shape');
+    expect(mid.shapeType).toBe('path');
+    expect(mid.curve).toBe('linear');
+    // Both outlines are closed loops → the in-flight polyline keeps its Z
+    // (and therefore its fill).
+    expect(mid.closed).toBe(true);
+    expect(mid.cornerRadius).toBe(0);
+    expect(mid.tangents).toBeUndefined();
+    expect(mid.startHead).toBeUndefined();
+    expect(mid.endHead).toBeUndefined();
+    expect(mid.points).toBeDefined();
+    expect(mid.points!.length).toBeGreaterThan(16);
+    expect(mid.points!.length % 2).toBe(0);
+    // Points are relative to the lerped box: they stay inside it.
+    const w = mid.width, h = mid.height;
+    for (let i = 0; i < mid.points!.length; i += 2) {
+      expect(mid.points![i]).toBeGreaterThanOrEqual(-1e-6);
+      expect(mid.points![i]).toBeLessThanOrEqual(w + 1e-6);
+      expect(mid.points![i + 1]).toBeGreaterThanOrEqual(-1e-6);
+      expect(mid.points![i + 1]).toBeLessThanOrEqual(h + 1e-6);
+    }
+    // Fill/stroke lerp mid-way.
+    expect(mid.fill).toBe('#808080');
+  });
+
+  test('endpoints are exact: t=0 is the rect, t=1 is the star', () => {
+    const at0 = interpolateElement(rect, star, 0) as ShapeElement;
+    expect(at0.shapeType).toBe('rect');
+    expect(at0.x).toBe(0);
+    expect(at0.width).toBe(100);
+    expect(at0.points).toBeUndefined();
+    expect(at0.fill).toBe('#000000');
+    const at1 = interpolateElement(rect, star, 1) as ShapeElement;
+    expect(at1.shapeType).toBe('star');
+    expect(at1.x).toBe(40);
+    expect(at1.width).toBe(60);
+    expect(at1.fill).toBe('#ffffff');
+  });
+
+  test('position easing governs x independently while the geometry morphs (uniformity)', () => {
+    const starEased = { ...star, transitions: { position: 'ease' as const } };
+    const out = interpolateElement(rect, starEased, 0.25) as ShapeElement;
+    // Geometry is morphing…
+    expect(out.shapeType).toBe('path');
+    expect(out.points!.length).toBeGreaterThan(16);
+    // …while x follows easeInOutCubic(0.25) = 0.0625 → 40 * 0.0625 = 2.5,
+    // NOT the linear 10.
+    expect(out.x).toBeCloseTo(2.5);
+    // Without the easing, x is linear.
+    expect((interpolateElement(rect, star, 0.25) as ShapeElement).x).toBeCloseTo(10);
+  });
+
+  test('controlPoints easing drives the geometry t (existing morph precedent)', () => {
+    const starConst = { ...star, transitions: { controlPoints: 'const' as const } };
+    const early = interpolateElement(rect, starConst, 0.3) as ShapeElement;
+    // Geometry snapped to the source outline: every point on the (lerped
+    // box scaled) rect outline — compare against the same call at a tiny t.
+    const atEps = interpolateElement(rect, starConst, 1e-9) as ShapeElement;
+    for (let i = 0; i < early.points!.length; i += 2) {
+      // const easing → geometry t = 0 → unit outline of the rect, scaled by
+      // the CURRENT lerped box. Normalize both to unit space to compare.
+      expect(early.points![i] / early.width).toBeCloseTo(atEps.points![i] / atEps.width, 6);
+      expect(early.points![i + 1] / early.height).toBeCloseTo(atEps.points![i + 1] / atEps.height, 6);
+    }
+  });
+
+  test('rect ↔ open line keeps the in-flight polyline open', () => {
+    const line = makeShape({ shapeType: 'path', points: [0, 0, 100, 0], closed: false });
+    const mid = interpolateElement(makeShape(), line, 0.5) as ShapeElement;
+    expect(mid.shapeType).toBe('path');
+    expect(mid.closed).toBe(false);
+  });
+});
+
+describe('text↔shape morph opt-in (_morphFx)', () => {
+  type WithMorphFx = SlideElement & { _morphFx?: { t: number; from: SlideElement; to: SlideElement } };
+
+  test('attached when tr.morph is linear/ease and both sides are text|shape', () => {
+    const s = makeShape({ x: 0 });
+    const txt = makeText({ x: 10, transitions: { morph: 'linear' } });
+    const out = interpolateElement(s, txt, 0.3) as WithMorphFx;
+    expect(out._morphFx).toBeDefined();
+    expect(out._morphFx!.t).toBeCloseTo(0.3);
+    expect(out._morphFx!.from).toBe(s);
+    expect(out._morphFx!.to).toBe(txt);
+    // The carrier element still snaps its type and lerps its base props.
+    expect(out.type).toBe('shape');
+    expect(out.x).toBeCloseTo(3);
+    expect((interpolateElement(s, txt, 0.7) as WithMorphFx).type).toBe('text');
+  });
+
+  test("morph 'ease' eases the geometry t", () => {
+    const s = makeShape();
+    const txt = makeText({ transitions: { morph: 'ease' } });
+    const out = interpolateElement(s, txt, 0.25) as WithMorphFx;
+    expect(out._morphFx!.t).toBeCloseTo(0.0625); // easeInOutCubic(0.25)
+  });
+
+  test("unset and 'const' keep the hard cut (no fx)", () => {
+    const s = makeShape();
+    expect((interpolateElement(s, makeText(), 0.3) as WithMorphFx)._morphFx).toBeUndefined();
+    const txtConst = makeText({ transitions: { morph: 'const' } });
+    expect((interpolateElement(s, txtConst, 0.3) as WithMorphFx)._morphFx).toBeUndefined();
+  });
+
+  test('never attached at the exact endpoints', () => {
+    const s = makeShape();
+    const txt = makeText({ transitions: { morph: 'linear' } });
+    expect((interpolateElement(s, txt, 0) as WithMorphFx)._morphFx).toBeUndefined();
+    expect((interpolateElement(s, txt, 1) as WithMorphFx)._morphFx).toBeUndefined();
+  });
+
+  test('image participants never morph', () => {
+    const img = makeImage();
+    const txt = makeText({ transitions: { morph: 'linear' } });
+    const out = interpolateElement(img, txt, 0.3) as WithMorphFx;
+    expect(out._morphFx).toBeUndefined();
+    // Base still lerps (frozen-fallback fix applies to all cross-type pairs).
+    expect(out.x).toBeCloseTo(3);
+  });
+
+  test('backward transitions read the morph easing from the source element', () => {
+    const s = makeShape({ transitions: { morph: 'linear' } });
+    const txt = makeText();
+    // isForward=false → settings come from `a`.
+    const out = interpolateElement(s, txt, 0.3, false) as WithMorphFx;
+    expect(out._morphFx).toBeDefined();
+    // Forward, the same pair has no morph configured on the target.
+    expect((interpolateElement(s, txt, 0.3, true) as WithMorphFx)._morphFx).toBeUndefined();
   });
 });
 

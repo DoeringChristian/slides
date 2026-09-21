@@ -142,6 +142,63 @@ export function pathLengthFor(d: string): number {
   }
 }
 
+// -----------------------------------------------------------------------------
+// samplePathD — equal-arc polyline sampling of an arbitrary d-string.
+// Used by the cross-type morph (RenderMorph) to turn per-glyph path data into
+// lerpable point lists. Same hidden-probe pattern as pathLengthFor, extended
+// with getPointAtLength; results cached by (d, n) since the morph re-samples
+// the same glyphs every animation frame.
+// -----------------------------------------------------------------------------
+
+/** Test seam: vitest runs in node where SVGPathElement.getTotalLength /
+ *  getPointAtLength don't exist. Tests inject a deterministic sampler. */
+type PathSampler = (d: string, n: number) => number[];
+let customPathSampler: PathSampler | null = null;
+export function setPathSamplerForTests(fn: PathSampler | null): void {
+  customPathSampler = fn;
+  samplePathCache.clear();
+}
+
+const samplePathCache = new Map<string, number[]>();
+let samplerProbe: SVGPathElement | null = null;
+
+/**
+ * Sample a path d-string into `n` points at equal arc-length spacing
+ * (endpoints included: sample k sits at arc `total * k / (n - 1)`).
+ * Returns a flat [x0,y0,…,x(n-1),y(n-1)] array in the path's own
+ * coordinate space, or [] when sampling isn't possible (no DOM and no
+ * injected sampler, or a degenerate d).
+ */
+export function samplePathD(d: string, n: number): number[] {
+  if (n < 2 || !d) return [];
+  const key = `${n}|${d}`;
+  const hit = samplePathCache.get(key);
+  if (hit) return hit;
+  let out: number[];
+  if (customPathSampler) {
+    out = customPathSampler(d, n);
+  } else if (typeof document === 'undefined') {
+    out = [];
+  } else {
+    if (!samplerProbe) {
+      samplerProbe = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    }
+    samplerProbe.setAttribute('d', d);
+    try {
+      const total = samplerProbe.getTotalLength();
+      out = [];
+      for (let k = 0; k < n; k++) {
+        const p = samplerProbe.getPointAtLength((total * k) / (n - 1));
+        out.push(p.x, p.y);
+      }
+    } catch {
+      out = [];
+    }
+  }
+  samplePathCache.set(key, out);
+  return out;
+}
+
 // Per-(glyphIndex, fontSize) path-data cache keyed by font name. opentype's
 // getPath is fast but we re-render the same text on every frame during a Write
 // transition; an inner-loop hash beats recomputing.

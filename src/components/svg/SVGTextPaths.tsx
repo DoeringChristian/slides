@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState, memo } from 'react';
 import type { TextElement } from '../../types/presentation';
 import type { WriteEffect } from '../../utils/interpolation';
 import { TEXT_BOX_PADDING } from '../../utils/constants';
-import { layoutSvgText, type SvgTextDoc } from '../../utils/textLayout';
+import { layoutSvgText, textVerticalOffset, type SvgTextDoc } from '../../utils/textLayout';
 import { prewarmFonts } from '../../utils/glyphPaths';
 import { RenderPaths } from './RenderPaths';
 import { SVGTextContent } from './SVGTextContent';
@@ -107,13 +107,9 @@ export const SVGTextPaths: React.FC<Props> = memo(({
   // load — fonts are pre-warmed so this is usually one frame.
   if (!doc) return null;
 
-  // Vertical alignment offset within the box.
-  let verticalOffset = 0;
-  if (style.verticalAlign === 'middle') {
-    verticalOffset = Math.max(0, (height - padding * 2 - doc.height) / 2);
-  } else if (style.verticalAlign === 'bottom') {
-    verticalOffset = Math.max(0, height - padding * 2 - doc.height);
-  }
+  // Vertical alignment offset within the box (shared helper so RenderMorph
+  // and hit-testing agree with the renderer).
+  const verticalOffset = textVerticalOffset(style.verticalAlign, height, padding, doc.height);
 
   return (
     <g transform={transform} style={{ pointerEvents: 'none' }}>

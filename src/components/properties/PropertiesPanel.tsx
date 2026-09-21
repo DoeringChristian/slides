@@ -9,6 +9,12 @@ import { ImageProperties } from './ImageProperties';
 import { SlideProperties } from './SlideProperties';
 import { ArrangePanel } from './ArrangePanel';
 import { PanelHeader } from './PanelHeader';
+import { TransitionButton } from './TransitionButton';
+import type { SlideElement } from '../../types/presentation';
+
+/** Element types that can participate in a cross-type geometry morph. */
+const isMorphable = (el: SlideElement | undefined): boolean =>
+  el?.type === 'text' || el?.type === 'shape';
 
 export const PropertiesPanel: React.FC = () => {
   const selected = useSelectedElements();
@@ -22,6 +28,17 @@ export const PropertiesPanel: React.FC = () => {
 
   const hasPrevDiff = element && prevElement && JSON.stringify(element) !== JSON.stringify(prevElement);
   const hasNextDiff = element && nextElement && JSON.stringify(element) !== JSON.stringify(nextElement);
+
+  // Cross-TYPE morph row: shown when an adjacent keyframe holds this object
+  // as a DIFFERENT morphable element type (text ↔ shape). The in/out
+  // TransitionButtons are the same picker every other group uses; each
+  // renders only when its own side actually differs.
+  const showMorphRow = Boolean(
+    element && isMorphable(element) && (
+      (prevElement && isMorphable(prevElement) && prevElement.type !== element.type) ||
+      (nextElement && isMorphable(nextElement) && nextElement.type !== element.type)
+    ),
+  );
 
   // Hide header for image/text elements (controls are in their respective Properties components)
   const showHeader = !element || (element.type !== 'image' && element.type !== 'text');
@@ -67,6 +84,17 @@ export const PropertiesPanel: React.FC = () => {
             {element.type === 'text' && <TextProperties element={element} />}
             {element.type === 'shape' && <ShapeProperties element={element} />}
             {element.type === 'image' && <ImageProperties element={element} />}
+            {showMorphRow && (
+              <div>
+                <div className="flex items-center">
+                  <span className="text-xs text-gray-500">Morph</span>
+                  <div className="flex items-center gap-0.5 ml-auto">
+                    <TransitionButton elementId={element.id} group="morph" direction="in" />
+                    <TransitionButton elementId={element.id} group="morph" direction="out" />
+                  </div>
+                </div>
+              </div>
+            )}
             <ArrangePanel element={element} />
           </>
         ) : (

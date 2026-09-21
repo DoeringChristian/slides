@@ -164,7 +164,7 @@ export type TransitionGroup =
   | 'fill' | 'stroke' | 'strokeWidth' | 'cornerRadius'
   | 'fontSize' | 'color' | 'lineHeight'
   | 'crop' | 'resource' | 'visibility' | 'content'
-  | 'controlPoints' | 'startArrow' | 'endArrow';
+  | 'controlPoints' | 'startArrow' | 'endArrow' | 'morph';
 
 // Per-property-group transition settings
 export interface PropertyTransitions {
@@ -192,6 +192,14 @@ export interface PropertyTransitions {
    *  the typed `startHead`/`endHead` fields.) */
   startArrow?: EasingType;
   endArrow?: EasingType;
+  /** Cross-TYPE geometry morph (text ↔ shape). Opt-in: unset (or 'const')
+   *  keeps the historical hard cut at t=0.5; 'linear'/'ease' morph the two
+   *  elements' outlines into each other (interpolation attaches `_morphFx`,
+   *  resolved by the shared RenderMorph leaf). Governs ONLY the geometry
+   *  correspondence — position/size/rotation/opacity keep their own group
+   *  easings. shape↔shape morphs are automatic and eased by `controlPoints`
+   *  instead. */
+  morph?: EasingType;
 
   /** Optional per-easing settings, per group. Read only when the matching
    *  easing field above is set. Unset → all options take their defaults. */

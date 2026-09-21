@@ -1,6 +1,7 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { Play, Pause } from 'lucide-react';
 import { RenderShape, RenderImage, RenderArrowhead } from '../svg/ElementRenderer';
+import { RenderMorph } from '../svg/RenderMorph';
 import { SVGTextPaths } from '../svg/SVGTextPaths';
 import { RenderPaths } from '../svg/RenderPaths';
 import { shapeToSvgPaths } from '../../utils/shapeToPath';
@@ -291,6 +292,7 @@ function renderElementInner(
   resources: Record<string, Resource>,
   fx: WriteEffect | undefined,
 ): React.ReactNode {
+  if ((element as SlideElement & { _morphFx?: unknown })._morphFx) return <RenderMorph key={element.id} element={element} />;
   if (element.type === 'text') {
     const textEl = element as (TextElement & {
       _dissolveText?: TextDissolveSource;

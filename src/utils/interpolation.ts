@@ -1,7 +1,7 @@
 import type { SlideElement, TextElement, ShapeElement, ImageElement, EasingType, ArrowheadType } from '../types/presentation';
 import { clamp } from './geometry';
-import { resamplePath, sampledPath, catmullTangents } from './pathShapes';
-import type { PathCurve } from '../types/presentation';
+import { resamplePath, catmullTangents } from './pathShapes';
+import { lerpMorphedPaths, morphShapeOutlines, outlineIsClosed } from './morphGeometry';
 
 export function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
@@ -83,6 +83,19 @@ export interface WriteEffect {
    *  `childIndex * lag`; the per-child renderer then sees a delayed t. */
   staggerLag?: number;
   staggerIndex?: number;
+}
+
+/** Cross-TYPE morph descriptor (text ↔ shape), attached to interpolated
+ *  elements as a private `_morphFx` field (same pattern as `_writeFx`).
+ *  Interpolation only decides WHEN a morph runs and how far along it is;
+ *  the shared `RenderMorph` leaf resolves the actual glyph/outline
+ *  geometry at render time (text layout is async, so geometry can't be
+ *  produced here). `t` already has the `morph` group easing applied:
+ *  0 = fully `from`, 1 = fully `to`. */
+export interface MorphFx {
+  t: number;
+  from: SlideElement;
+  to: SlideElement;
 }
 
 // Lerp with easing applied
@@ -169,17 +182,6 @@ function arrowAlpha(
   return lerpEased(aV, bV, t, easing);
 }
 
-/** Sample a path into a polyline suitable for the smooth curve / closed
- *  morph. When the source is closed, append the first sample at the end
- *  so the closing segment becomes an explicit polyline edge — the
- *  in-flight interpolated shape is rendered as an OPEN polyline, so the
- *  Z command can't add (or remove) a visible segment mid-transition. */
-function polylineForMorph(points: number[], curve: PathCurve, closed: boolean, tangents?: number[]): number[] {
-  const samples = sampledPath(points, curve, closed, tangents);
-  if (closed && samples.length >= 2) return [...samples, samples[0], samples[1]];
-  return samples;
-}
-
 /** Tangent list a bezier keyframe actually renders with: stored tangents
  *  when they match the vertex count, Catmull-Rom estimates otherwise —
  *  mirrors pathD's fallback so the lerp starts/ends on what's on screen. */
@@ -187,96 +189,6 @@ function renderedTangents(points: number[], tangents: number[] | undefined, clos
   return tangents && tangents.length === points.length * 2
     ? tangents
     : catmullTangents(points, closed);
-}
-
-/** Cyclically rotate sample list by k (k * 2 in the flat array). */
-function rotateSamples(s: number[], k: number): number[] {
-  const N = s.length / 2;
-  if (N === 0 || k % N === 0) return s.slice();
-  const out = new Array(s.length);
-  for (let i = 0; i < N; i++) {
-    const j = (i + k) % N;
-    out[2 * i] = s[2 * j];
-    out[2 * i + 1] = s[2 * j + 1];
-  }
-  return out;
-}
-
-/** Reverse a sample list end-to-end (used to test reversed traversal). */
-function reverseSamples(s: number[]): number[] {
-  const N = s.length / 2;
-  const out = new Array(s.length);
-  for (let i = 0; i < N; i++) {
-    out[2 * i] = s[2 * (N - 1 - i)];
-    out[2 * i + 1] = s[2 * (N - 1 - i) + 1];
-  }
-  return out;
-}
-
-/** Pick the rotation (and forward/reverse orientation) of `closed` that
- *  minimizes Σ‖closed[(i+k) mod N] − reference[i]‖² to `reference`. The
- *  reference side stays put. Forward orientation is tried first so a tie
- *  resolves to the original winding (no spurious flip). */
-function bestAlignment(closed: number[], reference: number[]): number[] {
-  const N = closed.length / 2;
-  if (N < 2 || reference.length !== closed.length) return closed;
-  let bestCost = Infinity;
-  let bestK = 0;
-  let bestReversed = false;
-  const evaluate = (cand: number[], reversed: boolean) => {
-    for (let k = 0; k < N; k++) {
-      let cost = 0;
-      for (let i = 0; i < N; i++) {
-        const j = (i + k) % N;
-        const dx = cand[2 * j] - reference[2 * i];
-        const dy = cand[2 * j + 1] - reference[2 * i + 1];
-        cost += dx * dx + dy * dy;
-      }
-      if (cost < bestCost) {
-        bestCost = cost;
-        bestK = k;
-        bestReversed = reversed;
-      }
-    }
-  };
-  evaluate(closed, false);
-  evaluate(reverseSamples(closed), true);
-  return rotateSamples(bestReversed ? reverseSamples(closed) : closed, bestK);
-}
-
-/** Align two sampled polylines for a path morph. A closed side has
- *  cyclic + reflection freedom around its perimeter; it rotates / reverses
- *  to follow the other side. An open side's endpoints are fixed by user
- *  intent, so it never moves. When both are closed we only rotate one —
- *  rotating both by the same offset is a no-op on pairwise distance. */
-function alignForMorph(
-  a: number[], b: number[],
-  aClosed: boolean, bClosed: boolean,
-): { a: number[]; b: number[] } {
-  if (aClosed && !bClosed) return { a: bestAlignment(a, b), b };
-  if (bClosed && !aClosed) return { a, b: bestAlignment(b, a) };
-  if (aClosed && bClosed)  return { a: bestAlignment(a, b), b };
-  return { a, b };
-}
-
-/** Sample-and-lerp morph between two paths of arbitrary curve / closed
- *  state. Steps: dense-sample each side → resample to a common N →
- *  cyclic-align the closed side(s) so each sample's travel is minimized
- *  (this is what stops the "inside-out" sweep when closed ↔ open) →
- *  pairwise lerp. The result is meant to be rendered as a plain open
- *  linear polyline. */
-function lerpMorphedPaths(
-  aPoints: number[], aCurve: PathCurve, aClosed: boolean, aTangents: number[] | undefined,
-  bPoints: number[], bCurve: PathCurve, bClosed: boolean, bTangents: number[] | undefined,
-  t: number,
-): number[] {
-  const aS = polylineForMorph(aPoints, aCurve, aClosed, aTangents);
-  const bS = polylineForMorph(bPoints, bCurve, bClosed, bTangents);
-  const N = Math.max(aS.length, bS.length) / 2;
-  const aR = aS.length === 2 * N ? aS : resamplePath(aS, N, false);
-  const bR = bS.length === 2 * N ? bS : resamplePath(bS, N, false);
-  const { a: aAlign, b: bAlign } = alignForMorph(aR, bR, aClosed, bClosed);
-  return aAlign.map((v, i) => lerp(v, bAlign[i], t));
 }
 
 /** Smooth control-point interpolation for path shapes.
@@ -537,6 +449,36 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
     const fillT = applyEasing(t, tr.fill);
     const strokeT = applyEasing(t, tr.stroke);
 
+    // Cross-shapeType morph (rect ↔ star, ellipse ↔ path, …): AUTOMATIC —
+    // both outlines are sampled/aligned/lerped by morphShapeOutlines and the
+    // in-flight frame renders as a synthetic path shape. The geometry t is
+    // eased by the EXISTING controlPoints group (same precedent as the
+    // curve/closed morph below); every other property keeps its own group
+    // easing via `base` / the fill/stroke/width lerps. The synthetic shape
+    // stays closed (so fills keep rendering) unless an open path
+    // participates, in which case the closing edge is baked into the sample
+    // list and the polyline renders open — exactly like the path↔path morph.
+    if (sa.shapeType !== sb.shapeType && t > 0 && t < 1) {
+      const geomT = applyEasing(t, tr.controlPoints ?? 'linear');
+      return {
+        ...base,
+        type: 'shape',
+        shapeType: 'path',
+        fill: lerpColor(sa.fill, sb.fill, fillT),
+        stroke: lerpColor(sa.stroke, sb.stroke, strokeT),
+        strokeWidth: lerpEased(sa.strokeWidth, sb.strokeWidth, t, tr.strokeWidth),
+        cornerRadius: 0,
+        points: morphShapeOutlines(sa, sb, geomT, undefined, base.width, base.height),
+        curve: 'linear',
+        closed: outlineIsClosed(sa) && outlineIsClosed(sb),
+        tangents: undefined,
+        startHead: undefined,
+        endHead: undefined,
+        startBinding: undefined,
+        endBinding: undefined,
+      } as ShapeElement;
+    }
+
     // Curve / closed morph: snapping the path shape at t=0.5 looks abrupt
     // whenever the source and target paths differ in curve mode OR closed
     // state. We sample both into dense polylines, lerp pairwise, and
@@ -712,8 +654,35 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
     return result;
   }
 
-  // Fallback: snap at midpoint
-  return (t < 0.5 ? { ...a } : { ...b }) as SlideElement;
+  // Cross-TYPE keyframes (text ↔ shape ↔ image). Base properties —
+  // position / size / rotation / opacity — ALWAYS lerp under their own
+  // group easings; the discrete remainder (the element's type-specific
+  // payload) snaps at t=0.5.
+  const snapped = t < 0.5 ? a : b;
+  const result = {
+    ...snapped,
+    x: base.x,
+    y: base.y,
+    width: base.width,
+    height: base.height,
+    rotation: base.rotation,
+    opacity: base.opacity,
+    visible: true,
+  } as SlideElement;
+
+  // Opt-in text ↔ shape geometry morph via the `morph` transition group.
+  // 'const' (and unset) keep the hard cut; 'linear'/'ease' attach a
+  // _morphFx descriptor that the shared RenderMorph leaf resolves. The
+  // morph governs ONLY the geometry correspondence — the base lerp above
+  // still carries position/size/rotation/opacity under their own easings.
+  const morphable = (el: SlideElement) => el.type === 'text' || el.type === 'shape';
+  if (morphable(a) && morphable(b) && tr.morph && tr.morph !== 'const' && t > 0 && t < 1) {
+    return {
+      ...result,
+      _morphFx: { t: applyEasing(t, tr.morph), from: a, to: b },
+    } as SlideElement & { _morphFx: MorphFx };
+  }
+  return result;
 }
 
 /** Default visibility easing for an element when no explicit setting is

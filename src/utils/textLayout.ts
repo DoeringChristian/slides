@@ -89,6 +89,27 @@ export function getLayoutSync(
   return syncLayoutCache.get(layoutCacheKey(text, style, boxWidth, rawLineIndices)) ?? null;
 }
 
+/**
+ * Vertical alignment offset of a laid-out text block inside its element box.
+ * Extracted from SVGTextPaths so every consumer of a layout (the renderer
+ * itself, RenderMorph's glyph-outline extraction, hit-testing) computes the
+ * SAME glyph positions. `contentHeight` is `SvgTextDoc.height`.
+ */
+export function textVerticalOffset(
+  verticalAlign: TextStyle['verticalAlign'],
+  boxHeight: number,
+  padding: number,
+  contentHeight: number,
+): number {
+  if (verticalAlign === 'middle') {
+    return Math.max(0, (boxHeight - padding * 2 - contentHeight) / 2);
+  }
+  if (verticalAlign === 'bottom') {
+    return Math.max(0, boxHeight - padding * 2 - contentHeight);
+  }
+  return 0;
+}
+
 function escapeXml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }

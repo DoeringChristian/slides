@@ -63,6 +63,19 @@ describe('transitionProperties', () => {
     expect(transitionPropertiesDiffer(path, { ...path, closed: true }, 'controlPoints')).toBe(true);
   });
 
+  test("morph diff fires exactly when the element type or shapeType differs", () => {
+    // Same type, same shapeType → no morph.
+    expect(transitionPropertiesDiffer(text, text, 'morph')).toBe(false);
+    expect(transitionPropertiesDiffer(path, path, 'morph')).toBe(false);
+    // Cross TYPE (text ↔ shape) → morph available.
+    expect(transitionPropertiesDiffer(text, path, 'morph')).toBe(true);
+    expect(transitionPropertiesDiffer(path, text, 'morph')).toBe(true);
+    // Same type, differing shapeType → morph available (shape↔shape).
+    expect(transitionPropertiesDiffer(path, { ...path, shapeType: 'rect' }, 'morph')).toBe(true);
+    expect(transitionPropertyValues(text, 'morph')).toEqual(['text', null]);
+    expect(transitionPropertyValues(path, 'morph')).toEqual(['shape', 'path']);
+  });
+
   test('reports which easings have option panels', () => {
     expect(easingHasOptions('content', 'write')).toBe(true);
     expect(easingHasOptions('visibility', 'grow')).toBe(true);

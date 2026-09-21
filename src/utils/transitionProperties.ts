@@ -68,6 +68,14 @@ export function transitionPropertyValues(element: SlideElement, group: Transitio
       return element.type === 'shape' ? [(element as ShapeElement).startHead ?? 'none'] : [];
     case 'endArrow':
       return element.type === 'shape' ? [(element as ShapeElement).endHead ?? 'none'] : [];
+    case 'morph':
+      // Fires exactly when the element TYPE or (for shapes) the shapeType
+      // differs between the two keyframes — i.e. whenever a geometry morph
+      // could run. Always length 2 so the differ compares pairwise.
+      return [
+        element.type,
+        element.type === 'shape' ? (element as ShapeElement).shapeType : null,
+      ];
     default: return [];
   }
 }

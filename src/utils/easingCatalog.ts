@@ -9,6 +9,10 @@ import type { EasingType, SlideElement } from '../types/presentation';
 export const DEFAULT_TYPES: EasingType[] = ['const', 'linear', 'ease'];
 export const RESOURCE_TYPES: EasingType[] = ['const', 'dissolve', 'fadeinout'];
 
+// Cross-TYPE morph (text ↔ shape): 'const' = the historical hard cut at
+// t=0.5 (the default when unset); 'linear'/'ease' drive the geometry morph.
+export const MORPH_TYPES: EasingType[] = ['const', 'linear', 'ease'];
+
 // Visibility easings differ by element type:
 // - text:  glyph reveal (write/typewriter/fadebyglyph) + visual wrappers
 // - shape: outline create + visual wrappers

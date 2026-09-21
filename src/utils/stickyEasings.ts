@@ -12,6 +12,7 @@ import {
   IMAGE_VISIBILITY_TYPES,
   CONTENT_TYPES,
   RESOURCE_TYPES,
+  MORPH_TYPES,
   DEFAULT_TYPES as NUMERIC,
 } from './easingCatalog';
 
@@ -47,6 +48,9 @@ function applicable(elementType: SlideElement['type'], group: TransitionGroup, e
       return elementType === 'image' && NUMERIC.includes(easing);
     case 'controlPoints': case 'startArrow': case 'endArrow':
       return elementType === 'shape' && NUMERIC.includes(easing);
+    case 'morph':
+      // Cross-TYPE morph: meaningful for the two morphable element types.
+      return (elementType === 'text' || elementType === 'shape') && MORPH_TYPES.includes(easing);
     case 'position': case 'size': case 'rotation': case 'opacity':
       return NUMERIC.includes(easing);
     default:
