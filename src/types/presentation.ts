@@ -47,8 +47,14 @@ export interface Slide {
   transition: SlideTransition;
   notes: string;
   hidden?: boolean;
-  autoAdvance?: boolean;        // Automatically advance to next slide
-  autoAdvanceDelay?: number;    // Delay in seconds before auto-advancing
+  /** LEGACY: replaced by slide groups (`groupId`). Still read by the collab
+   *  shim (live Y docs are never migrated) and deleted by migration. */
+  autoAdvance?: boolean;
+  /** Hold in seconds before the timed chain advances past this slide. */
+  autoAdvanceDelay?: number;
+  /** Slide-group membership: maximal CONTIGUOUS runs (length ≥ 2) of equal
+   *  groupId auto-play as a timed chain in the presenter. */
+  groupId?: string;
 }
 
 export type SlideBackground = {

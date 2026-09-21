@@ -1,11 +1,13 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { SlideSortable } from './SlideSortable';
+import type { SlideGroupInfo } from './SlideThumbnail';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useEditorStore } from '../../store/editorStore';
-import { useOrderedSlides } from '../../store/selectors';
-import { Plus, ArrowDown, ArrowUp, Blend, FilePlus2, LayoutTemplate } from 'lucide-react';
+import { useOrderedSlides, useGroupRuns } from '../../store/selectors';
+import { areSlidesContiguous, groupColorFor } from '../../utils/presenterAdvance';
+import { Plus, ArrowDown, ArrowUp, Blend, FilePlus2, LayoutTemplate, Group, Ungroup } from 'lucide-react';
 import { TemplatePicker } from './TemplatePicker';
 import type { DragEndEvent } from '@dnd-kit/core';
 
@@ -89,6 +91,9 @@ export const SlidePanel: React.FC = () => {
   const addSlideWithMode = usePresentationStore((s) => s.addSlideWithMode);
   const addEmptySlide = usePresentationStore((s) => s.addEmptySlide);
   const toggleSlideHidden = usePresentationStore((s) => s.toggleSlideHidden);
+  const slidesById = usePresentationStore((s) => s.presentation.slides);
+  const groupSlides = usePresentationStore((s) => s.groupSlides);
+  const ungroupSlides = usePresentationStore((s) => s.ungroupSlides);
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const setActiveSlide = useEditorStore((s) => s.setActiveSlide);
   const selectedSlideIds = useEditorStore((s) => s.selectedSlideIds);
@@ -97,6 +102,30 @@ export const SlidePanel: React.FC = () => {
   const [lastClickedSlideId, setLastClickedSlideId] = useState<string | null>(null);
 
   const [pickerState, setPickerState] = useState<PickerState | null>(null);
+
+  // Slide-group runs + per-slide visuals (colored rail, joined corners).
+  const runs = useGroupRuns();
+  const groupInfoBySlide = useMemo(() => {
+    const map = new Map<string, SlideGroupInfo>();
+    for (const run of runs) {
+      const color = groupColorFor(run.groupId);
+      run.slideIds.forEach((sid, i) => {
+        map.set(sid, { color, isStart: i === 0, isEnd: i === run.slideIds.length - 1 });
+      });
+    }
+    return map;
+  }, [runs]);
+
+  const canGroup = selectedSlideIds.length >= 2 && areSlidesContiguous(slideOrder, selectedSlideIds);
+  const canUngroup = selectedSlideIds.some((id) => !!slidesById[id]?.groupId);
+
+  const handleGroupSelected = useCallback(() => {
+    groupSlides(selectedSlideIds);
+  }, [groupSlides, selectedSlideIds]);
+
+  const handleUngroupSelected = useCallback(() => {
+    ungroupSlides(selectedSlideIds);
+  }, [ungroupSlides, selectedSlideIds]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -204,6 +233,14 @@ export const SlidePanel: React.FC = () => {
       { label: 'Delete', action: () => { if (slideOrder.length > 1) { deleteSlide(slideId); const remaining = slideOrder.filter(id => id !== slideId); setActiveSlide(remaining[0]); } } },
       { label: 'Insert slide after', action: () => { const id = addSlide(idx + 1); setActiveSlide(id); } },
     ];
+    // Slide groups: offer Group when the multi-selection includes this slide
+    // and is contiguous; offer Ungroup when this slide belongs to a group.
+    if (selectedSlideIds.includes(slideId) && areSlidesContiguous(slideOrder, selectedSlideIds)) {
+      items.push({ label: `Group ${selectedSlideIds.length} slides`, action: () => { groupSlides(selectedSlideIds); } });
+    }
+    if (slidesById[slideId]?.groupId) {
+      items.push({ label: 'Ungroup', action: () => { ungroupSlides([slideId]); } });
+    }
 
     items.forEach(({ label, action }) => {
       const btn = document.createElement('button');
@@ -216,7 +253,7 @@ export const SlidePanel: React.FC = () => {
     document.body.appendChild(menu);
     const remove = () => { menu.remove(); document.removeEventListener('click', remove); };
     setTimeout(() => document.addEventListener('click', remove), 0);
-  }, [slideOrder, addSlide, deleteSlide, duplicateSlide, setActiveSlide]);
+  }, [slideOrder, addSlide, deleteSlide, duplicateSlide, setActiveSlide, selectedSlideIds, slidesById, groupSlides, ungroupSlides]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, slideId: string) => {
     e.preventDefault();
@@ -276,6 +313,22 @@ export const SlidePanel: React.FC = () => {
         <span className="text-xs font-medium text-gray-500 uppercase">Slides</span>
         <div className="flex items-center gap-0.5">
           <button
+            onClick={handleGroupSelected}
+            disabled={!canGroup}
+            className="p-1 rounded hover:bg-gray-100 text-gray-600 disabled:opacity-30 disabled:hover:bg-transparent"
+            title="Group selected slides (auto-play as a timed chain)"
+          >
+            <Group size={16} />
+          </button>
+          <button
+            onClick={handleUngroupSelected}
+            disabled={!canUngroup}
+            className="p-1 rounded hover:bg-gray-100 text-gray-600 disabled:opacity-30 disabled:hover:bg-transparent"
+            title="Ungroup selected slides"
+          >
+            <Ungroup size={16} />
+          </button>
+          <button
             data-template-trigger
             onClick={handleHeaderTemplateClick}
             className="p-1 rounded hover:bg-gray-100 text-gray-600"
@@ -321,6 +374,7 @@ export const SlidePanel: React.FC = () => {
                     isActive={slide.id === activeSlideId}
                     isSelected={selectedSlideIds.includes(slide.id)}
                     canDelete={slides.length > 1}
+                    groupInfo={groupInfoBySlide.get(slide.id)}
                     onClick={(e) => handleSlideClick(slide.id, e)}
                     onDelete={() => handleDeleteSlide(slide.id)}
                     onToggleHidden={() => toggleSlideHidden(slide.id)}

@@ -4,6 +4,8 @@ import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { usePresenterMode } from '../../hooks/usePresenterMode';
 import { useSlideAnimation } from '../../hooks/useSlideAnimation';
+import { useAutoAdvanceChain } from '../../hooks/useAutoAdvanceChain';
+import { manualNextTarget } from '../../utils/presenterAdvance';
 import { SlideRenderer } from './presenterUtils';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 import type { Slide, Resource } from '../../types/presentation';
@@ -82,7 +84,9 @@ export const PresenterControlPanel: React.FC = () => {
   const slides = usePresentationStore((s) => s.presentation.slides);
   const resources = usePresentationStore((s) => s.presentation.resources);
 
-  const [autoAdvanceEnabled, setAutoAdvanceEnabled] = useState(true);
+  // Timed-chain suppression: going backwards pauses the group chain until
+  // the user advances manually again.
+  const [chainEnabled, setChainEnabled] = useState(true);
   const [, setTick] = useState(0); // For timer updates
 
   // Update timer every second
@@ -123,60 +127,38 @@ export const PresenterControlPanel: React.FC = () => {
 
   const goNext = useCallback(() => {
     if (isAnimating) return;
-    const pos = visibleIndices.indexOf(presentingSlideIndex);
-    const nextPos = pos === -1 ? visibleIndices.find((i) => i > presentingSlideIndex) : visibleIndices[pos + 1];
+    // Mid-group, manual "next" jumps to the group's last slide.
+    const nextPos = manualNextTarget(slideOrder, slides, visibleIndices, presentingSlideIndex);
     if (nextPos !== undefined) {
-      setAutoAdvanceEnabled(true); // Re-enable auto-advance when going forward
+      setChainEnabled(true); // Re-enable the chain when going forward
       startAnimation(nextPos);
     }
-  }, [presentingSlideIndex, visibleIndices, isAnimating, startAnimation]);
+  }, [presentingSlideIndex, slideOrder, slides, visibleIndices, isAnimating, startAnimation]);
 
   const goPrev = useCallback(() => {
     if (isAnimating) return;
     const pos = visibleIndices.indexOf(presentingSlideIndex);
     const prevPos = pos === -1 ? [...visibleIndices].reverse().find((i) => i < presentingSlideIndex) : visibleIndices[pos - 1];
     if (prevPos !== undefined) {
-      // Disable auto-advance when going back
-      setAutoAdvanceEnabled(false);
+      // Going back suppresses the timed chain
+      setChainEnabled(false);
       startAnimation(prevPos);
     }
   }, [presentingSlideIndex, visibleIndices, isAnimating, startAnimation]);
 
-  // Auto-advance timer
-  const autoAdvanceTimerRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    // Clear any existing timer
-    if (autoAdvanceTimerRef.current) {
-      clearTimeout(autoAdvanceTimerRef.current);
-      autoAdvanceTimerRef.current = null;
-    }
-
-    // Don't auto-advance if not in presenter mode, animating, or auto-advance disabled (went backwards)
-    if (!isPresenterMode || isAnimating || !autoAdvanceEnabled) return;
-
-    if (!currentSlide?.autoAdvance) return;
-
-    const delay = (currentSlide.autoAdvanceDelay ?? 0) * 1000;
-
-    // Check if there's a next slide
-    const pos = visibleIndices.indexOf(presentingSlideIndex);
-    const hasNext = pos !== -1 && pos < visibleIndices.length - 1;
-    if (!hasNext) return;
-
-    autoAdvanceTimerRef.current = window.setTimeout(() => {
-      const nextPos = visibleIndices[pos + 1];
-      if (nextPos !== undefined) {
-        startAnimation(nextPos);
-      }
-    }, delay);
-
-    return () => {
-      if (autoAdvanceTimerRef.current) {
-        clearTimeout(autoAdvanceTimerRef.current);
-      }
-    };
-  }, [isPresenterMode, isAnimating, presentingSlideIndex, currentSlide, visibleIndices, startAnimation, autoAdvanceEnabled]);
+  // Slide-group timed chain (single shared implementation with PresenterView).
+  // startAnimation drives the audience over BroadcastChannel exactly like a
+  // manual advance (sendAnimationState per frame, goToSlide on completion).
+  useAutoAdvanceChain({
+    active: isPresenterMode,
+    isAnimating,
+    chainEnabled,
+    currentIndex: presentingSlideIndex,
+    slideOrder,
+    slides,
+    visibleIndices,
+    startAnimation,
+  });
 
   // Keyboard navigation
   useEffect(() => {

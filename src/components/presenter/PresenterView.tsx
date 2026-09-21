@@ -2,6 +2,8 @@ import React, { useEffect, useCallback, useRef, useState, useMemo } from 'react'
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useSlideAnimation } from '../../hooks/useSlideAnimation';
+import { useAutoAdvanceChain } from '../../hooks/useAutoAdvanceChain';
+import { manualNextTarget } from '../../utils/presenterAdvance';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 import { composeSlideFrame, renderPresenterElement } from './presenterUtils';
 
@@ -22,7 +24,9 @@ export const PresenterView: React.FC = () => {
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [animProgress, setAnimProgress] = useState(0);
-  const [autoAdvanceEnabled, setAutoAdvanceEnabled] = useState(true);
+  // Timed-chain suppression: going backwards pauses the group chain until
+  // the user advances manually again.
+  const [chainEnabled, setChainEnabled] = useState(true);
   // Standalone modes auto-play on page load, but browsers refuse requestFullscreen
   // without a user gesture. Until the user's first interaction, swallow advance
   // keys/clicks and use that gesture to enter fullscreen instead.
@@ -61,60 +65,36 @@ export const PresenterView: React.FC = () => {
     startWithIndices(targetIdx, currentIndex);
   }, [startWithIndices, currentIndex]);
 
-  // Auto-advance timer
-  const autoAdvanceTimerRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    // Clear any existing timer
-    if (autoAdvanceTimerRef.current) {
-      clearTimeout(autoAdvanceTimerRef.current);
-      autoAdvanceTimerRef.current = null;
-    }
-
-    // Don't auto-advance if not presenting, animating, in presenter mode, or auto-advance disabled (went backwards)
-    if (!isPresenting || isAnimating || isPresenterMode || !autoAdvanceEnabled) return;
-
-    const currentSlide = slides[slideOrder[currentIndex]];
-    if (!currentSlide?.autoAdvance) return;
-
-    const delay = (currentSlide.autoAdvanceDelay ?? 0) * 1000;
-
-    // Check if there's a next slide
-    const pos = visibleIndices.indexOf(currentIndex);
-    const hasNext = pos !== -1 && pos < visibleIndices.length - 1;
-    if (!hasNext) return;
-
-    autoAdvanceTimerRef.current = window.setTimeout(() => {
-      const nextPos = visibleIndices[pos + 1];
-      if (nextPos !== undefined) {
-        startAnimation(nextPos);
-      }
-    }, delay);
-
-    return () => {
-      if (autoAdvanceTimerRef.current) {
-        clearTimeout(autoAdvanceTimerRef.current);
-      }
-    };
-  }, [isPresenting, isPresenterMode, isAnimating, currentIndex, slides, slideOrder, visibleIndices, startAnimation, autoAdvanceEnabled]);
+  // Slide-group timed chain: after landing on a grouped slide, hold for its
+  // autoAdvanceDelay and auto-start the transition to the next group member.
+  useAutoAdvanceChain({
+    active: isPresenting && !isPresenterMode,
+    isAnimating,
+    chainEnabled,
+    currentIndex,
+    slideOrder,
+    slides,
+    visibleIndices,
+    startAnimation,
+  });
 
   const goNext = useCallback(() => {
     if (isAnimating) return;
-    const pos = visibleIndices.indexOf(currentIndex);
-    const nextPos = pos === -1 ? visibleIndices.find((i) => i > currentIndex) : visibleIndices[pos + 1];
+    // Mid-group, manual "next" jumps to the group's last slide.
+    const nextPos = manualNextTarget(slideOrder, slides, visibleIndices, currentIndex);
     if (nextPos !== undefined) {
-      setAutoAdvanceEnabled(true); // Re-enable auto-advance when going forward
+      setChainEnabled(true); // Re-enable the chain when going forward
       startAnimation(nextPos);
     }
-  }, [currentIndex, visibleIndices, isAnimating, startAnimation]);
+  }, [currentIndex, slideOrder, slides, visibleIndices, isAnimating, startAnimation]);
 
   const goPrev = useCallback(() => {
     if (isAnimating) return;
     const pos = visibleIndices.indexOf(currentIndex);
     const prevPos = pos === -1 ? [...visibleIndices].reverse().find((i) => i < currentIndex) : visibleIndices[pos - 1];
     if (prevPos !== undefined) {
-      // Disable auto-advance when going back
-      setAutoAdvanceEnabled(false);
+      // Going back suppresses the timed chain
+      setChainEnabled(false);
       startAnimation(prevPos);
     }
   }, [currentIndex, visibleIndices, isAnimating, startAnimation]);

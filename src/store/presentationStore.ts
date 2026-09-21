@@ -9,6 +9,7 @@ import { rebindAfterElementsMoved } from '../utils/connectorUtils';
 import { beforeMutation } from '../utils/autoDraw';
 import { lerpAngle } from '../utils/interpolation';
 import { mirrorTargets, withMirroring } from '../utils/multiSlide';
+import { areSlidesContiguous, groupsToDissolve } from '../utils/presenterAdvance';
 import { applyStickyDefaults } from '../utils/stickyEasings';
 import {
   collectGhostObjectIds,
@@ -152,6 +153,14 @@ interface PresentationStore {
   addSlideWithMode: (afterIndex: number, mode: 'previous' | 'next' | 'interpolate') => string;
   addEmptySlide: (index?: number) => string;
   toggleSlideHidden: (slideId: string) => void;
+  /** Group ≥2 slides that are contiguous in slideOrder into one timed-chain
+   *  group (members' existing groupIds are overwritten). Returns the new
+   *  groupId, or null when the selection is invalid. */
+  groupSlides: (slideIds: string[]) => string | null;
+  /** Strip the groupId from every slide sharing a group with any given id. */
+  ungroupSlides: (slideIds: string[]) => void;
+  /** Per-slide hold (seconds) before the timed chain advances past it. */
+  updateSlideAutoAdvanceDelay: (slideId: string, delay: number) => void;
 
   // Element actions
   addElement: (slideId: string, element: SlideElement) => void;
@@ -432,13 +441,43 @@ export const usePresentationStore = create<PresentationStore>()(
             const order = root.get('slideOrder') as Y.Array<string> | undefined;
             if (!order) return;
             yArrayReplaceAll(order, slideOrder);
+            // Post-pass: dissolve slide groups the reorder split apart —
+            // a group is only meaningful as a contiguous run.
+            const slidesMap = root.get('slides') as Y.Map<Y.Map<unknown>> | undefined;
+            if (slidesMap) {
+              const dissolve = groupsToDissolve(slideOrder, (id) => {
+                const gid = slidesMap.get(id)?.get('groupId');
+                return typeof gid === 'string' ? gid : undefined;
+              });
+              if (dissolve.size > 0) {
+                for (const slideMap of slidesMap.values()) {
+                  const gid = slideMap.get('groupId');
+                  if (typeof gid === 'string' && dissolve.has(gid)) slideMap.delete('groupId');
+                }
+              }
+            }
             root.set('updatedAt', Date.now());
           });
           return;
         }
-        set((state) => ({
-          presentation: { ...state.presentation, slideOrder, updatedAt: Date.now() },
-        }));
+        set((state) => {
+          // Post-pass mirroring the Y branch: strip groups no longer contiguous.
+          const dissolve = groupsToDissolve(slideOrder, (id) => state.presentation.slides[id]?.groupId);
+          let slides = state.presentation.slides;
+          if (dissolve.size > 0) {
+            slides = { ...slides };
+            for (const sid of Object.keys(slides)) {
+              const slide = slides[sid];
+              if (slide.groupId && dissolve.has(slide.groupId)) {
+                const { groupId: _gid, ...rest } = slide;
+                slides[sid] = rest as Slide;
+              }
+            }
+          }
+          return {
+            presentation: { ...state.presentation, slides, slideOrder, updatedAt: Date.now() },
+          };
+        });
       },
 
       updateSlideBackground: (slideId, background) => {
@@ -687,6 +726,113 @@ export const usePresentationStore = create<PresentationStore>()(
               slides: {
                 ...state.presentation.slides,
                 [slideId]: { ...slide, hidden: !slide.hidden },
+              },
+              updatedAt: Date.now(),
+            },
+          };
+        });
+      },
+
+      groupSlides: (slideIds: string[]) => {
+        const doc = getActiveDoc();
+        if (doc) {
+          let result: string | null = null;
+          runInTxn(() => {
+            const root = getYRoot(doc);
+            const order = root.get('slideOrder') as Y.Array<string> | undefined;
+            if (!order) return;
+            if (!areSlidesContiguous(order.toArray(), slideIds)) return;
+            const groupId = generateId();
+            for (const sid of slideIds) {
+              const slideMap = getYSlide(doc, sid);
+              if (slideMap) slideMap.set('groupId', groupId);
+            }
+            root.set('updatedAt', Date.now());
+            result = groupId;
+          });
+          return result;
+        }
+        let result: string | null = null;
+        set((state) => {
+          const { slideOrder, slides } = state.presentation;
+          if (!areSlidesContiguous(slideOrder, slideIds)) return state;
+          const groupId = generateId();
+          const newSlides = { ...slides };
+          for (const sid of slideIds) {
+            if (newSlides[sid]) newSlides[sid] = { ...newSlides[sid], groupId };
+          }
+          result = groupId;
+          return {
+            presentation: { ...state.presentation, slides: newSlides, updatedAt: Date.now() },
+          };
+        });
+        return result;
+      },
+
+      ungroupSlides: (slideIds: string[]) => {
+        const doc = getActiveDoc();
+        if (doc) {
+          runInTxn(() => {
+            const root = getYRoot(doc);
+            const slidesMap = root.get('slides') as Y.Map<Y.Map<unknown>> | undefined;
+            if (!slidesMap) return;
+            const targetGroups = new Set<string>();
+            for (const sid of slideIds) {
+              const gid = getYSlide(doc, sid)?.get('groupId');
+              if (typeof gid === 'string') targetGroups.add(gid);
+            }
+            if (targetGroups.size === 0) return;
+            for (const slideMap of slidesMap.values()) {
+              const gid = slideMap.get('groupId');
+              if (typeof gid === 'string' && targetGroups.has(gid)) slideMap.delete('groupId');
+            }
+            root.set('updatedAt', Date.now());
+          });
+          return;
+        }
+        set((state) => {
+          const { slides } = state.presentation;
+          const targetGroups = new Set<string>();
+          for (const sid of slideIds) {
+            const gid = slides[sid]?.groupId;
+            if (gid) targetGroups.add(gid);
+          }
+          if (targetGroups.size === 0) return state;
+          const newSlides: Record<string, Slide> = {};
+          for (const [sid, slide] of Object.entries(slides)) {
+            if (slide.groupId && targetGroups.has(slide.groupId)) {
+              const { groupId: _gid, ...rest } = slide;
+              newSlides[sid] = rest as Slide;
+            } else {
+              newSlides[sid] = slide;
+            }
+          }
+          return {
+            presentation: { ...state.presentation, slides: newSlides, updatedAt: Date.now() },
+          };
+        });
+      },
+
+      updateSlideAutoAdvanceDelay: (slideId, delay) => {
+        const doc = getActiveDoc();
+        if (doc) {
+          runInTxn(() => {
+            const slideMap = getYSlide(doc, slideId);
+            if (!slideMap) return;
+            slideMap.set('autoAdvanceDelay', delay);
+            getYRoot(doc).set('updatedAt', Date.now());
+          });
+          return;
+        }
+        set((state) => {
+          const slide = state.presentation.slides[slideId];
+          if (!slide) return state;
+          return {
+            presentation: {
+              ...state.presentation,
+              slides: {
+                ...state.presentation.slides,
+                [slideId]: { ...slide, autoAdvanceDelay: delay },
               },
               updatedAt: Date.now(),
             },

@@ -1,5 +1,6 @@
-import type { Presentation, SlideElement, ShapeElement, ConnectorBinding } from '../types/presentation';
+import type { Presentation, Slide, SlideElement, ShapeElement, ConnectorBinding } from '../types/presentation';
 import { ANCHOR_TO_UV } from './connectorUtils';
+import { generateId } from './idGenerator';
 
 /**
  * In-place upgrades for legacy presentation data.
@@ -19,6 +20,51 @@ export function migratePresentation(p: Presentation): Presentation {
     }
     slides[slideId] = { ...slide, elements };
   }
+  return migrateAutoAdvanceToGroups({ ...p, slides });
+}
+
+/** Slide-level rule (WS-4): the legacy per-slide `autoAdvance` flag becomes
+ *  slide groups (timed chains). Each maximal run of consecutive
+ *  `autoAdvance: true` slides PLUS the slide it advances into becomes one
+ *  group (fresh groupId); the boolean flag is deleted everywhere while
+ *  `autoAdvanceDelay` lives on as the per-slide hold. A trailing flag with
+ *  no successor just loses the flag. Slides that already carry a groupId are
+ *  never re-grouped, and a migrated deck carries no flags at all — so the
+ *  pass is idempotent. */
+function migrateAutoAdvanceToGroups(p: Presentation): Presentation {
+  const hasFlags = Object.values(p.slides).some((s) => s.autoAdvance !== undefined);
+  if (!hasFlags) return p;
+
+  const slides = { ...p.slides };
+  const order = p.slideOrder;
+  const stripFlag = (id: string) => {
+    if (slides[id]?.autoAdvance === undefined) return;
+    const { autoAdvance: _flag, ...rest } = slides[id];
+    slides[id] = rest as Slide;
+  };
+
+  let i = 0;
+  while (i < order.length) {
+    if (!slides[order[i]]?.autoAdvance) { i++; continue; }
+    let j = i;
+    while (j < order.length && slides[order[j]]?.autoAdvance) j++;
+    const end = Math.min(j + 1, order.length); // the run + its landing slide
+    const runIds = order.slice(i, end);
+    if (runIds.length >= 2 && runIds.every((id) => !slides[id]?.groupId)) {
+      const groupId = generateId();
+      for (const id of runIds) {
+        stripFlag(id);
+        slides[id] = { ...slides[id], groupId };
+      }
+    } else {
+      // Trailing flag with no successor, or a run overlapping an existing
+      // group: just drop the legacy flags.
+      for (const id of runIds) stripFlag(id);
+    }
+    i = end;
+  }
+  // Sweep leftover flags (explicit `autoAdvance: false`, orphan slides).
+  for (const id of Object.keys(slides)) stripFlag(id);
   return { ...p, slides };
 }
 

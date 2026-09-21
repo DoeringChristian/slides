@@ -153,6 +153,7 @@ export function slideToYMap(slide: Slide): Y.Map<unknown> {
   setIfDefined(s, 'hidden', slide.hidden);
   setIfDefined(s, 'autoAdvance', slide.autoAdvance);
   setIfDefined(s, 'autoAdvanceDelay', slide.autoAdvanceDelay);
+  setIfDefined(s, 'groupId', slide.groupId);
   return s;
 }
 

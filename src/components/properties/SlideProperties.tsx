@@ -1,13 +1,14 @@
 import React from 'react';
-import { Timer } from 'lucide-react';
+import { Link2, Ungroup } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
+import { useGroupRuns } from '../../store/selectors';
+import { findRunAt } from '../../utils/presenterAdvance';
 import { ColorPicker } from '../toolbar/ColorPicker';
 import { SlidePropertyRow } from './SlidePropertyRow';
 import {
   Property,
   NumberProperty,
-  CheckboxProperty,
   type PropertyContext,
 } from './Property';
 import type { Slide } from '../../types/presentation';
@@ -48,21 +49,15 @@ const SLIDE_PROPERTIES: Property<Slide>[] = [
   }),
 ];
 
-// --- Auto-advance section --------------------------------------------------
-// NOTE: a later workstream (slide groups, WS-4) replaces this UI with
-// group-based timed chains — kept as a separate property list + block below
-// so it can be swapped out wholesale.
+// --- Slide-group (timed chain) section --------------------------------------
+// Replaces the old per-slide auto-advance UI: grouping slides in the slide
+// panel makes them auto-play as a chain; this section shows the slide's
+// position in its group and the per-slide hold before the chain advances.
 
-const AUTO_ADVANCE_PROPERTIES: Property<Slide>[] = [
-  new CheckboxProperty<Slide>({
-    key: 'autoAdvance', label: 'Automatically advance to next slide',
-  }),
-  new NumberProperty<Slide>({
-    key: 'autoAdvanceDelay', label: 'Delay',
-    min: 0, max: 300, step: 0.1, unit: 's', defaultValue: 0,
-    visibleFor: (s) => !!s.autoAdvance,
-  }),
-];
+const HOLD_PROPERTY = new NumberProperty<Slide>({
+  key: 'autoAdvanceDelay', label: 'Hold before next',
+  min: 0, max: 300, step: 0.1, unit: 's', defaultValue: 0,
+});
 
 interface Props {
   slide: Slide;
@@ -72,7 +67,15 @@ export const SlideProperties: React.FC<Props> = ({ slide }) => {
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const updateSlideBackground = usePresentationStore((s) => s.updateSlideBackground);
   const updateSlideTransition = usePresentationStore((s) => s.updateSlideTransition);
-  const updateSlideAutoAdvance = usePresentationStore((s) => s.updateSlideAutoAdvance);
+  const updateSlideAutoAdvanceDelay = usePresentationStore((s) => s.updateSlideAutoAdvanceDelay);
+  const ungroupSlides = usePresentationStore((s) => s.ungroupSlides);
+  const slideOrder = usePresentationStore((s) => s.presentation.slideOrder);
+
+  const runs = useGroupRuns();
+  const slideIndex = slideOrder.indexOf(slide.id);
+  const run = findRunAt(runs, slideIndex);
+  const posInRun = run ? slideIndex - run.start + 1 : 0;
+  const isLastInRun = run ? slideIndex === run.start + run.slideIds.length - 1 : false;
 
   // Dispatch adapter: Partial<Slide> → the existing dual-path actions.
   // Nested partials arrive with their siblings spread (setNestedPartial),
@@ -84,12 +87,8 @@ export const SlideProperties: React.FC<Props> = ({ slide }) => {
     if (changes.transition !== undefined) {
       updateSlideTransition(activeSlideId, changes.transition);
     }
-    if ('autoAdvance' in changes || 'autoAdvanceDelay' in changes) {
-      updateSlideAutoAdvance(
-        activeSlideId,
-        changes.autoAdvance ?? slide.autoAdvance ?? false,
-        changes.autoAdvanceDelay,
-      );
+    if (changes.autoAdvanceDelay !== undefined) {
+      updateSlideAutoAdvanceDelay(activeSlideId, changes.autoAdvanceDelay);
     }
   };
 
@@ -100,12 +99,35 @@ export const SlideProperties: React.FC<Props> = ({ slide }) => {
       ))}
       <div className="border-t border-gray-200 pt-3 space-y-3">
         <div className="flex items-center gap-2">
-          <Timer size={14} className="text-gray-500" />
-          <span className="text-xs text-gray-500">Auto-Advance</span>
+          <Link2 size={14} className="text-gray-500" />
+          <span className="text-xs text-gray-500">Slide Group</span>
         </div>
-        {AUTO_ADVANCE_PROPERTIES.map((p) => (
-          <SlidePropertyRow key={p.key} property={p} element={slide} update={update} />
-        ))}
+        {run ? (
+          <>
+            <div className="text-xs text-gray-600">
+              Group (slide {posInRun} of {run.slideIds.length})
+            </div>
+            {/* The run's last slide has no next group member to hold before. */}
+            {!isLastInRun && (
+              <SlidePropertyRow property={HOLD_PROPERTY} element={slide} update={update} />
+            )}
+            {/* Legacy shim runs (collab docs still on autoAdvance flags) have
+                no groupId on the slide — nothing to ungroup. */}
+            {slide.groupId && (
+              <button
+                onClick={() => ungroupSlides([slide.id])}
+                className="flex items-center gap-1.5 px-2 py-1 rounded border border-gray-200 text-xs text-gray-600 hover:bg-gray-50"
+              >
+                <Ungroup size={12} />
+                Ungroup
+              </button>
+            )}
+          </>
+        ) : (
+          <p className="text-xs text-gray-400">
+            Select multiple slides and press Group to auto-play them.
+          </p>
+        )}
       </div>
     </div>
   );

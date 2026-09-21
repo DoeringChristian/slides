@@ -1,7 +1,23 @@
 import { useMemo, useCallback } from 'react';
 import { usePresentationStore } from './presentationStore';
 import { useEditorStore } from './editorStore';
+import { groupRuns } from '../utils/presenterAdvance';
+import type { GroupRun } from '../utils/presenterAdvance';
 import type { Slide, SlideElement, ObjectMeta } from '../types/presentation';
+
+// Slide-group runs: the pure computation lives in utils/presenterAdvance
+// (shared with the presenter chain + store post-pass); re-exported here so
+// UI/tests can keep importing it from the selectors module.
+export { groupRuns } from '../utils/presenterAdvance';
+export type { GroupRun } from '../utils/presenterAdvance';
+
+/** Maximal contiguous slide-group runs of the current deck (incl. the
+ *  legacy autoAdvance collab shim). */
+export function useGroupRuns(): GroupRun[] {
+  const slides = usePresentationStore((s) => s.presentation.slides);
+  const order = usePresentationStore((s) => s.presentation.slideOrder);
+  return useMemo(() => groupRuns(order, slides), [order, slides]);
+}
 
 export function useActiveSlide(): Slide | undefined {
   const activeSlideId = useEditorStore((s) => s.activeSlideId);

@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, EyeOff, Eye } from 'lucide-react';
+import { X, EyeOff, Eye, Link2 } from 'lucide-react';
 import { SVGStaticSlide } from '../svg/SVGStaticSlide';
 import type { Slide } from '../../types/presentation';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
@@ -9,18 +9,26 @@ const THUMB_WIDTH = 192;
 const THUMB_SCALE = THUMB_WIDTH / SLIDE_WIDTH;
 const THUMB_HEIGHT = SLIDE_HEIGHT * THUMB_SCALE;
 
+/** How a slide participates in a grouped run, for the panel visuals. */
+export interface SlideGroupInfo {
+  color: string;
+  isStart: boolean;
+  isEnd: boolean;
+}
+
 interface Props {
   slide: Slide;
   index: number;
   isActive: boolean;
   isSelected?: boolean;
   canDelete: boolean;
+  groupInfo?: SlideGroupInfo;
   onClick: (e: React.MouseEvent) => void;
   onDelete: () => void;
   onToggleHidden: () => void;
 }
 
-export const SlideThumbnail: React.FC<Props> = React.memo(({ slide, index, isActive, isSelected = false, canDelete, onClick, onDelete, onToggleHidden }) => {
+export const SlideThumbnail: React.FC<Props> = React.memo(({ slide, index, isActive, isSelected = false, canDelete, groupInfo, onClick, onDelete, onToggleHidden }) => {
   const hidden = slide.hidden;
   const peers = useActivePeers();
   // Distinct peer colors currently viewing this slide.
@@ -38,8 +46,34 @@ export const SlideThumbnail: React.FC<Props> = React.memo(({ slide, index, isAct
   return (
     <div
       onClick={onClick}
-      className={`flex items-center gap-2 px-2 py-1.5 cursor-pointer group ${bgClass}`}
+      className={`relative flex items-center gap-2 px-2 py-1.5 cursor-pointer group ${bgClass}`}
     >
+      {/* Grouped-run rail: continuous colored strip along the run; corners
+          rounded only at the run's start/end so interior slides read as
+          joined. */}
+      {groupInfo && (
+        <div
+          className="absolute left-0.5 w-1"
+          style={{
+            backgroundColor: groupInfo.color,
+            top: groupInfo.isStart ? 6 : 0,
+            bottom: groupInfo.isEnd ? 6 : 0,
+            borderTopLeftRadius: groupInfo.isStart ? 2 : 0,
+            borderTopRightRadius: groupInfo.isStart ? 2 : 0,
+            borderBottomLeftRadius: groupInfo.isEnd ? 2 : 0,
+            borderBottomRightRadius: groupInfo.isEnd ? 2 : 0,
+          }}
+        />
+      )}
+      {groupInfo?.isStart && (
+        <span
+          className="absolute left-0 top-0.5 p-0.5 rounded-full bg-white border border-gray-200 shadow-sm pointer-events-none"
+          style={{ color: groupInfo.color }}
+          title="Auto-play group"
+        >
+          <Link2 size={9} />
+        </span>
+      )}
       <span className="text-xs text-gray-400 w-5 text-right shrink-0">{index + 1}</span>
       <div className="relative">
         <div className={`relative rounded border-2 overflow-hidden ${hidden ? 'opacity-40' : ''} ${borderClass}`}>

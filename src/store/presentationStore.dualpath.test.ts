@@ -796,3 +796,112 @@ describe('known dual-path divergences (documented, intentional or pending fix)',
   // the doc and its exact output is not a contract worth pinning.
   test.todo('syncElementToSlides with nested object properties (style) diverges in collab mode');
 });
+
+// =============================================================================
+// WS-4 slide groups (timed chain): groupSlides / ungroupSlides / reorder
+// dissolve / keyframe-copy inheritance / hold updates.
+// =============================================================================
+
+describe('WS-4 slide groups (dual-path)', () => {
+  const groupCases: Array<{ name: string; action: Action }> = [
+    {
+      name: 'groupSlides (contiguous pair)',
+      action: (s) => { s.groupSlides(['s1', 's2']); },
+    },
+    {
+      name: 'groupSlides (whole deck)',
+      action: (s) => { s.groupSlides(['s1', 's2', 's3']); },
+    },
+    {
+      name: 'groupSlides (non-contiguous — rejected, no-op)',
+      action: (s) => { s.groupSlides(['s1', 's3']); },
+    },
+    {
+      name: 'groupSlides (single slide — rejected, no-op)',
+      action: (s) => { s.groupSlides(['s2']); },
+    },
+    {
+      name: 'groupSlides overwrites members’ existing groupIds',
+      action: (s) => { s.groupSlides(['s1', 's2']); s.groupSlides(['s2', 's3']); },
+    },
+    {
+      name: 'ungroupSlides (one member id strips the whole group)',
+      action: (s) => { s.groupSlides(['s1', 's2', 's3']); s.ungroupSlides(['s2']); },
+    },
+    {
+      name: 'ungroupSlides (ungrouped slide — no-op)',
+      action: (s) => { s.ungroupSlides(['s1']); },
+    },
+    {
+      name: 'reorderSlides dissolves a group it splits',
+      action: (s) => { s.groupSlides(['s1', 's2']); s.reorderSlides(['s1', 's3', 's2']); },
+    },
+    {
+      name: 'reorderSlides keeps a group that stays contiguous',
+      action: (s) => { s.groupSlides(['s1', 's2']); s.reorderSlides(['s3', 's1', 's2']); },
+    },
+    {
+      name: 'duplicateSlide inherits the source groupId (copy joins the group)',
+      action: (s) => { s.groupSlides(['s1', 's2']); s.duplicateSlide('s1'); },
+    },
+    {
+      name: 'addSlideWithMode(previous) inside a group inherits the groupId',
+      action: (s) => { s.groupSlides(['s1', 's2']); s.addSlideWithMode(0, 'previous'); },
+    },
+    {
+      name: 'updateSlideAutoAdvanceDelay (per-slide hold)',
+      action: (s) => { s.updateSlideAutoAdvanceDelay('s2', 2.5); },
+    },
+  ];
+
+  test.each(groupCases)('$name', ({ action }) => {
+    expectEquivalent(action);
+  });
+
+  // Equivalence alone could be satisfied by both paths doing nothing —
+  // pin the actual outcome on each path.
+  test.each([
+    ['local JSON path', runLocal],
+    ['collab Y path', runCollab],
+  ] as const)('%s: members share one fresh id; a splitting reorder strips it', (_name, run) => {
+    const grouped = run((s) => { s.groupSlides(['s1', 's2']); });
+    const gid = grouped.slides['s1'].groupId;
+    expect(gid).toBeTruthy();
+    expect(grouped.slides['s2'].groupId).toBe(gid);
+    expect(grouped.slides['s3'].groupId).toBeUndefined();
+
+    const split = run((s) => { s.groupSlides(['s1', 's2']); s.reorderSlides(['s1', 's3', 's2']); });
+    expect(split.slides['s1'].groupId).toBeUndefined();
+    expect(split.slides['s2'].groupId).toBeUndefined();
+
+    const rejected = run((s) => { s.groupSlides(['s1', 's3']); });
+    expect(rejected.slides['s1'].groupId).toBeUndefined();
+    expect(rejected.slides['s3'].groupId).toBeUndefined();
+  });
+
+  test('groupSlides returns the fresh groupId, or null when rejected (both paths)', () => {
+    // Local path.
+    setActiveDoc(null);
+    usePresentationStore.setState({ presentation: makeFixture() });
+    let store = usePresentationStore.getState();
+    expect(store.groupSlides(['s1', 's3'])).toBeNull();
+    expect(store.groupSlides(['s2'])).toBeNull();
+    const localGid = store.groupSlides(['s2', 's3']);
+    expect(localGid).toBeTruthy();
+    expect(usePresentationStore.getState().presentation.slides['s2'].groupId).toBe(localGid);
+
+    // Collab path.
+    const doc = jsonToYDoc(makeFixture());
+    usePresentationStore.setState({ presentation: makeFixture() });
+    setActiveDoc(doc);
+    try {
+      store = usePresentationStore.getState();
+      expect(store.groupSlides(['s1', 's3'])).toBeNull();
+      const collabGid = store.groupSlides(['s2', 's3']);
+      expect(collabGid).toBeTruthy();
+      expect(yDocToJson(doc).slides['s2'].groupId).toBe(collabGid);
+    } finally {
+      setActiveDoc(null);
+    }
+  });
+});

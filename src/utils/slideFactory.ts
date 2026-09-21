@@ -358,6 +358,10 @@ export function copySlideAsKeyframe(sourceSlide: Slide): Slide {
     background: JSON.parse(JSON.stringify(sourceSlide.background)),
     transition: { duration: sourceSlide.transition.duration },
     notes: '',
+    // Keyframe copies inherit the slide group so a duplicate inserted next to
+    // its source joins the timed chain (the run stays contiguous by
+    // construction — the copy lands adjacent to the source).
+    ...(sourceSlide.groupId !== undefined ? { groupId: sourceSlide.groupId } : {}),
   };
 }
 

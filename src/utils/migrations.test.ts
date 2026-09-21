@@ -357,3 +357,122 @@ describe('migratePresentation', () => {
     expect(migratePresentation(modern)).toEqual(modern);
   });
 });
+
+// =============================================================================
+// WS-4: autoAdvance → slide-group migration (slide-level pass)
+// =============================================================================
+
+describe('WS-4: autoAdvance → slide groups', () => {
+  type SlideSpec = Partial<Presentation['slides'][string]> & { id: string };
+
+  /** Multi-slide deck with empty slides, in the given order. */
+  function multiDeck(specs: SlideSpec[]): Presentation {
+    const base = makeDeck({});
+    const slides: Presentation['slides'] = {};
+    for (const spec of specs) {
+      slides[spec.id] = {
+        elements: {},
+        elementOrder: [],
+        background: { type: 'solid', color: '#ffffff' },
+        transition: { duration: 300 },
+        notes: '',
+        ...spec,
+      };
+    }
+    return { ...base, slides, slideOrder: specs.map((s) => s.id) };
+  }
+
+  test('a single flag groups the slide with its successor; flag deleted, delay kept', () => {
+    const out = migratePresentation(multiDeck([
+      { id: 'a', autoAdvance: true, autoAdvanceDelay: 2 },
+      { id: 'b' },
+      { id: 'c' },
+    ]));
+    const gid = out.slides['a'].groupId;
+    expect(gid).toBeTruthy();
+    expect(out.slides['b'].groupId).toBe(gid);
+    expect(out.slides['c'].groupId).toBeUndefined();
+    expect('autoAdvance' in out.slides['a']).toBe(false);
+    expect(out.slides['a'].autoAdvanceDelay).toBe(2); // the hold lives on
+  });
+
+  test('a run of consecutive flags + its landing slide becomes ONE group', () => {
+    const out = migratePresentation(multiDeck([
+      { id: 'a', autoAdvance: true },
+      { id: 'b', autoAdvance: true, autoAdvanceDelay: 1 },
+      { id: 'c' },
+      { id: 'd' },
+    ]));
+    const gid = out.slides['a'].groupId;
+    expect(gid).toBeTruthy();
+    expect(out.slides['b'].groupId).toBe(gid);
+    expect(out.slides['c'].groupId).toBe(gid);
+    expect(out.slides['d'].groupId).toBeUndefined();
+    for (const id of ['a', 'b', 'c', 'd']) {
+      expect('autoAdvance' in out.slides[id]).toBe(false);
+    }
+  });
+
+  test('two separate runs get DISTINCT group ids', () => {
+    const out = migratePresentation(multiDeck([
+      { id: 'a', autoAdvance: true },
+      { id: 'b' },
+      { id: 'c', autoAdvance: true },
+      { id: 'd' },
+    ]));
+    expect(out.slides['a'].groupId).toBeTruthy();
+    expect(out.slides['b'].groupId).toBe(out.slides['a'].groupId);
+    expect(out.slides['c'].groupId).toBeTruthy();
+    expect(out.slides['d'].groupId).toBe(out.slides['c'].groupId);
+    expect(out.slides['a'].groupId).not.toBe(out.slides['c'].groupId);
+  });
+
+  test('a trailing flag with no successor just loses the flag (no group)', () => {
+    const out = migratePresentation(multiDeck([
+      { id: 'a' },
+      { id: 'b', autoAdvance: true },
+    ]));
+    expect(out.slides['a'].groupId).toBeUndefined();
+    expect(out.slides['b'].groupId).toBeUndefined();
+    expect('autoAdvance' in out.slides['b']).toBe(false);
+  });
+
+  test('an explicit autoAdvance:false field is swept away', () => {
+    const out = migratePresentation(multiDeck([
+      { id: 'a', autoAdvance: false },
+      { id: 'b' },
+    ]));
+    expect('autoAdvance' in out.slides['a']).toBe(false);
+    expect(out.slides['a'].groupId).toBeUndefined();
+  });
+
+  test('slides already carrying a groupId are never re-grouped; their flags still drop', () => {
+    const out = migratePresentation(multiDeck([
+      { id: 'a', autoAdvance: true, groupId: 'existing' },
+      { id: 'b', groupId: 'existing' },
+    ]));
+    expect(out.slides['a'].groupId).toBe('existing');
+    expect(out.slides['b'].groupId).toBe('existing');
+    expect('autoAdvance' in out.slides['a']).toBe(false);
+  });
+
+  test('idempotent: migrating a migrated deck is a deep-equal no-op', () => {
+    const once = migratePresentation(multiDeck([
+      { id: 'a', autoAdvance: true, autoAdvanceDelay: 3 },
+      { id: 'b', autoAdvance: true },
+      { id: 'c' },
+      { id: 'd', autoAdvance: true }, // trailing
+    ]));
+    expect(migratePresentation(once)).toEqual(once);
+  });
+
+  test('does not mutate the input deck', () => {
+    const input = multiDeck([
+      { id: 'a', autoAdvance: true },
+      { id: 'b' },
+    ]);
+    const before = structuredClone(input);
+    migratePresentation(input);
+    expect(input).toEqual(before);
+  });
+});

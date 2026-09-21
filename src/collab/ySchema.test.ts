@@ -364,3 +364,27 @@ describe('Y-edit observation', () => {
     ]);
   });
 });
+
+// =============================================================================
+// WS-4 slide groups: Slide.groupId round-trip
+// =============================================================================
+
+describe('WS-4 slide groups: groupId round-trip', () => {
+  test('slide groupId survives jsonToYDoc → yDocToJson', () => {
+    const fixture = makeFixture();
+    fixture.slides['slide-b'].groupId = 'grp-chain-1';
+    fixture.slides['slide-a'].groupId = 'grp-chain-1';
+    const out = yDocToJson(jsonToYDoc(fixture));
+    expect(out.slides['slide-b'].groupId).toBe('grp-chain-1');
+    expect(out.slides['slide-a'].groupId).toBe('grp-chain-1');
+    expect(out).toEqual(fixture);
+  });
+
+  test('an absent groupId is not serialised (key stays absent after round-trip)', () => {
+    const doc = jsonToYDoc(makeFixture());
+    const slides = doc.getMap(ROOT_KEY).get('slides') as Y.Map<Y.Map<unknown>>;
+    expect(slides.get('slide-a')!.has('groupId')).toBe(false);
+    const out = yDocToJson(doc);
+    expect('groupId' in out.slides['slide-a']).toBe(false);
+  });
+});
