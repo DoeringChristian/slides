@@ -1,4 +1,5 @@
-import type { Presentation, SlideElement, ShapeElement } from '../types/presentation';
+import type { Presentation, SlideElement, ShapeElement, ConnectorBinding } from '../types/presentation';
+import { ANCHOR_TO_UV } from './connectorUtils';
 
 /**
  * In-place upgrades for legacy presentation data.
@@ -26,10 +27,40 @@ export function migrateElement(el: SlideElement): SlideElement {
   return el;
 }
 
+/** Binding v2: a legacy 5-anchor binding becomes a `pinned` binding whose
+ *  `fixedPoint` is the anchor's [u,v] on the target's bbox — resolving to
+ *  the exact same point the anchor used to. The `anchor` key is dropped.
+ *  Already-migrated (or new edge-mode) bindings pass through unchanged, so
+ *  the rule is idempotent. */
+function migrateBinding(
+  binding: ConnectorBinding | null | undefined,
+): ConnectorBinding | null | undefined {
+  if (!binding || binding.anchor === undefined) return binding;
+  const { anchor, ...rest } = binding;
+  // A stray legacy anchor on an explicit edge-mode binding carries no
+  // information — just drop it.
+  if (binding.mode === 'edge') return rest;
+  return {
+    ...rest,
+    mode: 'pinned',
+    fixedPoint: binding.fixedPoint ?? ANCHOR_TO_UV[anchor] ?? [0.5, 0.5],
+  };
+}
+
 /** Collapse legacy line/arrow/polygon/bspline shapeType into the unified
- *  `path` model: same geometry, different defaults for `curve`, `closed`,
- *  and the optional arrowheads. */
+ *  `path` model (same geometry, different defaults for `curve`, `closed`,
+ *  and the optional arrowheads), then upgrade legacy anchor bindings to
+ *  binding v2. */
 function migrateShape(shape: ShapeElement): ShapeElement {
+  let out = migrateShapeType(shape);
+  const startBinding = migrateBinding(out.startBinding);
+  if (startBinding !== out.startBinding) out = { ...out, startBinding };
+  const endBinding = migrateBinding(out.endBinding);
+  if (endBinding !== out.endBinding) out = { ...out, endBinding };
+  return out;
+}
+
+function migrateShapeType(shape: ShapeElement): ShapeElement {
   const legacy = shape as ShapeElement & { bsplineDegree?: 2 | 3 };
   switch (legacy.shapeType as string) {
     case 'line':

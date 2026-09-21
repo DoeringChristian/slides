@@ -256,13 +256,15 @@ function mkArray<T>(items: readonly T[]): Y.Array<T> {
 }
 
 /** Y.Map of flat scalar fields — no nested Y types. Round-trips via toJSON.
- *  Accepts any object (interfaces don't get index signatures by default, so
- *  the parameter is widened to `object` and cast on entry). */
+ *  Plain-array values (e.g. ConnectorBinding.fixedPoint) are stored as
+ *  copies so later caller-side mutation can't alias into the doc. Accepts
+ *  any object (interfaces don't get index signatures by default, so the
+ *  parameter is widened to `object` and cast on entry). */
 export function mkScalarMap(obj: object): Y.Map<unknown> {
   const m = new Y.Map<unknown>();
   for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
     if (v === undefined) continue;
-    m.set(k, v);
+    m.set(k, Array.isArray(v) ? [...v] : v);
   }
   return m;
 }
@@ -312,6 +314,13 @@ export function yArrayReplaceAll<T>(arr: Y.Array<T>, newItems: readonly T[]) {
 export function applyChangesToYElement(elMap: Y.Map<unknown>, changes: Record<string, unknown>) {
   for (const [key, value] of Object.entries(changes)) {
     if (value === undefined) continue;
+    // Connector bindings are REPLACED wholesale, never key-merged: switching
+    // a binding's mode (edge ⇄ pinned) must drop the other mode's fields
+    // (focus/gap vs fixedPoint), exactly like the JSON path's object spread.
+    if (key === 'startBinding' || key === 'endBinding') {
+      elMap.set(key, value !== null && typeof value === 'object' ? mkScalarMap(value) : value);
+      continue;
+    }
     const existing = elMap.get(key);
     if (existing instanceof Y.Text && typeof value === 'string') {
       existing.delete(0, existing.length);

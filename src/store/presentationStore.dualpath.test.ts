@@ -337,6 +337,45 @@ const cases: Array<{ name: string; action: Action }> = [
       { elementId: 'el-conn', changes: { x: 320, y: 470, startBinding: null, endBinding: null } as Partial<SlideElement> },
     ]),
   },
+  // --- binding v2 (edge focus/gap + pinned fixedPoint) ---
+  {
+    name: 'binding v2: edge-mode binding re-solves identically when the target moves',
+    action: (s) => {
+      s.updateElement('s2', 'el-conn', {
+        startBinding: { elementId: 'el-box', mode: 'edge', focus: 0.25, gap: 6 },
+      } as Partial<SlideElement>);
+      s.updateElements('s2', [{ elementId: 'el-box', changes: { x: 640, y: 420 } }]);
+    },
+  },
+  {
+    name: 'binding v2: pinned fixedPoint binding tracks the moved target identically',
+    action: (s) => {
+      s.updateElement('s2', 'el-conn', {
+        endBinding: { elementId: 'el-box', mode: 'pinned', fixedPoint: [0.25, 1] },
+      } as Partial<SlideElement>);
+      s.updateElement('s2', 'el-box', { x: 700, y: 480 });
+    },
+  },
+  {
+    name: "binding v2: a path's own points edit re-solves its edge-mode ends on both paths",
+    action: (s) => {
+      s.updateElement('s2', 'el-conn', {
+        startBinding: { elementId: 'el-box', mode: 'edge', focus: 0, gap: 0 },
+      } as Partial<SlideElement>);
+      s.updateElement('s2', 'el-conn', { points: [0, 0, 150, 40, 300, 0] } as Partial<SlideElement>);
+    },
+  },
+  {
+    name: 'binding v2: binding replaced wholesale — pinned → edge drops fixedPoint on both paths',
+    action: (s) => {
+      s.updateElement('s2', 'el-conn', {
+        startBinding: { elementId: 'el-box', mode: 'pinned', fixedPoint: [0.5, 0] },
+      } as Partial<SlideElement>);
+      s.updateElement('s2', 'el-conn', {
+        startBinding: { elementId: 'el-box', mode: 'edge', focus: -0.5, gap: 3 },
+      } as Partial<SlideElement>);
+    },
+  },
   {
     name: 'deleteElements (terminal — element only on this slide, full purge)',
     action: (s) => s.deleteElements('s1', ['el-rect']),
@@ -621,6 +660,56 @@ describe('updateElements connector rebind', () => {
     // Bindings themselves are untouched by the rebind pass.
     expect(conn.startBinding).toEqual({ elementId: 'el-box', anchor: 'left' });
     expect(conn.endBinding).toBeNull();
+  });
+});
+
+// =============================================================================
+// Binding v2 rebind outcomes — the equivalence table pins Y ≡ JSON; these pin
+// the actual geometry on each path so the equivalence can't be satisfied by
+// both paths skipping the re-solve alike.
+// =============================================================================
+
+describe('binding v2 rebind outcomes (edge + pinned)', () => {
+  test.each([
+    ['local JSON path', runLocal],
+    ['collab Y path', runCollab],
+  ] as const)('%s: pinned fixedPoint end tracks the moved target exactly', (_name, run) => {
+    const result = run((s) => {
+      s.updateElement('s2', 'el-conn', {
+        endBinding: { elementId: 'el-box', mode: 'pinned', fixedPoint: [0.25, 1] },
+      } as Partial<SlideElement>);
+      s.updateElement('s2', 'el-box', { x: 700, y: 480 });
+    });
+    const conn = result.slides.s2.elements['el-conn'] as ShapeElement;
+    const abs = (conn.points ?? []).map((v, i) => v + (i % 2 === 0 ? conn.x : conn.y));
+    // el-box at (700,480), 200×100 → fixedPoint [0.25,1] = (750, 580).
+    expect(abs.slice(4)).toEqual([750, 580]);
+    // The fixture's LEGACY start binding (anchor 'left') re-solves too, via
+    // the pinned fallback: left anchor of the moved box = (700, 530). The
+    // interior vertex keeps its absolute position.
+    expect(abs.slice(0, 4)).toEqual([700, 530, 450, 450]);
+    expect(conn.endBinding).toEqual({ elementId: 'el-box', mode: 'pinned', fixedPoint: [0.25, 1] });
+  });
+
+  test.each([
+    ['local JSON path', runLocal],
+    ['collab Y path', runCollab],
+  ] as const)('%s: edge-mode end re-solves against the silhouette toward the adjacent vertex', (_name, run) => {
+    const result = run((s) => {
+      s.updateElement('s2', 'el-conn', {
+        startBinding: { elementId: 'el-box', mode: 'edge', focus: 0, gap: 0 },
+      } as Partial<SlideElement>);
+      s.updateElements('s2', [{ elementId: 'el-box', changes: { x: 660, y: 460 } }]);
+    });
+    const conn = result.slides.s2.elements['el-conn'] as ShapeElement;
+    const abs = (conn.points ?? []).map((v, i) => v + (i % 2 === 0 ? conn.x : conn.y));
+    // el-box at (660,460), 200×100 → center (760,510). Ray from the adjacent
+    // vertex (450,450) toward the center enters the left edge x=660 at
+    // y = 450 + 60·(210/310) ≈ 490.645.
+    expect(abs[0]).toBeCloseTo(660, 6);
+    expect(abs[1]).toBeCloseTo(450 + 60 * (210 / 310), 6);
+    // Interior + end vertices untouched.
+    expect(abs.slice(2)).toEqual([450, 450, 600, 450]);
   });
 });
 

@@ -215,10 +215,84 @@ describe('migrateElement: pass-through', () => {
     expect(out.opacity).toBe(0.4);
     expect(out.strokeWidth).toBe(7);
     expect(out.transitions).toEqual({ position: 'ease', visibility: 'create' });
-    expect(out.startBinding).toEqual({ elementId: 'other', anchor: 'right' });
+    // The legacy anchor binding is upgraded to binding v2 in the same pass.
+    expect(out.startBinding).toEqual({ elementId: 'other', mode: 'pinned', fixedPoint: [1, 0.5] });
     expect(out.endBinding).toBeNull();
     expect(out.fill).toBe('#ff0000');
     expect(out.stroke).toBe('#0000ff');
+  });
+});
+
+// =============================================================================
+// migrateElement — binding v2 (legacy anchor → pinned fixedPoint)
+// =============================================================================
+
+describe('migrateElement: legacy anchor bindings', () => {
+  const boundPath = (bindings: Record<string, unknown>) =>
+    legacyShape({
+      shapeType: 'path', points: [0, 0, 100, 0],
+      curve: 'linear', closed: false,
+      ...bindings,
+    });
+
+  test('every legacy anchor maps to its pinned fixedPoint (anchor key dropped)', () => {
+    const expected: Record<string, [number, number]> = {
+      center: [0.5, 0.5],
+      top: [0.5, 0],
+      bottom: [0.5, 1],
+      left: [0, 0.5],
+      right: [1, 0.5],
+    };
+    for (const [anchor, uv] of Object.entries(expected)) {
+      const out = migrateElement(boundPath({
+        startBinding: { elementId: 'box', anchor },
+      })) as ShapeElement;
+      expect(out.startBinding).toEqual({ elementId: 'box', mode: 'pinned', fixedPoint: uv });
+      expect('anchor' in (out.startBinding as object)).toBe(false);
+    }
+  });
+
+  test('both ends migrate independently; null endBinding stays null', () => {
+    const out = migrateElement(boundPath({
+      startBinding: { elementId: 'a', anchor: 'top' },
+      endBinding: null,
+    })) as ShapeElement;
+    expect(out.startBinding).toEqual({ elementId: 'a', mode: 'pinned', fixedPoint: [0.5, 0] });
+    expect(out.endBinding).toBeNull();
+  });
+
+  test('v2 bindings pass through untouched (idempotent), same object identity', () => {
+    const edge = boundPath({
+      startBinding: { elementId: 'a', mode: 'edge', focus: 0.4, gap: 8 },
+      endBinding: { elementId: 'b', mode: 'pinned', fixedPoint: [0.25, 1] },
+    });
+    expect(migrateElement(edge)).toBe(edge);
+  });
+
+  test('a stray legacy anchor on an explicit edge-mode binding is dropped, focus/gap kept', () => {
+    const out = migrateElement(boundPath({
+      startBinding: { elementId: 'a', mode: 'edge', focus: -0.2, gap: 3, anchor: 'left' },
+    })) as ShapeElement;
+    expect(out.startBinding).toEqual({ elementId: 'a', mode: 'edge', focus: -0.2, gap: 3 });
+  });
+
+  test('idempotent: migrating a migrated binding again is a no-op', () => {
+    const once = migrateElement(boundPath({
+      startBinding: { elementId: 'box', anchor: 'bottom' },
+    })) as ShapeElement;
+    const twice = migrateElement(once) as ShapeElement;
+    expect(twice).toBe(once);
+    expect(twice.startBinding).toEqual({ elementId: 'box', mode: 'pinned', fixedPoint: [0.5, 1] });
+  });
+
+  test('binding migration also applies to legacy shapeType conversions in one pass', () => {
+    const out = migrateElement(legacyShape({
+      shapeType: 'arrow', points: [0, 0, 300, 50],
+      endBinding: { elementId: 'box', anchor: 'left' },
+    })) as ShapeElement;
+    expect(out.shapeType).toBe('path');
+    expect(out.endArrow).toBe(true);
+    expect(out.endBinding).toEqual({ elementId: 'box', mode: 'pinned', fixedPoint: [0, 0.5] });
   });
 });
 

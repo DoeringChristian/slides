@@ -245,9 +245,36 @@ export type PathCurve = 'linear' | 'bspline2' | 'bspline3';
  *  `strokeWidth` in the renderer so it scales with the line. */
 export type StrokeStyle = 'solid' | 'dashed' | 'dotted';
 
+/** How a connector endpoint tracks its bound element:
+ *    edge   — Excalidraw-style: the endpoint aims at a focus point inside the
+ *             target (focus 0 = center, ±1 = grazing the silhouette) and sits
+ *             `gap` slide units short of the silhouette along the ray from
+ *             the adjacent vertex. Re-solved whenever either side moves.
+ *    pinned — the endpoint sticks to a fixed point of the target's bounding
+ *             box (`fixedPoint` [u,v] ∈ [0,1]², rotated with the target). */
+export type BindingMode = 'edge' | 'pinned';
+
+/** Legacy 5-anchor payload — decks written before binding v2 carry `anchor`;
+ *  `utils/migrations.ts` rewrites it to `mode: 'pinned'` + `fixedPoint`. */
+export type BindingAnchor = 'center' | 'top' | 'bottom' | 'left' | 'right';
+
 export interface ConnectorBinding {
   elementId: string;
-  anchor: 'center' | 'top' | 'bottom' | 'left' | 'right';
+  /** Defaults to 'edge' when absent (unless a legacy `anchor` is present,
+   *  which implies 'pinned'). */
+  mode?: BindingMode;
+  /** Edge mode: signed focus in [-1, 1]. 0 aims at the center; ±1 grazes
+   *  the silhouette on either side of the center axis. */
+  focus?: number;
+  /** Edge mode: distance (≥ 0, slide units) the endpoint keeps from the
+   *  target's silhouette. */
+  gap?: number;
+  /** Pinned mode: [u, v] ∈ [0,1]² in the target's local (unrotated)
+   *  bounding-box coordinates. */
+  fixedPoint?: [number, number];
+  /** Legacy (pre-v2) anchor. Kept optional so unmigrated in-memory decks
+   *  still resolve; new bindings never set it. */
+  anchor?: BindingAnchor;
 }
 
 export interface ShapeElement extends BaseElement {

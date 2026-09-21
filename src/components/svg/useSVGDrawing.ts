@@ -6,7 +6,7 @@ import { computePointSnap, guideKey, type Guide } from '../../hooks/useAlignment
 import { getMarginLayout, getMarginBounds } from '../../utils/marginLayouts';
 import { isShiftHeld, isMetaHeld } from '../../utils/keyboard';
 import { pathBounds } from '../../utils/pathShapes';
-import { getBindingTarget, getAnchorPoint, bindDraftEndpoints } from '../../utils/connectorUtils';
+import { getBindingTarget2, bindingFor, resolveBinding, bindDraftEndpoints } from '../../utils/connectorUtils';
 import type { PathCurve, ConnectorBinding, SlideElement } from '../../types/presentation';
 
 /** Click within this many slide units of the first vertex while drafting a
@@ -49,10 +49,11 @@ export function useSVGDrawing(onConnectorHighlight?: (elementId: string | null) 
   // eslint-disable-next-line react-hooks/refs -- latest-value ref pattern: mirrors state for pointer handlers; read only outside render
   polyDraftRef.current = polyDraft;
   const justFinishedDrawing = useRef(false);
-  // Binding the START of a drag-created line/arrow picked up at pointerdown.
-  // Kept in a ref so pointermove can preserve the anchor-snapped start point
+  // Id of the bind target under the START of a drag-created line/arrow,
+  // picked up at pointerdown. Kept in a ref so pointermove can keep the
+  // start point raw (edge bindings preserve the exact point via focus/gap)
   // instead of re-running the grid/alignment snap over it every frame.
-  const startBindingRef = useRef<ConnectorBinding | null>(null);
+  const startTargetRef = useRef<string | null>(null);
 
   const tool = useEditorStore((s) => s.tool);
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
@@ -77,7 +78,8 @@ export function useSVGDrawing(onConnectorHighlight?: (elementId: string | null) 
   }, [activeSlideId]);
 
   /** Slide elements in z-order — binding-target candidates for connector
-   *  endpoints (getBindingTarget filters invisible/locked/path itself). */
+   *  endpoints (getBindingTarget2 filters invisible/locked/path itself
+   *  and picks the topmost match). */
   const getSlideElements = useCallback((): SlideElement[] => {
     const slide = usePresentationStore.getState().presentation.slides[activeSlideId];
     if (!slide) return [];
@@ -97,7 +99,7 @@ export function useSVGDrawing(onConnectorHighlight?: (elementId: string | null) 
     let startBinding: ConnectorBinding | null = null;
     let endBinding: ConnectorBinding | null = null;
     if (!closed && !isMetaHeld()) {
-      const bound = bindDraftEndpoints(vertices, getSlideElements());
+      const bound = bindDraftEndpoints(vertices, getSlideElements(), useEditorStore.getState().zoom);
       vertices = bound.absPoints;
       startBinding = bound.startBinding;
       endBinding = bound.endBinding;
@@ -200,22 +202,20 @@ export function useSVGDrawing(onConnectorHighlight?: (elementId: string | null) 
     let startY = snappedStartY;
     let startGuides = startSnap.guides;
 
-    // Line/arrow: the START point can bind to a shape anchor right away.
-    // The anchor wins over grid/alignment snap; Meta/Cmd suppresses the
-    // target search entirely.
-    startBindingRef.current = null;
+    // Line/arrow: a START over a bind target binds at commit (edge mode).
+    // The raw pointer position wins over grid/alignment snap there — the
+    // binding keeps the exact point via focus/gap, and a start inside the
+    // silhouette gets pulled onto the outline at commit. Meta/Cmd
+    // suppresses the target search entirely.
+    startTargetRef.current = null;
     if ((tool === 'line' || tool === 'arrow') && !e.metaKey) {
-      const target = getBindingTarget(pos, getSlideElements(), '');
+      const target = getBindingTarget2(pos, getSlideElements(), '', useEditorStore.getState().zoom);
       if (target) {
-        const anchorEl = getSlideElements().find((el) => el.id === target.elementId);
-        const ap = anchorEl ? getAnchorPoint(anchorEl, target.anchor) : null;
-        if (ap) {
-          startX = ap.x;
-          startY = ap.y;
-          startGuides = [];
-          startBindingRef.current = target;
-          onConnectorHighlight?.(target.elementId);
-        }
+        startX = pos.x;
+        startY = pos.y;
+        startGuides = [];
+        startTargetRef.current = target.id;
+        onConnectorHighlight?.(target.id);
       }
     }
 
@@ -266,21 +266,25 @@ export function useSVGDrawing(onConnectorHighlight?: (elementId: string | null) 
 
     const { others, marginBounds, snappingEnabled } = getSnapContext();
 
-    // Line/arrow: the moving END can bind to a shape anchor. The anchor wins
-    // over grid/alignment snap; Meta/Cmd suppresses the target search.
+    // Line/arrow: the moving END previews its binding — outside the target's
+    // silhouette it stays under the cursor, inside it hugs the outline
+    // (silhouette + gap preview). Binding preview wins over grid/alignment
+    // snap; Meta/Cmd suppresses the target search.
     let endBindingSnap: { x: number; y: number; elementId: string } | null = null;
     if (tool === 'line' || tool === 'arrow') {
-      const target = e.metaKey ? null : getBindingTarget(pos, getSlideElements(), '');
+      const target = e.metaKey
+        ? null
+        : getBindingTarget2(pos, getSlideElements(), '', useEditorStore.getState().zoom);
       if (target) {
-        const anchorEl = getSlideElements().find((el) => el.id === target.elementId);
-        const ap = anchorEl ? getAnchorPoint(anchorEl, target.anchor) : null;
-        if (ap) endBindingSnap = { x: ap.x, y: ap.y, elementId: target.elementId };
+        const other = { x: drawState.snappedStartX, y: drawState.snappedStartY };
+        const preview = resolveBinding(bindingFor(pos, target, other, 'edge'), target, other);
+        endBindingSnap = { x: preview.x, y: preview.y, elementId: target.id };
       }
       onConnectorHighlight?.(endBindingSnap ? endBindingSnap.elementId : null);
     }
 
-    // A bound start point stays glued to its anchor — don't re-snap it.
-    const startBound = startBindingRef.current !== null;
+    // A start point over a bind target stays raw — don't grid-snap it.
+    const startBound = startTargetRef.current !== null;
 
     if (snappingEnabled) {
       const currentSnap = endBindingSnap ? null : computePointSnap(pos, others, 5, marginBounds);
@@ -319,7 +323,7 @@ export function useSVGDrawing(onConnectorHighlight?: (elementId: string | null) 
         snappedStartY: startBound ? s.snappedStartY : s.startY,
       }));
     }
-  }, [drawState.isDrawing, drawState.startX, drawState.startY, getSnapContext, tool, getSlideElements, onConnectorHighlight]);
+  }, [drawState.isDrawing, drawState.startX, drawState.startY, drawState.snappedStartX, drawState.snappedStartY, getSnapContext, tool, getSlideElements, onConnectorHighlight]);
 
   const handlePointerUp = useCallback(() => {
     if (!drawState.isDrawing) return;
@@ -336,7 +340,7 @@ export function useSVGDrawing(onConnectorHighlight?: (elementId: string | null) 
       // Click without a drag — too small to materialize anything. Stay
       // in the drawing tool so the user can try again; we only reset to
       // select when a shape was actually committed.
-      startBindingRef.current = null;
+      startTargetRef.current = null;
       setDrawState({
         startX: 0, startY: 0, currentX: 0, currentY: 0, isDrawing: false,
         snappedStartX: 0, snappedStartY: 0, snappedCurrentX: 0, snappedCurrentY: 0,
@@ -363,7 +367,7 @@ export function useSVGDrawing(onConnectorHighlight?: (elementId: string | null) 
       let startBinding: ConnectorBinding | null = null;
       let endBinding: ConnectorBinding | null = null;
       if (!isMetaHeld()) {
-        const bound = bindDraftEndpoints([sx, sy, ex, ey], getSlideElements());
+        const bound = bindDraftEndpoints([sx, sy, ex, ey], getSlideElements(), useEditorStore.getState().zoom);
         [sx, sy, ex, ey] = bound.absPoints as [number, number, number, number];
         startBinding = bound.startBinding;
         endBinding = bound.endBinding;
@@ -395,7 +399,7 @@ export function useSVGDrawing(onConnectorHighlight?: (elementId: string | null) 
     // with that.
     setTool('select');
 
-    startBindingRef.current = null;
+    startTargetRef.current = null;
     setDrawState({
       startX: 0, startY: 0, currentX: 0, currentY: 0, isDrawing: false,
       snappedStartX: 0, snappedStartY: 0, snappedCurrentX: 0, snappedCurrentY: 0,

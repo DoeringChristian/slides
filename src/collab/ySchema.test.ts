@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import * as Y from 'yjs';
-import { jsonToYDoc, yDocToJson, ROOT_KEY } from './ySchema';
+import { jsonToYDoc, yDocToJson, applyChangesToYElement, ROOT_KEY } from './ySchema';
 import type { Presentation } from '../types/presentation';
 
 // =============================================================================
@@ -144,6 +144,19 @@ function makeFixture(): Presentation {
             curve: 'linear',
             endArrow: true,
           },
+          // Binding v2 payloads: edge mode (focus + gap) and pinned mode
+          // (fixedPoint ARRAY value — must survive the Y round-trip).
+          'el-conn2': {
+            id: 'el-conn2',
+            type: 'shape', shapeType: 'path',
+            x: 100, y: 100, width: 200, height: 80,
+            rotation: 0, opacity: 1, locked: false, visible: true,
+            fill: '', stroke: '#fff', strokeWidth: 2, cornerRadius: 0,
+            points: [0, 0, 100, 80, 200, 0],
+            curve: 'linear',
+            startBinding: { elementId: 'el-rect', mode: 'edge', focus: 0.25, gap: 6 },
+            endBinding: { elementId: 'el-rect', mode: 'pinned', fixedPoint: [0.25, 1] },
+          },
           'el-video': {
             id: 'el-video',
             type: 'image', resourceId: 'res-vid',
@@ -160,7 +173,7 @@ function makeFixture(): Presentation {
             childIds: ['el-line', 'el-arrow'],
           },
         },
-        elementOrder: ['el-line', 'el-arrow', 'el-video', 'el-group'],
+        elementOrder: ['el-line', 'el-arrow', 'el-conn2', 'el-video', 'el-group'],
         background: {
           type: 'gradient',
           from: '#3b82f6', to: '#0b0f19', direction: 180,
@@ -270,6 +283,48 @@ describe('jsonToYDoc → yDocToJson', () => {
     const line = out.slides['slide-b'].elements['el-line'] as import('../types/presentation').ShapeElement;
     expect(line.startBinding).toEqual({ elementId: 'el-rect', anchor: 'right' });
     expect(line.endBinding).toBeNull();
+  });
+
+  test('round-trips binding v2 payloads, including the fixedPoint array', () => {
+    const doc = jsonToYDoc(makeFixture());
+    const out = yDocToJson(doc);
+    const conn = out.slides['slide-b'].elements['el-conn2'] as import('../types/presentation').ShapeElement;
+    expect(conn.startBinding).toEqual({ elementId: 'el-rect', mode: 'edge', focus: 0.25, gap: 6 });
+    expect(conn.endBinding).toEqual({ elementId: 'el-rect', mode: 'pinned', fixedPoint: [0.25, 1] });
+    // The Y doc stores a COPY of the array — mutating the source fixture
+    // after serialisation must not leak into the doc.
+    const fixture2 = makeFixture();
+    const doc2 = jsonToYDoc(fixture2);
+    const src = fixture2.slides['slide-b'].elements['el-conn2'] as import('../types/presentation').ShapeElement;
+    src.endBinding!.fixedPoint![0] = 0.999;
+    const out2 = yDocToJson(doc2);
+    expect((out2.slides['slide-b'].elements['el-conn2'] as import('../types/presentation').ShapeElement).endBinding!.fixedPoint).toEqual([0.25, 1]);
+  });
+
+  test('applyChangesToYElement replaces bindings WHOLESALE (mode switch drops the other mode\'s fields)', () => {
+    const doc = jsonToYDoc(makeFixture());
+    const root = doc.getMap(ROOT_KEY);
+    const slides = root.get('slides') as Y.Map<Y.Map<unknown>>;
+    const elements = slides.get('slide-b')!.get('elements') as Y.Map<Y.Map<unknown>>;
+    const conn = elements.get('el-conn2')!;
+
+    // pinned → edge: fixedPoint must NOT survive as a stale merged key.
+    doc.transact(() => {
+      applyChangesToYElement(conn, {
+        endBinding: { elementId: 'el-rect', mode: 'edge', focus: -0.5, gap: 3 },
+      });
+    });
+    let out = yDocToJson(doc);
+    let el = out.slides['slide-b'].elements['el-conn2'] as import('../types/presentation').ShapeElement;
+    expect(el.endBinding).toEqual({ elementId: 'el-rect', mode: 'edge', focus: -0.5, gap: 3 });
+
+    // Clearing a binding stores null (not a leftover map).
+    doc.transact(() => {
+      applyChangesToYElement(conn, { startBinding: null });
+    });
+    out = yDocToJson(doc);
+    el = out.slides['slide-b'].elements['el-conn2'] as import('../types/presentation').ShapeElement;
+    expect(el.startBinding).toBeNull();
   });
 });
 

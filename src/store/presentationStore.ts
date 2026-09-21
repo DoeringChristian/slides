@@ -857,7 +857,8 @@ export const usePresentationStore = create<PresentationStore>()(
             const moved =
               changes.x !== undefined || changes.y !== undefined ||
               changes.width !== undefined || changes.height !== undefined ||
-              changes.rotation !== undefined;
+              changes.rotation !== undefined ||
+              (changes as { points?: number[] }).points !== undefined;
             if (!moved) return;
             const slide = yDocToJsonSlideOnly(doc, slideId);
             if (!slide) return;
@@ -877,9 +878,10 @@ export const usePresentationStore = create<PresentationStore>()(
             [elementId]: { ...slide.elements[elementId], ...changes } as SlideElement,
           };
 
-          // If a non-connector element moved or rotated, update any
-          // connectors bound to it.
-          if (changes.x !== undefined || changes.y !== undefined || changes.width !== undefined || changes.height !== undefined || changes.rotation !== undefined) {
+          // If an element's geometry changed (move / resize / rotate / vertex
+          // edit), update any connectors bound to it — and, for a path's own
+          // vertex edit, re-solve its own edge-mode bindings.
+          if (changes.x !== undefined || changes.y !== undefined || changes.width !== undefined || changes.height !== undefined || changes.rotation !== undefined || (changes as { points?: number[] }).points !== undefined) {
             for (const rebound of rebindAfterElementsMoved(updatedElements, slide.elementOrder, new Set([elementId]))) {
               updatedElements[rebound.elementId] = { ...updatedElements[rebound.elementId], ...rebound.changes } as SlideElement;
             }
@@ -928,7 +930,8 @@ export const usePresentationStore = create<PresentationStore>()(
               updates
                 .filter(u => u.changes.x !== undefined || u.changes.y !== undefined ||
                             u.changes.width !== undefined || u.changes.height !== undefined ||
-                            u.changes.rotation !== undefined)
+                            u.changes.rotation !== undefined ||
+                            (u.changes as { points?: number[] }).points !== undefined)
                 .map(u => u.elementId)
             );
             if (movedElementIds.size === 0) return;
@@ -958,7 +961,8 @@ export const usePresentationStore = create<PresentationStore>()(
             updates
               .filter(u => u.changes.x !== undefined || u.changes.y !== undefined ||
                           u.changes.width !== undefined || u.changes.height !== undefined ||
-                          u.changes.rotation !== undefined)
+                          u.changes.rotation !== undefined ||
+                            (u.changes as { points?: number[] }).points !== undefined)
               .map(u => u.elementId)
           );
 

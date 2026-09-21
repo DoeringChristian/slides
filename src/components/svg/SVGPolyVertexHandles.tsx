@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import type { SlideElement, ShapeElement, ConnectorBinding } from '../../types/presentation';
 import { pathBounds, pathD, insetEndpoints } from '../../utils/pathShapes';
 import { useScreenToSVG } from './useScreenToSVG';
-import { getBindingTarget, getAnchorPoint } from '../../utils/connectorUtils';
+import { getBindingTarget2, bindingFor, resolveBinding } from '../../utils/connectorUtils';
 
 interface Props {
   element: ShapeElement;
@@ -77,12 +77,25 @@ export const SVGPolyVertexHandles: React.FC<Props> = ({
       let absX = pos.x;
       let absY = pos.y;
       if (isEndpoint && elements) {
-        const target = getBindingTarget({ x: absX, y: absY }, elements, element.id);
+        const target = getBindingTarget2({ x: absX, y: absY }, elements, element.id, zoom);
         if (target) {
-          const anchor = elements.find((el) => el.id === target.elementId);
-          const ap = anchor ? getAnchorPoint(anchor, target.anchor) : null;
-          if (ap) { absX = ap.x; absY = ap.y; }
-          onConnectorHighlight?.(target.elementId);
+          // Silhouette + gap preview: outside the outline the vertex stays
+          // under the cursor; inside, it hugs the silhouette. The adjacent
+          // vertex (Excalidraw's adjacentPoint) fixes the ray direction.
+          const prevPts = livePointsRef.current ?? points;
+          const adjIdx = dragging.idx === 0 ? 1 : lastIdx - 1;
+          const adj = {
+            x: element.x + prevPts[2 * adjIdx],
+            y: element.y + prevPts[2 * adjIdx + 1],
+          };
+          const preview = resolveBinding(
+            bindingFor({ x: absX, y: absY }, target, adj, 'edge'),
+            target,
+            adj,
+          );
+          absX = preview.x;
+          absY = preview.y;
+          onConnectorHighlight?.(target.id);
         } else {
           onConnectorHighlight?.(null);
         }
@@ -119,14 +132,23 @@ export const SVGPolyVertexHandles: React.FC<Props> = ({
         width: bounds.width, height: bounds.height,
         points: bounds.points,
       };
-      // Snap-bind the dragged endpoint if it landed on another shape's
-      // anchor. The other endpoint's binding is preserved unchanged.
+      // Bind the dragged endpoint if it landed inside / near another
+      // shape's silhouette (edge-mode binding derived from the drop point).
+      // The other endpoint's binding is preserved unchanged.
       if (isEndpoint && elements) {
         const lastVxIdx = bounds.points.length - 2;
         const tipX = (dragging.idx === 0 ? bounds.points[0] : bounds.points[lastVxIdx]) + bounds.x;
         const tipY = (dragging.idx === 0 ? bounds.points[1] : bounds.points[lastVxIdx + 1]) + bounds.y;
-        const target = getBindingTarget({ x: tipX, y: tipY }, elements, element.id);
-        const binding: ConnectorBinding | null = target ?? null;
+        const target = getBindingTarget2({ x: tipX, y: tipY }, elements, element.id, zoom);
+        let binding: ConnectorBinding | null = null;
+        if (target) {
+          const adjVxIdx = dragging.idx === 0 ? 2 : lastVxIdx - 2;
+          const adj = {
+            x: bounds.points[adjVxIdx] + bounds.x,
+            y: bounds.points[adjVxIdx + 1] + bounds.y,
+          };
+          binding = bindingFor({ x: tipX, y: tipY }, target, adj, 'edge');
+        }
         if (dragging.idx === 0) update.startBinding = binding;
         else update.endBinding = binding;
       }
@@ -140,7 +162,7 @@ export const SVGPolyVertexHandles: React.FC<Props> = ({
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-  }, [dragging, n, element.id, element.x, element.y, elements, onUpdate, onConnectorHighlight, screenToSVG]);
+  }, [dragging, n, points, element.id, element.x, element.y, elements, zoom, onUpdate, onConnectorHighlight, screenToSVG]);
 
   // Delete the hovered vertex on Backspace / Delete. Keep ≥3 vertices so the
   // shape doesn't degenerate.

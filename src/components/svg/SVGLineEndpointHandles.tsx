@@ -5,7 +5,7 @@ import { constrainToAngle } from '../../utils/geometry';
 import { useEditorStore } from '../../store/editorStore';
 import { computePointSnap, type Guide } from '../../hooks/useAlignmentGuides';
 import { getMarginLayout, getMarginBounds } from '../../utils/marginLayouts';
-import { getBindingTarget, getAnchorPoint } from '../../utils/connectorUtils';
+import { getBindingTarget2, bindingFor, resolveBinding } from '../../utils/connectorUtils';
 import { useScreenToSVG } from './useScreenToSVG';
 
 interface Props {
@@ -94,19 +94,20 @@ export const SVGLineEndpointHandles: React.FC<Props> = ({
         newY = constrained.y;
       }
 
-      // Check for binding target (connector snap)
-      const bindingTarget = getBindingTarget({ x: newX, y: newY }, elements, element.id);
+      // Check for binding target (silhouette + gap preview). Outside the
+      // silhouette the endpoint stays under the cursor (edge bindings keep
+      // the exact point via focus/gap); inside, it hugs the outline.
+      const bindingTarget = getBindingTarget2({ x: newX, y: newY }, elements, element.id, zoom);
       if (bindingTarget) {
-        // Snap to the binding anchor point
-        const targetElement = elements.find(el => el.id === bindingTarget.elementId);
-        if (targetElement) {
-          const anchorPoint = getAnchorPoint(targetElement, bindingTarget.anchor);
-          if (anchorPoint) {
-            newX = anchorPoint.x;
-            newY = anchorPoint.y;
-          }
-        }
-        onConnectorHighlight?.(bindingTarget.elementId);
+        const other = dragging.endpoint === 'start' ? { x: endX, y: endY } : { x: startX, y: startY };
+        const preview = resolveBinding(
+          bindingFor({ x: newX, y: newY }, bindingTarget, other, 'edge'),
+          bindingTarget,
+          other,
+        );
+        newX = preview.x;
+        newY = preview.y;
+        onConnectorHighlight?.(bindingTarget.id);
         onGuidesChange?.([]);
       } else {
         onConnectorHighlight?.(null);
@@ -154,21 +155,18 @@ export const SVGLineEndpointHandles: React.FC<Props> = ({
         newY = constrained.y;
       }
 
-      // Check for binding target
-      const bindingTarget = getBindingTarget({ x: newX, y: newY }, elements, element.id);
+      // Derive the edge-mode binding for the drop point: focus/gap keep the
+      // dropped position when it's outside the silhouette; a drop inside
+      // pulls the endpoint onto the outline (gap 0).
+      const bindingTarget = getBindingTarget2({ x: newX, y: newY }, elements, element.id, zoom);
       let newBinding: ConnectorBinding | null = null;
 
       if (bindingTarget) {
-        // Snap to the binding anchor point
-        const targetElement = elements.find(el => el.id === bindingTarget.elementId);
-        if (targetElement) {
-          const anchorPoint = getAnchorPoint(targetElement, bindingTarget.anchor);
-          if (anchorPoint) {
-            newX = anchorPoint.x;
-            newY = anchorPoint.y;
-            newBinding = bindingTarget;
-          }
-        }
+        const other = dragging.endpoint === 'start' ? { x: endX, y: endY } : { x: startX, y: startY };
+        newBinding = bindingFor({ x: newX, y: newY }, bindingTarget, other, 'edge');
+        const resolved = resolveBinding(newBinding, bindingTarget, other);
+        newX = resolved.x;
+        newY = resolved.y;
       }
 
       if (dragging.endpoint === 'start') {
@@ -211,7 +209,7 @@ export const SVGLineEndpointHandles: React.FC<Props> = ({
       window.removeEventListener('pointerup', handlePointerUp);
       window.removeEventListener('pointercancel', handlePointerUp);
     };
-  }, [dragging, currentPos, screenToSVG, startX, startY, endX, endY, onUpdate, element.id, elements, onGuidesChange, onConnectorHighlight]);
+  }, [dragging, currentPos, screenToSVG, startX, startY, endX, endY, onUpdate, element.id, elements, zoom, onGuidesChange, onConnectorHighlight]);
 
   // Calculate display positions (use current drag position if dragging)
   const displayStartX = dragging?.endpoint === 'start' && currentPos ? currentPos.x : startX;
