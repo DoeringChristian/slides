@@ -1,10 +1,10 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { Play, Pause } from 'lucide-react';
-import { RenderShape, RenderImage } from '../svg/ElementRenderer';
+import { RenderShape, RenderImage, RenderArrowhead } from '../svg/ElementRenderer';
 import { SVGTextPaths } from '../svg/SVGTextPaths';
 import { RenderPaths } from '../svg/RenderPaths';
 import { shapeToSvgPaths } from '../../utils/shapeToPath';
-import { pathD, insetEndpoints, arrowheadPoints, pathArcLength, pointAtArcLength } from '../../utils/pathShapes';
+import { pathD, insetEndpoints, arrowheadGeometry, arrowheadInset, pathArcLength, pointAtArcLength } from '../../utils/pathShapes';
 import { pathLengthFor } from '../../utils/glyphPaths';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 import { interpolateWithVisibility, lerpColor } from '../../utils/interpolation';
@@ -402,7 +402,7 @@ function renderElementInner(
     // shaft progressively (RenderPaths with no head in the d-string) AND
     // sticks the arrowhead onto the current tip — so the head appears to
     // ride along with the growing line instead of materializing last.
-    if (fx.tipDraw && shapeEl.shapeType === 'path' && shapeEl.endArrow) {
+    if (fx.tipDraw && shapeEl.shapeType === 'path' && shapeEl.endHead && shapeEl.endHead !== 'none') {
       return (
         <g key={shapeEl.id} transform={transform} opacity={shapeEl.opacity}>
           <TipDrawArrow element={shapeEl} fx={fx} strokeWidth={strokeWidth} />
@@ -439,11 +439,18 @@ const TipDrawArrow: React.FC<{
   if (pts.length < 4) return null;
   const closed = element.closed ?? false;
   const curve = element.curve ?? 'linear';
-  // Inset the end vertex so the shaft stops where the arrowhead's base
-  // will sit. The arrowhead's tip then extends back out to the original
+  // Head geometry parameters mirror the steady-state ElementRenderer
+  // exactly (same helper, same size/strokeWidth inputs), so the riding
+  // head IS the final head.
+  const endType = element.endHead ?? 'none';
+  const headSW = element.strokeWidth || (closed ? 0 : 3);
+  const startInset = arrowheadInset(element.startHead, 10, headSW);
+  const endInset = arrowheadInset(endType, 10, headSW);
+  // Inset the end vertex so the shaft stops where a solid head's base
+  // will sit. The head's tip then extends back out to the original
   // endpoint at the end of the animation — same final geometry as the
   // steady-state render in ElementRenderer.
-  const shaftPts = insetEndpoints(pts, !!element.startArrow, true);
+  const shaftPts = insetEndpoints(pts, startInset, endInset);
   const cornerR = curve === 'linear' ? (element.cornerRadius ?? 0) : 0;
   const d = pathD(shaftPts, curve, closed, cornerR, element.tangents);
   const arc = pathArcLength(shaftPts, curve, closed, element.tangents);
@@ -473,18 +480,18 @@ const TipDrawArrow: React.FC<{
     tipX = pts[last]; tipY = pts[last + 1];
     dirX = pts[last] - pts[last - 2]; dirY = pts[last + 1] - pts[last - 1];
   } else if (tip) {
-    // Push the tip forward by the head length so the triangle's tip lands
-    // at the position the user expects ("the arrow is HERE"), not its base.
+    // Push the tip forward by the head's shaft inset so a solid glyph's
+    // tip lands at the position the user expects ("the arrow is HERE"),
+    // not its base. Open glyphs (inset 0) ride exactly on the reveal tip.
     const tLen = Math.hypot(tip.dx, tip.dy) || 1;
-    const HEAD = 10;
-    tipX = tip.x + (tip.dx / tLen) * HEAD;
-    tipY = tip.y + (tip.dy / tLen) * HEAD;
+    tipX = tip.x + (tip.dx / tLen) * endInset;
+    tipY = tip.y + (tip.dy / tLen) * endInset;
     dirX = tip.dx; dirY = tip.dy;
   } else {
     // Degenerate path — bail out, no arrow to draw.
     return null;
   }
-  const head = arrowheadPoints(tipX, tipY, dirX, dirY);
+  const headGeo = arrowheadGeometry(endType, tipX, tipY, dirX, dirY, 10, headSW);
 
   // Cached path length for stroke-dasharray. pathLengthFor measures via a
   // hidden <path>; ours is just the shaft so it matches `arc` closely
@@ -505,14 +512,14 @@ const TipDrawArrow: React.FC<{
   return (
     <>
       <RenderPaths paths={[svgPath]} writeFx={fx} strokeWidth={strokeWidth} />
-      {/* Arrowhead. Fades in over the first ~5% of the reveal so it
-          doesn't pop into existence at t=0. */}
-      <polygon
-        points={`${head[0]},${head[1]} ${head[2]},${head[3]} ${head[4]},${head[5]}`}
+      {/* Arrowhead via the shared RenderArrowhead leaf. Fades in over the
+          first ~5% of the reveal so it doesn't pop into existence at t=0;
+          full opacity once it's tracking. */}
+      <RenderArrowhead
+        geo={headGeo}
+        color={strokeColor}
+        strokeWidth={headSW}
         transform={`translate(${element.x}, ${element.y})`}
-        fill={strokeColor}
-        // Fade in over the first ~5% of the reveal so the head doesn't
-        // pop in fully formed at t=0; full opacity once it's tracking.
         opacity={Math.min(1, revealPh * 20)}
       />
     </>

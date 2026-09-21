@@ -1,5 +1,36 @@
 import PptxGenJS from 'pptxgenjs';
-import type { Presentation, Slide, TextElement, ShapeElement, ImageElement, SlideBackground } from '../types/presentation';
+import type { Presentation, Slide, TextElement, ShapeElement, ImageElement, SlideBackground, ArrowheadType } from '../types/presentation';
+
+/** Nearest PptxGenJS line-end type for a typed arrowhead. PowerPoint's
+ *  vocabulary is arrow/triangle/diamond/oval/stealth — bar and the
+ *  crowfoot family have no counterpart and fall back to the closest
+ *  silhouette; the SVG/PDF exporters carry the full fidelity. */
+function pptxArrowFor(
+  head: ArrowheadType | undefined,
+): 'arrow' | 'triangle' | 'diamond' | 'oval' | undefined {
+  switch (head) {
+    case undefined:
+    case 'none':
+      return undefined;
+    case 'arrow':
+    case 'crowfoot-one':
+    case 'crowfoot-many':
+    case 'crowfoot-one-many':
+      return 'arrow';
+    case 'diamond':
+    case 'diamond-outline':
+      return 'diamond';
+    case 'dot':
+    case 'circle':
+    case 'circle-outline':
+      return 'oval';
+    case 'triangle':
+    case 'triangle-outline':
+    case 'bar':
+    default:
+      return 'triangle';
+  }
+}
 import { TEXT_BOX_PADDING } from './constants';
 import { parseBlocks, getBlockFontMultiplier } from '../components/canvas/CustomMarkdownRenderer';
 
@@ -171,13 +202,15 @@ function addShapeElement(slide: PptxGenJS.Slide, el: ShapeElement) {
       const dashType = el.strokeStyle === 'dashed' ? 'dash' as const
         : el.strokeStyle === 'dotted' ? 'sysDot' as const
         : undefined;
+      const endArrowType = pptxArrowFor(el.endHead);
+      const beginArrowType = pptxArrowFor(el.startHead);
       slide.addShape('line', {
         x, y, w, h,
         line: {
           color: hexWithoutHash(strokeColor),
           width: el.strokeWidth || 3,
-          ...(el.endArrow ? { endArrowType: 'triangle' as const } : {}),
-          ...(el.startArrow ? { beginArrowType: 'triangle' as const } : {}),
+          ...(endArrowType ? { endArrowType } : {}),
+          ...(beginArrowType ? { beginArrowType } : {}),
           ...(dashType ? { dashType } : {}),
         },
         rotate: el.rotation || 0,

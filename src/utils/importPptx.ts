@@ -711,7 +711,8 @@ export async function importPptx(file: File): Promise<Presentation> {
 
       elements.push(createShapeElement('path', {
         curve: 'linear',
-        endArrow,
+        // Import fidelity: any tail marker lifts to the classic triangle.
+        ...(endArrow ? { endHead: 'triangle' as const } : {}),
         x: ex.x,
         y: ex.y,
         width: Math.max(ex.width, 1),

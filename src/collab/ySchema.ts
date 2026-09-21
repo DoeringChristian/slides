@@ -213,8 +213,8 @@ export function elementToYMap(el: SlideElement): Y.Map<unknown> {
       setIfDefined(m, 'curve', s.curve);
       setIfDefined(m, 'tangents', s.tangents ? [...s.tangents] : undefined);
       setIfDefined(m, 'closed', s.closed);
-      setIfDefined(m, 'startArrow', s.startArrow);
-      setIfDefined(m, 'endArrow', s.endArrow);
+      setIfDefined(m, 'startHead', s.startHead);
+      setIfDefined(m, 'endHead', s.endHead);
       setIfDefined(m, 'startBinding', s.startBinding ? mkScalarMap(s.startBinding) : s.startBinding);
       setIfDefined(m, 'endBinding', s.endBinding ? mkScalarMap(s.endBinding) : s.endBinding);
       return m;

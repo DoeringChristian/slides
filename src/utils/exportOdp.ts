@@ -1,5 +1,5 @@
 import JSZip from 'jszip';
-import type { Presentation, Slide, TextElement, ShapeElement, ImageElement, SlideBackground } from '../types/presentation';
+import type { Presentation, Slide, TextElement, ShapeElement, ImageElement, SlideBackground, ArrowheadType } from '../types/presentation';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from './constants';
 import { parseBlocks, getBlockFontMultiplier } from '../components/canvas/CustomMarkdownRenderer';
 
@@ -158,6 +158,24 @@ function buildShapeXml(el: ShapeElement, slideIndex: number, elIndex: number): s
   }
 }
 
+/** Nearest stock ODP marker name for a typed arrowhead. Impress ships
+ *  "Arrow" and "Circle" in every document; fancier glyphs (bar, crowfoot,
+ *  outlines) fall back to the closest of those two — the SVG/PDF exporters
+ *  carry the full fidelity. */
+function odpMarkerFor(head: ArrowheadType | undefined): string | null {
+  switch (head) {
+    case undefined:
+    case 'none':
+      return null;
+    case 'dot':
+    case 'circle':
+    case 'circle-outline':
+      return 'Circle';
+    default:
+      return 'Arrow';
+  }
+}
+
 function buildShapeStyle(el: ShapeElement, slideIndex: number, elIndex: number): string {
   const styleName = `gr_s${slideIndex}_e${elIndex}`;
   const hasFill = el.fill && el.fill !== 'transparent' && el.fill !== 'none' && el.fill !== '';
@@ -188,12 +206,16 @@ function buildShapeStyle(el: ShapeElement, slideIndex: number, elIndex: number):
     style += `draw:opacity="${Math.round(el.opacity * 100)}%" `;
   }
 
-  // Arrow markers on the unified path shape.
-  if (el.shapeType === 'path' && el.startArrow) {
-    style += `draw:marker-start="Arrow" draw:marker-start-width="0.3cm" `;
+  // Arrow markers on the unified path shape — each typed head maps to the
+  // nearest stock ODP marker (circle family → "Circle", everything else
+  // that has a head → "Arrow").
+  const startMarker = odpMarkerFor(el.startHead);
+  const endMarker = odpMarkerFor(el.endHead);
+  if (el.shapeType === 'path' && startMarker) {
+    style += `draw:marker-start="${startMarker}" draw:marker-start-width="0.3cm" `;
   }
-  if (el.shapeType === 'path' && el.endArrow) {
-    style += `draw:marker-end="Arrow" draw:marker-end-width="0.3cm" `;
+  if (el.shapeType === 'path' && endMarker) {
+    style += `draw:marker-end="${endMarker}" draw:marker-end-width="0.3cm" `;
   }
 
   style += `/>`;

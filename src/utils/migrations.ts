@@ -95,10 +95,11 @@ function migrateBinding(
 
 /** Collapse legacy line/arrow/polygon/bspline shapeType into the unified
  *  `path` model (same geometry, different defaults for `curve`, `closed`,
- *  and the optional arrowheads), then upgrade legacy anchor bindings to
- *  binding v2. */
+ *  and the optional arrowheads), lift legacy `startArrow`/`endArrow`
+ *  booleans into the typed `startHead`/`endHead` fields, then upgrade
+ *  legacy anchor bindings to binding v2. */
 function migrateShape(shape: ShapeElement): ShapeElement {
-  let out = migrateShapeType(shape);
+  let out = migrateHeads(migrateShapeType(shape));
   const startBinding = migrateBinding(out.startBinding);
   if (startBinding !== out.startBinding) out = { ...out, startBinding };
   const endBinding = migrateBinding(out.endBinding);
@@ -106,16 +107,35 @@ function migrateShape(shape: ShapeElement): ShapeElement {
   return out;
 }
 
+/** Legacy boolean arrowheads → typed heads. `true` becomes `'triangle'`
+ *  (exactly the glyph the boolean used to render); `false` just vanishes
+ *  (absent = 'none'). Decks that already carry typed heads keep them —
+ *  a stray leftover boolean never overwrites a typed head. The booleans
+ *  are always deleted, so the rule is idempotent (second pass sees no
+ *  boolean and returns the same object). */
+function migrateHeads(shape: ShapeElement): ShapeElement {
+  const legacy = shape as ShapeElement & { startArrow?: boolean; endArrow?: boolean };
+  if (legacy.startArrow === undefined && legacy.endArrow === undefined) return shape;
+  const next = { ...legacy };
+  if (next.startArrow !== undefined) {
+    if (next.startArrow && next.startHead === undefined) next.startHead = 'triangle';
+    delete next.startArrow;
+  }
+  if (next.endArrow !== undefined) {
+    if (next.endArrow && next.endHead === undefined) next.endHead = 'triangle';
+    delete next.endArrow;
+  }
+  return next;
+}
+
 function migrateShapeType(shape: ShapeElement): ShapeElement {
-  const legacy = shape as ShapeElement & { bsplineDegree?: 2 | 3 };
+  const legacy = shape as ShapeElement & { bsplineDegree?: 2 | 3; endArrow?: boolean };
   switch (legacy.shapeType as string) {
     case 'line':
       return {
         ...shape,
         shapeType: 'path',
         curve: shape.curve ?? 'linear',
-        startArrow: shape.startArrow ?? false,
-        endArrow: shape.endArrow ?? false,
         closed: shape.closed ?? false,
       };
     case 'arrow':
@@ -123,9 +143,13 @@ function migrateShapeType(shape: ShapeElement): ShapeElement {
         ...shape,
         shapeType: 'path',
         curve: shape.curve ?? 'linear',
-        startArrow: shape.startArrow ?? false,
-        endArrow: shape.endArrow ?? true,
         closed: shape.closed ?? false,
+        // The defining difference vs 'line': an end head by default. An
+        // explicit legacy boolean (either value) or an existing typed head
+        // wins — migrateHeads folds those in right after this pass.
+        ...(legacy.endArrow === undefined && shape.endHead === undefined
+          ? { endHead: 'triangle' as const }
+          : {}),
       };
     case 'polygon':
       return {

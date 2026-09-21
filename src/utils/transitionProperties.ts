@@ -63,10 +63,11 @@ export function transitionPropertyValues(element: SlideElement, group: Transitio
         s.closed ? 1 : 0,
       ];
     }
+    // Historical group names; they drive the typed startHead/endHead fields.
     case 'startArrow':
-      return element.type === 'shape' ? [(element as ShapeElement).startArrow ? 1 : 0] : [];
+      return element.type === 'shape' ? [(element as ShapeElement).startHead ?? 'none'] : [];
     case 'endArrow':
-      return element.type === 'shape' ? [(element as ShapeElement).endArrow ? 1 : 0] : [];
+      return element.type === 'shape' ? [(element as ShapeElement).endHead ?? 'none'] : [];
     default: return [];
   }
 }

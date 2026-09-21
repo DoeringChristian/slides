@@ -13,7 +13,7 @@
  * element's (x, y) so a translation never has to rewrite every vertex.
  */
 
-import type { PathCurve } from '../types/presentation';
+import type { PathCurve, ArrowheadType } from '../types/presentation';
 
 /** True when this path is conceptually a single line / arrow: linear curve,
  *  exactly two vertices. Used by hit-testing, endpoint handles, and
@@ -291,39 +291,41 @@ export function sampledPath(points: number[], curve: PathCurve, closed: boolean,
 }
 
 /** Return a points list with the first / last vertex pulled back along the
- *  outgoing tangent by `headLen`, so a rendered path that ends in an
- *  arrowhead doesn't poke through the triangle to the tip. The tip itself
- *  (used by `arrowheadPoints`) stays at the ORIGINAL endpoint — only the
- *  shaft is shortened. Returns the same array reference unchanged when no
- *  arrows are requested. */
+ *  outgoing tangent by the given per-end inset, so a rendered path that
+ *  ends in a solid arrowhead doesn't poke through the glyph to the tip.
+ *  The tip itself (used by `arrowheadGeometry`) stays at the ORIGINAL
+ *  endpoint — only the shaft is shortened. Insets come from
+ *  `ArrowheadGeometry.shaftInset` (or the `arrowheadInset` convenience);
+ *  open glyphs (arrow / bar / crowfoot) report 0 and leave the shaft
+ *  untouched. Returns the same array reference unchanged when both insets
+ *  are 0. */
 export function insetEndpoints(
   points: number[],
-  startArrow: boolean,
-  endArrow: boolean,
-  headLen = 10,
+  startInset: number,
+  endInset: number,
 ): number[] {
-  if (!startArrow && !endArrow) return points;
+  if (startInset <= 0 && endInset <= 0) return points;
   if (points.length < 4) return points;
   const out = points.slice();
-  if (startArrow) {
+  if (startInset > 0) {
     const p0x = out[0], p0y = out[1];
     const p1x = out[2], p1y = out[3];
     const dx = p1x - p0x, dy = p1y - p0y;
     const len = Math.hypot(dx, dy);
-    if (len > headLen) {
-      out[0] = p0x + (headLen / len) * dx;
-      out[1] = p0y + (headLen / len) * dy;
+    if (len > startInset) {
+      out[0] = p0x + (startInset / len) * dx;
+      out[1] = p0y + (startInset / len) * dy;
     }
   }
-  if (endArrow) {
+  if (endInset > 0) {
     const n = out.length;
     const pNx = out[n - 2], pNy = out[n - 1];
     const pPx = out[n - 4], pPy = out[n - 3];
     const dx = pPx - pNx, dy = pPy - pNy;
     const len = Math.hypot(dx, dy);
-    if (len > headLen) {
-      out[n - 2] = pNx + (headLen / len) * dx;
-      out[n - 1] = pNy + (headLen / len) * dy;
+    if (len > endInset) {
+      out[n - 2] = pNx + (endInset / len) * dx;
+      out[n - 1] = pNy + (endInset / len) * dy;
     }
   }
   return out;
@@ -400,6 +402,174 @@ export function arrowheadPoints(
     baseX - uy * half, baseY + ux * half,
     baseX + uy * half, baseY - ux * half,
   ];
+}
+
+// =============================================================================
+// Typed arrowheads — THE single geometry source for every renderer
+// (ElementRenderer, exportPdf, shapeToPath pen-trace, presenter tip-draw,
+// and the property-panel previews). Never re-derive head math elsewhere.
+// =============================================================================
+
+/** Output of `arrowheadGeometry`, in the same (element-relative or absolute
+ *  — whatever space the tip is given in) coordinate space as the tip.
+ *
+ *  fills   — solid primitives painted in the stroke colour: either a flat
+ *            polygon vertex list `[x0,y0,x1,y1,…]` or a full `d` string
+ *            (circles). No stroke.
+ *  strokes — open/closed `d` strings stroked at the shaft's strokeWidth
+ *            with round caps/joins, never filled.
+ *  shaftInset — how far the shaft must stop short of the tip so it doesn't
+ *            poke through the glyph (0 for open glyphs). Feed into
+ *            `insetEndpoints`. */
+export interface ArrowheadGeometry {
+  shaftInset: number;
+  fills: Array<{ points: number[] } | { d: string }>;
+  strokes: Array<{ d: string }>;
+}
+
+/** Nominal head length: `size`, scaled up with strokeWidth beyond the
+ *  default path width of 3 (so heavier lines grow proportionally bigger
+ *  heads) with `size` itself as the sensible minimum — a hairline never
+ *  shrinks its head below the classic 10-unit triangle. */
+function headSize(size: number, strokeWidth: number): number {
+  return Math.max(size, (size * strokeWidth) / 3);
+}
+
+/** Shaft inset for a head type without needing the tip position — the
+ *  inset depends only on the glyph, size and strokeWidth. Convenience over
+ *  `arrowheadGeometry(...).shaftInset` for callers that inset the shaft
+ *  before knowing (or without caring about) the tip direction. */
+export function arrowheadInset(
+  type: ArrowheadType | undefined,
+  size = 10,
+  strokeWidth = 3,
+): number {
+  if (!type || type === 'none') return 0;
+  return arrowheadGeometry(type, 0, 0, 1, 0, size, strokeWidth).shaftInset;
+}
+
+/** Geometry for a typed arrowhead whose tip sits at (tipX, tipY) pointing
+ *  along (dirX, dirY) (need not be normalized). `size` is the nominal head
+ *  length at the default strokeWidth of 3; see `headSize` for the scaling
+ *  rule. Glyph catalogue (Excalidraw's option set):
+ *
+ *    arrow             open V of two stroked segments,       inset 0
+ *    triangle          filled triangle (today's classic),    inset s
+ *    triangle-outline  stroked closed triangle,              inset s
+ *    bar               perpendicular stroke through the tip, inset 0
+ *    dot               small filled circle touching the tip, inset 2r
+ *    circle            larger filled circle,                 inset 2r
+ *    circle-outline    larger stroked circle,                inset 2r
+ *    diamond           filled rhombus,                       inset s
+ *    diamond-outline   stroked closed rhombus,               inset s
+ *    crowfoot-one      perpendicular bar behind the tip,     inset 0
+ *    crowfoot-many     inverted V spreading to the tip line, inset 0
+ *    crowfoot-one-many both of the above,                    inset 0
+ */
+export function arrowheadGeometry(
+  type: ArrowheadType | undefined,
+  tipX: number,
+  tipY: number,
+  dirX: number,
+  dirY: number,
+  size = 10,
+  strokeWidth = 3,
+): ArrowheadGeometry {
+  const none: ArrowheadGeometry = { shaftInset: 0, fills: [], strokes: [] };
+  if (!type || type === 'none') return none;
+
+  const s = headSize(size, strokeWidth);
+  const len = Math.hypot(dirX, dirY) || 1;
+  const ux = dirX / len;
+  const uy = dirY / len;
+  // Perpendicular (rotate 90° CCW): (-uy, ux).
+  const px = -uy;
+  const py = ux;
+  /** Point at `back` units behind the tip, offset `side` units sideways. */
+  const at = (back: number, side: number): [number, number] =>
+    [tipX - ux * back + px * side, tipY - uy * back + py * side];
+  const seg = (a: [number, number], b: [number, number]) =>
+    `M ${fmt(a[0])} ${fmt(a[1])} L ${fmt(b[0])} ${fmt(b[1])}`;
+  const polyD = (pts: Array<[number, number]>, close: boolean) =>
+    pts.map(([x, y], i) => `${i === 0 ? 'M' : 'L'} ${fmt(x)} ${fmt(y)}`).join(' ') + (close ? ' Z' : '');
+  const circleD = (cx: number, cy: number, r: number) =>
+    `M ${fmt(cx - r)} ${fmt(cy)} `
+    + `a ${fmt(r)} ${fmt(r)} 0 1 0 ${fmt(2 * r)} 0 `
+    + `a ${fmt(r)} ${fmt(r)} 0 1 0 ${fmt(-2 * r)} 0 Z`;
+
+  switch (type) {
+    case 'arrow':
+      // Open V: wings at depth s, half-spread s/2 — same silhouette as the
+      // classic triangle but stroked, with the shaft running to the tip.
+      return {
+        shaftInset: 0,
+        fills: [],
+        strokes: [{ d: `M ${fmt(at(s, s / 2)[0])} ${fmt(at(s, s / 2)[1])} L ${fmt(tipX)} ${fmt(tipY)} L ${fmt(at(s, -s / 2)[0])} ${fmt(at(s, -s / 2)[1])}` }],
+      };
+    case 'triangle': {
+      const tri = arrowheadPoints(tipX, tipY, dirX, dirY, s);
+      return { shaftInset: s, fills: [{ points: tri }], strokes: [] };
+    }
+    case 'triangle-outline':
+      return {
+        shaftInset: s,
+        fills: [],
+        strokes: [{ d: polyD([[tipX, tipY], at(s, s / 2), at(s, -s / 2)], true) }],
+      };
+    case 'bar':
+      // Perpendicular stroke THROUGH the tip, spread s across.
+      return { shaftInset: 0, fills: [], strokes: [{ d: seg(at(0, s / 2), at(0, -s / 2)) }] };
+    case 'dot':
+    case 'circle':
+    case 'circle-outline': {
+      // Circle tangent to the tip, centred back along the shaft. dot is the
+      // small filled variant; circle the larger filled one; circle-outline
+      // the larger stroked one. Shaft stops at the far side (2r) so the
+      // outline variant shows no shaft crossing its interior.
+      const r = type === 'dot' ? s * 0.3 : s * 0.5;
+      const [cx, cy] = at(r, 0);
+      const d = circleD(cx, cy, r);
+      return type === 'circle-outline'
+        ? { shaftInset: 2 * r, fills: [], strokes: [{ d }] }
+        : { shaftInset: 2 * r, fills: [{ d }], strokes: [] };
+    }
+    case 'diamond': {
+      const pts = [tipX, tipY, ...at(s / 2, s / 2), ...at(s, 0), ...at(s / 2, -s / 2)];
+      return { shaftInset: s, fills: [{ points: pts }], strokes: [] };
+    }
+    case 'diamond-outline':
+      return {
+        shaftInset: s,
+        fills: [],
+        strokes: [{ d: polyD([[tipX, tipY], at(s / 2, s / 2), at(s, 0), at(s / 2, -s / 2)], true) }],
+      };
+    case 'crowfoot-one':
+      // Perpendicular bar sitting BEHIND the tip; shaft runs through it.
+      return { shaftInset: 0, fills: [], strokes: [{ d: seg(at(s, s / 2), at(s, -s / 2)) }] };
+    case 'crowfoot-many': {
+      // Inverted V: from a point on the shaft at depth s, spreading out to
+      // the tip line — the classic crow's foot.
+      const back = at(s, 0);
+      return {
+        shaftInset: 0,
+        fills: [],
+        strokes: [{ d: `M ${fmt(at(0, s / 2)[0])} ${fmt(at(0, s / 2)[1])} L ${fmt(back[0])} ${fmt(back[1])} L ${fmt(at(0, -s / 2)[0])} ${fmt(at(0, -s / 2)[1])}` }],
+      };
+    }
+    case 'crowfoot-one-many': {
+      const back = at(s, 0);
+      return {
+        shaftInset: 0,
+        fills: [],
+        strokes: [
+          { d: `M ${fmt(at(0, s / 2)[0])} ${fmt(at(0, s / 2)[1])} L ${fmt(back[0])} ${fmt(back[1])} L ${fmt(at(0, -s / 2)[0])} ${fmt(at(0, -s / 2)[1])}` },
+          { d: seg(at(s * 1.5, s / 2), at(s * 1.5, -s / 2)) },
+        ],
+      };
+    }
+    default:
+      return none;
+  }
 }
 
 /** Bounding box for a vertex list. `translated` shifts the vertices to

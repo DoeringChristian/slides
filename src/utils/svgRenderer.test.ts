@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import type { Slide, SlideElement, ShapeElement, TextElement, ImageElement, Resource } from '../types/presentation';
 import { SLIDE_WIDTH, SLIDE_HEIGHT, TEXT_BOX_PADDING } from './constants';
-import { pathD, arrowheadPoints, insetEndpoints, strokeDashFor } from './pathShapes';
+import { pathD, arrowheadGeometry, insetEndpoints, strokeDashFor } from './pathShapes';
 import { renderSlideToSVG } from './svgRenderer';
 
 // =============================================================================
@@ -212,21 +212,27 @@ describe('svgRenderer geometry (stable across renderer unification)', () => {
     expect(poly.attrs.fill).toBe('#ffcc00');
   });
 
-  test('open path with arrowheads: shaft d, translate, caps, arrow polygons', () => {
+  test('open path with triangle arrowheads: shaft d, translate, caps, arrow polygons', () => {
     const points = [0, 0, 120, 40, 240, 10];
     const el = shape({
       id: 'path1', shapeType: 'path',
       x: 800, y: 500, width: 240, height: 40,
       points, closed: false, curve: 'linear', cornerRadius: 8,
-      startArrow: true, endArrow: true,
+      startHead: 'triangle', endHead: 'triangle',
       fill: '', stroke: '#0000ff', strokeWidth: 3,
       opacity: 0.7,
     });
     const svg = renderOne(el);
 
-    // Shaft geometry must come from the shared pathShapes helpers.
+    // Head geometry must come from THE shared pathShapes helper (endpoint
+    // chord direction, size 10, strokeWidth 3).
+    const startGeo = arrowheadGeometry('triangle', 0, 0, 0 - 120, 0 - 40, 10, 3);
+    const endGeo = arrowheadGeometry('triangle', 240, 10, 240 - 120, 10 - 40, 10, 3);
+
+    // Shaft geometry must come from the shared pathShapes helpers, inset
+    // per-end by each head's shaftInset.
     const path = firstTag(svg, 'path');
-    const expectedD = pathD(insetEndpoints(points, true, true), 'linear', false, 8);
+    const expectedD = pathD(insetEndpoints(points, startGeo.shaftInset, endGeo.shaftInset), 'linear', false, 8);
     expect(path.attrs.d).toBe(expectedD);
     expect(path.attrs.fill).toBe('none'); // open path never fills
     expect(path.attrs.stroke).toBe('#0000ff');
@@ -240,17 +246,43 @@ describe('svgRenderer geometry (stable across renderer unification)', () => {
     expect(translated.length).toBe(1);
     expectNumsClose(nums(translated[0].attrs.transform), [800, 500]);
 
-    // Arrowhead triangles at the ORIGINAL (un-inset) endpoints.
+    // Arrowhead triangles at the ORIGINAL (un-inset) endpoints, wrapped in
+    // a <g> that carries opacity × head alpha.
     const polys = tagsOf(svg, 'polygon');
     expect(polys.length).toBe(2);
-    const expectedStart = arrowheadPoints(0, 0, 0 - 120, 0 - 40);
-    const expectedEnd = arrowheadPoints(240, 10, 240 - 120, 10 - 40);
-    expectNumsClose(nums(polys[0].attrs.points), expectedStart);
-    expectNumsClose(nums(polys[1].attrs.points), expectedEnd);
+    const startFill = startGeo.fills[0] as { points: number[] };
+    const endFill = endGeo.fills[0] as { points: number[] };
+    expectNumsClose(nums(polys[0].attrs.points), startFill.points);
+    expectNumsClose(nums(polys[1].attrs.points), endFill.points);
     expect(polys[0].attrs.fill).toBe('#0000ff');
     expect(polys[1].attrs.fill).toBe('#0000ff');
-    expect(nums(polys[0].attrs.opacity)[0]).toBeCloseTo(0.7);
-    expect(nums(polys[1].attrs.opacity)[0]).toBeCloseTo(0.7);
+    const headGroups = tagsOf(svg, 'g').filter(g => g.attrs.opacity !== undefined);
+    expect(headGroups.length).toBe(2);
+    expect(nums(headGroups[0].attrs.opacity)[0]).toBeCloseTo(0.7);
+    expect(nums(headGroups[1].attrs.opacity)[0]).toBeCloseTo(0.7);
+  });
+
+  test('open head type (crowfoot-many): stroked V, no polygon, no shaft inset', () => {
+    const points = [0, 0, 200, 0];
+    const el = shape({
+      id: 'path2', shapeType: 'path',
+      x: 0, y: 0, width: 200, height: 10,
+      points, closed: false, curve: 'linear',
+      endHead: 'crowfoot-many',
+      fill: '', stroke: '#123456', strokeWidth: 3,
+    });
+    const svg = renderOne(el);
+    // Shaft runs all the way to the tip (open glyphs report inset 0).
+    const paths = tagsOf(svg, 'path');
+    expect(paths[0].attrs.d).toBe(pathD(points, 'linear', false, 0));
+    expect(tagsOf(svg, 'polygon').length).toBe(0);
+    // The head is a stroked path with the shared geometry's d.
+    const geo = arrowheadGeometry('crowfoot-many', 200, 0, 200, 0, 10, 3);
+    const head = paths.find(p => p.attrs.d === geo.strokes[0].d);
+    expect(head).toBeDefined();
+    expect(head!.attrs.fill).toBe('none');
+    expect(head!.attrs.stroke).toBe('#123456');
+    expect(nums(head!.attrs['stroke-width'])[0]).toBe(3);
   });
 
   test('closed path (polygon) fills and closes', () => {

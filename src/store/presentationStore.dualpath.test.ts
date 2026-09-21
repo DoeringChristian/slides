@@ -130,7 +130,7 @@ function makeFixture(): Presentation {
         fill: '', strokeWidth: 3, cornerRadius: 0,
         points: [0, 0, 150, 0, 300, 0],
         curve: 'linear',
-        endArrow: true,
+        endHead: 'triangle',
         startBinding: { elementId: 'el-box', anchor: 'left' },
         endBinding: null,
       }),
@@ -280,7 +280,7 @@ const cases: Array<{ name: string; action: Action }> = [
       s.addElement('s2', shapeEl('el-new-path', {
         shapeType: 'path', fill: '', strokeWidth: 3,
         points: [0, 0, 50, 80, 120, 10],
-        curve: 'bspline2', closed: false, startArrow: false, endArrow: true,
+        curve: 'bspline2', closed: false, endHead: 'triangle',
         startBinding: { elementId: 'el-box', anchor: 'top' }, endBinding: null,
       })),
   },
@@ -903,5 +903,47 @@ describe('WS-4 slide groups (dual-path)', () => {
     } finally {
       setActiveDoc(null);
     }
+  });
+});
+
+// =============================================================================
+// WS-2 Phase 3: typed arrowheads (startHead/endHead) — dual-path equivalence.
+// Appended as a separate block; the main `cases` table above belongs to the
+// original suite.
+// =============================================================================
+
+describe('WS-2 Phase 3 typed arrowheads (dual-path)', () => {
+  const headCases: Array<{ name: string; action: Action }> = [
+    {
+      name: 'updateElement writes startHead → equal on both paths',
+      action: (s) => s.updateElement('s2', 'el-conn', {
+        startHead: 'crowfoot-one-many',
+      } as Partial<SlideElement>),
+    },
+    {
+      name: 'updateElement switches endHead type (triangle → diamond-outline)',
+      action: (s) => s.updateElement('s2', 'el-conn', {
+        endHead: 'diamond-outline',
+      } as Partial<SlideElement>),
+    },
+    {
+      name: "updateElement clears a head with the explicit 'none' value",
+      action: (s) => s.updateElement('s2', 'el-conn', {
+        endHead: 'none',
+      } as Partial<SlideElement>),
+    },
+    {
+      name: 'addElement with typed heads round-trips both paths',
+      action: (s) => s.addElement('s1', shapeEl('el-new-headed', {
+        shapeType: 'path', fill: '', strokeWidth: 3, cornerRadius: 0,
+        points: [0, 0, 120, 40],
+        curve: 'linear', closed: false,
+        startHead: 'dot', endHead: 'bar',
+      })),
+    },
+  ];
+
+  test.each(headCases)('$name', ({ action }) => {
+    expectEquivalent(action);
   });
 });

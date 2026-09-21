@@ -1,7 +1,7 @@
 import type { ShapeElement } from '../types/presentation';
 import type { SvgPath } from '../components/svg/RenderPaths';
 import { pathLengthFor } from './glyphPaths';
-import { pathD, insetEndpoints } from './pathShapes';
+import { pathD, insetEndpoints, arrowheadGeometry } from './pathShapes';
 
 /**
  * Convert a ShapeElement to its outline path d-string. Used by the Create
@@ -76,31 +76,42 @@ export function shapeToPathD(shape: ShapeElement): string {
       const curve = shape.curve ?? 'linear';
       // Translate the relative vertices into absolute slide-space coords.
       const abs = pts.map((v, i) => v + (i % 2 === 0 ? x : y));
-      // Shorten the shaft at arrowhead endpoints so the Write/Create pen
-      // doesn't draw through the triangle.
-      const shaftPts = insetEndpoints(abs, !!shape.startArrow, !!shape.endArrow);
+      const sw = shape.strokeWidth || (closed ? 0 : 3);
+      // Typed arrowheads from the ONE shared helper (endpoint-chord
+      // direction, like every other renderer).
+      const last = abs.length - 2;
+      const startGeo = shape.startHead && shape.startHead !== 'none'
+        ? arrowheadGeometry(shape.startHead, abs[0], abs[1], abs[0] - abs[2], abs[1] - abs[3], 10, sw)
+        : null;
+      const endGeo = shape.endHead && shape.endHead !== 'none'
+        ? arrowheadGeometry(shape.endHead, abs[last], abs[last + 1], abs[last] - abs[last - 2], abs[last + 1] - abs[last - 1], 10, sw)
+        : null;
+      // Shorten the shaft at solid-head endpoints so the Write/Create pen
+      // doesn't draw through the glyph.
+      const shaftPts = insetEndpoints(abs, startGeo?.shaftInset ?? 0, endGeo?.shaftInset ?? 0);
       const cornerR = curve === 'linear' ? (shape.cornerRadius ?? 0) : 0;
       // Tangents are vertex-relative, so they need no abs translation.
       const main = pathD(shaftPts, curve, closed, cornerR, shape.tangents);
-      // Append the arrowhead wings to the path so the Create pen traces
-      // through them in order. Each wing is a short L-segment from the
-      // outer corner back to the tip.
+      // Append the head primitives to the path so the Create pen traces
+      // through them in order — fills as closed polygon outlines, strokes
+      // and circle d-strings verbatim.
       const heads: string[] = [];
-      const addHead = (tipX: number, tipY: number, dxOut: number, dyOut: number) => {
-        const len = Math.hypot(dxOut, dyOut) || 1;
-        const ux = dxOut / len;
-        const uy = dyOut / len;
-        const baseX = tipX - ux * 10;
-        const baseY = tipY - uy * 10;
-        const lx = baseX + uy * 5;
-        const ly = baseY - ux * 5;
-        const rx = baseX - uy * 5;
-        const ry = baseY + ux * 5;
-        heads.push(`M ${lx} ${ly} L ${tipX} ${tipY} L ${rx} ${ry}`);
+      const addGeo = (geo: NonNullable<typeof startGeo>) => {
+        for (const f of geo.fills) {
+          if ('points' in f) {
+            const p = f.points;
+            const cmds = [`M ${p[0]} ${p[1]}`];
+            for (let i = 2; i < p.length; i += 2) cmds.push(`L ${p[i]} ${p[i + 1]}`);
+            cmds.push('Z');
+            heads.push(cmds.join(' '));
+          } else {
+            heads.push(f.d);
+          }
+        }
+        for (const s of geo.strokes) heads.push(s.d);
       };
-      const last = abs.length - 2;
-      if (shape.startArrow) addHead(abs[0], abs[1], abs[0] - abs[2], abs[1] - abs[3]);
-      if (shape.endArrow) addHead(abs[last], abs[last + 1], abs[last] - abs[last - 2], abs[last + 1] - abs[last - 1]);
+      if (startGeo) addGeo(startGeo);
+      if (endGeo) addGeo(endGeo);
       return [main, ...heads].join(' ');
     }
 
@@ -132,8 +143,10 @@ function shapeGeometryKey(shape: ShapeElement): string {
     shape.tangents ? shape.tangents.join(',') : '',
     shape.closed ? 1 : 0,
     shape.curve ?? 'linear',
-    shape.startArrow ? 1 : 0,
-    shape.endArrow ? 1 : 0,
+    shape.startHead ?? 'none',
+    shape.endHead ?? 'none',
+    // Head size scales with strokeWidth, so it's part of the geometry key.
+    shape.strokeWidth ?? 0,
   ].join('|');
 }
 

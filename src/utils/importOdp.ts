@@ -305,7 +305,8 @@ export async function importOdp(file: File): Promise<Presentation> {
 
         const el = createShapeElement('path', {
           curve: 'linear',
-          endArrow: !!markerEnd,
+          // Import fidelity: any end marker lifts to the classic triangle.
+          ...(markerEnd ? { endHead: 'triangle' as const } : {}),
           x: minX,
           y: minY,
           width: Math.max(Math.abs(x2 - x1), 1),

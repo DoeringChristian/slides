@@ -2,7 +2,7 @@ import jsPDF from 'jspdf';
 import type { Presentation, Slide, TextElement, ShapeElement, ImageElement, Resource } from '../types/presentation';
 import { SLIDE_WIDTH, SLIDE_HEIGHT, TEXT_BOX_PADDING } from './constants';
 import { parseBlocks, parseInlineSegments, getBlockFontMultiplier } from '../components/canvas/CustomMarkdownRenderer';
-import { pathD, arrowheadPoints, insetEndpoints, strokeDashFor } from './pathShapes';
+import { pathD, arrowheadGeometry, insetEndpoints, strokeDashFor } from './pathShapes';
 import { shapeToPathD } from './shapeToPath';
 
 // ── Canvas2D-based PDF export ──
@@ -280,7 +280,7 @@ function drawTextElement(ctx: CanvasRenderingContext2D, element: TextElement) {
 //
 // GEOMETRY IS NOT DEFINED HERE. All shape outlines come from the same
 // sources the editor renderer uses — `shapeToPathD` (rect / ellipse /
-// triangle / star) and `pathD` + `insetEndpoints` + `arrowheadPoints`
+// triangle / star) and `pathD` + `insetEndpoints` + `arrowheadGeometry`
 // (path shapes) — consumed on the canvas via `new Path2D(d)`. Canvas2D
 // accepts full SVG path syntax in the Path2D constructor, and this file
 // draws into a plain HTMLCanvasElement (jsPDF only receives the finished
@@ -325,7 +325,16 @@ function drawShapeElement(ctx: CanvasRenderingContext2D, element: ShapeElement) 
       const curve = element.curve ?? 'linear';
       const strokeCol = stroke || fill || '#000';
       const sw = strokeWidth || (closed ? 0 : 3);
-      const shaftPts = insetEndpoints(pts, !!element.startArrow, !!element.endArrow);
+      // Typed arrowheads from the ONE shared helper (same tip/direction
+      // convention as RenderShape: the endpoint chord).
+      const last = pts.length - 2;
+      const startGeo = element.startHead && element.startHead !== 'none'
+        ? arrowheadGeometry(element.startHead, pts[0], pts[1], pts[0] - pts[2], pts[1] - pts[3], 10, sw)
+        : null;
+      const endGeo = element.endHead && element.endHead !== 'none'
+        ? arrowheadGeometry(element.endHead, pts[last], pts[last + 1], pts[last] - pts[last - 2], pts[last + 1] - pts[last - 1], 10, sw)
+        : null;
+      const shaftPts = insetEndpoints(pts, startGeo?.shaftInset ?? 0, endGeo?.shaftInset ?? 0);
       const cornerR = curve === 'linear' ? (element.cornerRadius ?? 0) : 0;
       // Same d-string RenderShape puts into the editor SVG. Points are
       // relative to (x, y), so translate the canvas like the SVG's
@@ -346,15 +355,32 @@ function drawShapeElement(ctx: CanvasRenderingContext2D, element: ShapeElement) 
         ctx.stroke(shaft);
         ctx.setLineDash([]);
       }
-      // Arrowheads at the ORIGINAL (un-inset) endpoints.
-      const last = pts.length - 2;
-      const drawHead = (tipX: number, tipY: number, dirX: number, dirY: number) => {
-        const h = arrowheadPoints(tipX, tipY, dirX, dirY);
+      // Arrowheads at the ORIGINAL (un-inset) endpoints — fills painted in
+      // the stroke colour, stroked primitives at the shaft width with round
+      // caps/joins, mirroring RenderArrowhead exactly.
+      const drawHead = (geo: NonNullable<typeof startGeo>) => {
         ctx.fillStyle = strokeCol;
-        ctx.fill(new Path2D(`M ${h[0]} ${h[1]} L ${h[2]} ${h[3]} L ${h[4]} ${h[5]} Z`));
+        for (const f of geo.fills) {
+          if ('points' in f) {
+            const p = new Path2D();
+            p.moveTo(f.points[0], f.points[1]);
+            for (let i = 2; i < f.points.length; i += 2) p.lineTo(f.points[i], f.points[i + 1]);
+            p.closePath();
+            ctx.fill(p);
+          } else {
+            ctx.fill(new Path2D(f.d));
+          }
+        }
+        if (geo.strokes.length > 0) {
+          ctx.strokeStyle = strokeCol;
+          ctx.lineWidth = sw;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          for (const s of geo.strokes) ctx.stroke(new Path2D(s.d));
+        }
       };
-      if (element.startArrow) drawHead(pts[0], pts[1], pts[0] - pts[2], pts[1] - pts[3]);
-      if (element.endArrow) drawHead(pts[last], pts[last + 1], pts[last] - pts[last - 2], pts[last + 1] - pts[last - 1]);
+      if (startGeo) drawHead(startGeo);
+      if (endGeo) drawHead(endGeo);
     }
   } else {
     // rect / ellipse / triangle / star: one Path2D from the shared

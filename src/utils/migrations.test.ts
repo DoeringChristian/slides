@@ -90,38 +90,93 @@ describe('migrateElement: legacy line', () => {
     expect(out.shapeType).toBe('path');
     expect(out.curve).toBe('linear');
     expect(out.closed).toBe(false);
-    expect(out.startArrow).toBe(false);
-    expect(out.endArrow).toBe(false);
+    expect(out.startHead).toBeUndefined();
+    expect(out.endHead).toBeUndefined();
     expect(out.points).toEqual([0, 0, 100, 0]);
   });
 
-  test('existing arrow flags on a line are preserved, not overwritten', () => {
+  test('an existing arrow flag on a line lifts to a triangle head', () => {
     const out = migrateElement(legacyShape({
       shapeType: 'line', points: [0, 0, 100, 0], startArrow: true,
     })) as ShapeElement;
-    expect(out.startArrow).toBe(true);
-    expect(out.endArrow).toBe(false);
+    expect(out.startHead).toBe('triangle');
+    expect(out.endHead).toBeUndefined();
+    expect('startArrow' in out).toBe(false);
   });
 });
 
 describe('migrateElement: legacy arrow', () => {
-  test("'arrow' becomes an open linear path with endArrow defaulting to true", () => {
+  test("'arrow' becomes an open linear path with endHead defaulting to 'triangle'", () => {
     const out = migrateElement(legacyShape({
       shapeType: 'arrow', points: [0, 0, 300, 50],
     })) as ShapeElement;
     expect(out.shapeType).toBe('path');
     expect(out.curve).toBe('linear');
     expect(out.closed).toBe(false);
-    expect(out.startArrow).toBe(false);
-    expect(out.endArrow).toBe(true); // the defining difference vs 'line'
+    expect(out.startHead).toBeUndefined();
+    expect(out.endHead).toBe('triangle'); // the defining difference vs 'line'
     expect(out.points).toEqual([0, 0, 300, 50]);
   });
 
-  test('an arrow that explicitly disabled its head keeps endArrow=false', () => {
+  test('an arrow that explicitly disabled its head stays headless', () => {
     const out = migrateElement(legacyShape({
       shapeType: 'arrow', points: [0, 0, 300, 50], endArrow: false,
     })) as ShapeElement;
-    expect(out.endArrow).toBe(false);
+    expect(out.endHead).toBeUndefined();
+    expect('endArrow' in out).toBe(false);
+  });
+});
+
+// =============================================================================
+// migrateElement — typed arrowheads (boolean startArrow/endArrow → heads)
+// =============================================================================
+
+describe('migrateElement: typed arrowheads (WS-2 Phase 3)', () => {
+  const pathShape = (overrides: Record<string, unknown>) =>
+    legacyShape({
+      shapeType: 'path', points: [0, 0, 100, 0],
+      curve: 'linear', closed: false,
+      ...overrides,
+    });
+
+  test('startArrow:true / endArrow:true become triangle heads and the booleans vanish', () => {
+    const out = migrateElement(pathShape({ startArrow: true, endArrow: true })) as ShapeElement;
+    expect(out.startHead).toBe('triangle');
+    expect(out.endHead).toBe('triangle');
+    expect('startArrow' in out).toBe(false);
+    expect('endArrow' in out).toBe(false);
+  });
+
+  test('false booleans are simply deleted (absent = none)', () => {
+    const out = migrateElement(pathShape({ startArrow: false, endArrow: false })) as ShapeElement;
+    expect(out.startHead).toBeUndefined();
+    expect(out.endHead).toBeUndefined();
+    expect('startArrow' in out).toBe(false);
+    expect('endArrow' in out).toBe(false);
+  });
+
+  test('a deck that already carries typed heads passes through as the SAME object', () => {
+    const modern = pathShape({ startHead: 'dot', endHead: 'crowfoot-many' });
+    expect(migrateElement(modern)).toBe(modern);
+  });
+
+  test('a stray leftover boolean never overwrites an existing typed head', () => {
+    const out = migrateElement(pathShape({ endHead: 'diamond', endArrow: true })) as ShapeElement;
+    expect(out.endHead).toBe('diamond');
+    expect('endArrow' in out).toBe(false);
+  });
+
+  test('idempotent: migrating a migrated element again is a no-op (same object)', () => {
+    const once = migrateElement(pathShape({ startArrow: true, endArrow: false })) as ShapeElement;
+    expect(migrateElement(once)).toBe(once);
+  });
+
+  test("legacy 'arrow' with an explicit endArrow:true still ends up with one triangle head", () => {
+    const out = migrateElement(legacyShape({
+      shapeType: 'arrow', points: [0, 0, 300, 50], endArrow: true,
+    })) as ShapeElement;
+    expect(out.endHead).toBe('triangle');
+    expect('endArrow' in out).toBe(false);
   });
 });
 
@@ -291,7 +346,7 @@ describe('migrateElement: legacy anchor bindings', () => {
       endBinding: { elementId: 'box', anchor: 'left' },
     })) as ShapeElement;
     expect(out.shapeType).toBe('path');
-    expect(out.endArrow).toBe(true);
+    expect(out.endHead).toBe('triangle');
     expect(out.endBinding).toEqual({ elementId: 'box', mode: 'pinned', fixedPoint: [0, 0.5] });
   });
 });
@@ -313,7 +368,7 @@ describe('migratePresentation', () => {
     const els = out.slides['s1'].elements;
     expect((els['el-line'] as ShapeElement).shapeType).toBe('path');
     expect((els['el-arrow'] as ShapeElement).shapeType).toBe('path');
-    expect((els['el-arrow'] as ShapeElement).endArrow).toBe(true);
+    expect((els['el-arrow'] as ShapeElement).endHead).toBe('triangle');
     expect((els['el-spline'] as ShapeElement).curve).toBe('bspline2');
     expect(els['el-text']).toEqual(makeText());
   });

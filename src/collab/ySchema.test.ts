@@ -142,7 +142,7 @@ function makeFixture(): Presentation {
             fill: '', stroke: '#f97316', strokeWidth: 4, cornerRadius: 0,
             points: [0, 0, 300, 50],
             curve: 'linear',
-            endArrow: true,
+            endHead: 'triangle',
           },
           // Binding v2 payloads: edge mode (focus + gap) and pinned mode
           // (fixedPoint ARRAY value — must survive the Y round-trip).
@@ -299,6 +299,37 @@ describe('jsonToYDoc → yDocToJson', () => {
     src.endBinding!.fixedPoint![0] = 0.999;
     const out2 = yDocToJson(doc2);
     expect((out2.slides['slide-b'].elements['el-conn2'] as import('../types/presentation').ShapeElement).endBinding!.fixedPoint).toEqual([0.25, 1]);
+  });
+
+  // --- WS-2 Phase 3: typed arrowheads ---------------------------------------
+  test('round-trips typed startHead/endHead and drops absent heads', () => {
+    const fixture = makeFixture();
+    const arrowEl = fixture.slides['slide-b'].elements['el-arrow'] as import('../types/presentation').ShapeElement;
+    arrowEl.startHead = 'crowfoot-one-many';
+    arrowEl.endHead = 'diamond-outline';
+    const out = yDocToJson(jsonToYDoc(fixture));
+    const arrow = out.slides['slide-b'].elements['el-arrow'] as import('../types/presentation').ShapeElement;
+    expect(arrow.startHead).toBe('crowfoot-one-many');
+    expect(arrow.endHead).toBe('diamond-outline');
+    // A path without heads keeps the keys absent (setIfDefined).
+    const line = out.slides['slide-b'].elements['el-line'] as unknown as Record<string, unknown>;
+    expect('startHead' in line).toBe(false);
+    expect('endHead' in line).toBe(false);
+  });
+
+  test('applyChangesToYElement writes a head-type change as a plain scalar', () => {
+    const doc = jsonToYDoc(makeFixture());
+    const root = doc.getMap(ROOT_KEY);
+    const slides = root.get('slides') as Y.Map<Y.Map<unknown>>;
+    const elements = slides.get('slide-b')!.get('elements') as Y.Map<Y.Map<unknown>>;
+    const arrow = elements.get('el-arrow')!;
+    doc.transact(() => {
+      applyChangesToYElement(arrow, { endHead: 'circle-outline', startHead: 'none' });
+    });
+    const out = yDocToJson(doc);
+    const el = out.slides['slide-b'].elements['el-arrow'] as import('../types/presentation').ShapeElement;
+    expect(el.endHead).toBe('circle-outline');
+    expect(el.startHead).toBe('none'); // explicit 'none' round-trips as a value
   });
 
   test('applyChangesToYElement replaces bindings WHOLESALE (mode switch drops the other mode\'s fields)', () => {

@@ -4,6 +4,7 @@ import {
   pathD,
   sampledPath,
   insetEndpoints,
+  arrowheadInset,
   pathBoundsFor,
   catmullTangents,
 } from '../../utils/pathShapes';
@@ -460,7 +461,11 @@ export const SVGPathHandles: React.FC<Props> = ({
   // shape. Doubles as the selection outline (the transformer is suppressed
   // for sole-selected paths) and as the live drag preview.
   const previewD = pathD(
-    insetEndpoints(renderPoints, !!element.startArrow, !!element.endArrow),
+    insetEndpoints(
+      renderPoints,
+      arrowheadInset(element.startHead, 10, element.strokeWidth || 3),
+      arrowheadInset(element.endHead, 10, element.strokeWidth || 3),
+    ),
     curve,
     closed,
     curve === 'linear' ? (element.cornerRadius ?? 0) : 0,

@@ -10,11 +10,13 @@ import {
   ReadoutProperty,
   type PropertyContext,
 } from './Property';
-import type { ShapeElement, ConnectorBinding, PathCurve, StrokeStyle } from '../../types/presentation';
+import type { ShapeElement, ConnectorBinding, PathCurve, StrokeStyle, ArrowheadType, TransitionGroup } from '../../types/presentation';
 import { bindingFor, resolveBinding, isPinnedBinding } from '../../utils/connectorUtils';
-import { pathBounds, catmullTangents } from '../../utils/pathShapes';
+import { pathBounds, catmullTangents, arrowheadGeometry } from '../../utils/pathShapes';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useEditorStore } from '../../store/editorStore';
+import { IconSelect, type IconSelectOption } from '../controls/IconSelect';
+import { RenderArrowhead } from '../svg/ElementRenderer';
 
 const isRect = (el: ShapeElement) => el.shapeType === 'rect';
 const isPath = (el: ShapeElement) => el.shapeType === 'path';
@@ -137,6 +139,93 @@ class CurveProperty extends SelectProperty<ShapeElement, PathCurve> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Typed arrowhead selector (WS-2 Phase 3)
+// ---------------------------------------------------------------------------
+
+const ARROWHEAD_TYPES: Array<{ value: ArrowheadType; title: string }> = [
+  { value: 'none', title: 'None' },
+  { value: 'arrow', title: 'Arrow' },
+  { value: 'triangle', title: 'Triangle' },
+  { value: 'triangle-outline', title: 'Triangle (outline)' },
+  { value: 'bar', title: 'Bar' },
+  { value: 'dot', title: 'Dot' },
+  { value: 'circle', title: 'Circle' },
+  { value: 'circle-outline', title: 'Circle (outline)' },
+  { value: 'diamond', title: 'Diamond' },
+  { value: 'diamond-outline', title: 'Diamond (outline)' },
+  { value: 'crowfoot-one', title: 'Crowfoot (one)' },
+  { value: 'crowfoot-many', title: 'Crowfoot (many)' },
+  { value: 'crowfoot-one-many', title: 'Crowfoot (one or many)' },
+];
+
+/** Preview icon: a stub shaft plus the head drawn by LITERALLY calling the
+ *  production `arrowheadGeometry` + `RenderArrowhead` at a fixed size —
+ *  previews can never drift from what the canvas renders. Start-head
+ *  previews point left, end-head previews point right. */
+function headPreview(type: ArrowheadType, end: 'start' | 'end'): React.ReactNode {
+  const W = 26, H = 14, PAD = 3, SIZE = 6, SW = 1.5;
+  const midY = H / 2;
+  const tipX = end === 'end' ? W - PAD : PAD;
+  const tailX = end === 'end' ? PAD : W - PAD;
+  const dirX = end === 'end' ? 1 : -1;
+  const geo = arrowheadGeometry(type, tipX, midY, dirX, 0, SIZE, SW);
+  const shaftEndX = tipX - dirX * geo.shaftInset;
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} aria-hidden="true">
+      <line
+        x1={tailX} y1={midY} x2={shaftEndX} y2={midY}
+        stroke="currentColor" strokeWidth={SW} strokeLinecap="round"
+      />
+      <RenderArrowhead geo={geo} color="currentColor" strokeWidth={SW} />
+    </svg>
+  );
+}
+
+interface ArrowheadOpts {
+  key: 'startHead' | 'endHead';
+  label: string;
+  transitionGroup: TransitionGroup;
+}
+
+/** IconSelect-backed exclusive choice row for one path end's arrowhead.
+ *  Value semantics: absent = 'none'. Picking 'none' writes the explicit
+ *  'none' value (never `undefined` — the Y path skips undefined changes,
+ *  so an undefined-as-delete write would silently diverge from JSON). */
+class ArrowheadProperty extends Property<ShapeElement> {
+  readonly key: 'startHead' | 'endHead';
+  readonly label: string;
+  private readonly _transitionGroup: TransitionGroup;
+  private readonly options: Array<IconSelectOption<ArrowheadType>>;
+
+  constructor(opts: ArrowheadOpts) {
+    super();
+    this.key = opts.key;
+    this.label = opts.label;
+    this._transitionGroup = opts.transitionGroup;
+    const end = opts.key === 'startHead' ? 'start' : 'end';
+    this.options = ARROWHEAD_TYPES.map(({ value, title }) => ({
+      value, title, preview: headPreview(value, end),
+    }));
+  }
+
+  override get transitionGroup(): TransitionGroup { return this._transitionGroup; }
+  override visibleFor(el: ShapeElement): boolean { return isPath(el); }
+  override disabledFor(el: ShapeElement): boolean { return !!el.closed; }
+
+  renderEditor({ element, update }: PropertyContext<ShapeElement>) {
+    return (
+      <IconSelect<ArrowheadType>
+        options={this.options}
+        value={element[this.key] ?? 'none'}
+        onChange={(v) => update({ [this.key]: v } as Partial<ShapeElement>)}
+        columns={7}
+        disabled={this.disabledFor(element)}
+      />
+    );
+  }
+}
+
 /**
  * Property list for shape elements. Each entry is the SINGLE place that
  * defines a property — label, editor type, animation hook-up, sync set,
@@ -189,16 +278,10 @@ const SHAPE_PROPERTIES: Property<ShapeElement>[] = [
     ],
   }),
   new CheckboxProperty<ShapeElement>({ key: 'closed', label: 'Closed path', visibleFor: isPath }),
-  new CheckboxProperty<ShapeElement>({
-    key: 'startArrow', label: 'Start arrow',
-    transitionGroup: 'startArrow', visibleFor: isPath,
-    disabledFor: (el) => !!el.closed,
-  }),
-  new CheckboxProperty<ShapeElement>({
-    key: 'endArrow', label: 'End arrow',
-    transitionGroup: 'endArrow', visibleFor: isPath,
-    disabledFor: (el) => !!el.closed,
-  }),
+  // Typed arrowheads. The transition groups keep their historical
+  // 'startArrow'/'endArrow' names (persisted in decks).
+  new ArrowheadProperty({ key: 'startHead', label: 'Start head', transitionGroup: 'startArrow' }),
+  new ArrowheadProperty({ key: 'endHead', label: 'End head', transitionGroup: 'endArrow' }),
   // Binding v2 pin toggles — one per bound end. Not grouped: grouping would
   // leave an empty grid row behind whenever neither end is bound (the
   // wrapper div renders even when every row in the bucket is invisible).

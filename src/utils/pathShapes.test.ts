@@ -8,6 +8,8 @@ import {
   pathArcLength,
   pointAtArcLength,
   arrowheadPoints,
+  arrowheadGeometry,
+  arrowheadInset,
   pathBounds,
   pathBoundsFor,
   resamplePath,
@@ -418,38 +420,38 @@ describe('resamplePath', () => {
 // insetEndpoints
 // =============================================================================
 
-describe('insetEndpoints', () => {
-  test('no arrows returns the SAME array reference (no copy)', () => {
+describe('insetEndpoints (per-end numeric insets)', () => {
+  test('zero insets return the SAME array reference (no copy)', () => {
     const pts = [0, 0, 100, 0];
-    expect(insetEndpoints(pts, false, false)).toBe(pts);
+    expect(insetEndpoints(pts, 0, 0)).toBe(pts);
   });
 
-  test('end arrow pulls the last vertex back along the incoming direction', () => {
-    expect(insetEndpoints([0, 0, 100, 0], false, true)).toEqual([0, 0, 90, 0]);
+  test('end inset pulls the last vertex back along the incoming direction', () => {
+    expect(insetEndpoints([0, 0, 100, 0], 0, 10)).toEqual([0, 0, 90, 0]);
   });
 
-  test('start arrow pulls the first vertex forward along the outgoing direction', () => {
-    expect(insetEndpoints([0, 0, 100, 0], true, false)).toEqual([10, 0, 100, 0]);
+  test('start inset pulls the first vertex forward along the outgoing direction', () => {
+    expect(insetEndpoints([0, 0, 100, 0], 10, 0)).toEqual([10, 0, 100, 0]);
   });
 
-  test('both arrows inset both ends; the interior is untouched', () => {
-    expect(insetEndpoints([0, 0, 50, 0, 100, 0], true, true))
-      .toEqual([10, 0, 50, 0, 90, 0]);
+  test('the two ends take INDEPENDENT inset amounts; the interior is untouched', () => {
+    expect(insetEndpoints([0, 0, 50, 0, 100, 0], 10, 6))
+      .toEqual([10, 0, 50, 0, 94, 0]);
   });
 
   test('inset moves along the actual segment direction (3-4-5 diagonal)', () => {
-    const out = insetEndpoints([0, 0, 30, 40], false, true);
+    const out = insetEndpoints([0, 0, 30, 40], 0, 10);
     expect(out[2]).toBeCloseTo(24); // 30 − 10·(30/50)
     expect(out[3]).toBeCloseTo(32); // 40 − 10·(40/50)
   });
 
-  test('segments shorter than headLen are left alone (no inversion)', () => {
-    expect(insetEndpoints([0, 0, 5, 0], true, true)).toEqual([0, 0, 5, 0]);
+  test('segments shorter than the inset are left alone (no inversion)', () => {
+    expect(insetEndpoints([0, 0, 5, 0], 10, 10)).toEqual([0, 0, 5, 0]);
   });
 
-  test('original array is never mutated when arrows are set', () => {
+  test('original array is never mutated when insets are set', () => {
     const pts = [0, 0, 100, 0];
-    insetEndpoints(pts, true, true);
+    insetEndpoints(pts, 10, 10);
     expect(pts).toEqual([0, 0, 100, 0]);
   });
 });
@@ -540,6 +542,145 @@ describe('arrowheadPoints', () => {
 });
 
 // =============================================================================
+// arrowheadGeometry — the ONE geometry source for typed heads
+// =============================================================================
+
+describe('arrowheadGeometry', () => {
+  // All snapshots below use tip (100, 0), direction +x, size 10,
+  // strokeWidth 3 (the default path width, so headSize == size == 10).
+  const geo = (type: Parameters<typeof arrowheadGeometry>[0]) =>
+    arrowheadGeometry(type, 100, 0, 1, 0, 10, 3);
+
+  test("'none' / undefined yield no primitives and no inset", () => {
+    expect(geo('none')).toEqual({ shaftInset: 0, fills: [], strokes: [] });
+    expect(geo(undefined)).toEqual({ shaftInset: 0, fills: [], strokes: [] });
+  });
+
+  test("'arrow' is an open stroked V through the tip, inset 0", () => {
+    expect(geo('arrow')).toEqual({
+      shaftInset: 0,
+      fills: [],
+      strokes: [{ d: 'M 90.00 5.00 L 100.00 0.00 L 90.00 -5.00' }],
+    });
+  });
+
+  test("'triangle' is the classic filled triangle (same points as arrowheadPoints), inset = depth", () => {
+    expect(geo('triangle')).toEqual({
+      shaftInset: 10,
+      fills: [{ points: arrowheadPoints(100, 0, 1, 0, 10) }],
+      strokes: [],
+    });
+  });
+
+  test("'triangle-outline' is the stroked CLOSED triangle, inset = depth", () => {
+    expect(geo('triangle-outline')).toEqual({
+      shaftInset: 10,
+      fills: [],
+      strokes: [{ d: 'M 100.00 0.00 L 90.00 5.00 L 90.00 -5.00 Z' }],
+    });
+  });
+
+  test("'bar' is a perpendicular stroke through the tip, inset 0", () => {
+    expect(geo('bar')).toEqual({
+      shaftInset: 0,
+      fills: [],
+      strokes: [{ d: 'M 100.00 5.00 L 100.00 -5.00' }],
+    });
+  });
+
+  test("'dot' is a SMALL filled circle tangent to the tip, inset 2r", () => {
+    const g = geo('dot');
+    expect(g.shaftInset).toBeCloseTo(6); // r = 3 = size·0.3
+    expect(g.strokes).toEqual([]);
+    expect(g.fills).toEqual([{ d: 'M 94.00 0.00 a 3.00 3.00 0 1 0 6.00 0 a 3.00 3.00 0 1 0 -6.00 0 Z' }]);
+  });
+
+  test("'circle' is a LARGER filled circle; 'circle-outline' the same circle stroked", () => {
+    const filled = geo('circle');
+    expect(filled.shaftInset).toBeCloseTo(10); // r = 5 = size·0.5
+    expect(filled.strokes).toEqual([]);
+    expect(filled.fills).toEqual([{ d: 'M 90.00 0.00 a 5.00 5.00 0 1 0 10.00 0 a 5.00 5.00 0 1 0 -10.00 0 Z' }]);
+
+    const outline = geo('circle-outline');
+    expect(outline.shaftInset).toBeCloseTo(10);
+    expect(outline.fills).toEqual([]);
+    expect(outline.strokes).toEqual(filled.fills as Array<{ d: string }>);
+  });
+
+  test("the three circle variants are pairwise distinct", () => {
+    expect(geo('dot')).not.toEqual(geo('circle'));
+    expect(geo('circle')).not.toEqual(geo('circle-outline'));
+    expect(geo('dot')).not.toEqual(geo('circle-outline'));
+  });
+
+  test("'diamond' is a filled rhombus tip→side→back→side, inset = depth", () => {
+    expect(geo('diamond')).toEqual({
+      shaftInset: 10,
+      fills: [{ points: [100, 0, 95, 5, 90, 0, 95, -5] }],
+      strokes: [],
+    });
+  });
+
+  test("'diamond-outline' is the stroked closed rhombus", () => {
+    expect(geo('diamond-outline')).toEqual({
+      shaftInset: 10,
+      fills: [],
+      strokes: [{ d: 'M 100.00 0.00 L 95.00 5.00 L 90.00 0.00 L 95.00 -5.00 Z' }],
+    });
+  });
+
+  test("'crowfoot-one' is a perpendicular bar BEHIND the tip, inset 0", () => {
+    expect(geo('crowfoot-one')).toEqual({
+      shaftInset: 0,
+      fills: [],
+      strokes: [{ d: 'M 90.00 5.00 L 90.00 -5.00' }],
+    });
+  });
+
+  test("'crowfoot-many' is an inverted V spreading from the shaft to the tip line, inset 0", () => {
+    expect(geo('crowfoot-many')).toEqual({
+      shaftInset: 0,
+      fills: [],
+      strokes: [{ d: 'M 100.00 5.00 L 90.00 0.00 L 100.00 -5.00' }],
+    });
+  });
+
+  test("'crowfoot-one-many' combines the V with a bar further back", () => {
+    expect(geo('crowfoot-one-many')).toEqual({
+      shaftInset: 0,
+      fills: [],
+      strokes: [
+        { d: 'M 100.00 5.00 L 90.00 0.00 L 100.00 -5.00' },
+        { d: 'M 85.00 5.00 L 85.00 -5.00' },
+      ],
+    });
+  });
+
+  test('head size scales with strokeWidth above the default 3, never below `size`', () => {
+    // strokeWidth 6 → doubled head depth.
+    expect(arrowheadGeometry('triangle', 100, 0, 1, 0, 10, 6).shaftInset).toBeCloseTo(20);
+    // Hairline stays at the nominal size (sensible minimum).
+    expect(arrowheadGeometry('triangle', 100, 0, 1, 0, 10, 0.5).shaftInset).toBeCloseTo(10);
+  });
+
+  test('direction vector is normalized (magnitude does not change the glyph)', () => {
+    expect(geo('diamond')).toEqual(arrowheadGeometry('diamond', 100, 0, 250, 0, 10, 3));
+  });
+
+  test('arrowheadInset matches arrowheadGeometry.shaftInset for every type', () => {
+    const types = [
+      'none', 'arrow', 'triangle', 'triangle-outline', 'bar', 'dot', 'circle',
+      'circle-outline', 'diamond', 'diamond-outline', 'crowfoot-one',
+      'crowfoot-many', 'crowfoot-one-many',
+    ] as const;
+    for (const t of types) {
+      expect(arrowheadInset(t, 10, 4)).toBe(arrowheadGeometry(t, 7, 8, 2, 1, 10, 4).shaftInset);
+    }
+    expect(arrowheadInset(undefined)).toBe(0);
+  });
+});
+
+// =============================================================================
 // pathBounds
 // =============================================================================
 
@@ -619,14 +760,26 @@ describe('shapeToPathD presets', () => {
     }
   });
 
-  test('path preset: arrowhead wings are appended and the shaft is inset', () => {
+  test('path preset: typed head primitives are appended and the shaft is inset', () => {
     const d = shapeToPathD(makePathShape({
-      shapeType: 'path', x: 0, y: 0, points: [0, 0, 100, 0], endArrow: true,
+      shapeType: 'path', x: 0, y: 0, points: [0, 0, 100, 0], endHead: 'triangle',
+      strokeWidth: 3,
     }));
-    // Shaft stops 10 units short of the tip…
+    // Shaft stops 10 units short of the tip (triangle depth at default width)…
     expect(d.startsWith('M 0.00 0.00 L 90.00 0.00')).toBe(true);
-    // …and the head is traced as wing → tip → wing.
-    expect(d).toContain('M 90 -5 L 100 0 L 90 5');
+    // …and the filled head is traced as a closed tip → wing → wing polygon.
+    expect(d).toContain('M 100 0 L 90 5 L 90 -5 Z');
+  });
+
+  test('path preset: an open head (crowfoot) leaves the shaft un-inset and appends its strokes', () => {
+    const d = shapeToPathD(makePathShape({
+      shapeType: 'path', x: 0, y: 0, points: [0, 0, 100, 0], endHead: 'crowfoot-many',
+      strokeWidth: 3,
+    }));
+    // Shaft runs all the way to the tip…
+    expect(d.startsWith('M 0.00 0.00 L 100.00 0.00')).toBe(true);
+    // …and the inverted V is appended for the pen to trace.
+    expect(d).toContain('M 100.00 5.00 L 90.00 0.00 L 100.00 -5.00');
   });
 
   test('path preset with too few points returns an empty d', () => {

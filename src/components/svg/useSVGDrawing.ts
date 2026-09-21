@@ -357,7 +357,8 @@ export function useSVGDrawing(onConnectorHighlight?: (elementId: string | null) 
       setEditingTextId(el.id);
     } else if (tool === 'line' || tool === 'arrow') {
       // Line/arrow are drag-to-create path shapes: 2 vertices, linear curve,
-      // optional endArrow. Closed/start-arrow are off; toggle via panel.
+      // the arrow tool with a triangle end head. Closed/start-head are off;
+      // toggle via panel.
       // Endpoints near a shape anchor bind to it (the live preview already
       // snapped them there); Meta/Cmd held at release suppresses binding.
       let sx = drawState.snappedStartX;
@@ -380,8 +381,7 @@ export function useSVGDrawing(onConnectorHighlight?: (elementId: string | null) 
         points: [0, 0, ex - sx, ey - sy],
         curve: 'linear',
         closed: false,
-        startArrow: false,
-        endArrow: tool === 'arrow',
+        ...(tool === 'arrow' ? { endHead: 'triangle' as const } : {}),
         startBinding,
         endBinding,
       });

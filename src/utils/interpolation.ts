@@ -1,4 +1,4 @@
-import type { SlideElement, TextElement, ShapeElement, ImageElement, EasingType } from '../types/presentation';
+import type { SlideElement, TextElement, ShapeElement, ImageElement, EasingType, ArrowheadType } from '../types/presentation';
 import { clamp } from './geometry';
 import { resamplePath, sampledPath, catmullTangents } from './pathShapes';
 import type { PathCurve } from '../types/presentation';
@@ -148,22 +148,24 @@ function lerpPoints(a: number[], b: number[], t: number): number[] {
   return a.map((v, i) => lerp(v, b[i], t));
 }
 
-/** Per-arrow fade alpha across a slide transition.
+/** Per-arrowhead fade alpha across a slide transition.
  *
- *  Returns `undefined` when both sides agree (no animation needed — the
- *  boolean field already carries the right value) or when no easing is set
- *  (default `const` behaviour: snap at t=0.5). Otherwise eases between 0
- *  and 1 so the renderer can fade the arrowhead's opacity. */
+ *  Works on head PRESENCE (any head vs 'none'/absent): returns `undefined`
+ *  when both sides agree on presence (no fade needed — the typed field
+ *  already carries the right glyph; a type-only change hard-cuts at t=0.5
+ *  like every discrete property) or when no easing is set (default `const`
+ *  behaviour: snap at t=0.5). Otherwise eases between 0 and 1 so the
+ *  renderer can fade the arrowhead's opacity. */
 function arrowAlpha(
-  a: boolean | undefined,
-  b: boolean | undefined,
+  a: ArrowheadType | undefined,
+  b: ArrowheadType | undefined,
   t: number,
   easing: EasingType | undefined,
 ): number | undefined {
   if (!easing || easing === 'const') return undefined;
-  if (a === b) return undefined;
-  const aV = a ? 1 : 0;
-  const bV = b ? 1 : 0;
+  const aV = a && a !== 'none' ? 1 : 0;
+  const bV = b && b !== 'none' ? 1 : 0;
+  if (aV === bV) return undefined;
   return lerpEased(aV, bV, t, easing);
 }
 
@@ -593,13 +595,26 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
       nextPoints = t < 0.5 ? sa.points : sb.points;
     }
 
-    // Per-arrow fade alpha. When the matching easing is set AND the
-    // endpoints differ between A and B, we ease a numeric 0↔1 alpha and
+    // Per-arrowhead fade alpha. When the matching easing is set AND head
+    // presence differs between A and B, we ease a numeric 0↔1 alpha and
     // attach it as `_startArrowAlpha` / `_endArrowAlpha`; ElementRenderer
-    // honours those over the boolean fields. Without an easing set, the
-    // boolean snaps at t=0.5 (default `const` behaviour).
-    const startArrowAlpha = arrowAlpha(sa.startArrow, sb.startArrow, t, tr.startArrow);
-    const endArrowAlpha = arrowAlpha(sa.endArrow, sb.endArrow, t, tr.endArrow);
+    // honours those over head presence. The head TYPE itself always snaps
+    // at t=0.5 (mirroring the old boolean snap), so without an easing set
+    // the whole head snaps (default `const` behaviour).
+    const startArrowAlpha = arrowAlpha(sa.startHead, sb.startHead, t, tr.startArrow);
+    const endArrowAlpha = arrowAlpha(sa.endHead, sb.endHead, t, tr.endArrow);
+    // While a presence fade is active, the interpolated element must carry
+    // the glyph of the side that HAS a head for the whole transition —
+    // otherwise the t<0.5 half would render 'none' at partial alpha (i.e.
+    // nothing) and the fade would look like a snap anyway.
+    const headDuringFade = (aH: ArrowheadType | undefined, bH: ArrowheadType | undefined) =>
+      aH && aH !== 'none' ? aH : bH;
+    const nextStartHead = startArrowAlpha !== undefined
+      ? headDuringFade(sa.startHead, sb.startHead)
+      : (t < 0.5 ? sa.startHead : sb.startHead);
+    const nextEndHead = endArrowAlpha !== undefined
+      ? headDuringFade(sa.endHead, sb.endHead)
+      : (t < 0.5 ? sa.endHead : sb.endHead);
 
     return {
       ...base,
@@ -613,8 +628,8 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
       curve: nextCurve,
       closed: nextClosed,
       tangents: nextTangents,
-      startArrow: t < 0.5 ? sa.startArrow : sb.startArrow,
-      endArrow: t < 0.5 ? sa.endArrow : sb.endArrow,
+      startHead: nextStartHead,
+      endHead: nextEndHead,
       _startArrowAlpha: startArrowAlpha,
       _endArrowAlpha: endArrowAlpha,
       startBinding: t < 0.5 ? sa.startBinding : sb.startBinding,

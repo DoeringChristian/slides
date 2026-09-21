@@ -1,8 +1,50 @@
 import React, { memo } from 'react';
 import { SVGTextPaths } from './SVGTextPaths';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
-import { pathD, arrowheadPoints, insetEndpoints, strokeDashFor } from '../../utils/pathShapes';
+import { pathD, arrowheadGeometry, insetEndpoints, strokeDashFor, type ArrowheadGeometry } from '../../utils/pathShapes';
 import type { SlideElement, TextElement, ShapeElement, ImageElement, Resource } from '../../types/presentation';
+
+// ============================================================================
+// Arrowhead renderer (shared leaf)
+// ============================================================================
+
+/** Draw one `arrowheadGeometry` result as SVG: fills painted in the shaft's
+ *  stroke colour, strokes at the shaft's strokeWidth with round caps/joins.
+ *  Shared by the editor/export path renderer below, the presenter's
+ *  tip-draw animation, and the property-panel previews — the preview IS the
+ *  production glyph. */
+export const RenderArrowhead: React.FC<{
+  geo: ArrowheadGeometry;
+  color: string;
+  strokeWidth: number;
+  opacity?: number;
+  transform?: string;
+}> = ({ geo, color, strokeWidth, opacity, transform }) => (
+  <g opacity={opacity} transform={transform}>
+    {geo.fills.map((f, i) =>
+      'points' in f ? (
+        <polygon
+          key={`f${i}`}
+          points={Array.from({ length: f.points.length / 2 }, (_, k) => `${f.points[2 * k]},${f.points[2 * k + 1]}`).join(' ')}
+          fill={color}
+        />
+      ) : (
+        <path key={`f${i}`} d={f.d} fill={color} />
+      ),
+    )}
+    {geo.strokes.map((s, i) => (
+      <path
+        key={`s${i}`}
+        d={s.d}
+        fill="none"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    ))}
+  </g>
+);
 
 // ============================================================================
 // Shape Renderer
@@ -102,22 +144,18 @@ export const RenderShape: React.FC<ShapeProps> = memo(({ element }) => {
       if (pts.length < 4) return null;
       const closed = element.closed ?? false;
       const curve = element.curve ?? 'linear';
-      // Per-arrow alpha: defaults to the boolean's binary value, but
-      // interpolation can override with a `_startArrowAlpha` / `_endArrowAlpha`
-      // synthetic field to fade the arrow during a slide transition.
+      // Per-arrowhead alpha: defaults to head presence, but interpolation
+      // can override with a `_startArrowAlpha` / `_endArrowAlpha` synthetic
+      // field to fade the head during a slide transition (the head TYPE
+      // itself snaps at t=0.5 in interpolation).
       const animFx = element as ShapeElement & {
         _startArrowAlpha?: number;
         _endArrowAlpha?: number;
       };
-      const startAlpha = animFx._startArrowAlpha ?? (element.startArrow ? 1 : 0);
-      const endAlpha = animFx._endArrowAlpha ?? (element.endArrow ? 1 : 0);
-      const hasStartArrow = startAlpha > 0;
-      const hasEndArrow = endAlpha > 0;
-      // Pull the shaft back from any arrowhead end so it stops at the
-      // triangle base instead of poking through to the tip vertex.
-      const shaftPts = insetEndpoints(pts, hasStartArrow, hasEndArrow);
-      const cornerR = curve === 'linear' ? (element.cornerRadius ?? 0) : 0;
-      const d = pathD(shaftPts, curve, closed, cornerR, element.tangents);
+      const startType = element.startHead ?? 'none';
+      const endType = element.endHead ?? 'none';
+      const startAlpha = animFx._startArrowAlpha ?? (startType !== 'none' ? 1 : 0);
+      const endAlpha = animFx._endArrowAlpha ?? (endType !== 'none' ? 1 : 0);
       // Stroke colour falls back to fill or black so a freshly-drawn open
       // path always renders something visible (it has no fill by default).
       const strokeCol = strokeAttr === 'none'
@@ -126,12 +164,20 @@ export const RenderShape: React.FC<ShapeProps> = memo(({ element }) => {
       const strokeW = strokeWidthAttr || (closed ? 0 : 3);
       const fillCol = closed ? fillAttr : 'none';
       const last = pts.length - 2;
-      const startHead = hasStartArrow
-        ? arrowheadPoints(pts[0], pts[1], pts[0] - pts[2], pts[1] - pts[3])
+      // Head geometry from the ONE shared helper; direction is the
+      // endpoint chord (works for bezier/bspline too — same convention
+      // everywhere).
+      const startGeo = startType !== 'none' && startAlpha > 0
+        ? arrowheadGeometry(startType, pts[0], pts[1], pts[0] - pts[2], pts[1] - pts[3], 10, strokeW)
         : null;
-      const endHead = hasEndArrow
-        ? arrowheadPoints(pts[last], pts[last + 1], pts[last] - pts[last - 2], pts[last + 1] - pts[last - 1])
+      const endGeo = endType !== 'none' && endAlpha > 0
+        ? arrowheadGeometry(endType, pts[last], pts[last + 1], pts[last] - pts[last - 2], pts[last + 1] - pts[last - 1], 10, strokeW)
         : null;
+      // Pull the shaft back from any solid head so it stops at the glyph's
+      // base instead of poking through to the tip vertex.
+      const shaftPts = insetEndpoints(pts, startGeo?.shaftInset ?? 0, endGeo?.shaftInset ?? 0);
+      const cornerR = curve === 'linear' ? (element.cornerRadius ?? 0) : 0;
+      const d = pathD(shaftPts, curve, closed, cornerR, element.tangents);
       return (
         <g transform={transform}>
           <g transform={`translate(${x}, ${y})`}>
@@ -146,19 +192,11 @@ export const RenderShape: React.FC<ShapeProps> = memo(({ element }) => {
               opacity={opacity}
               style={{ pointerEvents: 'none' }}
             />
-            {startHead && (
-              <polygon
-                points={`${startHead[0]},${startHead[1]} ${startHead[2]},${startHead[3]} ${startHead[4]},${startHead[5]}`}
-                fill={strokeCol}
-                opacity={opacity * startAlpha}
-              />
+            {startGeo && (
+              <RenderArrowhead geo={startGeo} color={strokeCol} strokeWidth={strokeW} opacity={opacity * startAlpha} />
             )}
-            {endHead && (
-              <polygon
-                points={`${endHead[0]},${endHead[1]} ${endHead[2]},${endHead[3]} ${endHead[4]},${endHead[5]}`}
-                fill={strokeCol}
-                opacity={opacity * endAlpha}
-              />
+            {endGeo && (
+              <RenderArrowhead geo={endGeo} color={strokeCol} strokeWidth={strokeW} opacity={opacity * endAlpha} />
             )}
           </g>
         </g>

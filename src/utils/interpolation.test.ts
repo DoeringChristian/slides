@@ -497,18 +497,42 @@ describe('path shape interpolation', () => {
     expect(mid.points!.length).toBeGreaterThan(4);
   });
 
-  test('endArrow easing produces a numeric _endArrowAlpha; without easing it snaps', () => {
-    const sa = makeShape({ shapeType: 'path', points: [0, 0, 100, 0], endArrow: false });
-    const sbEased = makeShape({ shapeType: 'path', points: [0, 0, 100, 0], endArrow: true, transitions: { endArrow: 'linear' } });
+  test('endArrow easing produces a numeric _endArrowAlpha; without easing the head snaps', () => {
+    const sa = makeShape({ shapeType: 'path', points: [0, 0, 100, 0] });
+    const sbEased = makeShape({ shapeType: 'path', points: [0, 0, 100, 0], endHead: 'triangle', transitions: { endArrow: 'linear' } });
     const eased = interpolateElement(sa, sbEased, 0.3) as WithArrowAlpha;
     expect(eased._endArrowAlpha).toBeCloseTo(0.3);
-    expect(eased._startArrowAlpha).toBeUndefined(); // startArrow agrees on both sides
+    // The fading glyph rides through the WHOLE transition (else the t<0.5
+    // half would draw 'none' at partial alpha, i.e. nothing).
+    expect(eased.endHead).toBe('triangle');
+    expect(eased._startArrowAlpha).toBeUndefined(); // startHead agrees on both sides
 
-    const sbSnap = makeShape({ shapeType: 'path', points: [0, 0, 100, 0], endArrow: true });
+    const sbSnap = makeShape({ shapeType: 'path', points: [0, 0, 100, 0], endHead: 'triangle' });
     const snapped = interpolateElement(sa, sbSnap, 0.3) as WithArrowAlpha;
     expect(snapped._endArrowAlpha).toBeUndefined();
-    expect(snapped.endArrow).toBe(false); // boolean snaps at t=0.5
-    expect((interpolateElement(sa, sbSnap, 0.7) as ShapeElement).endArrow).toBe(true);
+    expect(snapped.endHead).toBeUndefined(); // head type snaps at t=0.5
+    expect((interpolateElement(sa, sbSnap, 0.7) as ShapeElement).endHead).toBe('triangle');
+  });
+
+  test("head TYPE change (both present) snaps at t=0.5; alpha stays undefined even when eased", () => {
+    const sa = makeShape({ shapeType: 'path', points: [0, 0, 100, 0], endHead: 'dot', transitions: { endArrow: 'linear' } });
+    const sb = makeShape({ shapeType: 'path', points: [0, 0, 100, 0], endHead: 'triangle', transitions: { endArrow: 'linear' } });
+    const early = interpolateElement(sa, sb, 0.3) as WithArrowAlpha;
+    // Presence agrees on both sides → no fade; the glyph itself hard-cuts.
+    expect(early._endArrowAlpha).toBeUndefined();
+    expect(early.endHead).toBe('dot');
+    const late = interpolateElement(sa, sb, 0.7) as WithArrowAlpha;
+    expect(late._endArrowAlpha).toBeUndefined();
+    expect(late.endHead).toBe('triangle');
+  });
+
+  test("'none' counts as absent for the presence fade ('none' → head eases like undefined → head)", () => {
+    const sa = makeShape({ shapeType: 'path', points: [0, 0, 100, 0], startHead: 'none' });
+    const sb = makeShape({ shapeType: 'path', points: [0, 0, 100, 0], startHead: 'bar', transitions: { startArrow: 'linear' } });
+    const mid = interpolateElement(sa, sb, 0.25) as WithArrowAlpha;
+    expect(mid._startArrowAlpha).toBeCloseTo(0.25);
+    expect(mid.startHead).toBe('bar'); // the incoming glyph, not 'none'
+    expect(mid._endArrowAlpha).toBeUndefined();
   });
 });
 
@@ -593,7 +617,7 @@ describe('interpolateWithVisibility', () => {
     expect(out._writeFx).toEqual({ t: 0.3, direction: 'in', mode: 'create', tipDraw: undefined });
 
     const tipped = makeShape({
-      shapeType: 'path', points: [0, 0, 100, 0], endArrow: true,
+      shapeType: 'path', points: [0, 0, 100, 0], endHead: 'triangle',
       transitions: { visibility: 'create', visibilityOptions: { create: { tipDraw: true } } },
     });
     const tippedOut = interpolateWithVisibility(undefined, tipped, 0.3) as WithFx;

@@ -186,8 +186,10 @@ export interface PropertyTransitions {
   /** Path-shape control points (vertex list). Per-vertex lerp when the
    *  list shapes match; arc-length resampling falls in when they don't. */
   controlPoints?: EasingType;
-  /** Per-arrow fade easing. When set, the start/end arrowhead's alpha is
-   *  interpolated 0 ↔ 1 across the slide transition instead of snapping. */
+  /** Per-arrowhead fade easing. When set and one keyframe has a head where
+   *  the other has none, the head's alpha is interpolated 0 ↔ 1 across the
+   *  slide transition instead of snapping. (Historical names — these drive
+   *  the typed `startHead`/`endHead` fields.) */
   startArrow?: EasingType;
   endArrow?: EasingType;
 
@@ -232,10 +234,25 @@ export interface TextElement extends BaseElement {
 
 /** Shape kinds. `path` covers every vertex-driven shape — line, arrow,
  *  polyline, polygon, B-spline curve — and is configured by `points`,
- *  `closed`, `curve`, `startArrow`, `endArrow`. Older decks with the
+ *  `closed`, `curve`, `startHead`, `endHead`. Older decks with the
  *  individual `line`/`arrow`/`polygon`/`bspline` values are migrated to
  *  `path` on load (see `utils/migrations.ts`). */
 export type ShapeType = 'rect' | 'ellipse' | 'triangle' | 'star' | 'path';
+
+/** Typed arrowhead at a path endpoint (Excalidraw's option set). Geometry
+ *  for every variant comes from ONE helper — `arrowheadGeometry` in
+ *  `utils/pathShapes.ts` — consumed by all renderers and by the property
+ *  panel previews. `'none'` and an absent field are equivalent; legacy
+ *  `startArrow`/`endArrow` booleans migrate to `'triangle'`
+ *  (see `utils/migrations.ts`). */
+export type ArrowheadType =
+  | 'none'
+  | 'arrow'
+  | 'triangle' | 'triangle-outline'
+  | 'bar'
+  | 'dot' | 'circle' | 'circle-outline'
+  | 'diamond' | 'diamond-outline'
+  | 'crowfoot-one' | 'crowfoot-many' | 'crowfoot-one-many';
 
 /** Curve mode for a path shape:
  *    linear   — straight segments between vertices
@@ -310,9 +327,11 @@ export interface ShapeElement extends BaseElement {
    *  Catmull-Rom-estimated tangents (`catmullTangents`), so a bare
    *  curve switch still looks smooth. Ignored for non-bezier curves. */
   tangents?: number[];
-  /** Path only: arrowhead at the first / last vertex. */
-  startArrow?: boolean;
-  endArrow?: boolean;
+  /** Path only: typed arrowhead at the first / last vertex. Absent means
+   *  `'none'`. (The matching TransitionGroups keep their historical
+   *  `'startArrow'`/`'endArrow'` names — they're persisted in decks.) */
+  startHead?: ArrowheadType;
+  endHead?: ArrowheadType;
   /** Path only: solid / dashed / dotted stroke. Defaults to 'solid'. */
   strokeStyle?: StrokeStyle;
   startBinding?: ConnectorBinding | null;
