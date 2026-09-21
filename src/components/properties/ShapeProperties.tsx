@@ -1,5 +1,5 @@
 import React from 'react';
-import { PropertyRow } from './PropertyRow';
+import { PropertyList } from './PropertyList';
 import {
   Property,
   ColorProperty,
@@ -12,7 +12,7 @@ import {
 } from './Property';
 import type { ShapeElement, ConnectorBinding, PathCurve, StrokeStyle } from '../../types/presentation';
 import { bindingFor, resolveBinding, isPinnedBinding } from '../../utils/connectorUtils';
-import { pathBounds } from '../../utils/pathShapes';
+import { pathBounds, catmullTangents } from '../../utils/pathShapes';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useEditorStore } from '../../store/editorStore';
 
@@ -116,6 +116,28 @@ class BindingPinProperty extends Property<ShapeElement> {
 }
 
 /**
+ * Curve-mode select. Subclassed so converting a path TO bezier also writes
+ * explicit initialized tangents (Catmull-Rom estimates — the same values
+ * the renderer's missing-tangent fallback would use), giving the tangent
+ * handles real data to edit from the first frame. Existing tangents (e.g.
+ * bezier → linear → bezier round trip) are preserved.
+ */
+class CurveProperty extends SelectProperty<ShapeElement, PathCurve> {
+  protected override set(el: ShapeElement, v: PathCurve): Partial<ShapeElement> {
+    const changes: Partial<ShapeElement> = super.set(el, v);
+    if (
+      v === 'bezier'
+      && (el.curve ?? 'linear') !== 'bezier'
+      && (el.points?.length ?? 0) >= 4
+      && !el.tangents
+    ) {
+      changes.tangents = catmullTangents(el.points!, !!el.closed);
+    }
+    return changes;
+  }
+}
+
+/**
  * Property list for shape elements. Each entry is the SINGLE place that
  * defines a property — label, editor type, animation hook-up, sync set,
  * visibility. PropertyRow draws the standard header (label + SlideSync +
@@ -151,7 +173,7 @@ const SHAPE_PROPERTIES: Property<ShapeElement>[] = [
     transitionGroup: 'cornerRadius', min: 0, max: 100, step: 1,
     visibleFor: supportsCornerRadius,
   }),
-  new SelectProperty<ShapeElement, PathCurve>({
+  new CurveProperty({
     key: 'curve', label: 'Curve',
     // Curve mode shares the `controlPoints` transition with the vertex
     // list — interpolation samples both paths into polylines and lerps
@@ -163,6 +185,7 @@ const SHAPE_PROPERTIES: Property<ShapeElement>[] = [
       { value: 'linear', label: 'Linear' },
       { value: 'bspline2', label: 'B-spline (quadratic)' },
       { value: 'bspline3', label: 'B-spline (cubic)' },
+      { value: 'bezier', label: 'Bezier' },
     ],
   }),
   new CheckboxProperty<ShapeElement>({ key: 'closed', label: 'Closed path', visibleFor: isPath }),
@@ -200,36 +223,8 @@ interface Props {
   element: ShapeElement;
 }
 
-// Fold consecutive properties into groups whenever a property is marked as
-// `groupWithPrevious`. Each returned bucket renders as one horizontal row —
-// single-entry buckets keep the existing full-width look, multi-entry buckets
-// use a grid so the columns share the row's width.
-function groupProperties(props: Property<ShapeElement>[]): Property<ShapeElement>[][] {
-  const groups: Property<ShapeElement>[][] = [];
-  for (const p of props) {
-    if (p.groupWithPrevious && groups.length > 0) {
-      groups[groups.length - 1].push(p);
-    } else {
-      groups.push([p]);
-    }
-  }
-  return groups;
-}
-
 export const ShapeProperties: React.FC<Props> = ({ element }) => (
   <div className="space-y-3">
-    {groupProperties(SHAPE_PROPERTIES).map((group) => {
-      if (group.length === 1) {
-        const p = group[0];
-        return <PropertyRow key={p.key} property={p} element={element} />;
-      }
-      return (
-        <div key={group.map((p) => p.key).join('|')} className="grid grid-cols-2 gap-3">
-          {group.map((p) => (
-            <PropertyRow key={p.key} property={p} element={element} />
-          ))}
-        </div>
-      );
-    })}
+    <PropertyList properties={SHAPE_PROPERTIES} element={element} />
   </div>
 );

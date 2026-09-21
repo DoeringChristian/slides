@@ -3,9 +3,41 @@ import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useSelectedElements } from '../../store/selectors';
 import { ColorPicker } from './ColorPicker';
+import { ScrubInput } from '../controls/ScrubInput';
+import { useScrubCommit } from '../controls/useScrubCommit';
 import { Bold, Italic, Underline, Strikethrough, AlignLeft, AlignCenter, AlignRight } from 'lucide-react';
-import { FONT_FAMILIES, FONT_SIZES } from '../../utils/constants';
+import { FONT_FAMILIES } from '../../utils/constants';
 import type { TextElement, TextStyle } from '../../types/presentation';
+
+/**
+ * Compact font-size scrub field. Separate component (not inline in the bar)
+ * because useScrubCommit is a hook and TextFormatBar early-returns before
+ * any hook could run. Writes whole style objects, matching the bar's
+ * updateStyle convention; the scrub session snapshots only style.fontSize
+ * (setNestedPartial spreads the sibling style fields on restore).
+ */
+const FontSizeInput: React.FC<{
+  element: TextElement;
+  update: (changes: Partial<TextElement>) => void;
+}> = ({ element, update }) => {
+  const scrub = useScrubCommit({ element, update, syncFields: ['style.fontSize'] });
+  const changesFor = (v: number): Partial<TextElement> => ({
+    style: { ...element.style, fontSize: v },
+  });
+  return (
+    <div className="w-14">
+      <ScrubInput
+        compact
+        value={element.style.fontSize}
+        spec={{ min: 6, max: 200, step: 1, precision: 0 }}
+        onScrubStart={scrub.begin}
+        onPreview={(v) => scrub.preview(changesFor(v))}
+        onCommit={(v) => scrub.end(changesFor(v))}
+        onScrubCancel={scrub.cancel}
+      />
+    </div>
+  );
+};
 
 export const TextFormatBar: React.FC = () => {
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
@@ -35,15 +67,10 @@ export const TextFormatBar: React.FC = () => {
         ))}
       </select>
 
-      <select
-        value={style.fontSize}
-        onChange={(e) => updateStyle({ fontSize: Number(e.target.value) })}
-        className="h-7 w-14 text-xs border border-gray-300 rounded px-1 bg-white"
-      >
-        {FONT_SIZES.map((s) => (
-          <option key={s} value={s}>{s}</option>
-        ))}
-      </select>
+      <FontSizeInput
+        element={textEl}
+        update={(changes) => updateElement(activeSlideId, textEl.id, changes)}
+      />
 
       <button
         onClick={() => updateStyle({ fontWeight: style.fontWeight === 'bold' ? 'normal' : 'bold' })}

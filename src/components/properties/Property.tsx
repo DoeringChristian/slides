@@ -1,5 +1,7 @@
 import React from 'react';
 import { ColorPicker } from '../toolbar/ColorPicker';
+import { Toggle } from '../controls/Toggle';
+import { SelectControl } from '../controls/SelectControl';
 // Scrub-capable editor bodies (NumberEditor/PairEditor/RangeEditor) live in
 // their own components-only module: renderEditor is a class method and
 // can't call hooks, so the scrubbing classes return these components and
@@ -24,6 +26,14 @@ import type { SlideElement, TransitionGroup } from '../../types/presentation';
  * in/out, KeyframeButtons — driven entirely from this metadata, so a panel
  * is just a list of Property instances.
  *
+ * The classes are generic over ANY plain object `T` (default: SlideElement),
+ * so the same editors serve non-element panels too — SlideProperties reuses
+ * them over `Slide` via SlidePropertyRow (label + editor only). The
+ * element/keyframe metadata (`transitionGroup`, `differsFromKeyframe`,
+ * `copyFromKeyframe`, …) is only consulted by the element-scoped
+ * PropertyRow / KeyframeButtons / SlideSyncButton, which remain typed over
+ * `E extends SlideElement`.
+ *
  * The defaults on `BaseProperty` cover ~every existing property: a single
  * top-level field or nested path. For multi-field rows (Position, Size,
  * Control points → x/y/w/h/points) override `syncFields` to list all the
@@ -43,13 +53,13 @@ export function getNested(obj: unknown, path: string): unknown {
   return cur;
 }
 
-/** Returns a `Partial<E>` that, when shallow-merged onto `el`, sets the
+/** Returns a `Partial<T>` that, when shallow-merged onto `el`, sets the
  *  value at `path`. For nested paths the intermediate objects are spread
  *  from the live element so sibling fields aren't lost. */
-export function setNestedPartial<E>(el: E, path: string, value: unknown): Partial<E> {
+export function setNestedPartial<T>(el: T, path: string, value: unknown): Partial<T> {
   const parts = path.split('.');
   if (parts.length === 1) {
-    return { [parts[0]]: value } as Partial<E>;
+    return { [parts[0]]: value } as Partial<T>;
   }
   const root: Record<string, unknown> = {};
   let target = root;
@@ -62,7 +72,7 @@ export function setNestedPartial<E>(el: E, path: string, value: unknown): Partia
     target = target[parts[i]] as Record<string, unknown>;
   }
   target[parts[parts.length - 1]] = value;
-  return root as Partial<E>;
+  return root as Partial<T>;
 }
 
 export function defaultEquals(a: unknown, b: unknown): boolean {
@@ -74,12 +84,12 @@ export function defaultEquals(a: unknown, b: unknown): boolean {
 // Abstract Property
 // ---------------------------------------------------------------------------
 
-export interface PropertyContext<E extends SlideElement> {
-  element: E;
-  update: (changes: Partial<E>) => void;
+export interface PropertyContext<T extends object> {
+  element: T;
+  update: (changes: Partial<T>) => void;
 }
 
-export abstract class Property<E extends SlideElement = SlideElement> {
+export abstract class Property<T extends object = SlideElement> {
   abstract readonly key: string;
   abstract readonly label: string;
 
@@ -93,12 +103,12 @@ export abstract class Property<E extends SlideElement = SlideElement> {
   get transitionGroup(): TransitionGroup | undefined { return undefined; }
 
   /** Whether to render this row for the given element. Default: always. */
-  visibleFor(_element: E): boolean { return true; }
+  visibleFor(_element: T): boolean { return true; }
 
   /** Whether to render this property's editor in a disabled state — the row
    *  still shows up, but the value can't be changed. Distinct from
    *  `visibleFor`: hidden vs. shown-but-greyed. */
-  disabledFor(_element: E): boolean { return false; }
+  disabledFor(_element: T): boolean { return false; }
 
   /** If true, the containing panel packs this row side-by-side with the
    *  previous property (see `BaseOpts.groupWithPrevious`). */
@@ -106,15 +116,15 @@ export abstract class Property<E extends SlideElement = SlideElement> {
 
   /** Has any of `syncFields` got a different value on `kf` than on the
    *  current element? Drives whether KeyframeButtons shows an arrow. */
-  differsFromKeyframe(kf: E, current: E): boolean {
+  differsFromKeyframe(kf: T, current: T): boolean {
     return this.syncFields.some((f) => !defaultEquals(getNested(kf, f), getNested(current, f)));
   }
 
-  /** Build a `Partial<E>` that copies all `syncFields` from `target` into
+  /** Build a `Partial<T>` that copies all `syncFields` from `target` into
    *  the current element. Handles dot-notation paths (nested style fields)
    *  by deep-spreading intermediate objects. */
-  copyFromKeyframe(target: E, current: E): Partial<E> {
-    let changes: Partial<E> = {};
+  copyFromKeyframe(target: T, current: T): Partial<T> {
+    let changes: Partial<T> = {};
     for (const f of this.syncFields) {
       const value = getNested(target, f);
       const slice = setNestedPartial(current, f, value);
@@ -129,14 +139,14 @@ export abstract class Property<E extends SlideElement = SlideElement> {
    *  delegates the value editing to this method. Return null for
    *  header-only properties (e.g. `Control points (N)` — vertices are
    *  edited on the canvas, not in the panel). */
-  abstract renderEditor(ctx: PropertyContext<E>): React.ReactNode;
+  abstract renderEditor(ctx: PropertyContext<T>): React.ReactNode;
 }
 
 // ---------------------------------------------------------------------------
 // Base implementation with field path + dot-notation read/write
 // ---------------------------------------------------------------------------
 
-interface BaseOpts<E extends SlideElement> {
+interface BaseOpts<T extends object> {
   /** Dot-notation field path. Used both as the displayed `key` and as the
    *  default getter / setter path. */
   key: string;
@@ -144,24 +154,24 @@ interface BaseOpts<E extends SlideElement> {
   transitionGroup?: TransitionGroup;
   /** Defaults to `[key]`. */
   syncFields?: string[];
-  visibleFor?: (el: E) => boolean;
-  disabledFor?: (el: E) => boolean;
+  visibleFor?: (el: T) => boolean;
+  disabledFor?: (el: T) => boolean;
   /** Render this property's row on the same horizontal line as the previous
    *  property. Used to pack narrow editors (e.g. fill + stroke color swatches)
    *  into a single row instead of two half-empty rows. */
   groupWithPrevious?: boolean;
 }
 
-abstract class BaseProperty<E extends SlideElement, V> extends Property<E> {
+abstract class BaseProperty<T extends object, V> extends Property<T> {
   readonly key: string;
   readonly label: string;
   private readonly _transitionGroup?: TransitionGroup;
   private readonly _syncFields?: string[];
-  private readonly _visibleFor?: (el: E) => boolean;
-  private readonly _disabledFor?: (el: E) => boolean;
+  private readonly _visibleFor?: (el: T) => boolean;
+  private readonly _disabledFor?: (el: T) => boolean;
   private readonly _groupWithPrevious?: boolean;
 
-  constructor(opts: BaseOpts<E>) {
+  constructor(opts: BaseOpts<T>) {
     super();
     this.key = opts.key;
     this.label = opts.label;
@@ -174,19 +184,19 @@ abstract class BaseProperty<E extends SlideElement, V> extends Property<E> {
 
   override get syncFields(): string[] { return this._syncFields ?? [this.key]; }
   override get transitionGroup(): TransitionGroup | undefined { return this._transitionGroup; }
-  override visibleFor(el: E): boolean { return this._visibleFor ? this._visibleFor(el) : true; }
-  override disabledFor(el: E): boolean { return this._disabledFor ? this._disabledFor(el) : false; }
+  override visibleFor(el: T): boolean { return this._visibleFor ? this._visibleFor(el) : true; }
+  override disabledFor(el: T): boolean { return this._disabledFor ? this._disabledFor(el) : false; }
   override get groupWithPrevious(): boolean { return this._groupWithPrevious ?? false; }
 
-  protected get(el: E): V { return getNested(el, this.key) as V; }
-  protected set(el: E, v: V): Partial<E> { return setNestedPartial(el, this.key, v); }
+  protected get(el: T): V { return getNested(el, this.key) as V; }
+  protected set(el: T, v: V): Partial<T> { return setNestedPartial(el, this.key, v); }
 }
 
 // ---------------------------------------------------------------------------
 // Concrete property types
 // ---------------------------------------------------------------------------
 
-interface NumberOpts<E extends SlideElement> extends BaseOpts<E> {
+interface NumberOpts<T extends object> extends BaseOpts<T> {
   min?: number;
   max?: number;
   step?: number;
@@ -197,6 +207,9 @@ interface NumberOpts<E extends SlideElement> extends BaseOpts<E> {
   precision?: number;
   /** Display-only suffix, e.g. '°' or 'px'. */
   unit?: string;
+  /** Shown (and scrubbed from) when the field is absent on the element
+   *  (e.g. `autoAdvanceDelay` before the first edit). */
+  defaultValue?: number;
 }
 
 /** Legacy `round: true` maps to `precision: 0`; explicit precision wins. */
@@ -211,17 +224,17 @@ function scrubSpecFrom(opts: {
   };
 }
 
-export class NumberProperty<E extends SlideElement> extends BaseProperty<E, number> {
-  private readonly opts: NumberOpts<E>;
-  constructor(opts: NumberOpts<E>) { super(opts); this.opts = opts; }
-  renderEditor({ element, update }: PropertyContext<E>) {
+export class NumberProperty<T extends object = SlideElement> extends BaseProperty<T, number> {
+  private readonly opts: NumberOpts<T>;
+  constructor(opts: NumberOpts<T>) { super(opts); this.opts = opts; }
+  renderEditor({ element, update }: PropertyContext<T>) {
     return (
       <NumberEditor
         element={element}
         update={update}
         syncFields={this.syncFields}
-        value={this.get(element)}
-        changesFor={(el: E, v: number) => this.set(el, v)}
+        value={this.get(element) ?? this.opts.defaultValue ?? 0}
+        changesFor={(el: T, v: number) => this.set(el, v)}
         spec={scrubSpecFrom(this.opts)}
         unit={this.opts.unit}
         disabled={this.disabledFor(element)}
@@ -230,7 +243,7 @@ export class NumberProperty<E extends SlideElement> extends BaseProperty<E, numb
   }
 }
 
-interface RangeOpts<E extends SlideElement> extends BaseOpts<E> {
+interface RangeOpts<T extends object> extends BaseOpts<T> {
   min: number;
   max: number;
   /** Slider value = stored value × scale (e.g. opacity 0..1 with scale=100
@@ -238,17 +251,17 @@ interface RangeOpts<E extends SlideElement> extends BaseOpts<E> {
   scale?: number;
 }
 
-export class RangeProperty<E extends SlideElement> extends BaseProperty<E, number> {
-  private readonly opts: RangeOpts<E>;
-  constructor(opts: RangeOpts<E>) { super(opts); this.opts = opts; }
-  renderEditor({ element, update }: PropertyContext<E>) {
+export class RangeProperty<T extends object = SlideElement> extends BaseProperty<T, number> {
+  private readonly opts: RangeOpts<T>;
+  constructor(opts: RangeOpts<T>) { super(opts); this.opts = opts; }
+  renderEditor({ element, update }: PropertyContext<T>) {
     return (
       <RangeEditor
         element={element}
         update={update}
         syncFields={this.syncFields}
         value={this.get(element)}
-        changesFor={(el: E, v: number) => this.set(el, v)}
+        changesFor={(el: T, v: number) => this.set(el, v)}
         min={this.opts.min}
         max={this.opts.max}
         scale={this.opts.scale}
@@ -258,14 +271,14 @@ export class RangeProperty<E extends SlideElement> extends BaseProperty<E, numbe
   }
 }
 
-interface ColorOpts<E extends SlideElement> extends BaseOpts<E> {
+interface ColorOpts<T extends object> extends BaseOpts<T> {
   allowTransparent?: boolean;
 }
 
-export class ColorProperty<E extends SlideElement> extends BaseProperty<E, string> {
-  private readonly opts: ColorOpts<E>;
-  constructor(opts: ColorOpts<E>) { super(opts); this.opts = opts; }
-  renderEditor({ element, update }: PropertyContext<E>) {
+export class ColorProperty<T extends object = SlideElement> extends BaseProperty<T, string> {
+  private readonly opts: ColorOpts<T>;
+  constructor(opts: ColorOpts<T>) { super(opts); this.opts = opts; }
+  renderEditor({ element, update }: PropertyContext<T>) {
     return (
       <ColorPicker
         color={this.get(element)}
@@ -276,26 +289,22 @@ export class ColorProperty<E extends SlideElement> extends BaseProperty<E, strin
   }
 }
 
-export class CheckboxProperty<E extends SlideElement> extends BaseProperty<E, boolean | undefined> {
-  constructor(opts: BaseOpts<E>) { super(opts); }
-  renderEditor({ element, update }: PropertyContext<E>) {
-    const disabled = this.disabledFor(element);
+/** Checkbox row. The editor is a bare Toggle — the label is rendered ONCE,
+ *  by the row header, never by the control itself. */
+export class CheckboxProperty<T extends object = SlideElement> extends BaseProperty<T, boolean | undefined> {
+  constructor(opts: BaseOpts<T>) { super(opts); }
+  renderEditor({ element, update }: PropertyContext<T>) {
     return (
-      <label className={`text-xs flex items-center gap-2 ${disabled ? 'text-gray-300' : 'text-gray-500'}`}>
-        <input
-          type="checkbox"
-          checked={this.get(element) ?? false}
-          disabled={disabled}
-          onChange={(e) => update(this.set(element, e.target.checked))}
-          className="accent-blue-500 disabled:opacity-50"
-        />
-        {this.label}
-      </label>
+      <Toggle
+        checked={this.get(element) ?? false}
+        disabled={this.disabledFor(element)}
+        onChange={(v) => update(this.set(element, v))}
+      />
     );
   }
 }
 
-interface SelectOpts<E extends SlideElement, V extends string | number> extends BaseOpts<E> {
+interface SelectOpts<T extends object, V extends string | number> extends BaseOpts<T> {
   options: Array<{ value: V; label: string }>;
   defaultValue?: V;
   /** Coerce the select's raw string value back to V on change. Required
@@ -303,29 +312,26 @@ interface SelectOpts<E extends SlideElement, V extends string | number> extends 
   parse?: (s: string) => V;
 }
 
-export class SelectProperty<E extends SlideElement, V extends string | number = string> extends BaseProperty<E, V> {
-  private readonly opts: SelectOpts<E, V>;
-  constructor(opts: SelectOpts<E, V>) { super(opts); this.opts = opts; }
-  renderEditor({ element, update }: PropertyContext<E>) {
+export class SelectProperty<T extends object = SlideElement, V extends string | number = string> extends BaseProperty<T, V> {
+  private readonly opts: SelectOpts<T, V>;
+  constructor(opts: SelectOpts<T, V>) { super(opts); this.opts = opts; }
+  renderEditor({ element, update }: PropertyContext<T>) {
     const v = (this.get(element) ?? this.opts.defaultValue) as V;
     const parse = this.opts.parse ?? ((s: string) => s as V);
     return (
-      <select
+      <SelectControl
         value={String(v)}
-        onChange={(e) => update(this.set(element, parse(e.target.value)))}
-        className="w-full h-8 text-sm border border-gray-300 rounded px-2 bg-white"
-      >
-        {this.opts.options.map((o) => (
-          <option key={String(o.value)} value={String(o.value)}>{o.label}</option>
-        ))}
-      </select>
+        options={this.opts.options.map((o) => ({ value: String(o.value), label: o.label }))}
+        onChange={(s) => update(this.set(element, parse(s)))}
+        disabled={this.disabledFor(element)}
+      />
     );
   }
 }
 
 /** Two side-by-side number inputs (Position X/Y, Size W/H). The two fields
  *  share one transition group and one sync set so they animate as a unit. */
-interface PairOpts<E extends SlideElement> extends BaseOpts<E> {
+interface PairOpts<T extends object> extends BaseOpts<T> {
   keys: [string, string];
   labels: [string, string];
   /** Legacy whole-number rounding; equivalent to `precision: 0`. */
@@ -337,11 +343,11 @@ interface PairOpts<E extends SlideElement> extends BaseOpts<E> {
   precision?: number;
 }
 
-export class PairNumberProperty<E extends SlideElement> extends BaseProperty<E, number> {
-  private readonly opts: PairOpts<E>;
-  constructor(opts: PairOpts<E>) { super(opts); this.opts = opts; }
+export class PairNumberProperty<T extends object = SlideElement> extends BaseProperty<T, number> {
+  private readonly opts: PairOpts<T>;
+  constructor(opts: PairOpts<T>) { super(opts); this.opts = opts; }
   override get syncFields(): string[] { return this.opts.syncFields ?? this.opts.keys; }
-  renderEditor({ element, update }: PropertyContext<E>) {
+  renderEditor({ element, update }: PropertyContext<T>) {
     return (
       <PairEditor
         element={element}
@@ -360,15 +366,15 @@ export class PairNumberProperty<E extends SlideElement> extends BaseProperty<E, 
  *  but still animated / synced from the panel — e.g. `Control points` is
  *  edited via canvas handles, but the header still drives transitions and
  *  keyframe resets. */
-interface ReadoutOpts<E extends SlideElement> extends BaseOpts<E> {
+interface ReadoutOpts<T extends object> extends BaseOpts<T> {
   /** Suffix shown in parentheses after the label, e.g. `(3)` for "3 points". */
-  readout?: (el: E) => string;
+  readout?: (el: T) => string;
 }
 
-export class ReadoutProperty<E extends SlideElement> extends BaseProperty<E, unknown> {
-  private readonly opts: ReadoutOpts<E>;
-  constructor(opts: ReadoutOpts<E>) { super(opts); this.opts = opts; }
-  formattedLabel(el: E): string {
+export class ReadoutProperty<T extends object = SlideElement> extends BaseProperty<T, unknown> {
+  private readonly opts: ReadoutOpts<T>;
+  constructor(opts: ReadoutOpts<T>) { super(opts); this.opts = opts; }
+  formattedLabel(el: T): string {
     return this.opts.readout ? `${this.label} (${this.opts.readout(el)})` : this.label;
   }
   renderEditor() { return null; }
@@ -377,14 +383,14 @@ export class ReadoutProperty<E extends SlideElement> extends BaseProperty<E, unk
 /** A free-form property whose value text is rendered inline beneath the
  *  header but isn't edited from the panel — current example is the text
  *  Content readout (a slice of the element's text). */
-interface PreviewOpts<E extends SlideElement> extends BaseOpts<E> {
-  preview: (el: E) => string;
+interface PreviewOpts<T extends object> extends BaseOpts<T> {
+  preview: (el: T) => string;
 }
 
-export class TextPreviewProperty<E extends SlideElement> extends BaseProperty<E, string> {
-  private readonly opts: PreviewOpts<E>;
-  constructor(opts: PreviewOpts<E>) { super(opts); this.opts = opts; }
-  renderEditor({ element }: PropertyContext<E>) {
+export class TextPreviewProperty<T extends object = SlideElement> extends BaseProperty<T, string> {
+  private readonly opts: PreviewOpts<T>;
+  constructor(opts: PreviewOpts<T>) { super(opts); this.opts = opts; }
+  renderEditor({ element }: PropertyContext<T>) {
     return <div className="text-xs text-gray-400 truncate">{this.opts.preview(element)}</div>;
   }
 }

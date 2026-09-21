@@ -3,6 +3,8 @@ import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { ZoomIn, ZoomOut, Grid3x3, Magnet, LayoutTemplate } from 'lucide-react';
 import { MarginLayoutPicker } from './MarginLayoutPicker';
+import { SliderWithReadout } from '../controls/SliderWithReadout';
+import { MIN_ZOOM, MAX_ZOOM } from '../../utils/constants';
 
 export const StatusBar: React.FC = () => {
   const zoom = useEditorStore((s) => s.zoom);
@@ -61,18 +63,21 @@ export const StatusBar: React.FC = () => {
           <button onClick={() => setZoom(zoom - 0.1)} className="p-1 rounded hover:bg-gray-100">
             <ZoomOut size={14} />
           </button>
-          <span className="w-12 text-center">{Math.round(zoom * 100)}%</span>
+          {/* editorStore has no history middleware, so preview and commit
+              are the same plain setZoom — no scrub session needed. */}
+          <SliderWithReadout
+            className="w-44"
+            value={zoom}
+            min={MIN_ZOOM * 100}
+            max={MAX_ZOOM * 100}
+            scale={100}
+            unit="%"
+            onPreview={setZoom}
+            onCommit={setZoom}
+          />
           <button onClick={() => setZoom(zoom + 0.1)} className="p-1 rounded hover:bg-gray-100">
             <ZoomIn size={14} />
           </button>
-          <input
-            type="range"
-            min="25"
-            max="300"
-            value={zoom * 100}
-            onChange={(e) => setZoom(Number(e.target.value) / 100)}
-            className="w-24 h-1 accent-blue-500"
-          />
         </div>
       </div>
       <MarginLayoutPicker

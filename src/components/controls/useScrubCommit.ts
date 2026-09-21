@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef } from 'react';
 import { usePresentationStore } from '../../store/presentationStore';
 import { getActiveUndoManager } from '../../collab/activeUndo';
 import { getNested, setNestedPartial } from '../properties/Property';
-import type { SlideElement } from '../../types/presentation';
 
 /**
  * Scrub-commit protocol: live canvas preview during a drag-to-scrub gesture
@@ -109,9 +108,9 @@ export function snapshotFields<E>(element: E, fields: string[]): Partial<E> {
   return changes;
 }
 
-export interface UseScrubCommitArgs<E extends SlideElement> {
-  element: E;
-  update: (changes: Partial<E>) => void;
+export interface UseScrubCommitArgs<T extends object> {
+  element: T;
+  update: (changes: Partial<T>) => void;
   /** All field paths the gesture may touch (the property's `syncFields`),
    *  snapshotted at begin() and restored at end()/cancel(). */
   syncFields: string[];
@@ -125,9 +124,9 @@ export interface UseScrubCommitArgs<E extends SlideElement> {
  * The returned session is referentially stable; it always reads the latest
  * element / update through refs, so mid-scrub re-renders are safe.
  */
-export function useScrubCommit<E extends SlideElement>(
-  { element, update, syncFields }: UseScrubCommitArgs<E>,
-): ScrubSession<Partial<E>> {
+export function useScrubCommit<T extends object>(
+  { element, update, syncFields }: UseScrubCommitArgs<T>,
+): ScrubSession<Partial<T>> {
   const elementRef = useRef(element);
   const updateRef = useRef(update);
   const syncFieldsRef = useRef(syncFields);
@@ -143,7 +142,7 @@ export function useScrubCommit<E extends SlideElement>(
   /* eslint-disable react-hooks/refs */
   const session = useMemo(
     () =>
-      runScrubSession<Partial<E>>({
+      runScrubSession<Partial<T>>({
         pause: () => {
           usePresentationStore.temporal.getState().pause();
           // Collab: force a capture boundary so the scrub's writes never

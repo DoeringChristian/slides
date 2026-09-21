@@ -4,7 +4,6 @@ import { SliderWithReadout } from '../controls/SliderWithReadout';
 import { useScrubCommit } from '../controls/useScrubCommit';
 import { getNested, setNestedPartial } from './Property';
 import type { ScrubSpec } from '../../utils/scrub';
-import type { SlideElement } from '../../types/presentation';
 
 /**
  * Scrub-capable editor bodies for the Property classes.
@@ -24,17 +23,17 @@ import type { SlideElement } from '../../types/presentation';
  * components-only module.)
  */
 
-interface ScrubEditorBaseProps<E extends SlideElement> {
-  element: E;
-  update: (changes: Partial<E>) => void;
+interface ScrubEditorBaseProps<T extends object> {
+  element: T;
+  update: (changes: Partial<T>) => void;
   syncFields: string[];
 }
 
-export function NumberEditor<E extends SlideElement>({
+export function NumberEditor<T extends object>({
   element, update, syncFields, value, changesFor, spec, unit, disabled,
-}: ScrubEditorBaseProps<E> & {
+}: ScrubEditorBaseProps<T> & {
   value: number;
-  changesFor: (el: E, v: number) => Partial<E>;
+  changesFor: (el: T, v: number) => Partial<T>;
   spec: ScrubSpec;
   unit?: string;
   disabled?: boolean;
@@ -54,9 +53,9 @@ export function NumberEditor<E extends SlideElement>({
   );
 }
 
-export function PairEditor<E extends SlideElement>({
+export function PairEditor<T extends object>({
   element, update, syncFields, keys, labels, spec, disabled,
-}: ScrubEditorBaseProps<E> & {
+}: ScrubEditorBaseProps<T> & {
   keys: [string, string];
   labels: [string, string];
   spec: ScrubSpec;
@@ -84,11 +83,11 @@ export function PairEditor<E extends SlideElement>({
   );
 }
 
-export function RangeEditor<E extends SlideElement>({
+export function RangeEditor<T extends object>({
   element, update, syncFields, value, changesFor, min, max, scale, disabled,
-}: ScrubEditorBaseProps<E> & {
+}: ScrubEditorBaseProps<T> & {
   value: number;
-  changesFor: (el: E, v: number) => Partial<E>;
+  changesFor: (el: T, v: number) => Partial<T>;
   min: number;
   max: number;
   scale?: number;

@@ -1,5 +1,5 @@
 import React from 'react';
-import { PropertyRow } from './PropertyRow';
+import { PropertyList } from './PropertyList';
 import { PanelHeader } from './PanelHeader';
 import {
   Property,
@@ -60,8 +60,6 @@ interface Props {
 export const TextProperties: React.FC<Props> = ({ element }) => (
   <div className="space-y-3">
     <PanelHeader label="Text" elementId={element.id} groups={['visibility', 'content']} />
-    {TEXT_PROPERTIES.map((p) => (
-      <PropertyRow key={p.key} property={p} element={element} />
-    ))}
+    <PropertyList properties={TEXT_PROPERTIES} element={element} />
   </div>
 );

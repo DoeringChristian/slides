@@ -30,6 +30,8 @@ export interface SliderWithReadoutProps {
   scale?: number;
   /** Slider + readout arrow step, display units. Default 1. */
   step?: number;
+  /** Display-only suffix on the readout (e.g. '%'). */
+  unit?: string;
   onCommit: (value: number) => void;
   onPreview?: (value: number) => void;
   onScrubStart?: () => void;
@@ -44,6 +46,7 @@ export const SliderWithReadout: React.FC<SliderWithReadoutProps> = ({
   max,
   scale = 1,
   step = 1,
+  unit,
   onCommit,
   onPreview,
   onScrubStart,
@@ -165,6 +168,7 @@ export const SliderWithReadout: React.FC<SliderWithReadoutProps> = ({
           compact
           value={display}
           spec={readoutSpec}
+          unit={unit}
           onCommit={(v) => onCommit(v / scale)}
           onPreview={onPreview && ((v) => onPreview(v / scale))}
           onScrubStart={onScrubStart}

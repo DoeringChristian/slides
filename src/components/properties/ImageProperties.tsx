@@ -4,9 +4,10 @@ import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useMultiSlideUpdate } from '../../store/selectors';
 import { ResourcePicker } from './ResourcePicker';
-import { PropertyRow } from './PropertyRow';
+import { PropertyList } from './PropertyList';
 import { PanelHeader } from './PanelHeader';
-import { Property, RangeProperty } from './Property';
+import { IconButtonRow } from '../controls/IconButtonRow';
+import { Property, RangeProperty, ReadoutProperty } from './Property';
 import { computeResourceUpdate } from '../../utils/imageUtils';
 import type { ImageElement } from '../../types/presentation';
 
@@ -36,6 +37,18 @@ const IMAGE_PROPERTIES: Property<ImageElement>[] = [
   new RangeProperty<ImageElement>({
     key: 'opacity', label: 'Opacity',
     transitionGroup: 'opacity', min: 0, max: 100, scale: 100,
+  }),
+  // Header-only crop row: the rect is edited on the canvas (crop mode), but
+  // the header supplies the previously missing crop transition / sync /
+  // keyframe buttons. Crop coords are in SOURCE-IMAGE pixels (a full image
+  // is 0,0 originalWidth×originalHeight — see computeResourceUpdate and the
+  // width/cropWidth scaling in RenderImage).
+  new ReadoutProperty<ImageElement>({
+    key: 'cropX', label: 'Crop',
+    transitionGroup: 'crop',
+    syncFields: ['cropX', 'cropY', 'cropWidth', 'cropHeight'],
+    readout: (el) =>
+      `${Math.round(el.cropX)},${Math.round(el.cropY)} ${Math.round(el.cropWidth)}×${Math.round(el.cropHeight)}px`,
   }),
   new ResourceProperty(),
 ];
@@ -77,9 +90,7 @@ export const ImageProperties: React.FC<Props> = ({ element }) => {
         groups={['visibility', 'resource']}
       />
 
-      {IMAGE_PROPERTIES.map((p) => (
-        <PropertyRow key={p.key} property={p} element={element} />
-      ))}
+      <PropertyList properties={IMAGE_PROPERTIES} element={element} />
 
       {resource && (
         <div className="text-xs text-gray-400">
@@ -95,45 +106,31 @@ export const ImageProperties: React.FC<Props> = ({ element }) => {
       {isVideo && (
         <div className="space-y-2 pt-2 border-t border-gray-100">
           <label className="text-xs text-gray-500 block">Video Playback</label>
-          <div className="flex gap-2">
-            <button
-              onClick={() => update({ playing: !(element.playing ?? true) })}
-              className={`flex items-center gap-1 px-2 py-1 rounded text-xs border ${
-                (element.playing ?? true)
-                  ? 'bg-blue-50 border-blue-300 text-blue-700'
-                  : 'border-gray-300 text-gray-600 hover:bg-gray-50'
-              }`}
-              title={element.playing ?? true ? 'Pause' : 'Play'}
-            >
-              {(element.playing ?? true) ? <Pause size={12} /> : <Play size={12} />}
-              {(element.playing ?? true) ? 'Playing' : 'Paused'}
-            </button>
-
-            <button
-              onClick={() => update({ loop: !element.loop })}
-              className={`flex items-center gap-1 px-2 py-1 rounded text-xs border ${
-                element.loop
-                  ? 'bg-blue-50 border-blue-300 text-blue-700'
-                  : 'border-gray-300 text-gray-600 hover:bg-gray-50'
-              }`}
-              title={element.loop ? 'Disable loop' : 'Enable loop'}
-            >
-              <Repeat size={12} />
-              Loop
-            </button>
-
-            <button
-              onClick={() => update({ muted: !element.muted })}
-              className={`flex items-center gap-1 px-2 py-1 rounded text-xs border ${
-                element.muted
-                  ? 'bg-orange-50 border-orange-300 text-orange-700'
-                  : 'border-gray-300 text-gray-600 hover:bg-gray-50'
-              }`}
-              title={element.muted ? 'Unmute' : 'Mute'}
-            >
-              {element.muted ? <VolumeX size={12} /> : <Volume2 size={12} />}
-            </button>
-          </div>
+          <IconButtonRow
+            items={[
+              {
+                icon: (element.playing ?? true) ? <Pause size={12} /> : <Play size={12} />,
+                label: (element.playing ?? true) ? 'Playing' : 'Paused',
+                active: element.playing ?? true,
+                title: (element.playing ?? true) ? 'Pause' : 'Play',
+                onClick: () => update({ playing: !(element.playing ?? true) }),
+              },
+              {
+                icon: <Repeat size={12} />,
+                label: 'Loop',
+                active: !!element.loop,
+                title: element.loop ? 'Disable loop' : 'Enable loop',
+                onClick: () => update({ loop: !element.loop }),
+              },
+              {
+                icon: element.muted ? <VolumeX size={12} /> : <Volume2 size={12} />,
+                active: !!element.muted,
+                activeTone: 'orange',
+                title: element.muted ? 'Unmute' : 'Mute',
+                onClick: () => update({ muted: !element.muted }),
+              },
+            ]}
+          />
         </div>
       )}
 

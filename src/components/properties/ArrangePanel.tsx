@@ -3,7 +3,7 @@ import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useMultiSlideUpdate } from '../../store/selectors';
 import { ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Lock, Unlock, Eye, EyeOff } from 'lucide-react';
-import { PropertyRow } from './PropertyRow';
+import { PropertyList } from './PropertyList';
 import { Property, PairNumberProperty, NumberProperty } from './Property';
 import type { SlideElement } from '../../types/presentation';
 
@@ -44,9 +44,7 @@ export const ArrangePanel: React.FC<Props> = ({ element }) => {
     <div className="space-y-3 border-t border-gray-200 pt-3">
       <span className="text-xs font-medium text-gray-500 uppercase">Arrange</span>
 
-      {ARRANGE_PROPERTIES.map((p) => (
-        <PropertyRow key={p.key} property={p} element={element} />
-      ))}
+      <PropertyList properties={ARRANGE_PROPERTIES} element={element} />
 
       <div className="flex items-center gap-1">
         <span className="text-xs text-gray-500 mr-auto">Layer</span>
