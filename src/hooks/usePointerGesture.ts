@@ -48,6 +48,19 @@ export function usePointerGesture(options: UsePointerGestureOptions) {
   const lastStateRef = useRef<GestureState | null>(null);
 
   const onPointerDown = useCallback((e: React.PointerEvent) => {
+    // Self-heal stale entries: a pointerup that never reached us (mouse
+    // released outside the window, interrupted synthetic input) would leave
+    // a ghost pointer that turns the next single-finger drag into a phantom
+    // two-finger gesture — swallowing every pointermove on the canvas.
+    // A mouse is a single pointer, so a fresh mouse-down invalidates any
+    // other tracked pointer that isn't an actively-touching finger.
+    if (e.pointerType === 'mouse' && pointersRef.current.size > 0) {
+      pointersRef.current.clear();
+      if (lastStateRef.current) {
+        lastStateRef.current = null;
+        onGestureEnd?.();
+      }
+    }
     pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     try {
       (e.currentTarget as Element).setPointerCapture(e.pointerId);
@@ -57,10 +70,20 @@ export function usePointerGesture(options: UsePointerGestureOptions) {
       lastStateRef.current = computeState(p1, p2);
       onGestureStart?.();
     }
-  }, [onGestureStart]);
+  }, [onGestureStart, onGestureEnd]);
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
     if (!pointersRef.current.has(e.pointerId)) return;
+    // A tracked pointer moving with no buttons pressed lost its pointerup
+    // somewhere — drop it instead of letting it poison gesture detection.
+    if (e.pointerType === 'mouse' && e.buttons === 0) {
+      pointersRef.current.delete(e.pointerId);
+      if (pointersRef.current.size < 2 && lastStateRef.current) {
+        lastStateRef.current = null;
+        onGestureEnd?.();
+      }
+      return;
+    }
     pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pointersRef.current.size !== 2 || !lastStateRef.current) return;
     const [p1, p2] = Array.from(pointersRef.current.values());
@@ -77,7 +100,7 @@ export function usePointerGesture(options: UsePointerGestureOptions) {
     };
     lastStateRef.current = cur;
     onGesture?.(frame);
-  }, [onGesture]);
+  }, [onGesture, onGestureEnd]);
 
   const end = useCallback((e: React.PointerEvent) => {
     if (!pointersRef.current.has(e.pointerId)) return;

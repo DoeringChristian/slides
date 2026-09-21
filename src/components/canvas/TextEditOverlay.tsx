@@ -25,6 +25,12 @@ function commitEditedText(slideId: string, textId: string, text: string) {
   if (!el || el.type !== 'text') return;
   if ((el as TextElement).containerId && text.trim() === '') {
     store.deleteElements(slideId, [textId]);
+    // The deleted label may still be the active edit target (e.g. the
+    // unmount-commit path) — leaving the id dangling renders no overlay
+    // while blocking a fresh edit session from starting.
+    if (useEditorStore.getState().editingTextId === textId) {
+      useEditorStore.getState().setEditingTextId(null);
+    }
     return;
   }
   store.updateElement(slideId, textId, { text });
@@ -214,7 +220,6 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     // created moments ago may reach the store one microtask later in collab
     // mode (Y → store sync), and latching early would skip the seed/focus.
     if (!textElement || !editorRef.current) return;
-    prevEditingIdRef.current = editingTextId;
 
     const text = textElement.text || '';
     setLiveText(text);
@@ -227,6 +232,12 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
       setRawLines(new Set([text.slice(0, initialCursor).split('\n').length - 1]));
       requestAnimationFrame(() => {
         if (cancelled || !editorRef.current) return;
+        // Latch only once focus actually lands. A store write between the
+        // effect and this frame (e.g. the bound-label height-grow right
+        // after creation) re-runs the effect and cancels this attempt —
+        // latching eagerly would make that re-run bail and leave the
+        // overlay permanently unfocused.
+        prevEditingIdRef.current = editingTextId;
         editorRef.current.focus();
         if (text) setCursorPosition(initialCursor);
         else {
@@ -241,7 +252,10 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
       });
     };
 
-    if (clickPos) {
+    // Empty text has no glyphs to hit-test — calculateCursorFromClick would
+    // wait on a layout that never resolves and the overlay would open
+    // unfocused (freshly created bound labels hit this).
+    if (clickPos && text) {
       calculateCursorFromClick(textElement, clickPos).then(
         (cur) => placeCursor(cur ?? text.length),
         () => placeCursor(text.length),
@@ -251,6 +265,18 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     }
     return () => { cancelled = true; };
   }, [editingTextId, textElement, setCursorPosition]);
+
+  // Keep the editable focused while a session is open. Store writes landing
+  // right after a label is created (bound-text height-grow, dependent sync)
+  // can remount parts of the overlay and silently drop the focus the seed
+  // effect just placed. Only reclaim focus from <body> so a deliberate focus
+  // target (color picker, panel input, another app) is never fought.
+  useEffect(() => {
+    if (!editingTextId || !textElement || !editorRef.current) return;
+    if (document.activeElement === document.body) {
+      editorRef.current.focus();
+    }
+  });
 
   // Track which lines are raw via the DOM (range start / end → line indices).
   useEffect(() => {
