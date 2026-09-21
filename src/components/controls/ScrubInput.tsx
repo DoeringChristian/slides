@@ -23,6 +23,12 @@ import {
  * scrubbing mid-drag (`isShiftHeld` polled per move). Escape or a
  * pointercancel cancels the scrub without committing.
  *
+ * Optional live-preview protocol (see useScrubCommit): when wired, crossing
+ * the slop fires `onScrubStart` once, every subsequent move fires
+ * `onPreview` with the would-be-committed value, release fires `onCommit`
+ * as before, and Escape / pointercancel / a no-net-change release fire
+ * `onScrubCancel` so the session always unwinds.
+ *
  * `touch-action: pan-y` keeps vertical pane scrolling alive on touch; a
  * vertical swipe never enters scrub (horizontal slop) and the browser's
  * scroll takeover surfaces as pointercancel → clean cancel. No pointer lock.
@@ -33,6 +39,15 @@ export interface ScrubInputProps {
   /** Fired exactly once per completed gesture / edit, with the committed
    *  (clamped + rounded) value. Not fired when nothing changed. */
   onCommit: (value: number) => void;
+  /** Live-preview hook: fired on every scrub move with the value a release
+   *  at this instant would commit. Pair with onScrubStart/onScrubCancel. */
+  onPreview?: (value: number) => void;
+  /** Fired once when a scrub actually starts (slop crossed) — never on a
+   *  plain click-to-edit. */
+  onScrubStart?: () => void;
+  /** Fired when a started scrub ends without a commit: Escape,
+   *  pointercancel, or release with no net change. */
+  onScrubCancel?: () => void;
   spec: ScrubSpec;
   /** Appended verbatim after the value (e.g. '°', 'px'). Display only. */
   unit?: string;
@@ -47,6 +62,9 @@ export interface ScrubInputProps {
 export const ScrubInput: React.FC<ScrubInputProps> = ({
   value,
   onCommit,
+  onPreview,
+  onScrubStart,
+  onScrubCancel,
   spec,
   unit,
   subLabel,
@@ -65,11 +83,17 @@ export const ScrubInput: React.FC<ScrubInputProps> = ({
   // effects flush, so handlers see current values.
   const valueRef = useRef(value);
   const onCommitRef = useRef(onCommit);
+  const onPreviewRef = useRef(onPreview);
+  const onScrubStartRef = useRef(onScrubStart);
+  const onScrubCancelRef = useRef(onScrubCancel);
   const specRef = useRef(spec);
   const disabledRef = useRef(disabled);
   useEffect(() => {
     valueRef.current = value;
     onCommitRef.current = onCommit;
+    onPreviewRef.current = onPreview;
+    onScrubStartRef.current = onScrubStart;
+    onScrubCancelRef.current = onScrubCancel;
     specRef.current = spec;
     disabledRef.current = disabled;
   });
@@ -77,6 +101,10 @@ export const ScrubInput: React.FC<ScrubInputProps> = ({
   const phaseRef = useRef<'idle' | 'armed' | 'scrubbing'>('idle');
   const slopRef = useRef(DRAG_SLOP_MOUSE);
   const draftRef = useRef(0);
+  // Pre-scrub value, captured when the slop is crossed. The commit/no-change
+  // decision compares against this, not the live prop — during a live
+  // preview the prop tracks the scrub itself.
+  const startValueRef = useRef(0);
   const lastDxRef = useRef(0);
   const cancelledRef = useRef(false);
   const closingEditRef = useRef(false);
@@ -101,12 +129,17 @@ export const ScrubInput: React.FC<ScrubInputProps> = ({
         // Slop crossed: scrub starts now and catches up with the full delta
         // from the down point — the dead zone decides WHEN, not how much.
         phaseRef.current = 'scrubbing';
+        startValueRef.current = draftRef.current;
+        onScrubStartRef.current?.();
       }
       const dx = d.dx - lastDxRef.current;
       lastDxRef.current = d.dx;
       // Poll Shift per move so fine mode can toggle mid-drag.
       draftRef.current = applyScrubDelta(draftRef.current, dx, specRef.current, isShiftHeld());
       setScrubDraft(draftRef.current);
+      // Live preview with the value a release right now would commit; the
+      // unrounded accumulator stays in draftRef.
+      onPreviewRef.current?.(commitValue(draftRef.current, specRef.current));
     },
     onEnd: (e) => {
       const phase = phaseRef.current;
@@ -115,8 +148,11 @@ export const ScrubInput: React.FC<ScrubInputProps> = ({
       cancelledRef.current = false;
       setScrubDraft(null);
       // pointercancel (scroll takeover, alt-tab, iOS gesture) is neither a
-      // click nor a commit: revert silently.
-      if (e.type !== 'pointerup') return;
+      // click nor a commit: revert silently (unwinding any live session).
+      if (e.type !== 'pointerup') {
+        if (phase === 'scrubbing' && !cancelled) onScrubCancelRef.current?.();
+        return;
+      }
       if (phase === 'armed') {
         // Released inside the slop: a plain click → edit mode.
         closingEditRef.current = false;
@@ -126,7 +162,10 @@ export const ScrubInput: React.FC<ScrubInputProps> = ({
       }
       if (phase === 'scrubbing' && !cancelled) {
         const committed = commitValue(draftRef.current, specRef.current);
-        if (committed !== valueRef.current) onCommitRef.current(committed);
+        if (committed !== startValueRef.current) onCommitRef.current(committed);
+        // Net-zero scrub: nothing to commit, but a live session must still
+        // unwind (it previewed intermediate values while history was paused).
+        else onScrubCancelRef.current?.();
       }
     },
   });
@@ -140,6 +179,9 @@ export const ScrubInput: React.FC<ScrubInputProps> = ({
       e.stopPropagation();
       cancelledRef.current = true;
       setScrubDraft(null);
+      // Unwind the live session immediately — the canvas reverts while the
+      // pointer is still down. onEnd sees cancelledRef and stays silent.
+      onScrubCancelRef.current?.();
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);

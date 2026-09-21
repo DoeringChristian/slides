@@ -15,6 +15,11 @@ export interface ScrubPairProps {
   specs: [ScrubSpec, ScrubSpec];
   units?: [string | undefined, string | undefined];
   onCommit: (index: 0 | 1, value: number) => void;
+  /** Live-preview pass-throughs (see ScrubInput / useScrubCommit): a shared
+   *  session works because only one axis scrubs at a time. */
+  onPreview?: (index: 0 | 1, value: number) => void;
+  onScrubStart?: (index: 0 | 1) => void;
+  onScrubCancel?: (index: 0 | 1) => void;
   compact?: boolean;
   disabled?: boolean;
   className?: string;
@@ -26,6 +31,9 @@ export const ScrubPair: React.FC<ScrubPairProps> = ({
   specs,
   units,
   onCommit,
+  onPreview,
+  onScrubStart,
+  onScrubCancel,
   compact,
   disabled,
   className,
@@ -39,6 +47,9 @@ export const ScrubPair: React.FC<ScrubPairProps> = ({
         spec={specs[i]}
         unit={units?.[i]}
         onCommit={(v) => onCommit(i, v)}
+        onPreview={onPreview && ((v) => onPreview(i, v))}
+        onScrubStart={onScrubStart && (() => onScrubStart(i))}
+        onScrubCancel={onScrubCancel && (() => onScrubCancel(i))}
         compact={compact}
         disabled={disabled}
       />

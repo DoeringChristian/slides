@@ -1,7 +1,12 @@
 import React from 'react';
 import { ColorPicker } from '../toolbar/ColorPicker';
-import { ScrubInput } from '../controls/ScrubInput';
-import { ScrubPair } from '../controls/ScrubPair';
+// Scrub-capable editor bodies (NumberEditor/PairEditor/RangeEditor) live in
+// their own components-only module: renderEditor is a class method and
+// can't call hooks, so the scrubbing classes return these components and
+// PropertyRow mounts them as ordinary children (where useScrubCommit is
+// legal). The import cycle scrubEditors ⇄ Property is benign: both sides
+// only touch each other's bindings at call time.
+import { NumberEditor, PairEditor, RangeEditor } from './scrubEditors';
 import type { ScrubSpec } from '../../utils/scrub';
 import type { SlideElement, TransitionGroup } from '../../types/presentation';
 
@@ -211,9 +216,12 @@ export class NumberProperty<E extends SlideElement> extends BaseProperty<E, numb
   constructor(opts: NumberOpts<E>) { super(opts); this.opts = opts; }
   renderEditor({ element, update }: PropertyContext<E>) {
     return (
-      <ScrubInput
+      <NumberEditor
+        element={element}
+        update={update}
+        syncFields={this.syncFields}
         value={this.get(element)}
-        onCommit={(v) => update(this.set(element, v))}
+        changesFor={(el: E, v: number) => this.set(el, v)}
         spec={scrubSpecFrom(this.opts)}
         unit={this.opts.unit}
         disabled={this.disabledFor(element)}
@@ -234,16 +242,17 @@ export class RangeProperty<E extends SlideElement> extends BaseProperty<E, numbe
   private readonly opts: RangeOpts<E>;
   constructor(opts: RangeOpts<E>) { super(opts); this.opts = opts; }
   renderEditor({ element, update }: PropertyContext<E>) {
-    const v = this.get(element);
-    const scale = this.opts.scale ?? 1;
     return (
-      <input
-        type="range"
-        value={v * scale}
+      <RangeEditor
+        element={element}
+        update={update}
+        syncFields={this.syncFields}
+        value={this.get(element)}
+        changesFor={(el: E, v: number) => this.set(el, v)}
         min={this.opts.min}
         max={this.opts.max}
-        onChange={(e) => update(this.set(element, Number(e.target.value) / scale))}
-        className="w-full accent-blue-500"
+        scale={this.opts.scale}
+        disabled={this.disabledFor(element)}
       />
     );
   }
@@ -333,17 +342,14 @@ export class PairNumberProperty<E extends SlideElement> extends BaseProperty<E, 
   constructor(opts: PairOpts<E>) { super(opts); this.opts = opts; }
   override get syncFields(): string[] { return this.opts.syncFields ?? this.opts.keys; }
   renderEditor({ element, update }: PropertyContext<E>) {
-    const spec = scrubSpecFrom(this.opts);
     return (
-      <ScrubPair
-        values={[
-          getNested(element, this.opts.keys[0]) as number,
-          getNested(element, this.opts.keys[1]) as number,
-        ]}
+      <PairEditor
+        element={element}
+        update={update}
+        syncFields={this.syncFields}
+        keys={this.opts.keys}
         labels={this.opts.labels}
-        specs={[spec, spec]}
-        onCommit={(i, v) => update(setNestedPartial(element, this.opts.keys[i], v))}
-        compact
+        spec={scrubSpecFrom(this.opts)}
         disabled={this.disabledFor(element)}
       />
     );
