@@ -27,7 +27,7 @@ import { computeGuides } from '../../hooks/useAlignmentGuides';
 import { getMarginLayout, getMarginBounds } from '../../utils/marginLayouts';
 import { snapToGrid as snapToGridFn } from '../../utils/geometry';
 import { isShiftHeld } from '../../utils/keyboard';
-import { SLIDE_WIDTH, SLIDE_HEIGHT, CANVAS_PADDING, TEXT_BOX_PADDING } from '../../utils/constants';
+import { SLIDE_WIDTH, SLIDE_HEIGHT, CANVAS_PADDING } from '../../utils/constants';
 import { loadImageFile, loadPdfFile, loadVideoFile, duplicateElements } from '../../utils/slideFactory';
 import { isPointOnTextContent } from '../../utils/textHitTest';
 import { isLinePath } from '../../utils/pathShapes';
@@ -36,10 +36,11 @@ import {
   createBoundLabel,
   expandWithBoundTexts,
   findBoundText,
-  BOUND_TEXT_PADDING,
+  fitLabelToDoc,
+  labelWrapWidthFor,
 } from '../../utils/syncDependents';
 import type { ShapeElement, SlideElement, TextElement } from '../../types/presentation';
-import type { SvgTextDoc } from '../../utils/textLayout';
+import { layoutSvgText, type SvgTextDoc } from '../../utils/textLayout';
 import type { Guide } from '../../hooks/useAlignmentGuides';
 
 // Transform a slide-space point into an element's local coordinates (handle rotation)
@@ -55,6 +56,51 @@ function toLocalPoint(el: SlideElement, pos: { x: number; y: number }): { x: num
     x: relCenterX * cos - relCenterY * sin + el.width / 2,
     y: relCenterX * sin + relCenterY * cos + el.height / 2,
   };
+}
+
+/**
+ * Hug-the-text refit for one bound label (Excalidraw model): lay the label's
+ * text out at the container's wrap width (module-level layout cache — free
+ * when already measured; the SAME layoutSvgText pipeline that renders it, so
+ * LaTeX spans contribute their MathJax-measured extents to doc.width/height),
+ * then apply the pure fitLabelToDoc box math through the store. Store state
+ * is re-read after the async layout hop — the label may have been deleted or
+ * mutated in between.
+ */
+function refitBoundLabel(textId: string): void {
+  const slideId = useEditorStore.getState().activeSlideId;
+  const currentSlide = usePresentationStore.getState().presentation.slides[slideId];
+  const label = currentSlide?.elements[textId];
+  if (!label || label.type !== 'text') return;
+  const cid = (label as TextElement).containerId;
+  if (!cid) return;
+  const container = currentSlide.elements[cid];
+  if (!container) return;
+
+  const text = (label as TextElement).text || '';
+  const style = (label as TextElement).style;
+  layoutSvgText(text, style, labelWrapWidthFor(container)).then(
+    (doc) => {
+      const s = usePresentationStore.getState().presentation.slides[slideId];
+      const lbl = s?.elements[textId];
+      const cont = s?.elements[cid];
+      if (!lbl || lbl.type !== 'text' || !cont) return;
+      const cur = lbl as TextElement;
+      // Text changed while measuring → stale doc; the new text's own layout
+      // will re-enter through onLayout. (A style change mid-flight re-enters
+      // the same way, so the last fit always wins — no staleness check
+      // possible on style: the collab path rebuilds style object identities.)
+      if ((cur.text || '') !== text) return;
+      const fit = fitLabelToDoc(cont, cur, doc);
+      const updates: Array<{ elementId: string; changes: Partial<SlideElement> }> = [];
+      if (fit.label) updates.push({ elementId: textId, changes: fit.label });
+      if (fit.container) updates.push({ elementId: cid, changes: fit.container });
+      if (updates.length > 0) {
+        usePresentationStore.getState().updateElements(slideId, updates);
+      }
+    },
+    () => {}, // layout failure → renderer falls back too; keep the old box
+  );
 }
 
 export const SVGSlideCanvas: React.FC = () => {
@@ -828,54 +874,43 @@ export const SVGSlideCanvas: React.FC = () => {
     }
   }, [activeSlideId, updateElement]);
 
-  // Bound-label height-grow (EDITOR canvas only): when a label's measured
-  // text outgrows its box, refit the label height (both directions, keeps
-  // its center) and grow the container so the label + padding still fit
-  // (grow-only — users may keep an oversized container). Epsilon guards
-  // stop write loops: doc.height depends only on the label WIDTH, which
-  // this handler never touches, so the geometry converges in one pass.
-  const handleTextLayout = useCallback((textId: string, doc: SvgTextDoc) => {
-    const slideId = useEditorStore.getState().activeSlideId;
-    const currentSlide = usePresentationStore.getState().presentation.slides[slideId];
-    const label = currentSlide?.elements[textId];
-    if (!label || label.type !== 'text') return;
-    const cid = (label as TextElement).containerId;
-    if (!cid) return;
-    const container = currentSlide.elements[cid];
-    if (!container) return;
-
-    const EPSILON = 0.5;
-    const updates: Array<{ elementId: string; changes: Partial<SlideElement> }> = [];
-
-    const labelNeeded = doc.height + 2 * TEXT_BOX_PADDING;
-    if (Math.abs(labelNeeded - label.height) > EPSILON) {
-      updates.push({
-        elementId: textId,
-        changes: {
-          height: labelNeeded,
-          y: label.y + (label.height - labelNeeded) / 2,
-        },
-      });
-    }
-
-    const isPath = container.type === 'shape' && (container as ShapeElement).shapeType === 'path';
-    if (!isPath) {
-      const containerNeeded = labelNeeded + 2 * BOUND_TEXT_PADDING;
-      if (containerNeeded > container.height + EPSILON) {
-        updates.push({
-          elementId: cid,
-          changes: {
-            height: containerNeeded,
-            y: container.y - (containerNeeded - container.height) / 2,
-          },
-        });
-      }
-    }
-
-    if (updates.length > 0) {
-      usePresentationStore.getState().updateElements(slideId, updates);
-    }
+  // Bound-label hug-the-text refit (EDITOR canvas only, Excalidraw model):
+  // whenever a label's text has been measured, re-lay it out at the WRAP
+  // width (the container's inner width — labels wrap there, never at their
+  // own hugged box) and shrink/grow the element box to the laid-out extent
+  // via the pure fitLabelToDoc math; the container grows (never shrinks)
+  // when the wrapped text truly exceeds its inner height. Epsilon guards in
+  // fitLabelToDoc stop write loops: the fit depends only on (text, style,
+  // wrap width, container geometry), none of which the fit itself changes
+  // except a symmetric container height grow that converges in one pass.
+  const handleTextLayout = useCallback((textId: string, _doc: SvgTextDoc) => {
+    refitBoundLabel(textId);
   }, []);
+
+  // A container RESIZE changes the wrap width, but SVGTextPaths only re-lays
+  // a label out when the label's own props change — so re-run the fit for
+  // every label whose container inner width changed (e.g. widening a box
+  // un-wraps a width-capped label). Keyed on the wrap widths, so plain
+  // moves / unrelated edits don't re-enter; the fit itself is epsilon-
+  // guarded and its layouts are cache hits when nothing changed.
+  const labelWrapKey = useMemo(() => {
+    if (!slide) return '';
+    const parts: string[] = [];
+    for (const id of slide.elementOrder) {
+      const el = slide.elements[id];
+      if (!el || el.type !== 'text') continue;
+      const cid = (el as TextElement).containerId;
+      const container = cid ? slide.elements[cid] : undefined;
+      if (container) parts.push(`${id}:${labelWrapWidthFor(container).toFixed(2)}`);
+    }
+    return parts.join('|');
+  }, [slide]);
+  useEffect(() => {
+    if (!labelWrapKey) return;
+    for (const part of labelWrapKey.split('|')) {
+      refitBoundLabel(part.slice(0, part.lastIndexOf(':')));
+    }
+  }, [labelWrapKey]);
 
   // Path handle update handler (vertex / tangent / binding commits).
   const handlePathUpdate = useCallback((attrs: Partial<ShapeElement>) => {

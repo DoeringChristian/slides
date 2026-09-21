@@ -26,7 +26,16 @@ interface Props {
    *  uses the doc's per-line metrics to size its contentEditable line divs to
    *  match the rendered glyph positions exactly. */
   onLayout?: (doc: SvgTextDoc) => void;
+  /** Extra cushion (px) added around the clip rect. Defaults to a small
+   *  cushion for BOUND LABELS (whose box hugs the laid-out text, so glyph
+   *  ink that overhangs its advance width — italics, LaTeX radicals,
+   *  descenders — would otherwise get shaved) and to 0 for free text boxes
+   *  (legacy clip unchanged). */
+  clipPadding?: number;
 }
+
+/** Default clip cushion for bound labels (see `clipPadding`). */
+const LABEL_CLIP_PADDING = 6;
 
 /**
  * Renders a text element as native SVG paths via opentype.js (Inter) for plain
@@ -46,9 +55,11 @@ export const SVGTextPaths: React.FC<Props> = memo(({
   writeFx,
   rawLineIndices,
   onLayout,
+  clipPadding,
 }) => {
   const { style, x: elementX, y: elementY, width, height, rotation } = element;
   const padding = TEXT_BOX_PADDING;
+  const clipPad = clipPadding ?? (element.containerId ? LABEL_CLIP_PADDING : 0);
   const bottomOverflow = 500;
   const clipId = `${clipIdPrefix}-${element.id}`;
 
@@ -116,10 +127,10 @@ export const SVGTextPaths: React.FC<Props> = memo(({
       <defs>
         <clipPath id={clipId}>
           <rect
-            x={elementX + padding}
-            y={elementY + padding}
-            width={width - padding * 2}
-            height={height - padding * 2 + bottomOverflow}
+            x={elementX + padding - clipPad}
+            y={elementY + padding - clipPad}
+            width={width - padding * 2 + clipPad * 2}
+            height={height - padding * 2 + clipPad * 2 + bottomOverflow}
           />
         </clipPath>
       </defs>
@@ -140,6 +151,8 @@ export const SVGTextPaths: React.FC<Props> = memo(({
     prev.isEditing === next.isEditing &&
     prev.opacity === next.opacity &&
     prev.clipIdPrefix === next.clipIdPrefix &&
+    prev.clipPadding === next.clipPadding &&
+    a.containerId === b.containerId &&
     a.text === b.text &&
     a.width === b.width &&
     a.height === b.height &&

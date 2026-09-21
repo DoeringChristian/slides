@@ -8,9 +8,13 @@ import {
   createBoundLabel,
   expandWithBoundTexts,
   findBoundTextIn,
+  fitLabelToDoc,
+  labelWrapWidthFor,
+  maxLabelWidthFor,
   pathLabelCenter,
   syncDependentsAfterMutation,
 } from './syncDependents';
+import { TEXT_BOX_PADDING } from './constants';
 import { duplicateElements } from './slideFactory';
 import type { ShapeElement, SlideElement, TextElement } from '../types/presentation';
 
@@ -106,20 +110,43 @@ describe('findBoundTextIn / expandWithBoundTexts', () => {
   });
 });
 
+describe('maxLabelWidthFor / labelWrapWidthFor', () => {
+  test('shape container: inner width, floored at MIN_LABEL_WIDTH', () => {
+    expect(maxLabelWidthFor(rect('box', { width: 200 }))).toBe(200 - 2 * BOUND_TEXT_PADDING);
+    expect(maxLabelWidthFor(rect('box', { width: 30 }))).toBe(MIN_LABEL_WIDTH);
+  });
+
+  test('path container: fixed PATH_LABEL_WIDTH', () => {
+    expect(maxLabelWidthFor(path('arrow'))).toBe(PATH_LABEL_WIDTH);
+  });
+
+  test('wrap width subtracts the text box inner padding', () => {
+    expect(labelWrapWidthFor(rect('box', { width: 200 }))).toBe(
+      200 - 2 * BOUND_TEXT_PADDING - 2 * TEXT_BOX_PADDING,
+    );
+    expect(labelWrapWidthFor(path('arrow'))).toBe(PATH_LABEL_WIDTH - 2 * TEXT_BOX_PADDING);
+  });
+});
+
 describe('boundLabelChangesFor (label placement math)', () => {
-  test('shape container: width tracks container minus padding, recentred, height kept', () => {
+  test('shape container: label keeps its OWN hugged size, recentred on the bbox center', () => {
     const container = rect('box', { x: 100, y: 100, width: 200, height: 80 });
     const lbl = label('lbl', 'box', { x: 0, y: 0, width: 50, height: 40 });
     const changes = boundLabelChangesFor(container, lbl);
-    expect(changes).toEqual({
-      x: 100 + 100 - (200 - 2 * BOUND_TEXT_PADDING) / 2,
-      y: 100 + 40 - 20,
-      width: 200 - 2 * BOUND_TEXT_PADDING,
-    });
+    // Width 50 hugs the text and is under the cap → untouched; recenter only.
+    expect(changes).toEqual({ x: 200 - 25, y: 140 - 20 });
+    expect(changes).not.toHaveProperty('width');
     expect(changes).not.toHaveProperty('height');
   });
 
-  test('shape container: width clamps to MIN_LABEL_WIDTH', () => {
+  test('shape container: width capped at the container inner width (shrunk container)', () => {
+    const container = rect('box', { x: 0, y: 0, width: 100, height: 100 });
+    const lbl = label('lbl', 'box', { x: 500, y: 500, width: 150, height: 40 });
+    // Cap = 100 − 2·8 = 84 < 150 → width shrinks with the recenter.
+    expect(boundLabelChangesFor(container, lbl)).toEqual({ x: 50 - 42, y: 50 - 20, width: 84 });
+  });
+
+  test('shape container: cap floors at MIN_LABEL_WIDTH for tiny containers', () => {
     const container = rect('box', { x: 0, y: 0, width: 30, height: 30 });
     const lbl = label('lbl', 'box', { x: 500, y: 500 });
     expect(boundLabelChangesFor(container, lbl)!.width).toBe(MIN_LABEL_WIDTH);
@@ -127,8 +154,7 @@ describe('boundLabelChangesFor (label placement math)', () => {
 
   test('shape container: already in place → null (epsilon guard)', () => {
     const container = rect('box', { x: 100, y: 100, width: 200, height: 80 });
-    const width = 200 - 2 * BOUND_TEXT_PADDING;
-    const lbl = label('lbl', 'box', { x: 200 - width / 2, y: 120, width, height: 40 });
+    const lbl = label('lbl', 'box', { x: 200 - 25, y: 120, width: 50, height: 40 });
     expect(boundLabelChangesFor(container, lbl)).toBeNull();
   });
 
@@ -142,17 +168,17 @@ describe('boundLabelChangesFor (label placement math)', () => {
 
   test('path container with degenerate points falls back to bbox placement', () => {
     const container = path('arrow', { points: [0, 0] });
-    // < 2 vertices → not a usable path; treated like a box container.
+    // < 2 vertices → not a usable path; treated like a box container:
+    // recentred on the bbox center (200×0 at 0,0), own width kept.
     expect(boundLabelChangesFor(container, label('lbl', 'arrow'))).toEqual({
-      x: 8,
+      x: 100 - 50,
       y: -20,
-      width: 184,
     });
   });
 });
 
 describe('createBoundLabel', () => {
-  test('shape container: empty centred label with center/middle alignment', () => {
+  test('shape container: SMALL empty centred label with center/middle alignment', () => {
     const container = rect('box', { x: 100, y: 100, width: 200, height: 80 });
     const lbl = createBoundLabel(container);
     expect(lbl.type).toBe('text');
@@ -160,17 +186,90 @@ describe('createBoundLabel', () => {
     expect(lbl.containerId).toBe('box');
     expect(lbl.style.align).toBe('center');
     expect(lbl.style.verticalAlign).toBe('middle');
-    expect(lbl.width).toBe(200 - 2 * BOUND_TEXT_PADDING);
+    // Hug model: labels START small and grow with the text, they no longer
+    // span the container.
+    expect(lbl.width).toBe(MIN_LABEL_WIDTH);
     expect(lbl.x + lbl.width / 2).toBeCloseTo(200); // container center x
     expect(lbl.y + lbl.height / 2).toBeCloseTo(140); // container center y
   });
 
-  test('path container: default width centred on the arc midpoint', () => {
+  test('path container: small label centred on the arc midpoint', () => {
     const container = path('arrow', { x: 100, y: 50 });
     const lbl = createBoundLabel(container);
-    expect(lbl.width).toBe(PATH_LABEL_WIDTH);
+    expect(lbl.width).toBe(MIN_LABEL_WIDTH);
     expect(lbl.x + lbl.width / 2).toBeCloseTo(200);
     expect(lbl.y + lbl.height / 2).toBeCloseTo(50);
+  });
+});
+
+describe('fitLabelToDoc (hug-the-text box from a measured layout doc)', () => {
+  // Mocked SvgTextDoc extents — layoutSvgText computes doc.width from the
+  // widest laid-out line and doc.height from the summed line advances; math
+  // spans contribute via their MathJax-parsed widthPx / above+belowBaseline
+  // (textLayout.ts), so a "$x^2$" label flows through this same math.
+
+  test('label hugs the doc: width/height from doc + inner padding, centred on the container', () => {
+    const container = rect('box', { x: 100, y: 100, width: 200, height: 80 });
+    const lbl = label('lbl', 'box', { x: 0, y: 0, width: 184, height: 40 });
+    const fit = fitLabelToDoc(container, lbl, { width: 60, height: 28.8 });
+    const w = 60 + 2 * TEXT_BOX_PADDING;
+    const h = 28.8 + 2 * TEXT_BOX_PADDING;
+    expect(fit.label).toEqual({ x: 200 - w / 2, y: 140 - h / 2, width: w, height: h });
+    expect(fit.container).toBeNull();
+  });
+
+  test('LaTeX-shaped doc ("$x^2$" measured extents) sizes via doc.width/doc.height', () => {
+    // A MathJax x² span is wider than tall glyph-for-glyph and pushes the
+    // line height past fontSize·lineHeight; the fit must consume BOTH doc
+    // extents rather than re-deriving from character counts.
+    const container = rect('box', { x: 0, y: 0, width: 200, height: 100 });
+    const lbl = label('lbl', 'box', { x: 0, y: 0, width: 40, height: 56.8 });
+    const mathDoc = { width: 57.3, height: 41.6 }; // measured-style extents
+    const fit = fitLabelToDoc(container, lbl, mathDoc);
+    expect(fit.label).toEqual({
+      x: 100 - (57.3 + 2 * TEXT_BOX_PADDING) / 2,
+      y: 50 - (41.6 + 2 * TEXT_BOX_PADDING) / 2,
+      width: 57.3 + 2 * TEXT_BOX_PADDING,
+      height: 41.6 + 2 * TEXT_BOX_PADDING,
+    });
+  });
+
+  test('width clamps into [MIN_LABEL_WIDTH, container inner width]', () => {
+    const container = rect('box', { x: 0, y: 0, width: 200, height: 100 });
+    const tiny = fitLabelToDoc(container, label('lbl', 'box'), { width: 1, height: 28.8 });
+    expect((tiny.label as { width: number }).width).toBe(MIN_LABEL_WIDTH);
+    const wide = fitLabelToDoc(container, label('lbl', 'box'), { width: 500, height: 28.8 });
+    expect((wide.label as { width: number }).width).toBe(200 - 2 * BOUND_TEXT_PADDING);
+  });
+
+  test('already fitted → null label patch (epsilon guard, no undo/collab spam)', () => {
+    const container = rect('box', { x: 100, y: 100, width: 200, height: 80 });
+    const w = 60 + 2 * TEXT_BOX_PADDING;
+    const h = 28.8 + 2 * TEXT_BOX_PADDING;
+    const lbl = label('lbl', 'box', { x: 200 - w / 2, y: 140 - h / 2, width: w, height: h });
+    const fit = fitLabelToDoc(container, lbl, { width: 60.1, height: 28.9 });
+    expect(fit.label).toBeNull();
+    expect(fit.container).toBeNull();
+  });
+
+  test('container grows (symmetric, grow-only) when the wrapped text exceeds its inner height', () => {
+    const container = rect('box', { x: 100, y: 100, width: 200, height: 60 });
+    const fit = fitLabelToDoc(container, label('lbl', 'box'), { width: 100, height: 80 });
+    const labelH = 80 + 2 * TEXT_BOX_PADDING;
+    const needed = labelH + 2 * BOUND_TEXT_PADDING;
+    expect(fit.container).toEqual({ height: needed, y: 100 - (needed - 60) / 2 });
+    // Oversized container is NEVER shrunk back.
+    const roomy = rect('box', { x: 100, y: 100, width: 200, height: 400 });
+    expect(fitLabelToDoc(roomy, label('lbl', 'box'), { width: 100, height: 80 }).container).toBeNull();
+  });
+
+  test('path container: centred on the arc midpoint, container never resized', () => {
+    const container = path('arrow', { x: 100, y: 50 });
+    const fit = fitLabelToDoc(container, label('lbl', 'arrow'), { width: 60, height: 200 });
+    const w = 60 + 2 * TEXT_BOX_PADDING;
+    const h = 200 + 2 * TEXT_BOX_PADDING;
+    expect(fit.label).toEqual({ x: 200 - w / 2, y: 50 - h / 2, width: w, height: h });
+    expect(fit.container).toBeNull();
   });
 });
 
@@ -184,8 +283,10 @@ describe('syncDependentsAfterMutation (bound-text follows)', () => {
     const order = ['box', 'lbl', 'free'];
 
     const deps = syncDependentsAfterMutation(elements, order, new Set(['box']));
+    // Width 184 is exactly the cap → kept (hug model: sizing is owned by
+    // fitLabelToDoc); the follow is a pure recenter.
     expect(deps).toEqual([
-      { elementId: 'lbl', changes: { x: 108, y: 120, width: 184 } },
+      { elementId: 'lbl', changes: { x: 108, y: 120 } },
     ]);
   });
 

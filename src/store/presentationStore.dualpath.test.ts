@@ -981,7 +981,7 @@ describe('WS-2 Phase 4 bound text (dual-path)', () => {
       },
     },
     {
-      name: 'resize container → label re-wrapped width identically on both paths',
+      name: 'resize container → label recentred/width-capped identically on both paths',
       action: (s) => {
         s.addElement('s2', boundLabel('el-lbl', 'el-box'));
         s.updateElements('s2', [{ elementId: 'el-box', changes: { width: 320, height: 140 } }]);
@@ -1031,16 +1031,29 @@ describe('WS-2 Phase 4 bound text (dual-path)', () => {
   // Pinned outcomes — equivalence alone could be satisfied by both paths
   // doing nothing; these tests pin the actual follow/cascade behaviour.
 
-  test('label recenters on the container and tracks the width rule', () => {
+  test('label recenters on the container, keeps its own hugged width under the cap', () => {
     const out = runLocal((s) => {
       s.addElement('s2', boundLabel('el-lbl', 'el-box'));
       s.updateElement('s2', 'el-box', { x: 700, y: 480 });
     });
     const box = out.slides['s2'].elements['el-box'];
     const lbl = out.slides['s2'].elements['el-lbl'] as TextElement;
-    expect(lbl.width).toBe(box.width - 16); // 2 × BOUND_TEXT_PADDING
+    // Hug model: the label's measured-fit width (144 < box.width − 2·pad)
+    // is preserved by the follow pass; only the recenter is applied.
+    expect(lbl.width).toBe(144);
     expect(lbl.x + lbl.width / 2).toBeCloseTo(box.x + box.width / 2);
     expect(lbl.y + lbl.height / 2).toBeCloseTo(box.y + box.height / 2);
+  });
+
+  test('shrinking the container caps the label width at the new inner width', () => {
+    const out = runLocal((s) => {
+      s.addElement('s2', boundLabel('el-lbl', 'el-box'));
+      s.updateElement('s2', 'el-box', { width: 120 }); // inner width 104 < 144
+    });
+    const box = out.slides['s2'].elements['el-box'];
+    const lbl = out.slides['s2'].elements['el-lbl'] as TextElement;
+    expect(lbl.width).toBe(120 - 16); // 2 × BOUND_TEXT_PADDING
+    expect(lbl.x + lbl.width / 2).toBeCloseTo(box.x + box.width / 2);
   });
 
   test('arrow label sits on the arc-length midpoint after the rebind', () => {
@@ -1086,9 +1099,9 @@ describe('WS-2 Phase 4 bound text (dual-path)', () => {
     let dupId = '';
     const out = runLocal((s) => {
       // Two keyframes: s2 and a duplicate of it. The label starts already
-      // in its synced position (centred, width = container − 2·pad) so the
+      // in its synced position (its hugged width, centred on el-box) so the
       // duplicated keyframe is self-consistent from the start.
-      s.addElement('s2', boundLabel('el-lbl', 'el-box', { x: 608, y: 430, width: 184 }));
+      s.addElement('s2', boundLabel('el-lbl', 'el-box', { x: 628, y: 430, width: 144 }));
       dupId = s.duplicateSlide('s2');
       s.updateElement('s2', 'el-box', { x: 700, y: 480 });
     });

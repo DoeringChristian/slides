@@ -5,6 +5,7 @@ import { useActiveSlide } from '../../store/selectors';
 import { TEXT_BOX_PADDING, CANVAS_PADDING } from '../../utils/constants';
 import { calculateCursorFromClick } from '../../utils/textHitTest';
 import { layoutSvgText, type SvgTextDoc } from '../../utils/textLayout';
+import { maxLabelWidthFor } from '../../utils/syncDependents';
 import { SVGTextPaths } from '../svg/SVGTextPaths';
 import { injectInterFontFace } from '../../utils/glyphPaths';
 import type { TextElement } from '../../types/presentation';
@@ -104,13 +105,30 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
   const element = editingTextId ? slide?.elements[editingTextId] : null;
   const textElement = element && element.type === 'text' ? (element as TextElement) : null;
 
+  // Bound labels (Excalidraw model): the STORED element box hugs the laid-
+  // out text, but while editing, text must WRAP at the container's inner
+  // width — so the edit box is that wrap-max width, centered on the label's
+  // own center (which sits on the container anchor). With align:center the
+  // glyphs land in exactly the same place as the steady frame's hugged box,
+  // and the contenteditable spans the wrap width so the caret behaves.
+  // Free text boxes keep the element box unchanged.
+  const labelContainer = textElement?.containerId
+    ? slide?.elements[textElement.containerId] ?? null
+    : null;
+  const editWidth = textElement
+    ? labelContainer
+      ? Math.max(textElement.width, maxLabelWidthFor(labelContainer))
+      : textElement.width
+    : 0;
+  const editX = textElement ? textElement.x + (textElement.width - editWidth) / 2 : 0;
+
   // Layout doc from the SVG renderer (cached per text + style + width + raw
   // line set). We pre-compute it from `liveText` so per-line yTop/yBottom
   // reflect the user's latest typing; SVGTextPaths' onLayout also publishes
   // the doc, but pulling it directly avoids a render lag.
   const [doc, setDoc] = useState<SvgTextDoc | null>(null);
   const layoutWidth = textElement
-    ? Math.max(1, textElement.width - TEXT_BOX_PADDING * 2)
+    ? Math.max(1, editWidth - TEXT_BOX_PADDING * 2)
     : 1;
   const rawKeyForLayout = useMemo(
     () => Array.from(rawLines).sort((a, b) => a - b).join(','),
@@ -556,9 +574,11 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
 
   const { style } = textElement;
   const padding = TEXT_BOX_PADDING * zoom;
-  const offsetX = (textElement.x + CANVAS_PADDING) * zoom;
+  // editX/editWidth are the element box for free text and the wrap-width box
+  // (centered on the label) for bound labels — see their derivation above.
+  const offsetX = (editX + CANVAS_PADDING) * zoom;
   const offsetY = (textElement.y + CANVAS_PADDING) * zoom;
-  const widthPx = textElement.width * zoom;
+  const widthPx = editWidth * zoom;
   const heightPx = textElement.height * zoom;
 
   // Vertical alignment offset based on doc.height (if available) so it
@@ -582,8 +602,11 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
   // Element passed to SVGTextPaths uses (x:0, y:0) so its internal
   // translate(elementX+padding, elementY+padding+verticalOffset) places the
   // text at (padding, padding+verticalOffset) inside our local viewBox.
-  // text:liveText drives the SVG re-layout on every keystroke.
-  const localElement: TextElement = { ...textElement, text: liveText, x: 0, y: 0 };
+  // text:liveText drives the SVG re-layout on every keystroke. width is the
+  // edit-box width so a bound label wraps at its container's inner width.
+  const localElement: TextElement = {
+    ...textElement, text: liveText, x: 0, y: 0, width: editWidth,
+  };
 
   return (
     <div
@@ -603,7 +626,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
       <svg
         width={widthPx}
         height={heightPx}
-        viewBox={`0 0 ${textElement.width} ${textElement.height}`}
+        viewBox={`0 0 ${editWidth} ${textElement.height}`}
         style={{
           position: 'absolute',
           top: 0,

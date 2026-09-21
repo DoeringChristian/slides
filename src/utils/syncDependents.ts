@@ -8,11 +8,14 @@
  *   1. Connector rebinds — delegated to `rebindAfterElementsMoved` in
  *      connectorUtils (unchanged semantics).
  *   2. Bound-text follows — a TextElement with `containerId` tracks its
- *      container: shapes keep the label centered with width
- *      `container.width − 2·BOUND_TEXT_PADDING`; arrows/paths keep the label
- *      centered on the arc-length midpoint. Labels of connectors that were
- *      re-solved by step 1 follow the POST-rebind geometry, so an arrow
- *      label keeps riding the arrow when the arrow's bound target moves.
+ *      container: the label KEEPS ITS OWN hug-the-text size (Excalidraw
+ *      model — the box hugs the laid-out text, sized by `fitLabelToDoc`
+ *      from the measured layout doc), shapes recenter it on the container's
+ *      bbox center with width capped at `container.width −
+ *      2·BOUND_TEXT_PADDING`; arrows/paths keep the label centered on the
+ *      arc-length midpoint. Labels of connectors that were re-solved by
+ *      step 1 follow the POST-rebind geometry, so an arrow label keeps
+ *      riding the arrow when the arrow's bound target moves.
  *
  * Everything here is pure and DOM-free (unit-tested in
  * syncDependents.test.ts). The store call sites apply the returned changes
@@ -27,9 +30,9 @@ import { DEFAULT_TEXT_STYLE, TEXT_BOX_PADDING } from './constants';
 
 /** Gap kept between a container's edge and its bound label on each side. */
 export const BOUND_TEXT_PADDING = 8;
-/** A bound label never wraps narrower than this. */
+/** A bound label never shrinks narrower than this. */
 export const MIN_LABEL_WIDTH = 40;
-/** Default label width for arrow/path containers (no box to derive it from). */
+/** Max label width for arrow/path containers (no box to derive it from). */
 export const PATH_LABEL_WIDTH = 160;
 
 const EPS = 1e-6;
@@ -112,31 +115,115 @@ export function pathLabelCenter(container: ShapeElement): { x: number; y: number
   return { x: container.x + mid.x, y: container.y + mid.y };
 }
 
+/** Anchor point a bound label is centered on: arc-length midpoint for path
+ *  containers (bbox center as degenerate fallback), bbox center otherwise. */
+function labelAnchorFor(container: SlideElement): { x: number; y: number } {
+  if (isPathContainer(container)) {
+    const mid = pathLabelCenter(container as ShapeElement);
+    if (mid) return mid;
+  }
+  return { x: container.x + container.width / 2, y: container.y + container.height / 2 };
+}
+
+/**
+ * Widest a bound label's ELEMENT box may get (Excalidraw model: the box hugs
+ * the text, this is the hug's cap — and therefore the width the text WRAPS
+ * at). Shapes: container width minus the edge gap on each side; arrows/paths
+ * have no box to derive it from and use the fixed PATH_LABEL_WIDTH.
+ */
+export function maxLabelWidthFor(container: SlideElement): number {
+  if (isPathContainer(container)) return PATH_LABEL_WIDTH;
+  return Math.max(MIN_LABEL_WIDTH, container.width - 2 * BOUND_TEXT_PADDING);
+}
+
+/** The text wrap width inside a bound label's box: the max element width
+ *  minus the text element's own inner padding. Every consumer that lays a
+ *  label out for FITTING (editor canvas refit, edit overlay) must wrap at
+ *  this width; the element box then shrinks to the laid-out extent. */
+export function labelWrapWidthFor(container: SlideElement): number {
+  return Math.max(1, maxLabelWidthFor(container) - 2 * TEXT_BOX_PADDING);
+}
+
+export interface LabelFit {
+  /** Hug-the-text label box (x/y/width/height), or null when already fitted. */
+  label: Partial<TextElement> | null;
+  /** Grow-only container change so label + gap still fit, or null. */
+  container: Partial<SlideElement> | null;
+}
+
+/** Epsilon for measured-layout fitting (sub-pixel layout jitter is noise). */
+const FIT_EPS = 0.5;
+
+/**
+ * Excalidraw-style hug-the-text label box from a measured layout doc.
+ * `doc` must come from laying the label's text out at
+ * `labelWrapWidthFor(container)` (SvgTextDoc.width/.height — math spans
+ * contribute to both, so LaTeX labels size correctly). Pure math, no DOM:
+ * the caller measures, this fits.
+ *
+ *   label.width  = doc.width + inner padding, clamped to
+ *                  [MIN_LABEL_WIDTH, maxLabelWidthFor(container)]
+ *   label.height = doc.height + inner padding
+ *   x/y          = centered on the container anchor (bbox center for shapes,
+ *                  arc-length midpoint for paths)
+ *   container    = grows (never shrinks) when the wrapped text truly exceeds
+ *                  its inner height; symmetric so its center stays put.
+ */
+export function fitLabelToDoc(
+  container: SlideElement,
+  label: TextElement,
+  doc: { width: number; height: number },
+): LabelFit {
+  const width = Math.min(
+    Math.max(MIN_LABEL_WIDTH, doc.width + 2 * TEXT_BOX_PADDING),
+    maxLabelWidthFor(container),
+  );
+  const height = doc.height + 2 * TEXT_BOX_PADDING;
+  const anchor = labelAnchorFor(container);
+  const x = anchor.x - width / 2;
+  const y = anchor.y - height / 2;
+
+  const labelChanged =
+    Math.abs(x - label.x) > FIT_EPS ||
+    Math.abs(y - label.y) > FIT_EPS ||
+    Math.abs(width - label.width) > FIT_EPS ||
+    Math.abs(height - label.height) > FIT_EPS;
+
+  let containerChanges: Partial<SlideElement> | null = null;
+  if (!isPathContainer(container)) {
+    const containerNeeded = height + 2 * BOUND_TEXT_PADDING;
+    if (containerNeeded > container.height + FIT_EPS) {
+      containerChanges = {
+        height: containerNeeded,
+        y: container.y - (containerNeeded - container.height) / 2,
+      };
+    }
+  }
+
+  return {
+    label: labelChanged ? { x, y, width, height } : null,
+    container: containerChanges,
+  };
+}
+
 /**
  * Geometry changes that keep `label` attached to `container`, or null when
  * the label already sits where it should (epsilon compare — no-op writes
  * would spam undo/collab history).
  *
- *   shape containers — label width tracks the container width minus padding,
- *     x/y recentred on the container's bbox center, height untouched.
- *   path containers  — label recentred on the arc-length midpoint, size
- *     untouched.
+ * The label keeps its OWN hug-the-text size (`fitLabelToDoc` owns sizing —
+ * this pure pass has no layout doc); it is only recentred on the container
+ * anchor, with the width capped at the container's inner width so a
+ * container shrink can't leave the label sticking out.
  */
 export function boundLabelChangesFor(
   container: SlideElement,
   label: TextElement,
 ): Partial<TextElement> | null {
-  if (isPathContainer(container)) {
-    const mid = pathLabelCenter(container as ShapeElement);
-    if (!mid) return null;
-    const x = mid.x - label.width / 2;
-    const y = mid.y - label.height / 2;
-    if (Math.abs(x - label.x) < EPS && Math.abs(y - label.y) < EPS) return null;
-    return { x, y };
-  }
-  const width = Math.max(MIN_LABEL_WIDTH, container.width - 2 * BOUND_TEXT_PADDING);
-  const x = container.x + container.width / 2 - width / 2;
-  const y = container.y + container.height / 2 - label.height / 2;
+  const width = Math.min(label.width, maxLabelWidthFor(container));
+  const anchor = labelAnchorFor(container);
+  const x = anchor.x - width / 2;
+  const y = anchor.y - label.height / 2;
   if (
     Math.abs(x - label.x) < EPS &&
     Math.abs(y - label.y) < EPS &&
@@ -144,27 +231,17 @@ export function boundLabelChangesFor(
   ) {
     return null;
   }
-  return { x, y, width };
+  return Math.abs(width - label.width) < EPS ? { x, y } : { x, y, width };
 }
 
-/** Fresh empty bound label for a container, centered per the placement
+/** Fresh empty bound label for a container: a SMALL box (the text hugs into
+ *  it as it's typed — the refit pass grows it), centered per the placement
  *  rules above (bbox center for shapes, arc midpoint for paths). */
 export function createBoundLabel(container: SlideElement): TextElement {
   const height =
     DEFAULT_TEXT_STYLE.fontSize * DEFAULT_TEXT_STYLE.lineHeight + 2 * TEXT_BOX_PADDING;
-  let width: number;
-  let center: { x: number; y: number };
-  if (isPathContainer(container)) {
-    width = PATH_LABEL_WIDTH;
-    center =
-      pathLabelCenter(container as ShapeElement) ?? {
-        x: container.x + container.width / 2,
-        y: container.y + container.height / 2,
-      };
-  } else {
-    width = Math.max(MIN_LABEL_WIDTH, container.width - 2 * BOUND_TEXT_PADDING);
-    center = { x: container.x + container.width / 2, y: container.y + container.height / 2 };
-  }
+  const width = Math.min(MIN_LABEL_WIDTH, maxLabelWidthFor(container));
+  const center = labelAnchorFor(container);
   return createTextElement({
     x: center.x - width / 2,
     y: center.y - height / 2,
