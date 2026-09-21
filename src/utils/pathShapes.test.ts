@@ -786,3 +786,67 @@ describe('shapeToPathD presets', () => {
     expect(shapeToPathD(makePathShape({ shapeType: 'path', points: [] }))).toBe('');
   });
 });
+
+// =============================================================================
+// 'smooth' curve — Catmull-Rom through-point mode
+// =============================================================================
+
+describe("curve: 'smooth' (through-point)", () => {
+  // Three vertices with a deliberate kink so a through-point curve and a
+  // B-spline visibly disagree.
+  const pts = [0, 0, 50, 100, 100, 0];
+
+  test('THE defining property: the curve passes exactly through every vertex', () => {
+    const samples = sampledPath(pts, 'smooth', false);
+    for (let v = 0; v < pts.length; v += 2) {
+      const hit = (() => {
+        for (let s = 0; s < samples.length; s += 2) {
+          if (Math.hypot(samples[s] - pts[v], samples[s + 1] - pts[v + 1]) < 1e-9) return true;
+        }
+        return false;
+      })();
+      expect(hit).toBe(true);
+    }
+  });
+
+  test('a B-spline does NOT pass through its interior control points', () => {
+    // The contrast that motivated 'smooth': bspline3 approximates, so its
+    // samples never reach the (50,100) apex — handles would sit off the line.
+    const samples = sampledPath(pts, 'bspline3', false);
+    let nearest = Infinity;
+    for (let s = 0; s < samples.length; s += 2) {
+      nearest = Math.min(nearest, Math.hypot(samples[s] - 50, samples[s + 1] - 100));
+    }
+    expect(nearest).toBeGreaterThan(1);
+  });
+
+  test('renders as cubic segments (one C per span, closed wraps)', () => {
+    const open = pathD(pts, 'smooth', false);
+    expect(open.startsWith('M')).toBe(true);
+    expect((open.match(/C/g) ?? []).length).toBe(2);
+    expect(open).not.toContain('Z');
+
+    const closed = pathD(pts, 'smooth', true);
+    expect((closed.match(/C/g) ?? []).length).toBe(3);
+    expect(closed.trimEnd().endsWith('Z')).toBe(true);
+  });
+
+  test('tangents are always derived — stored tangents are ignored', () => {
+    // Same vertices, absurd stored tangents: 'bezier' honors them, 'smooth'
+    // does not (that is what keeps its handles on the line).
+    const wild = new Array(pts.length * 2).fill(999);
+    expect(pathD(pts, 'smooth', false, 0, wild)).toBe(pathD(pts, 'smooth', false));
+    expect(pathD(pts, 'bezier', false, 0, wild)).not.toBe(pathD(pts, 'smooth', false));
+  });
+
+  test('equals a bezier carrying Catmull-Rom tangents', () => {
+    expect(pathD(pts, 'smooth', false))
+      .toBe(pathD(pts, 'bezier', false, 0, catmullTangents(pts, false)));
+  });
+
+  test('bounds cover the curve bulge, not just the vertices', () => {
+    const b = pathBoundsFor([0, 0, 50, 100, 100, 0], 'smooth', false);
+    const plain = pathBounds([0, 0, 50, 100, 100, 0]);
+    expect(b.height).toBeGreaterThanOrEqual(plain.height - 1e-9);
+  });
+});

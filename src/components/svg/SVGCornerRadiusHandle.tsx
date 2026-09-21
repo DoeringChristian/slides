@@ -17,19 +17,10 @@ const COLOR = '#4285f4';
  *  grabbable at cornerRadius 0. */
 const MIN_INSET = 12;
 
-/**
- * On-canvas corner-radius handle: a single small circle inset from the
- * element's top-left corner along the 45° diagonal, at a distance equal to
- * the cornerRadius (the rounded corner's arc centre sits at exactly
- * (r, r)). Dragging maps the diagonal distance min(localX, localY) back to
- * cornerRadius, clamped to [0, min(w, h) / 2]. Rotation-aware: everything
- * renders inside the element's rotation transform and the pointer position
- * is inverse-rotated into local coordinates.
- *
- * Live preview is drawn here (dashed outline through the production
- * geometry — `<rect rx>` for rects, `pathD` for closed linear paths); the
- * store sees a SINGLE updateElement commit on release.
- */
+/** A diamond adjustment handle riding the rectangle's TOP edge. Dragging
+ * follows local horizontal displacement, not the pointer's absolute inset,
+ * so grabbing the hit area (including at radius zero) never jumps. A local
+ * preview is committed once on release; cancellation never touches the store. */
 export const SVGCornerRadiusHandle: React.FC<Props> = ({
   element,
   zoom,
@@ -44,12 +35,13 @@ export const SVGCornerRadiusHandle: React.FC<Props> = ({
   // Ref mirror: the commit on pointerup must read the final radius and call
   // onUpdate OUTSIDE any setState updater (React 19 StrictMode).
   const liveRRef = useRef<number | null>(null);
+  const gestureRef = useRef<{ pointerId: number; x: number; y: number } | null>(null);
   const [dragging, setDragging] = useState(false);
 
   const screenToSVG = useScreenToSVG(svgRef, zoom);
 
   const displayR = liveR ?? storedR;
-  const inset = Math.max(displayR, MIN_INSET / zoom);
+  const inset = Math.max(displayR, Math.min(MIN_INSET / zoom, element.width / 2));
 
   const cx = element.x + element.width / 2;
   const cy = element.y + element.height / 2;
@@ -63,54 +55,65 @@ export const SVGCornerRadiusHandle: React.FC<Props> = ({
     try {
       (e.currentTarget as Element).setPointerCapture(e.pointerId);
     } catch { /* ignore */ }
+    const pos = screenToSVG(e.clientX, e.clientY);
+    gestureRef.current = { pointerId: e.pointerId, ...pos };
     onTransformStart?.();
     liveRRef.current = storedR;
     setLiveR(storedR);
     setDragging(true);
-  }, [storedR, onTransformStart]);
+  }, [storedR, onTransformStart, screenToSVG]);
 
   useEffect(() => {
     if (!dragging) return;
 
     const onMove = (e: PointerEvent) => {
+      const start = gestureRef.current;
+      if (!start || e.pointerId !== start.pointerId) return;
       e.preventDefault();
       const pos = screenToSVG(e.clientX, e.clientY);
-      // Inverse-rotate the pointer around the element centre into local
-      // (unrotated) element coordinates.
-      const rad = (-rotation * Math.PI) / 180;
-      const cos = Math.cos(rad);
-      const sin = Math.sin(rad);
-      const relX = pos.x - cx;
-      const relY = pos.y - cy;
-      const localX = relX * cos - relY * sin + element.width / 2;
-      const localY = relX * sin + relY * cos + element.height / 2;
-      // Diagonal distance from the top-left corner → radius.
-      const r = Math.max(0, Math.min(Math.min(localX, localY), maxR));
+      const rad = rotation * Math.PI / 180;
+      const dx = (pos.x - start.x) * Math.cos(rad) + (pos.y - start.y) * Math.sin(rad);
+      const r = Math.max(0, Math.min(storedR + dx, maxR));
       liveRRef.current = r;
       setLiveR(r);
     };
 
-    const onUp = (e: PointerEvent) => {
-      e.preventDefault();
-      setDragging(false);
-      // Commit from the ref, NOT inside a setState updater — single store
-      // write (one undo entry) on release.
-      const finalR = liveRRef.current;
+    const cancel = () => {
+      gestureRef.current = null;
       liveRRef.current = null;
       setLiveR(null);
-      if (finalR === null) return;
-      onUpdate({ cornerRadius: Math.round(finalR * 100) / 100 });
+      setDragging(false);
     };
-
+    const onUp = (e: PointerEvent) => {
+      if (e.pointerId !== gestureRef.current?.pointerId) return;
+      onMove(e);
+      const finalR = liveRRef.current;
+      cancel();
+      if (finalR !== null && finalR !== storedR) {
+        onUpdate({ cornerRadius: Math.round(finalR * 100) / 100 });
+      }
+    };
+    const onCancel = (e: PointerEvent) => {
+      if (e.pointerId === gestureRef.current?.pointerId) cancel();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+    };
     window.addEventListener('pointermove', onMove, { passive: false });
     window.addEventListener('pointerup', onUp, { passive: false });
-    window.addEventListener('pointercancel', onUp, { passive: false });
+    window.addEventListener('pointercancel', onCancel);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('blur', cancel);
+    window.addEventListener('lostpointercapture', onCancel);
     return () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
+      window.removeEventListener('pointercancel', onCancel);
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('blur', cancel);
+      window.removeEventListener('lostpointercapture', onCancel);
     };
-  }, [dragging, rotation, cx, cy, element.width, element.height, maxR, screenToSVG, onUpdate]);
+  }, [dragging, rotation, storedR, maxR, screenToSVG, onUpdate]);
 
   // Live dashed preview of the rounded outline while dragging.
   let preview: React.ReactNode = null;
@@ -154,7 +157,7 @@ export const SVGCornerRadiusHandle: React.FC<Props> = ({
           x1={element.x}
           y1={element.y}
           x2={element.x + inset}
-          y2={element.y + inset}
+          y2={element.y}
           stroke={COLOR}
           strokeWidth={1 / zoom}
           style={{ pointerEvents: 'none' }}
@@ -162,20 +165,18 @@ export const SVGCornerRadiusHandle: React.FC<Props> = ({
       )}
       <circle
         cx={element.x + inset}
-        cy={element.y + inset}
+        cy={element.y}
         r={12 / zoom}
         fill="transparent"
-        style={{ cursor: 'nwse-resize', touchAction: 'none', pointerEvents: 'all' }}
+        style={{ cursor: 'ew-resize', touchAction: 'none', pointerEvents: 'all' }}
         onPointerDown={handlePointerDown}
       />
-      <circle
-        cx={element.x + inset}
-        cy={element.y + inset}
-        r={5 / zoom}
-        fill="#fff"
+      <path
+        d={`M ${element.x + inset} ${element.y - 4 / zoom} l ${4 / zoom} ${4 / zoom} l ${-4 / zoom} ${4 / zoom} l ${-4 / zoom} ${-4 / zoom} Z`}
+        fill="#fbbc04"
         stroke={COLOR}
         strokeWidth={2 / zoom}
-        style={{ cursor: 'nwse-resize', touchAction: 'none' }}
+        style={{ cursor: 'ew-resize', touchAction: 'none' }}
         onPointerDown={handlePointerDown}
       />
     </g>

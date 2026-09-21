@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePresentationStore } from '../../store/presentationStore';
-import { getActiveUndoManager } from '../../collab/activeUndo';
+import { getActiveUndoManager, beginScrubCapture } from '../../collab/activeUndo';
 import { getNested, setNestedPartial } from '../properties/Property';
 
 /**
@@ -38,6 +38,8 @@ export interface ScrubHandles<C> {
   /** Capture the restore payload: applying its result must put every field
    *  the scrub can touch back to its current (pre-scrub) value. */
   snapshot: () => C;
+  /** Close collab capture AFTER the final write (or after restoring a cancel). */
+  finish?: (cancelled: boolean) => void;
 }
 
 export interface ScrubSession<C> {
@@ -83,6 +85,7 @@ export function runScrubSession<C>(handles: ScrubHandles<C>): ScrubSession<C> {
       handles.apply(snap as C);
       handles.resume();
       handles.apply(finalChanges);
+      handles.finish?.(false);
       snap = null;
     },
 
@@ -91,6 +94,7 @@ export function runScrubSession<C>(handles: ScrubHandles<C>): ScrubSession<C> {
       active = false;
       handles.apply(snap as C);
       handles.resume();
+      handles.finish?.(true);
       snap = null;
     },
   };
@@ -130,6 +134,10 @@ export function useScrubCommit<T extends object>(
   const elementRef = useRef(element);
   const updateRef = useRef(update);
   const syncFieldsRef = useRef(syncFields);
+  // Closes the collab capture window opened at `pause`. Held in a ref (not a
+  // closure variable) because the session handles are built once and mutate
+  // it across gestures.
+  const finishCaptureRef = useRef<((cancelled: boolean) => void) | undefined>(undefined);
   useEffect(() => {
     elementRef.current = element;
     updateRef.current = update;
@@ -140,22 +148,27 @@ export function useScrubCommit<T extends object>(
   // session runs (inside pointer-event handlers), never during render —
   // runScrubSession just stores the handles.
   /* eslint-disable react-hooks/refs */
-  const session = useMemo(
-    () =>
-      runScrubSession<Partial<T>>({
-        pause: () => {
-          usePresentationStore.temporal.getState().pause();
-          // Collab: force a capture boundary so the scrub's writes never
-          // merge backwards into whatever was captured before the gesture.
-          getActiveUndoManager()?.stopCapturing();
-        },
-        resume: () => {
-          usePresentationStore.temporal.getState().resume();
-        },
-        apply: (changes) => updateRef.current(changes),
-        snapshot: () => snapshotFields(elementRef.current, syncFieldsRef.current),
-      }),
-    [],
+  // Lazy state initializer rather than useMemo: the session must be built
+  // exactly once (it owns gesture state), and an empty-dep useMemo is only a
+  // caching hint the compiler may discard.
+  const [session] = useState(
+    () => runScrubSession<Partial<T>>({
+      pause: () => {
+        usePresentationStore.temporal.getState().pause();
+        // Collab: force a capture boundary so the scrub's writes never
+        // merge backwards into whatever was captured before the gesture.
+        finishCaptureRef.current = beginScrubCapture(getActiveUndoManager());
+      },
+      resume: () => {
+        usePresentationStore.temporal.getState().resume();
+      },
+      apply: (changes) => updateRef.current(changes),
+      snapshot: () => snapshotFields(elementRef.current, syncFieldsRef.current),
+      finish: (cancelled) => {
+        finishCaptureRef.current?.(cancelled);
+        finishCaptureRef.current = undefined;
+      },
+    }),
   );
   /* eslint-enable react-hooks/refs */
 

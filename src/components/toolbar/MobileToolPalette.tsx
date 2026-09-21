@@ -21,7 +21,7 @@ const TOOLS: { tool: Tool; icon: React.ReactNode; label: string }[] = [
   { tool: 'line', icon: <Minus size={20} />, label: 'Line' },
   { tool: 'arrow', icon: <MoveRight size={20} />, label: 'Arrow' },
   { tool: 'polygon', icon: <Hexagon size={20} />, label: 'Polygon' },
-  { tool: 'bspline', icon: <Spline size={20} />, label: 'B-spline' },
+  { tool: 'bspline', icon: <Spline size={20} />, label: 'Curve' },
 ];
 
 export const MobileToolPalette: React.FC = () => {

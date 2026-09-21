@@ -443,6 +443,31 @@ describe('path shape interpolation', () => {
     expect((interpolateElement(sa, sb, 1) as ShapeElement).tangents).toEqual(sb.tangents);
   });
 
+  test("both 'smooth' with equal vertex count: points lerp, curve preserved", () => {
+    // Tangents are derived, not stored, so a through-point curve only needs
+    // its vertices lerped — the smoothing follows for free.
+    const sa = makeShape({ shapeType: 'path', curve: 'smooth', points: [0, 0, 50, 40, 100, 0] });
+    const sb = makeShape({ shapeType: 'path', curve: 'smooth', points: [0, 0, 50, 80, 100, 0] });
+    const mid = interpolateElement(sa, sb, 0.5) as ShapeElement;
+    expect(mid.curve).toBe('smooth');
+    expect(mid.points).toEqual([0, 0, 50, 60, 100, 0]);
+    expect((interpolateElement(sa, sb, 0) as ShapeElement).points).toEqual(sa.points);
+    expect((interpolateElement(sa, sb, 1) as ShapeElement).points).toEqual(sb.points);
+  });
+
+  test("'smooth' sides with DIFFERENT vertex counts fall back to the sampled morph", () => {
+    const sa = makeShape({ shapeType: 'path', curve: 'smooth', points: [0, 0, 50, 40, 100, 0] });
+    const sb = makeShape({ shapeType: 'path', curve: 'smooth', points: [0, 0, 100, 0] });
+    const mid = interpolateElement(sa, sb, 0.5) as ShapeElement;
+    // The morph renders as a resampled linear polyline, never a mismatched
+    // vertex pairing.
+    expect(mid.curve).toBe('linear');
+    expect(mid.points!.length).toBeGreaterThan(sa.points!.length);
+    // Endpoints still hand back the real shapes.
+    expect((interpolateElement(sa, sb, 0) as ShapeElement).curve).toBe('smooth');
+    expect((interpolateElement(sa, sb, 1) as ShapeElement).curve).toBe('smooth');
+  });
+
   test('bezier pair lerp honours the controlPoints easing', () => {
     const sa = makeShape({
       shapeType: 'path', curve: 'bezier',

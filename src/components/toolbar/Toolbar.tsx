@@ -23,7 +23,7 @@ const tools: { tool: Tool; icon: React.ReactNode; label: string }[] = [
   { tool: 'line', icon: <Minus size={16} />, label: 'Line (L)' },
   { tool: 'arrow', icon: <MoveRight size={16} />, label: 'Arrow (A)' },
   { tool: 'polygon', icon: <Hexagon size={16} />, label: 'Polygon (G)' },
-  { tool: 'bspline', icon: <Spline size={16} />, label: 'B-spline (P)' },
+  { tool: 'bspline', icon: <Spline size={16} />, label: 'Curve (P)' },
   { tool: 'image', icon: <Image size={16} />, label: 'Image (I)' },
 ];
 

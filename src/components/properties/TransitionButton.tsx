@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
-import { createPortal } from 'react-dom';
+import React from 'react';
+import { PreviewSelect } from '../controls/PreviewSelect';
 import {
   ChevronLeft, ChevronRight, Minus, TrendingUp, Spline, Layers,
   Type, ArrowRightLeft, PenLine, Pencil, MoveHorizontal,
@@ -49,10 +49,6 @@ export const TransitionButton: React.FC<Props> = ({
   group,
   direction,
 }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const slideOrder = usePresentationStore((s) => s.presentation.slideOrder);
   const slides = usePresentationStore((s) => s.presentation.slides);
@@ -111,27 +107,6 @@ export const TransitionButton: React.FC<Props> = ({
 
   const canEdit = !!transitionElement && differs;
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleClick = (e: MouseEvent) => {
-      if (
-        menuRef.current && !menuRef.current.contains(e.target as Node) &&
-        buttonRef.current && !buttonRef.current.contains(e.target as Node)
-      ) {
-        setIsOpen(false);
-      }
-    };
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setIsOpen(false);
-    };
-    document.addEventListener('mousedown', handleClick);
-    document.addEventListener('keydown', handleKey);
-    return () => {
-      document.removeEventListener('mousedown', handleClick);
-      document.removeEventListener('keydown', handleKey);
-    };
-  }, [isOpen]);
-
   if (!canEdit) return null;
 
   const writeNewTransitions = (mutate: (t: PropertyTransitions) => void) => {
@@ -152,185 +127,40 @@ export const TransitionButton: React.FC<Props> = ({
   };
 
   return (
-    <div className="relative">
-      <button
-        ref={buttonRef}
-        onClick={() => setIsOpen(!isOpen)}
-        className="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 flex items-center gap-0.5"
-        title={`${direction === 'in' ? 'Incoming' : 'Outgoing'} transition: ${EASING_LABELS[currentEasing]}`}
-      >
+    <PreviewSelect<EasingType>
+      label={`${direction === 'in' ? 'Incoming' : 'Outgoing'} transition`}
+      value={currentEasing}
+      onChange={handleSelect}
+      closeOnSelect={false}
+      previewHeight={80}
+      trigger={<>
         {direction === 'in' ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
         {EASING_ICONS[currentEasing]}
-      </button>
-
-      {isOpen && (
-        <PortalPanel anchorRef={buttonRef} menuRef={menuRef}>
+      </>}
+      triggerClassName="p-1 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600 flex items-center gap-0.5"
+      options={types.map((easing) => ({
+        value: easing,
+        label: EASING_LABELS[easing],
+        preview: <TransitionPreview
+          sourceElement={sourceElement}
+          targetElement={targetElement}
+          group={group}
+          easing={easing}
+          options={easing === currentEasing ? currentOptions : undefined}
+          width={120}
+          height={80}
+          active
+        />,
+      }))}
+      footer={easingHasOptions(group, currentEasing) ? (
+        <div className="mt-3 pt-3 border-t border-gray-200">
           <div className="text-xs font-medium text-gray-500 mb-2 px-1">
-            {direction === 'in' ? 'Incoming' : 'Outgoing'} transition
+            {EASING_LABELS[currentEasing]} options
           </div>
-
-          <div className="grid grid-cols-3 gap-2">
-            {types.map((easing) => {
-              const selected = currentEasing === easing;
-              return (
-                <button
-                  key={easing}
-                  onClick={() => handleSelect(easing)}
-                  className={`group flex flex-col items-stretch rounded overflow-hidden border ${
-                    selected ? 'border-blue-500 ring-1 ring-blue-300' : 'border-gray-200 hover:border-gray-400'
-                  }`}
-                  title={EASING_LABELS[easing]}
-                >
-                  <div className="bg-gray-50 aspect-[3/2]">
-                    <TransitionPreview
-                      sourceElement={sourceElement}
-                      targetElement={targetElement}
-                      group={group}
-                      easing={easing}
-                      options={easing === currentEasing ? currentOptions : undefined}
-                      width={120}
-                      height={80}
-                      active={isOpen}
-                    />
-                  </div>
-                  <div className={`flex items-center gap-1 px-2 py-1 text-xs ${
-                    selected ? 'bg-blue-50 text-blue-700' : 'bg-white text-gray-600'
-                  }`}>
-                    {EASING_ICONS[easing]}
-                    <span>{EASING_LABELS[easing]}</span>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          {easingHasOptions(group, currentEasing) && (
-            <div className="mt-3 pt-3 border-t border-gray-200">
-              <div className="text-xs font-medium text-gray-500 mb-2 px-1">
-                {EASING_LABELS[currentEasing]} options
-              </div>
-              <EasingOptionsPanel
-                value={currentOptions ?? {}}
-                onChange={handleOptionChange}
-                easing={currentEasing}
-              />
-            </div>
-          )}
-        </PortalPanel>
-      )}
-    </div>
-  );
-};
-
-/**
- * Renders its children into document.body as a fixed-positioned panel anchored
- * to the trigger button. Bypasses ancestor `overflow: hidden` clipping (the
- * sidebar does this; z-index alone can't escape it).
- *
- * Placement: prefers below the button. If there isn't room below the
- * viewport, flips above. If the panel is taller than the viewport entirely,
- * pins to the top of the visible area and lets the panel scroll internally
- * (`max-height` + `overflow-y: auto`).
- */
-const PANEL_W = 420;
-const GAP = 4;
-const VIEWPORT_PAD = 8;
-
-const PortalPanel: React.FC<{
-  anchorRef: React.RefObject<HTMLButtonElement | null>;
-  menuRef: React.RefObject<HTMLDivElement | null>;
-  children: React.ReactNode;
-}> = ({ anchorRef, menuRef, children }) => {
-  const panelRef = useRef<HTMLDivElement | null>(null);
-  const [pos, setPos] = useState<{
-    top: number; left: number; maxHeight: number; visible: boolean;
-  }>({ top: 0, left: 0, maxHeight: 0, visible: false });
-
-  const reposition = useCallback(() => {
-    const button = anchorRef.current;
-    if (!button) return;
-    const rect = button.getBoundingClientRect();
-    const panelHeight = panelRef.current?.offsetHeight ?? 0;
-
-    // Horizontal: right-align to the button, clamp to viewport.
-    const desiredLeft = rect.right - PANEL_W;
-    const left = Math.min(
-      Math.max(VIEWPORT_PAD, desiredLeft),
-      window.innerWidth - PANEL_W - VIEWPORT_PAD,
-    );
-
-    // Vertical: prefer below; flip above if not enough room; otherwise pin
-    // to whichever side has more room and cap the height.
-    const spaceBelow = window.innerHeight - VIEWPORT_PAD - (rect.bottom + GAP);
-    const spaceAbove = (rect.top - GAP) - VIEWPORT_PAD;
-    const fitsBelow = panelHeight <= spaceBelow;
-    const fitsAbove = panelHeight <= spaceAbove;
-
-    let top: number;
-    let maxHeight: number;
-    if (fitsBelow || spaceBelow >= spaceAbove) {
-      // Below (or below has more room than above even if neither fits).
-      top = rect.bottom + GAP;
-      maxHeight = Math.max(0, window.innerHeight - VIEWPORT_PAD - top);
-    } else if (fitsAbove) {
-      top = rect.top - GAP - panelHeight;
-      maxHeight = panelHeight;
-    } else {
-      // Pin to the top of the viewport and let the panel scroll internally.
-      top = VIEWPORT_PAD;
-      maxHeight = Math.max(0, rect.top - GAP - VIEWPORT_PAD);
-    }
-
-    setPos((prev) => {
-      if (
-        prev.visible &&
-        prev.top === top &&
-        prev.left === left &&
-        prev.maxHeight === maxHeight
-      ) {
-        return prev;
-      }
-      return { top, left, maxHeight, visible: true };
-    });
-  }, [anchorRef]);
-
-  // Run on every render so a content height change (options panel toggling,
-  // selection-driven layout shifts) re-runs the placement.
-  useLayoutEffect(() => {
-    reposition();
-  });
-
-  useEffect(() => {
-    window.addEventListener('resize', reposition);
-    window.addEventListener('scroll', reposition, true);
-    return () => {
-      window.removeEventListener('resize', reposition);
-      window.removeEventListener('scroll', reposition, true);
-    };
-  }, [reposition]);
-
-  // eslint-disable-next-line react-hooks/immutability -- merge-refs callback ref: writes only happen when React attaches/detaches the DOM node, never during render
-  const setRefs = useCallback((el: HTMLDivElement | null) => {
-    panelRef.current = el;
-    // eslint-disable-next-line react-hooks/immutability -- forwarding the panel DOM node into the caller-owned menuRef (outside-click detection)
-    (menuRef as React.MutableRefObject<HTMLDivElement | null>).current = el;
-  }, [menuRef]);
-
-  return createPortal(
-    <div
-      ref={setRefs}
-      className="fixed z-[9999] bg-white border border-gray-200 rounded-lg shadow-xl p-3 overflow-y-auto"
-      style={{
-        top: pos.top,
-        left: pos.left,
-        width: PANEL_W,
-        maxHeight: pos.maxHeight || undefined,
-        visibility: pos.visible ? 'visible' : 'hidden',
-      }}
-    >
-      {children}
-    </div>,
-    document.body,
+          <EasingOptionsPanel value={currentOptions ?? {}} onChange={handleOptionChange} easing={currentEasing} />
+        </div>
+      ) : undefined}
+    />
   );
 };
 

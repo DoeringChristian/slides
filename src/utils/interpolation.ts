@@ -504,7 +504,8 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
       && aClosed === bClosed;
     const pathsMorph = sa.shapeType === 'path' && sb.shapeType === 'path'
       && (aCurve !== bCurve || aClosed !== bClosed
-        || ((aIsBezier || bIsBezier) && !bezierPairLerp));
+        || ((aIsBezier || bIsBezier) && !bezierPairLerp)
+        || ((aCurve === 'smooth' || bCurve === 'smooth') && sa.points?.length !== sb.points?.length));
     let nextCurve: ShapeElement['curve'] | undefined = t < 0.5 ? sa.curve : sb.curve;
     let nextClosed: boolean | undefined = t < 0.5 ? sa.closed : sb.closed;
     let nextPoints: number[] | undefined;

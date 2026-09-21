@@ -6,17 +6,17 @@ import {
   NumberProperty,
   RangeProperty,
   CheckboxProperty,
-  SelectProperty,
   PreviewSelectProperty,
   ReadoutProperty,
   type PropertyContext,
 } from './Property';
 import type { ShapeElement, ConnectorBinding, PathCurve, StrokeStyle, ArrowheadType, TransitionGroup } from '../../types/presentation';
 import { bindingFor, resolveBinding, isPinnedBinding } from '../../utils/connectorUtils';
-import { pathBounds, catmullTangents, arrowheadGeometry, strokeDashFor } from '../../utils/pathShapes';
+import { pathBoundsFor, catmullTangents, arrowheadGeometry, strokeDashFor, pathD } from '../../utils/pathShapes';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useEditorStore } from '../../store/editorStore';
 import { IconSelect, type IconSelectOption } from '../controls/IconSelect';
+import { PreviewSelect } from '../controls/PreviewSelect';
 import { RenderArrowhead } from '../svg/ElementRenderer';
 
 const isRect = (el: ShapeElement) => el.shapeType === 'rect';
@@ -69,7 +69,7 @@ const BindingPinToggle: React.FC<{
     const abs = pts.map((v, i) => v + (i % 2 === 0 ? element.x : element.y));
     abs[idx] = resolved.x;
     abs[idx + 1] = resolved.y;
-    const b = pathBounds(abs);
+    const b = pathBoundsFor(abs, element.curve ?? 'linear', !!element.closed, element.tangents);
     update({
       [end === 'start' ? 'startBinding' : 'endBinding']: next,
       x: b.x, y: b.y, width: b.width, height: b.height, points: b.points,
@@ -118,26 +118,55 @@ class BindingPinProperty extends Property<ShapeElement> {
   }
 }
 
-/**
- * Curve-mode select. Subclassed so converting a path TO bezier also writes
- * explicit initialized tangents (Catmull-Rom estimates — the same values
- * the renderer's missing-tangent fallback would use), giving the tangent
- * handles real data to edit from the first frame. Existing tangents (e.g.
- * bezier → linear → bezier round trip) are preserved.
- */
-class CurveProperty extends SelectProperty<ShapeElement, PathCurve> {
-  protected override set(el: ShapeElement, v: PathCurve): Partial<ShapeElement> {
-    const changes: Partial<ShapeElement> = super.set(el, v);
-    if (
-      v === 'bezier'
-      && (el.curve ?? 'linear') !== 'bezier'
-      && (el.points?.length ?? 0) >= 4
-      && !el.tangents
-    ) {
-      changes.tangents = catmullTangents(el.points!, !!el.closed);
+/** Normal modes are straight, automatic through-point curvature, and manual
+ * Bézier. Legacy splines stay selected and render unchanged until an explicit
+ * conversion; dormant manual tangents survive mode switches. */
+class CurveProperty extends Property<ShapeElement> {
+  readonly key = 'curve';
+  readonly label = 'Curve';
+  override get transitionGroup(): TransitionGroup { return 'controlPoints'; }
+  override get syncFields(): string[] { return ['curve', 'tangents', 'points', 'x', 'y', 'width', 'height']; }
+  override visibleFor(el: ShapeElement): boolean { return isPath(el); }
+
+  renderEditor({ element, update }: PropertyContext<ShapeElement>) {
+    const mode = element.curve ?? 'linear';
+    const options: Array<{ value: PathCurve; label: string }> = [
+      { value: 'linear', label: 'Straight' },
+      { value: 'smooth', label: 'Curved through points' },
+      { value: 'bezier', label: 'Bezier' },
+    ];
+    if (mode === 'bspline2' || mode === 'bspline3') {
+      options.push({ value: mode, label: `B-spline (${mode === 'bspline2' ? 'quadratic' : 'cubic'}, legacy)` });
     }
-    return changes;
+    return <PreviewSelect<PathCurve>
+      label={this.label}
+      value={mode}
+      options={options.map((o) => ({ ...o, preview: curvePreview(o.value) }))}
+      onChange={(curve) => {
+        const points = element.points ?? [];
+        const tangents = curve === 'bezier' && element.tangents?.length !== points.length * 2
+          ? catmullTangents(points, !!element.closed) : element.tangents;
+        const b = pathBoundsFor(points, curve, !!element.closed, tangents);
+        const dx = b.x + (b.width - element.width) / 2;
+        const dy = b.y + (b.height - element.height) / 2;
+        const angle = element.rotation * Math.PI / 180;
+        update({ curve, ...(tangents ? { tangents } : {}), ...b,
+          x: element.x + (element.width - b.width) / 2 + dx * Math.cos(angle) - dy * Math.sin(angle),
+          y: element.y + (element.height - b.height) / 2 + dx * Math.sin(angle) + dy * Math.cos(angle),
+        });
+      }}
+    />;
   }
+}
+
+function curvePreview(curve: PathCurve): React.ReactNode {
+  const points = [3, 23, 22, 6, 43, 23, 62, 6];
+  return <svg width={65} height={30} viewBox="0 0 65 30" aria-hidden="true">
+    <path d={pathD(points, curve, false)} fill="none" stroke="currentColor" strokeWidth={1.5} />
+    {points.filter((_, i) => i % 2 === 0).map((x, i) =>
+      <circle key={i} cx={x} cy={points[2 * i + 1]} r={2} fill="currentColor" />)}
+    {curve === 'bezier' && <path d="M 12 6 H 32 M 33 23 H 53" stroke="currentColor" strokeWidth={0.7} />}
+  </svg>;
 }
 
 // ---------------------------------------------------------------------------
@@ -235,10 +264,11 @@ class ArrowheadProperty extends Property<ShapeElement> {
   renderEditor({ element, update }: PropertyContext<ShapeElement>) {
     return (
       <IconSelect<ArrowheadType>
+        label={this.label}
         options={this.options}
         value={element[this.key] ?? 'none'}
         onChange={(v) => update({ [this.key]: v } as Partial<ShapeElement>)}
-        columns={7}
+        columns={3}
         disabled={this.disabledFor(element)}
       />
     );
@@ -285,21 +315,7 @@ const SHAPE_PROPERTIES: Property<ShapeElement>[] = [
     transitionGroup: 'cornerRadius', min: 0, max: 100, step: 1,
     visibleFor: supportsCornerRadius,
   }),
-  new CurveProperty({
-    key: 'curve', label: 'Curve',
-    // Curve mode shares the `controlPoints` transition with the vertex
-    // list — interpolation samples both paths into polylines and lerps
-    // them when the curves differ. One easing controls the whole morph.
-    transitionGroup: 'controlPoints',
-    visibleFor: isPath,
-    defaultValue: 'linear',
-    options: [
-      { value: 'linear', label: 'Linear' },
-      { value: 'bspline2', label: 'B-spline (quadratic)' },
-      { value: 'bspline3', label: 'B-spline (cubic)' },
-      { value: 'bezier', label: 'Bezier' },
-    ],
-  }),
+  new CurveProperty(),
   new CheckboxProperty<ShapeElement>({ key: 'closed', label: 'Closed path', visibleFor: isPath }),
   // Typed arrowheads. The transition groups keep their historical
   // 'startArrow'/'endArrow' names (persisted in decks).
@@ -315,7 +331,7 @@ const SHAPE_PROPERTIES: Property<ShapeElement>[] = [
     transitionGroup: 'controlPoints',
     // Resets move the curve mode along with the vertices so the path
     // morphs in one piece.
-    syncFields: ['points', 'curve', 'closed', 'x', 'y', 'width', 'height'],
+    syncFields: ['points', 'curve', 'tangents', 'closed', 'x', 'y', 'width', 'height'],
     visibleFor: isPath,
     readout: (el) => String(((el.points?.length ?? 0) / 2) | 0),
   }),

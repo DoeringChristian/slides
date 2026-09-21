@@ -424,6 +424,59 @@ export function bindingFor(
   return { elementId: target.id, mode: 'edge', focus, gap };
 }
 
+/** Signed shortest distance to the rendered silhouette (negative inside).
+ * Rotation is removed before measuring. Polygon edges and rounded rectangles
+ * are exact; ellipse distance minimizes on its analytic first-quadrant arc. */
+export function silhouetteDistance(target: SlideElement, point: Pt): number {
+  const c = getRotationOrigin(target);
+  const p = rotatePoint(point.x, point.y, c.x, c.y, -(target.rotation || 0));
+  const { x, y, width: w, height: h } = target;
+  if (target.type === 'shape') {
+    if (target.shapeType === 'ellipse' && w > EPS && h > EPS) {
+      const px = Math.abs(p.x - c.x), py = Math.abs(p.y - c.y);
+      const rx = w / 2, ry = h / 2;
+      const distanceSq = (angle: number) => (rx * Math.cos(angle) - px) ** 2 + (ry * Math.sin(angle) - py) ** 2;
+      // Bracket the closest point, including axis endpoints, then refine.
+      const step = Math.PI / 128;
+      let best = 0;
+      for (let i = 1; i <= 64; i++) if (distanceSq(i * step) < distanceSq(best * step)) best = i;
+      let lo = Math.max(0, (best - 1) * step), hi = Math.min(Math.PI / 2, (best + 1) * step);
+      for (let i = 0; i < 40; i++) {
+        const a = lo + (hi - lo) / 3, b = hi - (hi - lo) / 3;
+        if (distanceSq(a) < distanceSq(b)) hi = b; else lo = a;
+      }
+      const d = Math.sqrt(Math.min(distanceSq(0), distanceSq(Math.PI / 2), distanceSq((lo + hi) / 2)));
+      return (px / rx) ** 2 + (py / ry) ** 2 < 1 ? -d : d;
+    }
+    if (target.shapeType === 'triangle' || target.shapeType === 'star') {
+      const poly = target.shapeType === 'triangle' ? triangleVerts(x, y, w, h) : starVerts(x, y, w, h);
+      let inside = false, distance = Infinity;
+      const n = poly.length / 2;
+      for (let i = 0, j = n - 1; i < n; j = i++) {
+        const ax = poly[2 * j], ay = poly[2 * j + 1], bx = poly[2 * i], by = poly[2 * i + 1];
+        if ((ay > p.y) !== (by > p.y) && p.x < (bx - ax) * (p.y - ay) / (by - ay) + ax) inside = !inside;
+        const dx = bx - ax, dy = by - ay;
+        const t = clamp(((p.x - ax) * dx + (p.y - ay) * dy) / (dx * dx + dy * dy || 1), 0, 1);
+        distance = Math.min(distance, Math.hypot(p.x - ax - t * dx, p.y - ay - t * dy));
+      }
+      return inside ? -distance : distance;
+    }
+  }
+  const r = target.type === 'shape' && target.shapeType === 'rect'
+    ? clamp(target.cornerRadius ?? 0, 0, Math.min(w, h) / 2) : 0;
+  const qx = Math.abs(p.x - c.x) - w / 2 + r;
+  const qy = Math.abs(p.y - c.y) - h / 2 + r;
+  return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - r;
+}
+
+/** Infer intent ONLY from the raw (possibly angle-constrained) drop point.
+ * Within 12 screen pixels of the silhouette, keep sliding edge semantics;
+ * deeper inside, pin the exact point. Both drawing and editing call this. */
+export function bindingForDrop(point: Pt, target: SlideElement, adjacent: Pt, zoom = 1): ConnectorBinding {
+  const mode = silhouetteDistance(target, point) < -12 / Math.max(zoom, EPS) ? 'pinned' : 'edge';
+  return bindingFor(point, target, adjacent, mode);
+}
+
 // =============================================================================
 // Target picking
 // =============================================================================
@@ -446,9 +499,8 @@ function bindThreshold(el: SlideElement, zoom?: number): number {
  * element wins. Invisible / locked elements and path shapes are never
  * targets (unchanged policy).
  *
- * Distance is measured radially from the element's center (the silhouette
- * crossing of the center→point ray) — a simplification vs Excalidraw's
- * per-shape exact distance functions; see the module tests.
+ * Uses shortest distance to the true silhouette, not the bounding box or
+ * radial distance (important at star notches and rounded corners).
  */
 export function getBindingTarget2(
   point: Pt,
@@ -461,12 +513,7 @@ export function getBindingTarget2(
     if (!el || el.id === excludeId) continue;
     if (el.visible === false || el.locked) continue;
     if (el.type === 'shape' && (el as ShapeElement).shapeType === 'path') continue;
-    const c = getRotationOrigin(el);
-    const dPoint = Math.hypot(point.x - c.x, point.y - c.y);
-    if (dPoint < EPS) return el; // exactly on the center
-    const hit = silhouetteIntersect(el, c, point);
-    const dBoundary = hit ? Math.hypot(hit.x - c.x, hit.y - c.y) : 0;
-    if (dPoint <= dBoundary + bindThreshold(el, zoom)) return el;
+    if (silhouetteDistance(el, point) <= bindThreshold(el, zoom)) return el;
   }
   return null;
 }
@@ -565,7 +612,7 @@ export function rebindAfterElementsMoved(
  * Bind-while-drawing commit helper (pure, DOM-free): given a freshly drawn
  * path's vertices in ABSOLUTE slide coords, find binding targets for the
  * first and last vertex (getBindingTarget2 semantics: inside or near the
- * silhouette, topmost wins), derive edge-mode bindings, and snap each bound
+ * silhouette, topmost wins), infer edge/pinned intent, and snap each bound
  * vertex to its binding's resolved position (identity for points outside
  * the silhouette; points inside get pulled onto the outline).
  *
@@ -588,7 +635,7 @@ export function bindDraftEndpoints(
       const target = getBindingTarget2(pt, elements, '', zoom);
       if (!target) return null;
       const adj: Pt = { x: absPoints[adjIdx], y: absPoints[adjIdx + 1] };
-      const binding = bindingFor(pt, target, adj, 'edge');
+      const binding = bindingForDrop(pt, target, adj, zoom);
       const snapped = resolveBinding(binding, target, adj);
       out[idx] = snapped.x;
       out[idx + 1] = snapped.y;

@@ -55,6 +55,7 @@ export function pathD(
   if (points.length < 4) return '';
   if (curve === 'linear') return linearPathD(points, closed, cornerRadius);
   // cornerRadius is meaningless for B-splines / béziers (already smooth).
+  if (curve === 'smooth') return bezierPathD(points, catmullTangents(points, closed), closed);
   if (curve === 'bezier') return bezierPathD(points, effectiveTangents(points, tangents, closed), closed);
   const degree = curve === 'bspline2' ? 2 : 3;
   return bsplinePathD(points, degree, closed);
@@ -282,9 +283,9 @@ function bsplineSamples(points: number[], degree: 2 | 3, closed: boolean): numbe
  *  estimates exactly like `pathD`). */
 export function sampledPath(points: number[], curve: PathCurve, closed: boolean, tangents?: number[]): number[] {
   if (curve === 'linear') return points.slice();
-  if (curve === 'bezier') {
+  if (curve === 'bezier' || curve === 'smooth') {
     if (points.length < 4) return points.slice();
-    return bezierSamples(points, effectiveTangents(points, tangents, closed), closed);
+    return bezierSamples(points, effectiveTangents(points, curve === 'smooth' ? undefined : tangents, closed), closed);
   }
   const degree = curve === 'bspline2' ? 2 : 3;
   return bsplineSamples(points, degree, closed);
@@ -603,11 +604,9 @@ export function pathBounds(points: number[]): {
   };
 }
 
-/** Curve-aware bounding box for a vertex list. Non-bezier curves keep the
- *  historical control-point bounds (B-splines stay inside their control
- *  hull, so those were already conservative-correct). Bézier curves can
- *  bulge OUTSIDE their vertex bbox — tangent handles pull the curve out —
- *  so their box is computed from the sampled polyline. The returned
+/** Curve-aware bounding box for a vertex list. Linear / legacy splines keep
+ *  their control-point bounds. Through-point curves can bulge OUTSIDE the
+ *  vertex bbox, so include every cubic derivative root (exact extrema). The returned
  *  `points` are the CONTROL vertices translated so the box's (x, y) is the
  *  new element position (tangents are vertex-relative and need no shift). */
 export function pathBoundsFor(
@@ -616,8 +615,28 @@ export function pathBoundsFor(
   closed: boolean,
   tangents?: number[],
 ): { x: number; y: number; width: number; height: number; points: number[] } {
-  if (curve !== 'bezier' || points.length < 4) return pathBounds(points);
-  const samples = sampledPath(points, 'bezier', closed, tangents);
+  if ((curve !== 'bezier' && curve !== 'smooth') || points.length < 4) return pathBounds(points);
+  const handles = effectiveTangents(points, curve === 'smooth' ? undefined : tangents, closed);
+  const samples = points.slice();
+  const n = points.length / 2;
+  for (let i = 0; i < (closed ? n : n - 1); i++) {
+    const j = (i + 1) % n;
+    for (let axis = 0; axis < 2; axis++) {
+      const p0 = points[2 * i + axis], p3 = points[2 * j + axis];
+      const p1 = p0 + handles[4 * i + 2 + axis], p2 = p3 + handles[4 * j + axis];
+      const a = -p0 + 3 * p1 - 3 * p2 + p3, b = 2 * (p0 - 2 * p1 + p2), c = p1 - p0;
+      const disc = b * b - 4 * a * c;
+      const roots = Math.abs(a) < 1e-12 ? (Math.abs(b) < 1e-12 ? [] : [-c / b])
+        : disc < 0 ? [] : [(-b + Math.sqrt(disc)) / (2 * a), (-b - Math.sqrt(disc)) / (2 * a)];
+      for (const t of roots) {
+        if (t <= 0 || t >= 1) continue;
+        const u = 1 - t;
+        const v = u ** 3 * p0 + 3 * u * u * t * p1 + 3 * u * t * t * p2 + t ** 3 * p3;
+        // Only this axis matters; the other coordinate is an existing vertex.
+        samples.push(axis === 0 ? v : points[2 * i], axis === 1 ? v : points[2 * i + 1]);
+      }
+    }
+  }
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (let i = 0; i < samples.length; i += 2) {
     if (samples[i] < minX) minX = samples[i];

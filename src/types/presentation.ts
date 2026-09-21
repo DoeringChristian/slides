@@ -272,14 +272,15 @@ export type ArrowheadType =
 
 /** Curve mode for a path shape:
  *    linear   — straight segments between vertices
- *    bspline2 — uniform quadratic B-spline through the control points
- *    bspline3 — uniform cubic B-spline through the control points
+ *    smooth   — Catmull-Rom curve through every vertex (automatic tangents)
+ *    bspline2 — uniform quadratic B-spline controlled by the points
+ *    bspline3 — uniform cubic B-spline controlled by the points
  *    bezier   — cubic Bézier chain through the vertices with editable
  *               per-vertex tangent handles (`ShapeElement.tangents`)
  *  Both B-spline modes interpolate the endpoints (clamped) when the path is
  *  open and wrap smoothly when closed. Bézier always passes through every
  *  vertex; missing tangents fall back to Catmull-Rom estimates. */
-export type PathCurve = 'linear' | 'bspline2' | 'bspline3' | 'bezier';
+export type PathCurve = 'linear' | 'smooth' | 'bspline2' | 'bspline3' | 'bezier';
 
 /** Stroke dash pattern for path shapes (lines, arrows, polylines, polygons).
  *  `solid` (default) = no dash. `dashed` = medium dashes. `dotted` = short

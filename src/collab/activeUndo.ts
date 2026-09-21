@@ -60,3 +60,26 @@ export function createUndoManagerFor(doc: Y.Doc): Y.UndoManager {
     captureTimeout: 500,
   });
 }
+
+/** Keep one local scrub together across pointer pauses, without changing the
+ * normal typing capture window outside the gesture. Cancellation undoes the
+ * captured gesture (reviving the original Y items, so earlier undo still works)
+ * and discards only that gesture's redo item. Remote origins remain excluded. */
+export function beginScrubCapture(mgr: Y.UndoManager | null): (cancelled: boolean) => void {
+  if (!mgr) return () => {};
+  const timeout = mgr.captureTimeout;
+  const previous = mgr.undoStack.at(-1);
+  mgr.stopCapturing();
+  mgr.captureTimeout = Infinity;
+  let finished = false;
+  return (cancelled) => {
+    if (finished) return;
+    finished = true;
+    mgr.captureTimeout = timeout;
+    if (cancelled && mgr.undoStack.length && mgr.undoStack.at(-1) !== previous) {
+      const item = mgr.undo();
+      if (item) mgr.redoStack.pop();
+    }
+    mgr.stopCapturing();
+  };
+}

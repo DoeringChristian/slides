@@ -1,6 +1,6 @@
 import React from 'react';
-import type { Tool } from '../../types/presentation';
-import { pathD } from '../../utils/pathShapes';
+import type { Tool, PathCurve } from '../../types/presentation';
+import { RenderShape } from './ElementRenderer';
 import type { PolyDraftState } from './useSVGDrawing';
 
 interface DrawState {
@@ -32,10 +32,7 @@ export const SVGDrawingPreview: React.FC<Props> = ({ drawState, tool, zoom = 1 }
 
   // Scale sizes inversely with zoom to keep them constant on screen
   const strokeW = 1 / zoom;
-  const lineStrokeW = 2 / zoom;
   const dashArray = `${5 / zoom} ${5 / zoom}`;
-  const headLength = 10 / zoom;
-  const headWidth = 10 / zoom;
 
   const commonStyle: React.CSSProperties = { pointerEvents: 'none' };
 
@@ -72,57 +69,31 @@ export const SVGDrawingPreview: React.FC<Props> = ({ drawState, tool, zoom = 1 }
         />
       );
     case 'line':
-      return (
-        <line
-          x1={drawState.snappedStartX}
-          y1={drawState.snappedStartY}
-          x2={drawState.snappedCurrentX}
-          y2={drawState.snappedCurrentY}
-          stroke="#4285f4"
-          strokeWidth={lineStrokeW}
-          strokeDasharray={dashArray}
-          style={commonStyle}
-        />
-      );
-    case 'arrow': {
-      // Draw line with arrowhead
-      const dx = drawState.snappedCurrentX - drawState.snappedStartX;
-      const dy = drawState.snappedCurrentY - drawState.snappedStartY;
-      const angle = Math.atan2(dy, dx);
-
-      const tip = { x: drawState.snappedCurrentX, y: drawState.snappedCurrentY };
-      const left = {
-        x: tip.x - headLength * Math.cos(angle) + headWidth / 2 * Math.sin(angle),
-        y: tip.y - headLength * Math.sin(angle) - headWidth / 2 * Math.cos(angle),
-      };
-      const right = {
-        x: tip.x - headLength * Math.cos(angle) - headWidth / 2 * Math.sin(angle),
-        y: tip.y - headLength * Math.sin(angle) + headWidth / 2 * Math.cos(angle),
-      };
-
-      return (
-        <g style={commonStyle}>
-          <line
-            x1={drawState.snappedStartX}
-            y1={drawState.snappedStartY}
-            x2={drawState.snappedCurrentX}
-            y2={drawState.snappedCurrentY}
-            stroke="#4285f4"
-            strokeWidth={lineStrokeW}
-            strokeDasharray={dashArray}
-          />
-          <polygon
-            points={`${tip.x},${tip.y} ${left.x},${left.y} ${right.x},${right.y}`}
-            fill="#4285f4"
-          />
-        </g>
-      );
-    }
+    case 'arrow':
+      return <DraftPath
+        points={[drawState.snappedStartX, drawState.snappedStartY, drawState.snappedCurrentX, drawState.snappedCurrentY]}
+        curve="linear"
+        endHead={tool === 'arrow' ? 'triangle' : undefined}
+        zoom={zoom}
+      />;
     default:
       return null;
   }
 };
 
+
+/** Preview uses the production path/arrow renderer, including shaft insets. */
+function DraftPath({ points, curve, closed = false, endHead, zoom }: {
+  points: number[]; curve: PathCurve; closed?: boolean; endHead?: 'triangle'; zoom: number;
+}) {
+  return <RenderShape element={{
+    id: 'draft-preview', type: 'shape', shapeType: 'path',
+    x: 0, y: 0, width: 1, height: 1, rotation: 0,
+    opacity: 1, visible: true, locked: false,
+    fill: '', stroke: '#4285f4', strokeWidth: 2 / zoom, cornerRadius: 0,
+    points, curve, closed, endHead,
+  }} />;
+}
 
 interface PolyPreviewProps {
   polyDraft: PolyDraftState | null;
@@ -143,15 +114,14 @@ export const SVGPolyDraftPreview: React.FC<PolyPreviewProps> = ({ polyDraft, zoo
   const lastY = committed[committed.length - 1];
   // Preview path includes a virtual vertex at the cursor so the user sees
   // exactly how the next click will land.
-  const previewVertices = [...committed, polyDraft.previewX, polyDraft.previewY];
-  const d = pathD(previewVertices, polyDraft.curve, false);
+  const previewVertices = polyDraft.previewPoints ?? [...committed, polyDraft.previewX, polyDraft.previewY];
   return (
     <g style={{ pointerEvents: 'none' }}>
-      <path d={d} stroke="#4285f4" strokeWidth={strokeW} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      <DraftPath points={previewVertices} curve={polyDraft.curve} closed={polyDraft.previewClosed} endHead={polyDraft.endHead} zoom={zoom} />
       {/* Dashed rubber-band from last committed vertex to cursor — only
           really visible for the polygon mode; the bspline shape already
           curves toward the cursor. */}
-      {polyDraft.curve === 'linear' && (
+      {polyDraft.curve === 'linear' && !polyDraft.previewPoints && (
         <line
           x1={lastX}
           y1={lastY}
@@ -166,14 +136,14 @@ export const SVGPolyDraftPreview: React.FC<PolyPreviewProps> = ({ polyDraft, zoo
           the user sees that clicking will close the path. */}
       {Array.from({ length: committed.length / 2 }, (_, i) => {
         const isFirst = i === 0;
-        const nearFirst = isFirst && committed.length >= 6
+        const nearFirst = polyDraft.canClose !== false && isFirst && committed.length >= 6
           && committed[0] === polyDraft.previewX
           && committed[1] === polyDraft.previewY;
         return (
           <circle
             key={i}
-            cx={committed[2 * i]}
-            cy={committed[2 * i + 1]}
+            cx={previewVertices[2 * i]}
+            cy={previewVertices[2 * i + 1]}
             r={nearFirst ? handleR * 1.8 : handleR}
             fill={nearFirst ? '#4285f4' : '#fff'}
             stroke="#4285f4"

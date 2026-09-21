@@ -11,7 +11,7 @@ const shapes: { tool: Tool; icon: React.ReactNode; label: string }[] = [
   { tool: 'line', icon: <Minus size={16} />, label: 'Line' },
   { tool: 'arrow', icon: <MoveRight size={16} />, label: 'Arrow' },
   { tool: 'polygon', icon: <Hexagon size={16} />, label: 'Polygon' },
-  { tool: 'bspline', icon: <Spline size={16} />, label: 'B-spline' },
+  { tool: 'bspline', icon: <Spline size={16} />, label: 'Curve' },
 ];
 
 export const ShapeMenu: React.FC = () => {

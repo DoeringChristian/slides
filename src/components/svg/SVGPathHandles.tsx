@@ -13,7 +13,7 @@ import { constrainToAngle } from '../../utils/geometry';
 import { useEditorStore } from '../../store/editorStore';
 import { computePointSnap, type Guide } from '../../hooks/useAlignmentGuides';
 import { getMarginLayout, getMarginBounds } from '../../utils/marginLayouts';
-import { getBindingTarget2, bindingFor, resolveBinding } from '../../utils/connectorUtils';
+import { getBindingTarget2, bindingForDrop, resolveBinding } from '../../utils/connectorUtils';
 import { useScreenToSVG } from './useScreenToSVG';
 
 interface Props {
@@ -97,10 +97,8 @@ export const SVGPathHandles: React.FC<Props> = ({
   // Tangents the path currently renders with (stored, or Catmull-Rom
   // defaults for a bare bezier conversion) — editing starts from these.
   const baseTangents = useMemo(() => {
-    if (!isBezier) return undefined;
-    return element.tangents && element.tangents.length === points.length * 2
-      ? element.tangents
-      : catmullTangents(points, closed);
+    if (element.tangents?.length === points.length * 2) return element.tangents;
+    return isBezier ? catmullTangents(points, closed) : undefined;
   }, [isBezier, element.tangents, points, closed]);
 
   const [dragging, setDragging] = useState<Drag | null>(null);
@@ -110,6 +108,9 @@ export const SVGPathHandles: React.FC<Props> = ({
   // call onUpdate OUTSIDE any setState updater (see component docs).
   const livePointsRef = useRef<number[] | null>(null);
   const liveTangentsRef = useRef<number[] | null>(null);
+  // Undefined means no endpoint move yet; null means explicitly unbound.
+  const dropBindingRef = useRef<ConnectorBinding | null | undefined>(undefined);
+  const pointerIdRef = useRef<number | null>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
   // Vertex whose bezier tangent handles are shown. Sticky (survives hover
   // leaving the vertex) so the pointer can travel to the handle itself.
@@ -127,14 +128,21 @@ export const SVGPathHandles: React.FC<Props> = ({
   // curve doesn't pass through its control points).
   // ---------------------------------------------------------------------------
   const segments = useMemo<Segment[]>(() => {
-    if (n < 2) return [];
+    const liveN = renderPoints.length / 2;
+    if (liveN < 2) return [];
     const samples = sampledPath(renderPoints, curve, closed, renderTangents ?? undefined);
     if (samples.length < 4) return [];
     const walk = closed ? [...samples, samples[0], samples[1]] : samples;
     const M = walk.length / 2;
     const bounds: number[] = [0];
     let cursor = 0;
-    for (let v = 1; v < n; v++) {
+    for (let v = 1; v < liveN; v++) {
+      // Through-point curves have EXACT segment boundaries every 32
+      // samples. Nearest-vertex searches misassign loops/repeated vertices.
+      if (curve === 'smooth' || curve === 'bezier' || curve === 'linear') {
+        bounds.push(curve === 'linear' ? v : v * 32);
+        continue;
+      }
       const vx = renderPoints[2 * v];
       const vy = renderPoints[2 * v + 1];
       let best = Math.min(cursor + 1, M - 1);
@@ -179,7 +187,7 @@ export const SVGPathHandles: React.FC<Props> = ({
       out.push({ sub, midX, midY });
     }
     return out;
-  }, [renderPoints, renderTangents, curve, closed, n]);
+  }, [renderPoints, renderTangents, curve, closed]);
 
   // ---------------------------------------------------------------------------
   // Commit helper: element-relative live geometry → absolute → bounds
@@ -209,6 +217,8 @@ export const SVGPathHandles: React.FC<Props> = ({
     try {
       (e.currentTarget as Element).setPointerCapture(e.pointerId);
     } catch { /* ignore */ }
+    pointerIdRef.current = e.pointerId;
+    dropBindingRef.current = undefined;
     onTransformStart?.();
   }, [onTransformStart]);
 
@@ -266,6 +276,7 @@ export const SVGPathHandles: React.FC<Props> = ({
     if (!dragging) return;
 
     const onMove = (e: PointerEvent) => {
+      if (e.pointerId !== pointerIdRef.current) return;
       e.preventDefault();
       const pos = screenToSVG(e.clientX, e.clientY);
       const prevPts = livePointsRef.current;
@@ -318,16 +329,15 @@ export const SVGPathHandles: React.FC<Props> = ({
         if (target) {
           // Silhouette + gap preview: outside the outline the vertex stays
           // under the cursor; inside, it hugs the silhouette.
-          const preview = resolveBinding(
-            bindingFor({ x: absX, y: absY }, target, adj, 'edge'),
-            target,
-            adj,
-          );
+          const binding = bindingForDrop({ x: absX, y: absY }, target, adj, zoom);
+          dropBindingRef.current = binding;
+          const preview = resolveBinding(binding, target, adj);
           absX = preview.x;
           absY = preview.y;
           onConnectorHighlight?.(target.id);
           onGuidesChange?.([]);
         } else {
+          dropBindingRef.current = null;
           onConnectorHighlight?.(null);
           // Snap to sibling elements (Shift disables, like every drag).
           const { snapToGrid: snappingEnabled, marginLayoutId } = useEditorStore.getState();
@@ -354,7 +364,9 @@ export const SVGPathHandles: React.FC<Props> = ({
     };
 
     const onUp = (e: PointerEvent) => {
+      if (e.pointerId !== pointerIdRef.current) return;
       e.preventDefault();
+      pointerIdRef.current = null;
       setDragging(null);
       onGuidesChange?.([]);
       onConnectorHighlight?.(null);
@@ -370,35 +382,42 @@ export const SVGPathHandles: React.FC<Props> = ({
       if (dragging.kind === 'vertex') {
         const liveN = finalPoints.length / 2;
         const isEndpoint = !closed && (dragging.idx === 0 || dragging.idx === liveN - 1);
-        // (Re)derive the dragged endpoint's binding from the drop point;
-        // no target clears a stale binding. The other endpoint's binding
-        // is preserved unchanged.
-        if (isEndpoint && elements) {
-          const pts = update.points!;
-          const lastVx = pts.length - 2;
-          const tipX = (dragging.idx === 0 ? pts[0] : pts[lastVx]) + update.x!;
-          const tipY = (dragging.idx === 0 ? pts[1] : pts[lastVx + 1]) + update.y!;
-          const target = getBindingTarget2({ x: tipX, y: tipY }, elements, element.id, zoom);
-          let binding: ConnectorBinding | null = null;
-          if (target) {
-            const adjVx = dragging.idx === 0 ? 2 : lastVx - 2;
-            const adj = { x: pts[adjVx] + update.x!, y: pts[adjVx + 1] + update.y! };
-            binding = bindingFor({ x: tipX, y: tipY }, target, adj, 'edge');
-          }
-          if (dragging.idx === 0) update.startBinding = binding;
-          else update.endBinding = binding;
+        // The preview retained raw-drop intent; snapped coordinates cannot
+        // tell an edge drop from a pin. Preserve the other endpoint binding.
+        if (isEndpoint && dropBindingRef.current !== undefined) {
+          if (dragging.idx === 0) update.startBinding = dropBindingRef.current;
+          else update.endBinding = dropBindingRef.current;
         }
       }
       onUpdate(update);
     };
 
+    const cancel = () => {
+      pointerIdRef.current = null;
+      dropBindingRef.current = undefined;
+      livePointsRef.current = null;
+      liveTangentsRef.current = null;
+      setLivePoints(null);
+      setLiveTangents(null);
+      setDragging(null);
+      onGuidesChange?.([]);
+      onConnectorHighlight?.(null);
+    };
+    const onCancel = (e: PointerEvent) => { if (e.pointerId === pointerIdRef.current) cancel(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); cancel(); } };
     window.addEventListener('pointermove', onMove, { passive: false });
     window.addEventListener('pointerup', onUp, { passive: false });
-    window.addEventListener('pointercancel', onUp, { passive: false });
+    window.addEventListener('pointercancel', onCancel);
+    window.addEventListener('lostpointercapture', onCancel);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('blur', cancel);
     return () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
+      window.removeEventListener('pointercancel', onCancel);
+      window.removeEventListener('lostpointercapture', onCancel);
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('blur', cancel);
     };
   }, [dragging, closed, element.id, element.x, element.y, elements, zoom, screenToSVG, geometryUpdate, onUpdate, onGuidesChange, onConnectorHighlight]);
 
@@ -407,7 +426,7 @@ export const SVGPathHandles: React.FC<Props> = ({
   // vertices; open paths keep ≥2 (a poly can degrade back to a line).
   // ---------------------------------------------------------------------------
   useEffect(() => {
-    if (hoverIdx === null) return;
+    if (hoverIdx === null || dragging) return;
     const minVertices = closed ? 3 : 2;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Backspace' && e.key !== 'Delete') return;
@@ -427,7 +446,7 @@ export const SVGPathHandles: React.FC<Props> = ({
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [hoverIdx, n, points, baseTangents, closed, geometryUpdate, onUpdate]);
+  }, [hoverIdx, dragging, n, points, baseTangents, closed, geometryUpdate, onUpdate]);
 
   // ---------------------------------------------------------------------------
   // Alt+click on a segment strip inserts a vertex at the click point.

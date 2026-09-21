@@ -198,6 +198,9 @@ abstract class BaseProperty<T extends object, V> extends Property<T> {
 // ---------------------------------------------------------------------------
 
 interface NumberOpts<T extends object> extends BaseOpts<T> {
+  /** Displayed/scrubbed value = stored value × scale. Bounds, precision,
+   * steps and Ctrl snapping are all in DISPLAY units. */
+  scale?: number;
   min?: number;
   max?: number;
   step?: number;
@@ -242,8 +245,8 @@ export class NumberProperty<T extends object = SlideElement> extends BasePropert
         element={element}
         update={update}
         syncFields={this.syncFields}
-        value={this.get(element) ?? this.opts.defaultValue ?? 0}
-        changesFor={(el: T, v: number) => this.set(el, v)}
+        value={(this.get(element) ?? this.opts.defaultValue ?? 0) * (this.opts.scale ?? 1)}
+        changesFor={(el: T, v: number) => this.set(el, v / (this.opts.scale ?? 1))}
         spec={scrubSpecFrom(this.opts)}
         unit={this.opts.unit}
         disabled={this.disabledFor(element)}
@@ -360,6 +363,7 @@ export class PreviewSelectProperty<T extends object = SlideElement, V extends st
     const v = (this.get(element) ?? this.opts.defaultValue) as V;
     return (
       <PreviewSelect<V>
+        label={this.label}
         options={this.opts.options.map((o) => ({
           value: o.value, label: o.label, preview: o.preview(element),
         }))}

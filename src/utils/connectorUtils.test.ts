@@ -21,6 +21,7 @@ import {
   getBindingTarget2,
   rebindAfterElementsMoved,
   bindDraftEndpoints,
+  bindingForDrop,
 } from './connectorUtils';
 import type {
   SlideElement,
@@ -500,14 +501,34 @@ describe('bindDraftEndpoints', () => {
     expect(endBinding).toMatchObject({ elementId: 'b', mode: 'edge' });
   });
 
-  test('an endpoint INSIDE a shape is pulled onto its silhouette (gap 0)', () => {
+  test('a DEEP drop inside a shape pins the exact point', () => {
+    // (50,50) is the centre of the (0,0)-(100,100) box — 50 units of depth,
+    // far past the 12-unit edge band, so the drop expresses "stick here".
     const { absPoints, startBinding } =
       bindDraftEndpoints([50, 50, 300, 300], [boxA]);
+    expect(startBinding).toMatchObject({
+      elementId: 'a', mode: 'pinned', fixedPoint: [0.5, 0.5],
+    });
+    // A pinned endpoint stays exactly where it was dropped.
+    expect(absPoints[0]).toBeCloseTo(50, 6);
+    expect(absPoints[1]).toBeCloseTo(50, 6);
+  });
+
+  test('a SHALLOW drop inside the edge band keeps sliding edge semantics', () => {
+    // (95,50) sits 5 units inside the right edge — within the 12-unit band,
+    // so it stays an edge binding and hugs the outline (gap 0).
+    const { absPoints, startBinding } =
+      bindDraftEndpoints([95, 50, 300, 300], [boxA]);
     expect(startBinding).toMatchObject({ elementId: 'a', mode: 'edge', gap: 0 });
-    // Ray from the adjacent vertex (300,300) through the center exits the
-    // rect at its corner (100,100) — the endpoint hugs the outline there.
-    expect(absPoints[0]).toBeCloseTo(100, 6);
-    expect(absPoints[1]).toBeCloseTo(100, 6);
+    const [x, y] = absPoints;
+    const onOutline =
+      Math.min(Math.abs(x - 0), Math.abs(x - 100)) < 1e-6 ||
+      Math.min(Math.abs(y - 0), Math.abs(y - 100)) < 1e-6;
+    expect(onOutline).toBe(true);
+    expect(x).toBeGreaterThanOrEqual(-1e-6);
+    expect(x).toBeLessThanOrEqual(100 + 1e-6);
+    expect(y).toBeGreaterThanOrEqual(-1e-6);
+    expect(y).toBeLessThanOrEqual(100 + 1e-6);
   });
 
   test('far endpoints stay unbound and unmoved', () => {
@@ -538,5 +559,57 @@ describe('bindDraftEndpoints', () => {
     const { startBinding, endBinding } = bindDraftEndpoints([50, 50, 50, 0], [hidden, locked]);
     expect(startBinding).toBeNull();
     expect(endBinding).toBeNull();
+  });
+});
+
+// =============================================================================
+// bindingForDrop — the edge-band / deep-drop intent split
+// =============================================================================
+
+describe('bindingForDrop (drop intent)', () => {
+  const box = rect('box'); // (0,0)-(100,100)
+  const far = { x: 400, y: 400 }; // adjacent vertex, well outside
+
+  test('a drop OUTSIDE the silhouette is an edge binding', () => {
+    expect(bindingForDrop({ x: 140, y: 50 }, box, far)).toMatchObject({
+      elementId: 'box', mode: 'edge',
+    });
+  });
+
+  test('a drop just inside the edge band stays an edge binding', () => {
+    // 5 units deep — inside the 12-unit band, so the endpoint keeps sliding
+    // around the outline as the target moves.
+    expect(bindingForDrop({ x: 95, y: 50 }, box, far)).toMatchObject({
+      elementId: 'box', mode: 'edge',
+    });
+  });
+
+  test('a drop deeper than the band pins the exact point', () => {
+    const b = bindingForDrop({ x: 70, y: 40 }, box, far);
+    expect(b).toMatchObject({ elementId: 'box', mode: 'pinned' });
+    expect(b.fixedPoint![0]).toBeCloseTo(0.7, 6);
+    expect(b.fixedPoint![1]).toBeCloseTo(0.4, 6);
+  });
+
+  test('the band is measured in SCREEN pixels — zooming out widens it', () => {
+    // 20 units deep: past the band at zoom 1, still inside it at zoom 0.5
+    // (12/0.5 = 24 units), so the same drop reads as an edge drop when
+    // zoomed out — the band is a constant on-screen distance.
+    const p = { x: 80, y: 50 };
+    expect(effectiveBindingMode(bindingForDrop(p, box, far, 1))).toBe('pinned');
+    expect(effectiveBindingMode(bindingForDrop(p, box, far, 0.5))).toBe('edge');
+  });
+
+  test('a pinned drop on a ROTATED target records unrotated local coords', () => {
+    // Rotating 90° about the centre (50,50) maps local (0.25,0.5) → (50,25).
+    const spun = rect('spun', { rotation: 90 });
+    const b = bindingForDrop({ x: 50, y: 25 }, spun, far);
+    expect(b.mode).toBe('pinned');
+    expect(b.fixedPoint![0]).toBeCloseTo(0.25, 6);
+    expect(b.fixedPoint![1]).toBeCloseTo(0.5, 6);
+    // …and it round-trips back to the dropped point.
+    const back = resolveBinding(b, spun, far);
+    expect(back.x).toBeCloseTo(50, 6);
+    expect(back.y).toBeCloseTo(25, 6);
   });
 });
