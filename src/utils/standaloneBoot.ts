@@ -22,15 +22,30 @@ export function applyStandaloneBoot(boot: StandaloneBoot, modeOverride?: Standal
   useEditorStore.getState().setPresenting(true);
 }
 
+// The <script type="application/json"> element id that exportStandaloneHtml.ts
+// embeds the presentation JSON under. This module owns the payload contract;
+// every consumer (boot, HTML import, export injection) must go through it.
+export const SLIDES_PAYLOAD_ID = 'slides-payload';
+
+// Parse the embedded presentation payload out of a (possibly DOMParser-built)
+// document. Returns null when the document carries no payload; throws on
+// malformed JSON.
+export function readSlidesPayload(doc: Document): unknown | null {
+  const payload = doc.getElementById(SLIDES_PAYLOAD_ID)?.textContent;
+  if (!payload) return null;
+  return JSON.parse(payload);
+}
+
 // Read the presentation JSON + config that exportStandaloneHtml.ts embeds into
 // a standalone HTML. Returns null when the document has no payload (i.e. we're
 // running in the regular editor, not a standalone HTML).
 export function readStandaloneBoot(): StandaloneBoot | null {
-  const payloadEl = document.getElementById('slides-payload');
   const configEl = document.getElementById('slides-config');
-  if (!payloadEl || !configEl) return null;
+  if (!configEl) return null;
   try {
-    const presentation = JSON.parse(payloadEl.textContent || '') as Presentation;
+    const payload = readSlidesPayload(document);
+    if (payload === null) return null;
+    const presentation = payload as Presentation;
     const config = JSON.parse(configEl.textContent || '') as { mode: StandaloneMode; editorOrigin: string };
     if (config.mode !== 'editor' && config.mode !== 'viewer') return null;
     return { presentation, mode: config.mode, editorOrigin: config.editorOrigin };

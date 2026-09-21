@@ -13,6 +13,46 @@ import { StorageSettingsDialog } from './StorageSettingsDialog';
 import { getStorageClient } from '../../utils/storageClient';
 import type { Presentation } from '../../types/presentation';
 import { useJoinedProjects, removeJoinedProject } from '../../store/joinedStore';
+import { readSlidesPayload } from '../../utils/standaloneBoot';
+
+function assertPresentation(value: unknown): Presentation {
+  const p = value as Partial<Presentation> | null;
+  if (!p || !Array.isArray(p.slideOrder) || !p.slides) {
+    throw new Error('Invalid presentation file');
+  }
+  return {
+    ...p,
+    id: p.id || crypto.randomUUID(),
+    updatedAt: Date.now(),
+  } as Presentation;
+}
+
+function presentationFromHtmlExport(html: string): Presentation | null {
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const payload = readSlidesPayload(doc);
+  if (payload === null) return null;
+  return assertPresentation(payload);
+}
+
+async function importPresentationFile(file: File): Promise<Presentation> {
+  const ext = file.name.split('.').pop()?.toLowerCase();
+
+  if (ext === 'pptx') {
+    const { importPptx } = await import('../../utils/importPptx');
+    return importPptx(file);
+  }
+  if (ext === 'odp') {
+    const { importOdp } = await import('../../utils/importOdp');
+    return importOdp(file);
+  }
+
+  const text = await file.text();
+  if (ext === 'html' || ext === 'htm') {
+    const fromHtml = presentationFromHtmlExport(text);
+    if (fromHtml) return fromHtml;
+  }
+  return assertPresentation(JSON.parse(text));
+}
 
 export const ProjectPickerDialog: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
@@ -92,30 +132,7 @@ export const ProjectPickerDialog: React.FC = () => {
     if (!file) return;
 
     try {
-      let presentation;
-      const ext = file.name.split('.').pop()?.toLowerCase();
-
-      if (ext === 'pptx') {
-        const { importPptx } = await import('../../utils/importPptx');
-        presentation = await importPptx(file);
-      } else if (ext === 'odp') {
-        const { importOdp } = await import('../../utils/importOdp');
-        presentation = await importOdp(file);
-      } else {
-        // JSON import (existing logic)
-        const text = await file.text();
-        const data = JSON.parse(text);
-
-        if (!data.slideOrder || !data.slides) {
-          throw new Error('Invalid presentation file');
-        }
-
-        presentation = {
-          ...data,
-          id: data.id || crypto.randomUUID(),
-          updatedAt: Date.now(),
-        };
-      }
+      const presentation = await importPresentationFile(file);
 
       // Load the presentation and open it
       loadPresentation(presentation);
@@ -209,7 +226,7 @@ export const ProjectPickerDialog: React.FC = () => {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".json,.pptx,.odp"
+            accept=".json,.html,.htm,.pptx,.odp"
             onChange={handleFileChange}
             className="hidden"
           />
@@ -233,7 +250,7 @@ export const ProjectPickerDialog: React.FC = () => {
             <>
               {/* Owned projects */}
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-                <NewProjectCard onClick={() => createProject()} />
+                <NewProjectCard onClick={() => createProject()} disabled={isLoading} />
                 {projects.map((project) => (
                   <ProjectCard
                     key={project.id}

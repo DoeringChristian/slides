@@ -90,7 +90,7 @@ export const Header: React.FC = () => {
       <div className="flex items-center gap-1 mr-4">
         {activeProjectId ? (
           <button
-            onClick={closeProject}
+            onClick={() => { void closeProject(); }}
             className="w-8 h-8 bg-blue-500 hover:bg-blue-600 rounded flex items-center justify-center transition-colors cursor-pointer"
             title="Back to Projects"
           >

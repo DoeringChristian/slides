@@ -1,5 +1,6 @@
 import type { Presentation } from '../types/presentation';
 import { embedResources } from './embedResources';
+import { SLIDES_PAYLOAD_ID } from './standaloneBoot';
 
 const PAYLOAD_SENTINEL = '<!--SLIDES_PAYLOAD-->';
 
@@ -48,7 +49,7 @@ function reusePageAsTemplate(): string {
     : '<!DOCTYPE html>\n';
   const html = doctype + document.documentElement.outerHTML;
   const stripped = html
-    .replace(/<script id="slides-payload"[\s\S]*?<\/script>\s*/g, '')
+    .replace(new RegExp(`<script id="${SLIDES_PAYLOAD_ID}"[\\s\\S]*?</script>\\s*`, 'g'), '')
     .replace(/<script id="slides-config"[\s\S]*?<\/script>\s*/g, '');
   // Make sure the sentinel is present so we have somewhere to re-inject.
   if (stripped.includes(PAYLOAD_SENTINEL)) return stripped;
@@ -62,7 +63,7 @@ function safeScriptJson(value: unknown): string {
 
 function buildPayloadBlock(presentation: Presentation, mode: StandaloneExportMode, editorOrigin: string): string {
   return [
-    `<script id="slides-payload" type="application/json">${safeScriptJson(presentation)}</script>`,
+    `<script id="${SLIDES_PAYLOAD_ID}" type="application/json">${safeScriptJson(presentation)}</script>`,
     `<script id="slides-config" type="application/json">${safeScriptJson({ mode, editorOrigin })}</script>`,
   ].join('\n  ');
 }

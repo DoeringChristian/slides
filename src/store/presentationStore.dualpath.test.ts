@@ -335,6 +335,10 @@ const cases: Array<{ name: string; action: Action }> = [
     action: (s) => s.hideElement('s1', 'el-text'),
   },
   {
+    name: 'hideElement (terminal — invisible everywhere → full purge incl. resource)',
+    action: (s) => s.hideElement('s3', 'el-img'),
+  },
+  {
     name: 'moveElementForward',
     action: (s) => s.moveElementForward('s1', 'el-text'),
   },
@@ -508,33 +512,9 @@ describe('dual-path equivalence (local JSON vs collab Y.Doc)', () => {
 // =============================================================================
 
 describe('known dual-path divergences (documented, intentional or pending fix)', () => {
-  test('hideElement (terminal): Y path only deletes the object-registry entry; JSON path fully purges', () => {
-    // el-img is hidden on s2 and visible only on s3. Hiding it on s3 makes it
-    // invisible everywhere. The JSON path then removes the element from every
-    // slide and drops its now-unreferenced resource; the Y path — per the
-    // comment in the store ("hideElement ... hides only this slide") —
-    // deliberately performs only the object-registry deletion and leaves the
-    // per-slide element entries (visible:false) and the resource in place.
-    const action: Action = (s) => s.hideElement('s3', 'el-img');
-    const local = runLocal(action);
-    const collab = runCollab(action);
-
-    // Both paths agree the object registry entry is gone.
-    expect(local.objects['el-img']).toBeUndefined();
-    expect(collab.objects['el-img']).toBeUndefined();
-
-    // JSON path: full purge.
-    expect(local.slides.s2.elements['el-img']).toBeUndefined();
-    expect(local.slides.s3.elements['el-img']).toBeUndefined();
-    expect(local.slides.s3.elementOrder).not.toContain('el-img');
-    expect(local.resources['res-1']).toBeUndefined();
-
-    // Y path: elements stay (hidden), resource stays.
-    expect(collab.slides.s2.elements['el-img']).toBeDefined();
-    expect(collab.slides.s3.elements['el-img']).toMatchObject({ visible: false });
-    expect(collab.slides.s3.elementOrder).toContain('el-img');
-    expect(collab.resources['res-1']).toBeDefined();
-  });
+  // (hideElement's terminal-purge divergence was closed — the Y branch now
+  // calls purgeObjectInY like deleteElements does — and the case was promoted
+  // into the equivalence table above.)
 
   test('updateElement with a partial nested object (style): Y path merges keys, JSON path replaces the object', () => {
     // applyChangesToYElement overlays keys onto an existing nested Y.Map, so

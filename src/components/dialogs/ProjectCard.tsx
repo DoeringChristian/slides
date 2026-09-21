@@ -117,13 +117,15 @@ export const ProjectCard: React.FC<Props> = ({ project, onOpen, onDuplicate, onD
 
 interface NewProjectCardProps {
   onClick: () => void;
+  disabled?: boolean;
 }
 
-export const NewProjectCard: React.FC<NewProjectCardProps> = ({ onClick }) => {
+export const NewProjectCard: React.FC<NewProjectCardProps> = ({ onClick, disabled }) => {
   return (
     <button
       onClick={onClick}
-      className="flex flex-col border-2 border-dashed border-gray-300 rounded-lg overflow-hidden hover:border-blue-400 hover:bg-blue-50/50 transition-all text-left"
+      disabled={disabled}
+      className="flex flex-col border-2 border-dashed border-gray-300 rounded-lg overflow-hidden hover:border-blue-400 hover:bg-blue-50/50 transition-all text-left disabled:opacity-50 disabled:pointer-events-none"
     >
       <div className="aspect-video flex items-center justify-center text-gray-400">
         <div className="text-center">

@@ -32,11 +32,7 @@ import { loadImageFile, loadPdfFile, loadVideoFile, duplicateElement } from '../
 import { isPointOnTextContent } from '../../utils/textHitTest';
 import { isLinePath } from '../../utils/pathShapes';
 import type { ShapeElement, SlideElement, TextElement } from '../../types/presentation';
-
-interface Guide {
-  type: 'horizontal' | 'vertical';
-  position: number;
-}
+import type { Guide } from '../../hooks/useAlignmentGuides';
 
 // Transform a slide-space point into an element's local coordinates (handle rotation)
 function toLocalPoint(el: SlideElement, pos: { x: number; y: number }): { x: number; y: number } {
@@ -147,10 +143,7 @@ export const SVGSlideCanvas: React.FC = () => {
     return null;
   }, [selectedElementIds, slide]);
 
-  // Track element dragging to prevent entering edit mode after drag
-  const isElementDragging = useRef(false);
   const justFinishedSelectionDrag = useRef(false);
-  const draggingElementId = useRef<string | null>(null);
   const pendingTextEdit = useRef<{ id: string; localX: number; localY: number } | null>(null);
   // Track initial positions of all selected elements for multi-element drag
   const dragStartPositions = useRef<Map<string, { x: number; y: number }>>(new Map());
@@ -177,12 +170,21 @@ export const SVGSlideCanvas: React.FC = () => {
     longPressStartRef.current = null;
   }, []);
 
+  // Shared pointerup guard for handleElementClick / handleDragEnd: cancels any
+  // pending long-press timer, and if the long-press already fired (we showed a
+  // context menu), consumes it — resets the flag, drops the pending gesture
+  // state, and returns true so the caller swallows the rest of the pointerup.
+  const consumeLongPress = useCallback((): boolean => {
+    cancelElementLongPress();
+    if (!longPressFiredRef.current) return false;
+    longPressFiredRef.current = false;
+    pendingTextEdit.current = null;
+    dragStartPositions.current.clear();
+    return true;
+  }, [cancelElementLongPress]);
+
   // Drag handling
   const handleDragStart = useCallback((id: string) => {
-    // Don't set isElementDragging here - we only want to set it when actual movement happens
-    // This allows single-click on text to enter edit mode
-    draggingElementId.current = id;
-
     // Read fresh state to avoid stale closures from React.memo'd children
     const currentSelectedIds = useEditorStore.getState().selectedElementIds;
     const currentSlide = usePresentationStore.getState().presentation.slides[activeSlideId];
@@ -244,8 +246,6 @@ export const SVGSlideCanvas: React.FC = () => {
     // Any actual movement cancels the long-press timer — drag and long-press
     // are mutually exclusive.
     cancelElementLongPress();
-    // Mark that an actual drag is happening (mouse moved while button down)
-    isElementDragging.current = true;
 
     if (!slide) return;
     const el = slide.elements[id];
@@ -289,35 +289,37 @@ export const SVGSlideCanvas: React.FC = () => {
 
   const justFinishedElementDrag = useRef(false);
 
+  // Pointer released before the drag slop was crossed: a plain click. The drag
+  // hook fires this INSTEAD of onDragStart/End, so a click never runs the
+  // move-commit path (no snap jump, no undo entry, no collab write).
+  const handleElementClick = useCallback((id: string) => {
+    // If a long-press just fired, swallow the click — we showed a menu, don't
+    // also enter edit mode.
+    if (consumeLongPress()) return;
+    justFinishedElementDrag.current = false;
+
+    // Tap-again-on-text enters edit mode (armed in handleSelect on pointerdown)
+    if (pendingTextEdit.current && pendingTextEdit.current.id === id) {
+      const { id: textId, localX, localY } = pendingTextEdit.current;
+      setEditingTextId(textId, { x: localX, y: localY });
+    }
+    pendingTextEdit.current = null;
+    dragStartPositions.current.clear();
+  }, [consumeLongPress, setEditingTextId]);
+
   const handleDragEnd = useCallback((id: string, x: number, y: number) => {
-    cancelElementLongPress();
     // If a long-press just fired, swallow the rest of this pointerup — we
-    // showed a menu, don't also enter edit mode / fire click handlers.
-    if (longPressFiredRef.current) {
-      longPressFiredRef.current = false;
-      pendingTextEdit.current = null;
-      dragStartPositions.current.clear();
+    // showed a menu, don't also commit the drag.
+    if (consumeLongPress()) {
       setDragGuides([]);
       setDragPreview(null);
-      isElementDragging.current = false;
-      draggingElementId.current = null;
       return;
     }
     setDragGuides([]);
     setDragPreview(null);
-    const didDrag = isElementDragging.current;
-    justFinishedElementDrag.current = didDrag;
-    isElementDragging.current = false;
-    draggingElementId.current = null;
-
-    // If no actual drag happened and we had a pending text edit, enter edit mode
-    if (!didDrag && pendingTextEdit.current && pendingTextEdit.current.id === id) {
-      const { id: textId, localX, localY } = pendingTextEdit.current;
-      pendingTextEdit.current = null;
-      setEditingTextId(textId, { x: localX, y: localY });
-      dragStartPositions.current.clear();
-      return;
-    }
+    // The drag slop in useSVGDrag guarantees onDragEnd only fires after real
+    // movement — a slop-less release goes to handleElementClick instead.
+    justFinishedElementDrag.current = true;
     pendingTextEdit.current = null;
 
     if (!activeSlideId || !slide) {
@@ -359,13 +361,14 @@ export const SVGSlideCanvas: React.FC = () => {
     }
 
     dragStartPositions.current.clear();
-  }, [activeSlideId, updateElements, slide, computeDragSnap, setEditingTextId, cancelElementLongPress]);
+  }, [activeSlideId, updateElements, slide, computeDragSnap, consumeLongPress]);
 
   const { handlePointerDown: handleElementPointerDown } = useSVGDrag({
     zoom,
     onDragStart: handleDragStart,
     onDragMove: handleDragMove,
     onDragEnd: handleDragEnd,
+    onClick: handleElementClick,
   });
 
   // Convert screen coordinates to SVG coordinates
@@ -483,8 +486,6 @@ export const SVGSlideCanvas: React.FC = () => {
       setEditingTextId(null);
     }
 
-    isElementDragging.current = false;
-
     if (metaPressed) {
       const ids = currentSelectedIds.includes(id)
         ? currentSelectedIds.filter((sid) => sid !== id)
@@ -555,6 +556,10 @@ export const SVGSlideCanvas: React.FC = () => {
     setHoveredObjectId(null);
   }, [setHoveredObjectId, coarsePointer]);
 
+  // Whether the current gesture's pointerdown landed on the empty canvas —
+  // written by handleCanvasPointerDown, consumed by handleStageClick.
+  const stagePointerDownOnBackground = useRef(false);
+
   // eslint-disable-next-line react-hooks/immutability -- ref-flag pattern: flags are set on mouseup and consumed by the click that follows; never touched during render
   const handleStageClick = useCallback((e: React.MouseEvent) => {
     if (justFinishedSelectionDrag.current) {
@@ -575,13 +580,28 @@ export const SVGSlideCanvas: React.FC = () => {
       justFinishedTransform.current = false;
       return;
     }
-    if (e.target === e.currentTarget || (e.target as Element).classList.contains('svg-background')) {
+    // Both the click target AND the gesture's pointerdown must be on the
+    // background. The click alone is not trustworthy: when the DOM changes
+    // mid-gesture (e.g. pointerdown on a locked text enters edit mode and
+    // mounts the edit overlay under the cursor), the browser retargets the
+    // click to the common ancestor — this svg — which looks exactly like an
+    // empty-canvas click and used to clear the selection/edit state that the
+    // pointerdown had just created.
+    if (
+      (e.target === e.currentTarget || (e.target as Element).classList.contains('svg-background'))
+      && stagePointerDownOnBackground.current
+    ) {
       clearSelection();
     }
   }, [clearSelection, justFinishedDrawing]);
 
   // Selection drag handlers (pointer-based; mouse/touch/stylus all share this path)
   const handleCanvasPointerDown = useCallback((e: React.PointerEvent) => {
+    // Remember where this gesture STARTED for handleStageClick (see there).
+    {
+      const t = e.target as Element;
+      stagePointerDownOnBackground.current = t.classList.contains('svg-background') || t === svgRef.current;
+    }
     // Ignore non-primary mouse buttons (right click). Middle-click panning is
     // handled separately below.
     if (e.pointerType === 'mouse' && e.button !== 0) return;
@@ -592,8 +612,7 @@ export const SVGSlideCanvas: React.FC = () => {
     }
 
     // Only start selection drag on background
-    const target = e.target as Element;
-    if (target.classList.contains('svg-background') || target === svgRef.current) {
+    if (stagePointerDownOnBackground.current) {
       const pos = screenToSVG(e.clientX, e.clientY);
       setSelectionDrag({
         startX: pos.x,

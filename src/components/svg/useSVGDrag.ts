@@ -1,40 +1,52 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { isCtrlHeld } from '../../utils/keyboard';
 
+// Google Slides–style drag slop: pointer-down only ARMS a drag; nothing moves
+// until the pointer travels this many *screen* pixels (zoom-independent) from
+// the down point. Below the threshold, release is a plain click and no move is
+// ever committed — which is what keeps a click from nudging (or grid-snapping)
+// the element. Touch gets a wider slop to absorb finger jitter, matching the
+// 8px long-press cancel radius used elsewhere.
+const DRAG_SLOP_MOUSE = 4;
+const DRAG_SLOP_TOUCH = 8;
+
 interface DragState {
-  isDragging: boolean;
+  phase: 'idle' | 'armed' | 'dragging';
   elementId: string | null;
   startX: number;
   startY: number;
   startElementX: number;
   startElementY: number;
-  currentX: number;
-  currentY: number;
+  slop: number;
 }
+
+const IDLE: DragState = {
+  phase: 'idle',
+  elementId: null,
+  startX: 0,
+  startY: 0,
+  startElementX: 0,
+  startElementY: 0,
+  slop: 0,
+};
 
 interface UseSVGDragOptions {
   zoom: number;
   onDragStart?: (id: string) => void;
   onDragMove?: (id: string, x: number, y: number) => void;
   onDragEnd?: (id: string, x: number, y: number) => void;
+  /** Pointer released before the slop threshold was crossed: a plain click.
+   *  Fired instead of onDragStart/Move/End (not in addition to them). */
+  onClick?: (id: string) => void;
 }
 
 // Element drag hook — pointer-event based so it works for mouse, touch, and stylus.
 // Preserves Ctrl-axis-constrain behavior. Uses setPointerCapture so the drag keeps
 // flowing even if the pointer leaves the element bounds.
 export function useSVGDrag(options: UseSVGDragOptions) {
-  const { zoom, onDragStart, onDragMove, onDragEnd } = options;
+  const { zoom, onDragStart, onDragMove, onDragEnd, onClick } = options;
 
-  const [dragState, setDragState] = useState<DragState>({
-    isDragging: false,
-    elementId: null,
-    startX: 0,
-    startY: 0,
-    startElementX: 0,
-    startElementY: 0,
-    currentX: 0,
-    currentY: 0,
-  });
+  const [dragState, setDragState] = useState<DragState>(IDLE);
 
   const pointerIdRef = useRef<number | null>(null);
 
@@ -57,27 +69,38 @@ export function useSVGDrag(options: UseSVGDragOptions) {
     } catch {
       // Capture can fail in rare cases; window listeners still cover us.
     }
-    onDragStart?.(id);
+    // Armed, not dragging: onDragStart fires once the slop is crossed.
     setDragState({
-      isDragging: true,
+      phase: 'armed',
       elementId: id,
       startX: e.clientX,
       startY: e.clientY,
       startElementX: elementX,
       startElementY: elementY,
-      currentX: elementX,
-      currentY: elementY,
+      slop: e.pointerType === 'touch' ? DRAG_SLOP_TOUCH : DRAG_SLOP_MOUSE,
     });
-  }, [onDragStart]);
+  }, []);
 
   useEffect(() => {
-    if (!dragState.isDragging) return;
+    if (dragState.phase === 'idle') return;
 
     const handlePointerMove = (e: PointerEvent) => {
       if (pointerIdRef.current !== null && e.pointerId !== pointerIdRef.current) return;
       e.preventDefault();
-      const dx = (e.clientX - dragState.startX) / zoom;
-      const dy = (e.clientY - dragState.startY) / zoom;
+      const screenDx = e.clientX - dragState.startX;
+      const screenDy = e.clientY - dragState.startY;
+
+      if (dragState.phase === 'armed') {
+        if (Math.hypot(screenDx, screenDy) < dragState.slop) return;
+        // Slop crossed: the drag starts now, and the element catches up with
+        // the full delta from the original down point — the dead zone decides
+        // WHEN a drag starts, never where the element ends up.
+        if (dragState.elementId) onDragStart?.(dragState.elementId);
+        setDragState((prev) => ({ ...prev, phase: 'dragging' }));
+      }
+
+      const dx = screenDx / zoom;
+      const dy = screenDy / zoom;
 
       let newX = dragState.startElementX + dx;
       let newY = dragState.startElementY + dy;
@@ -91,12 +114,6 @@ export function useSVGDrag(options: UseSVGDragOptions) {
         }
       }
 
-      setDragState((prev) => ({
-        ...prev,
-        currentX: newX,
-        currentY: newY,
-      }));
-
       if (dragState.elementId) {
         onDragMove?.(dragState.elementId, newX, newY);
       }
@@ -104,7 +121,14 @@ export function useSVGDrag(options: UseSVGDragOptions) {
 
     const handlePointerUp = (e: PointerEvent) => {
       if (pointerIdRef.current !== null && e.pointerId !== pointerIdRef.current) return;
-      if (dragState.elementId) {
+
+      if (dragState.phase === 'armed') {
+        // Never crossed the slop: a click, not a drag. A pointercancel
+        // (scroll takeover, alt-tab) is neither.
+        if (e.type === 'pointerup' && dragState.elementId) {
+          onClick?.(dragState.elementId);
+        }
+      } else if (dragState.elementId) {
         const dx = (e.clientX - dragState.startX) / zoom;
         const dy = (e.clientY - dragState.startY) / zoom;
 
@@ -123,16 +147,7 @@ export function useSVGDrag(options: UseSVGDragOptions) {
       }
 
       pointerIdRef.current = null;
-      setDragState({
-        isDragging: false,
-        elementId: null,
-        startX: 0,
-        startY: 0,
-        startElementX: 0,
-        startElementY: 0,
-        currentX: 0,
-        currentY: 0,
-      });
+      setDragState(IDLE);
     };
 
     window.addEventListener('pointermove', handlePointerMove);
@@ -146,7 +161,7 @@ export function useSVGDrag(options: UseSVGDragOptions) {
       window.removeEventListener('pointerup', handlePointerUp);
       window.removeEventListener('pointercancel', handlePointerUp);
     };
-  }, [dragState, zoom, onDragMove, onDragEnd]);
+  }, [dragState, zoom, onDragStart, onDragMove, onDragEnd, onClick]);
 
   return { handlePointerDown };
 }

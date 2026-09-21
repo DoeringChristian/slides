@@ -75,7 +75,7 @@ interface VaultStore {
   // Current project
   saveCurrentProject: () => Promise<void>;
   scheduleSave: () => void;
-  closeProject: () => void;
+  closeProject: () => Promise<void>;
 
   // Thumbnail
   updateThumbnail: (id: string, dataUrl: string) => void;
@@ -242,7 +242,9 @@ export const useVaultStore = create<VaultStore>()((set, get) => ({
   },
 
   createProject: async (title?: string) => {
-    const { vaultHandle, storageMode, projects } = get();
+    const { vaultHandle, storageMode, projects, isLoading } = get();
+    if (isLoading) return; // in-flight guard: a create (or other vault op) is already running
+
     set({ isLoading: true, error: null });
 
     try {
@@ -429,18 +431,24 @@ export const useVaultStore = create<VaultStore>()((set, get) => ({
     }
 
     const timer = setTimeout(() => {
-      get().saveCurrentProject();
+      set({ saveDebounceTimer: null });
+      void get().saveCurrentProject();
     }, 500);
 
     set({ saveDebounceTimer: timer });
   },
 
-  closeProject: () => {
+  closeProject: async () => {
     const { saveDebounceTimer } = get();
     if (saveDebounceTimer) {
       clearTimeout(saveDebounceTimer);
+      set({ saveDebounceTimer: null });
     }
-    get().saveCurrentProject();
+
+    // Flush the latest edit before returning to the project picker. If we clear
+    // activeProjectId first, a fast reopen can race the async save and load the
+    // stale snapshot.
+    await get().saveCurrentProject();
 
     set({
       activeProjectId: null,

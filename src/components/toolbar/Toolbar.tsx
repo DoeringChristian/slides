@@ -3,6 +3,7 @@ import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useSelectedElements } from '../../store/selectors';
 import { TextFormatBar } from './TextFormatBar';
+import { AlignmentTools } from './AlignmentTools';
 import { ShapeMenu as _ShapeMenu } from './ShapeMenu';
 import { duplicateElement, loadImageFile, loadPdfFile } from '../../utils/slideFactory';
 import {
@@ -146,6 +147,13 @@ export const Toolbar: React.FC = () => {
       <button onClick={handleDelete} className="p-1.5 rounded hover:bg-gray-100 text-gray-600 disabled:opacity-30" disabled={selectedIds.length === 0} title="Delete">
         <Trash2 size={16} />
       </button>
+
+      {selectedIds.length >= 2 && (
+        <>
+          <div className="w-px h-6 bg-gray-300 mx-1" />
+          <AlignmentTools />
+        </>
+      )}
 
       {showTextFormat && (
         <>

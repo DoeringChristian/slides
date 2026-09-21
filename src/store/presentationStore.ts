@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { temporal } from 'zundo';
 import * as Y from 'yjs';
-import type { Presentation, Slide, SlideElement, ShapeElement, ImageElement, ObjectMeta, SlideTemplate, Resource } from '../types/presentation';
+import type { Presentation, Slide, SlideElement, ShapeElement, ObjectMeta, SlideTemplate, Resource } from '../types/presentation';
 import { generateId } from '../utils/idGenerator';
 import { createPresentation, createSlide, copySlideAsKeyframe, generateObjectName } from '../utils/slideFactory';
 import { migratePresentation } from '../utils/migrations';
@@ -10,6 +10,12 @@ import { beforeMutation } from '../utils/autoDraw';
 import { lerpAngle } from '../utils/interpolation';
 import { mirrorTargets, withMirroring } from '../utils/multiSlide';
 import { applyStickyDefaults } from '../utils/stickyEasings';
+import {
+  isObjectVisibleAnywhere,
+  objectSubtypeForElement,
+  objectTypeForElement,
+  purgeObjectFromSlides,
+} from '../utils/presentationCleanup';
 import { getActiveDoc, runInTxn } from '../collab/yDocAdapter';
 import {
   elementToYMap,
@@ -24,6 +30,7 @@ import {
   yArrayReplaceAll,
   applyChangesToYElement,
 } from '../collab/ySchema';
+import { objectVisibleAnywhereInY, purgeObjectInY } from '../collab/yCleanup';
 
 // Collab helpers — small adapters over the Y schema so the actions below can
 // stay close to their original shape. All `getYxxx` returns either a Y type
@@ -61,60 +68,6 @@ function propagateInY(doc: Y.Doc, fromSlideId: string, elementId: string, change
   }
 }
 
-/** True iff `elementId` appears as visible on at least one slide. Used for
- *  the "object completely gone" cleanup branch in hideElement / deleteElements. */
-function objectVisibleAnywhereInY(doc: Y.Doc, elementId: string): boolean {
-  const order = (getYRoot(doc).get('slideOrder') as Y.Array<string>).toArray();
-  for (const slideId of order) {
-    const elMap = getYElement(doc, slideId, elementId);
-    if (elMap && elMap.get('visible') === true) return true;
-  }
-  return false;
-}
-
-/** True iff `resourceId` is referenced by at least one image element on any
- *  slide. Used to know whether removeResource should actually drop the entry. */
-function resourceReferencedInY(doc: Y.Doc, resourceId: string): boolean {
-  const order = (getYRoot(doc).get('slideOrder') as Y.Array<string>).toArray();
-  for (const slideId of order) {
-    const slide = getYSlide(doc, slideId);
-    const elements = slide?.get('elements') as Y.Map<Y.Map<unknown>> | undefined;
-    if (!elements) continue;
-    for (const el of elements.values()) {
-      if (el.get('type') === 'image' && el.get('resourceId') === resourceId) return true;
-    }
-  }
-  return false;
-}
-
-/** Strip a no-longer-visible object's element from every slide (elements map
- *  + elementOrder) and drop its image resource if nothing else references it.
- *  The caller handles the object-registry deletion itself. */
-function purgeObjectInY(doc: Y.Doc, objectId: string) {
-  const root = getYRoot(doc);
-  const order = (root.get('slideOrder') as Y.Array<string>).toArray();
-  let resourceIdToCheck: string | null = null;
-  for (const sid of order) {
-    const slide = getYSlide(doc, sid);
-    const elements = slide?.get('elements') as Y.Map<Y.Map<unknown>> | undefined;
-    const el = elements?.get(objectId);
-    if (!el) continue;
-    if (el.get('type') === 'image') {
-      const rid = el.get('resourceId');
-      if (typeof rid === 'string') resourceIdToCheck = rid;
-    }
-    elements!.delete(objectId);
-    const elementOrder = slide?.get('elementOrder') as Y.Array<string> | undefined;
-    if (elementOrder) {
-      const idx = elementOrder.toArray().indexOf(objectId);
-      if (idx !== -1) elementOrder.delete(idx, 1);
-    }
-  }
-  if (resourceIdToCheck && !resourceReferencedInY(doc, resourceIdToCheck)) {
-    (root.get('resources') as Y.Map<unknown> | undefined)?.delete(resourceIdToCheck);
-  }
-}
-
 // Helper: propagate partial changes to an element across all slides after fromSlideId
 function propagateToSubsequentSlides(
   slides: Record<string, Slide>,
@@ -140,75 +93,6 @@ function propagateToSubsequentSlides(
     }
   }
   return updated;
-}
-
-function getObjectType(el: SlideElement): ObjectMeta['type'] {
-  if (el.type === 'text') return 'text';
-  if (el.type === 'image') return 'image';
-  return 'shape';
-}
-
-function getObjectSubtype(el: SlideElement): string {
-  if (el.type === 'shape') return (el as ShapeElement).shapeType;
-  return el.type;
-}
-
-// Check if a resource is still referenced by any element in any slide
-function isResourceReferencedInSlides(slides: Record<string, Slide>, resourceId: string): boolean {
-  for (const slide of Object.values(slides)) {
-    for (const element of Object.values(slide.elements)) {
-      if (element.type === 'image' && 'resourceId' in element && (element as ImageElement).resourceId === resourceId) {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
-// Check if an object is visible in any slide
-function isObjectVisibleAnywhere(slides: Record<string, Slide>, objectId: string): boolean {
-  for (const slide of Object.values(slides)) {
-    if (slide.elements[objectId]?.visible) {
-      return true;
-    }
-  }
-  return false;
-}
-
-/** JSON-side counterpart of purgeObjectInY. Returns fresh slide records with
- *  the element removed everywhere, plus the image resource that became
- *  unreferenced (if any). Never mutates the input — callers thread the result
- *  through their own objects/resources copies. */
-function purgeObjectFromSlides(
-  slides: Record<string, Slide>,
-  objectId: string,
-): { slides: Record<string, Slide>; resourceIdToRemove: string | null } {
-  const cleanedSlides: Record<string, Slide> = {};
-  let resourceIdToCheck: string | null = null;
-
-  for (const [sid, slide] of Object.entries(slides)) {
-    const element = slide.elements[objectId];
-    if (element) {
-      if (element.type === 'image' && 'resourceId' in element && element.resourceId) {
-        resourceIdToCheck = element.resourceId;
-      }
-      const { [objectId]: _removed, ...remainingElements } = slide.elements;
-      cleanedSlides[sid] = {
-        ...slide,
-        elements: remainingElements,
-        elementOrder: slide.elementOrder.filter((id) => id !== objectId),
-      };
-    } else {
-      cleanedSlides[sid] = slide;
-    }
-  }
-
-  // Only report the resource if no other element still references it
-  const resourceIdToRemove =
-    resourceIdToCheck && !isResourceReferencedInSlides(cleanedSlides, resourceIdToCheck)
-      ? resourceIdToCheck
-      : null;
-  return { slides: cleanedSlides, resourceIdToRemove };
 }
 
 /** Build the slide inserted by addSlideWithMode from its neighbours. Shared
@@ -771,8 +655,8 @@ export const usePresentationStore = create<PresentationStore>()(
               ) as Record<string, ObjectMeta>;
               const meta: ObjectMeta = {
                 id: element.id,
-                name: generateObjectName(getObjectSubtype(element), objSnapshot),
-                type: getObjectType(element),
+                name: generateObjectName(objectSubtypeForElement(element), objSnapshot),
+                type: objectTypeForElement(element),
               };
               objects.set(element.id, mkScalarMap(meta));
             }
@@ -789,8 +673,8 @@ export const usePresentationStore = create<PresentationStore>()(
           if (!objects[element.id]) {
             objects[element.id] = {
               id: element.id,
-              name: generateObjectName(getObjectSubtype(element), objects),
-              type: getObjectType(element),
+              name: generateObjectName(objectSubtypeForElement(element), objects),
+              type: objectTypeForElement(element),
             };
           }
 
@@ -836,8 +720,8 @@ export const usePresentationStore = create<PresentationStore>()(
               if (objects && !objects.has(el.id)) {
                 const meta: ObjectMeta = {
                   id: el.id,
-                  name: generateObjectName(getObjectSubtype(el), objSnapshot),
-                  type: getObjectType(el),
+                  name: generateObjectName(objectSubtypeForElement(el), objSnapshot),
+                  type: objectTypeForElement(el),
                 };
                 objSnapshot[el.id] = meta;
                 objects.set(el.id, mkScalarMap(meta));
@@ -860,8 +744,8 @@ export const usePresentationStore = create<PresentationStore>()(
             if (!objects[element.id]) {
               objects[element.id] = {
                 id: element.id,
-                name: generateObjectName(getObjectSubtype(element), objects),
-                type: getObjectType(element),
+                name: generateObjectName(objectSubtypeForElement(element), objects),
+                type: objectTypeForElement(element),
               };
             }
             newElements[element.id] = element;
@@ -1168,6 +1052,7 @@ export const usePresentationStore = create<PresentationStore>()(
             if (!objectVisibleAnywhereInY(doc, elementId)) {
               const objects = root.get('objects') as Y.Map<unknown> | undefined;
               objects?.delete(elementId);
+              purgeObjectInY(doc, elementId);
             }
             root.set('updatedAt', Date.now());
           });
@@ -1642,8 +1527,8 @@ export const usePresentationStore = create<PresentationStore>()(
                 if (!el || objects.has(elId)) continue;
                 const meta: ObjectMeta = {
                   id: elId,
-                  name: generateObjectName(getObjectSubtype(el), objSnapshot),
-                  type: getObjectType(el),
+                  name: generateObjectName(objectSubtypeForElement(el), objSnapshot),
+                  type: objectTypeForElement(el),
                 };
                 objSnapshot[elId] = meta;
                 objects.set(elId, mkScalarMap(meta));
@@ -1681,8 +1566,8 @@ export const usePresentationStore = create<PresentationStore>()(
             if (el && !objects[elId]) {
               objects[elId] = {
                 id: elId,
-                name: generateObjectName(getObjectSubtype(el), objects),
-                type: getObjectType(el),
+                name: generateObjectName(objectSubtypeForElement(el), objects),
+                type: objectTypeForElement(el),
               };
             }
           }

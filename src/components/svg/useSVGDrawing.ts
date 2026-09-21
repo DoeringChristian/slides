@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { createTextElement, createShapeElement } from '../../utils/slideFactory';
-import { computePointSnap, type Guide } from '../../hooks/useAlignmentGuides';
+import { computePointSnap, guideKey, type Guide } from '../../hooks/useAlignmentGuides';
 import { getMarginLayout, getMarginBounds } from '../../utils/marginLayouts';
 import { isShiftHeld } from '../../utils/keyboard';
 import { pathBounds } from '../../utils/pathShapes';
@@ -224,7 +224,7 @@ export function useSVGDrawing() {
       const allGuides = [...startSnap.guides, ...currentSnap.guides];
       const seen = new Set<string>();
       const uniqueGuides = allGuides.filter((g) => {
-        const key = `${g.type}-${g.position}`;
+        const key = guideKey(g);
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
