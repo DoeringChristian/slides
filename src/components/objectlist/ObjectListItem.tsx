@@ -1,11 +1,14 @@
 import React, { useState, useRef, useCallback } from 'react';
-import { Eye, EyeOff, X } from 'lucide-react';
+import { Eye, EyeOff, Type, X } from 'lucide-react';
 import type { ObjectMeta, SlideElement } from '../../types/presentation';
 import { ObjectPreview } from './ObjectPreview';
 
 interface Props {
   object: ObjectMeta;
   element: SlideElement | undefined;
+  /** Container with a bound-text label — shows a small badge (the label
+   *  itself has no row of its own). */
+  hasBoundLabel?: boolean;
   isVisibleOnSlide: boolean;
   isSelected: boolean;
   isHovered: boolean;
@@ -20,6 +23,7 @@ interface Props {
 export const ObjectListItem: React.FC<Props> = ({
   object,
   element,
+  hasBoundLabel = false,
   isVisibleOnSlide,
   isSelected,
   isHovered,
@@ -82,6 +86,15 @@ export const ObjectListItem: React.FC<Props> = ({
       {/* Preview area */}
       <div className="relative aspect-square overflow-hidden">
         <ObjectPreview element={element} objectType={object.type} />
+        {/* Bound-label badge */}
+        {hasBoundLabel && (
+          <span
+            className="absolute bottom-1 right-1 p-0.5 rounded bg-white/80 shadow-sm"
+            title="Has a bound text label"
+          >
+            <Type size={10} className="text-gray-500" />
+          </span>
+        )}
         {/* Delete button overlay */}
         <button
           onClick={handleDeleteClick}

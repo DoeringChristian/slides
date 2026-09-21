@@ -148,10 +148,18 @@ export const RenderShape: React.FC<ShapeProps> = memo(({ element }) => {
       // can override with a `_startArrowAlpha` / `_endArrowAlpha` synthetic
       // field to fade the head during a slide transition (the head TYPE
       // itself snaps at t=0.5 in interpolation).
+      // `_labelMask` is another synthetic hint (attachLabelMasks in
+      // utils/syncDependents.ts): a background-coloured rect painted over
+      // the shaft under a bound-text label, so arrow labels punch a gap in
+      // the line (Excalidraw style). Computed by whoever has slide context
+      // (editor canvas, presenter frame composition, exports) — the shared
+      // renderer just draws it, so every consumer inherits the behaviour.
       const animFx = element as ShapeElement & {
         _startArrowAlpha?: number;
         _endArrowAlpha?: number;
+        _labelMask?: { x: number; y: number; width: number; height: number; color: string };
       };
+      const labelMask = animFx._labelMask;
       const startType = element.startHead ?? 'none';
       const endType = element.endHead ?? 'none';
       const startAlpha = animFx._startArrowAlpha ?? (startType !== 'none' ? 1 : 0);
@@ -179,27 +187,41 @@ export const RenderShape: React.FC<ShapeProps> = memo(({ element }) => {
       const cornerR = curve === 'linear' ? (element.cornerRadius ?? 0) : 0;
       const d = pathD(shaftPts, curve, closed, cornerR, element.tangents);
       return (
-        <g transform={transform}>
-          <g transform={`translate(${x}, ${y})`}>
-            <path
-              d={d}
-              fill={fillCol}
-              stroke={strokeCol}
-              strokeWidth={strokeW}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeDasharray={strokeDashFor(element.strokeStyle, strokeW)}
-              opacity={opacity}
+        <>
+          <g transform={transform}>
+            <g transform={`translate(${x}, ${y})`}>
+              <path
+                d={d}
+                fill={fillCol}
+                stroke={strokeCol}
+                strokeWidth={strokeW}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeDasharray={strokeDashFor(element.strokeStyle, strokeW)}
+                opacity={opacity}
+                style={{ pointerEvents: 'none' }}
+              />
+              {startGeo && (
+                <RenderArrowhead geo={startGeo} color={strokeCol} strokeWidth={strokeW} opacity={opacity * startAlpha} />
+              )}
+              {endGeo && (
+                <RenderArrowhead geo={endGeo} color={strokeCol} strokeWidth={strokeW} opacity={opacity * endAlpha} />
+              )}
+            </g>
+          </g>
+          {/* Bound-label mask: absolute slide coords (the label element is
+              unrotated), so it sits outside the path's own transforms. */}
+          {labelMask && (
+            <rect
+              x={labelMask.x}
+              y={labelMask.y}
+              width={labelMask.width}
+              height={labelMask.height}
+              fill={labelMask.color}
               style={{ pointerEvents: 'none' }}
             />
-            {startGeo && (
-              <RenderArrowhead geo={startGeo} color={strokeCol} strokeWidth={strokeW} opacity={opacity * startAlpha} />
-            )}
-            {endGeo && (
-              <RenderArrowhead geo={endGeo} color={strokeCol} strokeWidth={strokeW} opacity={opacity * endAlpha} />
-            )}
-          </g>
-        </g>
+          )}
+        </>
       );
     }
 

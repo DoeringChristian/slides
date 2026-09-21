@@ -238,6 +238,14 @@ export interface TextElement extends BaseElement {
   type: 'text';
   text: string;
   style: TextStyle;
+  /** Bound text (Excalidraw-style label): id of the container element this
+   *  text is attached to (a shape or an arrow/path on the same slide). The
+   *  container drives the label's geometry via the mutation-time sync pass
+   *  (`utils/syncDependents.ts`); there is NO persisted reverse index — use
+   *  `findBoundText` to scan a slide. Absent / null = free-standing text.
+   *  Dangling ids (container missing from the slide) are dropped on load
+   *  (see `utils/migrations.ts`). */
+  containerId?: string | null;
 }
 
 /** Shape kinds. `path` covers every vertex-driven shape — line, arrow,

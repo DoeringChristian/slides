@@ -83,34 +83,74 @@ export function repairPresentation(presentation: Presentation): Presentation {
   return { ...presentation, objects, resources };
 }
 
+/** Text elements bound to `containerId` anywhere in the deck (bound-text
+ *  labels). Deterministic order: slides in Object.entries order is NOT
+ *  stable across the two store paths, so ids are collected per-slide in
+ *  elementOrder order and de-duplicated. */
+function collectBoundTextIdsInSlides(
+  slides: Record<string, Slide>,
+  containerId: string,
+): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const slide of Object.values(slides)) {
+    for (const elId of slide.elementOrder) {
+      const el = slide.elements[elId];
+      if (!el || el.type !== 'text' || seen.has(elId)) continue;
+      if ((el as { containerId?: string | null }).containerId === containerId) {
+        seen.add(elId);
+        out.push(elId);
+      }
+    }
+  }
+  return out;
+}
+
+function removeElementFromSlides(
+  slides: Record<string, Slide>,
+  elementId: string,
+): Record<string, Slide> {
+  const cleaned: Record<string, Slide> = {};
+  for (const [sid, slide] of Object.entries(slides)) {
+    if (!slide.elements[elementId]) {
+      cleaned[sid] = slide;
+      continue;
+    }
+    const { [elementId]: _removed, ...remainingElements } = slide.elements;
+    cleaned[sid] = {
+      ...slide,
+      elements: remainingElements,
+      elementOrder: slide.elementOrder.filter((id) => id !== elementId),
+    };
+  }
+  return cleaned;
+}
+
 /**
  * Remove an object element from every slide and report the image resource that
- * became unreferenced, if any. The object registry itself is owned by callers.
+ * became unreferenced, if any. Cascades to bound-text labels: text elements
+ * whose `containerId` is the purged object are orphans and are purged too;
+ * their ids come back in `purgedBoundTextIds` so callers can drop their
+ * object-registry entries (the registry itself is owned by callers).
  */
 export function purgeObjectFromSlides(
   slides: Record<string, Slide>,
   objectId: string,
-): { slides: Record<string, Slide>; resourceIdToRemove: string | null } {
-  const cleanedSlides: Record<string, Slide> = {};
+): { slides: Record<string, Slide>; resourceIdToRemove: string | null; purgedBoundTextIds: string[] } {
   let resourceIdToCheck: string | null = null;
-
-  for (const [sid, slide] of Object.entries(slides)) {
+  for (const slide of Object.values(slides)) {
     const element = slide.elements[objectId];
-    if (!element) {
-      cleanedSlides[sid] = slide;
-      continue;
-    }
-
-    if (element.type === 'image' && element.resourceId) {
+    if (element && element.type === 'image' && element.resourceId) {
       resourceIdToCheck = element.resourceId;
     }
+  }
 
-    const { [objectId]: _removed, ...remainingElements } = slide.elements;
-    cleanedSlides[sid] = {
-      ...slide,
-      elements: remainingElements,
-      elementOrder: slide.elementOrder.filter((id) => id !== objectId),
-    };
+  let cleanedSlides = removeElementFromSlides(slides, objectId);
+
+  // Cascade: labels bound to the purged object would be orphans.
+  const purgedBoundTextIds = collectBoundTextIdsInSlides(cleanedSlides, objectId);
+  for (const labelId of purgedBoundTextIds) {
+    cleanedSlides = removeElementFromSlides(cleanedSlides, labelId);
   }
 
   const resourceIdToRemove =
@@ -118,5 +158,5 @@ export function purgeObjectFromSlides(
       ? resourceIdToCheck
       : null;
 
-  return { slides: cleanedSlides, resourceIdToRemove };
+  return { slides: cleanedSlides, resourceIdToRemove, purgedBoundTextIds };
 }

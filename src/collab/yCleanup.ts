@@ -26,19 +26,37 @@ export function resourceReferencedInY(doc: Y.Doc, resourceId: string): boolean {
   return false;
 }
 
-/**
- * Remove an object's element from all Y slides and drop its image resource when
- * no remaining slide references it. The object registry itself is owned by callers.
- */
-export function purgeObjectInY(doc: Y.Doc, objectId: string) {
-  const root = getYRoot(doc);
-  const order = (root.get('slideOrder') as Y.Array<string>).toArray();
-  let resourceIdToCheck: string | null = null;
+/** Y twin of the cleanup module's bound-text collector: text elements bound
+ *  to `containerId` anywhere in the doc, collected per-slide in elementOrder
+ *  order (deterministic, matches the JSON path). */
+export function collectBoundTextIdsInY(doc: Y.Doc, containerId: string): string[] {
+  const order = (getYRoot(doc).get('slideOrder') as Y.Array<string>).toArray();
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const slideId of order) {
+    const slide = getYSlide(doc, slideId);
+    const elements = slide?.get('elements') as Y.Map<Y.Map<unknown>> | undefined;
+    const elementOrder = slide?.get('elementOrder') as Y.Array<string> | undefined;
+    if (!elements || !elementOrder) continue;
+    for (const elId of elementOrder.toArray()) {
+      const el = elements.get(elId);
+      if (!el || el.get('type') !== 'text' || seen.has(elId)) continue;
+      if (el.get('containerId') === containerId) {
+        seen.add(elId);
+        out.push(elId);
+      }
+    }
+  }
+  return out;
+}
 
+function removeElementFromYSlides(doc: Y.Doc, elementId: string): string | null {
+  const order = (getYRoot(doc).get('slideOrder') as Y.Array<string>).toArray();
+  let resourceIdToCheck: string | null = null;
   for (const sid of order) {
     const slide = getYSlide(doc, sid);
     const elements = slide?.get('elements') as Y.Map<Y.Map<unknown>> | undefined;
-    const el = elements?.get(objectId);
+    const el = elements?.get(elementId);
     if (!el) continue;
 
     if (el.get('type') === 'image') {
@@ -46,15 +64,35 @@ export function purgeObjectInY(doc: Y.Doc, objectId: string) {
       if (typeof rid === 'string') resourceIdToCheck = rid;
     }
 
-    elements!.delete(objectId);
+    elements!.delete(elementId);
     const elementOrder = slide?.get('elementOrder') as Y.Array<string> | undefined;
     if (elementOrder) {
-      const idx = elementOrder.toArray().indexOf(objectId);
+      const idx = elementOrder.toArray().indexOf(elementId);
       if (idx !== -1) elementOrder.delete(idx, 1);
     }
+  }
+  return resourceIdToCheck;
+}
+
+/**
+ * Remove an object's element from all Y slides and drop its image resource when
+ * no remaining slide references it. Cascades to bound-text labels (text
+ * elements whose `containerId` is the purged object) and returns their ids so
+ * callers can drop the matching object-registry entries — mirror of
+ * `purgeObjectFromSlides` in utils/presentationCleanup.ts.
+ */
+export function purgeObjectInY(doc: Y.Doc, objectId: string): { purgedBoundTextIds: string[] } {
+  const root = getYRoot(doc);
+
+  const resourceIdToCheck = removeElementFromYSlides(doc, objectId);
+
+  const purgedBoundTextIds = collectBoundTextIdsInY(doc, objectId);
+  for (const labelId of purgedBoundTextIds) {
+    removeElementFromYSlides(doc, labelId);
   }
 
   if (resourceIdToCheck && !resourceReferencedInY(doc, resourceIdToCheck)) {
     (root.get('resources') as Y.Map<unknown> | undefined)?.delete(resourceIdToCheck);
   }
+  return { purgedBoundTextIds };
 }

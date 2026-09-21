@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
 import { useEditorStore } from '../store/editorStore';
 import { usePresentationStore } from '../store/presentationStore';
-import { duplicateElement, loadImageFile } from '../utils/slideFactory';
+import { duplicateElements, loadImageFile } from '../utils/slideFactory';
+import { createBoundLabel, expandWithBoundTexts, findBoundText } from '../utils/syncDependents';
 import { getActiveUndoManager } from '../collab/activeUndo';
 
 export function useKeyboardShortcuts() {
@@ -85,6 +86,39 @@ export function useKeyboardShortcuts() {
         }
       }
 
+      // Enter — edit the sole selected element's text: a text element opens
+      // its editor; a shape/arrow opens (or creates) its bound label. Only
+      // with the select tool active — the poly-draft commit in useSVGDrawing
+      // owns Enter while a polygon/spline draft is in flight.
+      if (
+        e.key === 'Enter' && !ctrl && !isInput &&
+        !editor.getState().editingTextId &&
+        editor.getState().tool === 'select' &&
+        selectedIds.length === 1
+      ) {
+        const slide = store.getState().presentation.slides[activeSlideId];
+        const el = slide?.elements[selectedIds[0]];
+        if (el && el.visible && !el.locked) {
+          if (el.type === 'text') {
+            e.preventDefault();
+            editor.getState().setEditingTextId(el.id);
+            return;
+          }
+          if (el.type === 'shape') {
+            e.preventDefault();
+            const existing = findBoundText(slide, el.id);
+            if (existing) {
+              editor.getState().setEditingTextId(existing.id);
+            } else {
+              const label = createBoundLabel(el);
+              store.getState().addElement(activeSlideId, label);
+              editor.getState().setEditingTextId(label.id);
+            }
+            return;
+          }
+        }
+      }
+
       // Escape
       if (e.key === 'Escape') {
         e.preventDefault();
@@ -97,12 +131,14 @@ export function useKeyboardShortcuts() {
         return;
       }
 
-      // Copy
+      // Copy — containers bring their bound-text labels along so a paste
+      // reproduces the labelled shape (ids remapped at paste time).
       if (ctrl && e.key === 'c' && selectedIds.length > 0) {
         e.preventDefault();
         const slide = store.getState().presentation.slides[activeSlideId];
         if (slide) {
-          const elements = selectedIds.map((id) => slide.elements[id]).filter(Boolean);
+          const copyIds = expandWithBoundTexts(slide.elements, slide.elementOrder, selectedIds);
+          const elements = copyIds.map((id) => slide.elements[id]).filter(Boolean);
           editor.getState().setClipboard(elements.map((e) => JSON.parse(JSON.stringify(e))));
           // Write marker to system clipboard so paste knows it's internal
           navigator.clipboard.writeText(INTERNAL_MARKER).catch(() => {});
@@ -115,7 +151,8 @@ export function useKeyboardShortcuts() {
         e.preventDefault();
         const slide = store.getState().presentation.slides[activeSlideId];
         if (slide) {
-          const elements = selectedIds.map((id) => slide.elements[id]).filter(Boolean);
+          const copyIds = expandWithBoundTexts(slide.elements, slide.elementOrder, selectedIds);
+          const elements = copyIds.map((id) => slide.elements[id]).filter(Boolean);
           editor.getState().setClipboard(elements.map((e) => JSON.parse(JSON.stringify(e))));
           for (const id of selectedIds) {
             store.getState().hideElement(activeSlideId, id);
@@ -138,9 +175,16 @@ export function useKeyboardShortcuts() {
         const pasteInternal = () => {
           const internalClipboard = editor.getState().clipboard;
           if (internalClipboard.length > 0) {
-            const duplicates = internalClipboard.map((el) => duplicateElement(el));
+            // duplicateElements remaps bound-text containerIds onto the
+            // pasted clones (labels copied without their container become
+            // free text).
+            const duplicates = duplicateElements(internalClipboard);
             store.getState().addElements(activeId, duplicates);
-            editor.getState().setSelectedElements(duplicates.map((el) => el.id));
+            editor.getState().setSelectedElements(
+              duplicates
+                .filter((el) => !(el.type === 'text' && el.containerId))
+                .map((el) => el.id),
+            );
           }
         };
 

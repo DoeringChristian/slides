@@ -4,6 +4,7 @@ import type { Slide, SlideElement, TextElement, ShapeElement, ImageElement, Reso
 import { SLIDE_WIDTH, SLIDE_HEIGHT, TEXT_BOX_PADDING } from './constants';
 import { renderMarkdownToHtml } from '../components/canvas/CustomMarkdownRenderer';
 import { RenderShape } from '../components/svg/ElementRenderer';
+import { attachLabelMasks } from './syncDependents';
 
 // ── String-assembled SVG for raster export (PNG download, thumbnails) ──
 //
@@ -160,7 +161,14 @@ function renderBackground(background: Slide['background']): string {
 
 // Render slide to SVG string
 export function renderSlideToSVG(slide: Slide, resources: Record<string, Resource>): string {
-  const elements = slide.elementOrder.map(id => slide.elements[id]).filter(Boolean);
+  // Bound-label masks: same synthetic-hint pass as the editor / presenter,
+  // so exported arrows keep the label gap (white fallback for gradient /
+  // image backgrounds — accepted limitation).
+  const bgColor = slide.background.type === 'solid' ? slide.background.color : '#ffffff';
+  const elements = attachLabelMasks(
+    slide.elementOrder.map(id => slide.elements[id]).filter(Boolean),
+    bgColor,
+  );
 
   const elementsSVG = elements.map(el => renderElement(el, resources)).join('\n');
 

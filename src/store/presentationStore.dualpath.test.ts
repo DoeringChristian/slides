@@ -29,6 +29,7 @@ vi.mock('nanoid', () => ({
 import { usePresentationStore } from './presentationStore';
 import { setActiveDoc } from '../collab/yDocAdapter';
 import { jsonToYDoc, yDocToJson } from '../collab/ySchema';
+import { pathLabelCenter } from '../utils/syncDependents';
 import type {
   Presentation,
   Slide,
@@ -945,5 +946,160 @@ describe('WS-2 Phase 3 typed arrowheads (dual-path)', () => {
 
   test.each(headCases)('$name', ({ action }) => {
     expectEquivalent(action);
+  });
+});
+
+// =============================================================================
+// WS-2 Phase 4 bound text (dual-path) — labels follow containers via the
+// shared syncDependentsAfterMutation pass; lifecycle cascades (delete / hide /
+// unhide / removeObject) keep label and container chained on both paths.
+// =============================================================================
+
+describe('WS-2 Phase 4 bound text (dual-path)', () => {
+  const boundLabel = (id: string, containerId: string, overrides?: Partial<TextElement>): TextElement =>
+    textEl(id, {
+      containerId,
+      text: 'Label',
+      width: 144,
+      height: 40,
+      x: 0,
+      y: 0,
+      style: { ...baseStyle, align: 'center', verticalAlign: 'middle' },
+      ...overrides,
+    });
+
+  const boundCases: Array<{ name: string; action: Action }> = [
+    {
+      name: 'addElement with containerId round-trips both paths',
+      action: (s) => s.addElement('s2', boundLabel('el-lbl', 'el-box')),
+    },
+    {
+      name: 'move container → label follows identically on both paths',
+      action: (s) => {
+        s.addElement('s2', boundLabel('el-lbl', 'el-box'));
+        s.updateElement('s2', 'el-box', { x: 700, y: 480 });
+      },
+    },
+    {
+      name: 'resize container → label re-wrapped width identically on both paths',
+      action: (s) => {
+        s.addElement('s2', boundLabel('el-lbl', 'el-box'));
+        s.updateElements('s2', [{ elementId: 'el-box', changes: { width: 320, height: 140 } }]);
+      },
+    },
+    {
+      name: 'arrow label follows the POST-rebind arrow when its bound target moves',
+      action: (s) => {
+        s.addElement('s2', boundLabel('el-lbl', 'el-conn'));
+        s.updateElement('s2', 'el-box', { x: 700, y: 500 }); // rebinds el-conn, label rides along
+      },
+    },
+    {
+      name: 'deleteElements cascades to the bound label (terminal purge, both paths)',
+      action: (s) => {
+        s.addElement('s2', boundLabel('el-lbl', 'el-box'));
+        s.deleteElements('s2', ['el-box']);
+      },
+    },
+    {
+      name: 'hideElement cascades visibility to the bound label',
+      action: (s) => {
+        s.addElement('s2', boundLabel('el-lbl', 'el-box'));
+        s.hideElement('s2', 'el-box');
+      },
+    },
+    {
+      name: 'unhideElement copies container AND label to the slide, label re-anchored',
+      action: (s) => {
+        s.addElement('s1', boundLabel('el-lbl', 'el-rect'));
+        s.unhideElement('s3', 'el-rect', { x: 100, y: 200 });
+      },
+    },
+    {
+      name: 'removeObject purges orphaned bound labels from slides and registry',
+      action: (s) => {
+        s.addElement('s2', boundLabel('el-lbl', 'el-box'));
+        s.removeObject('el-box');
+      },
+    },
+  ];
+
+  test.each(boundCases)('$name', ({ action }) => {
+    expectEquivalent(action);
+  });
+
+  // Pinned outcomes — equivalence alone could be satisfied by both paths
+  // doing nothing; these tests pin the actual follow/cascade behaviour.
+
+  test('label recenters on the container and tracks the width rule', () => {
+    const out = runLocal((s) => {
+      s.addElement('s2', boundLabel('el-lbl', 'el-box'));
+      s.updateElement('s2', 'el-box', { x: 700, y: 480 });
+    });
+    const box = out.slides['s2'].elements['el-box'];
+    const lbl = out.slides['s2'].elements['el-lbl'] as TextElement;
+    expect(lbl.width).toBe(box.width - 16); // 2 × BOUND_TEXT_PADDING
+    expect(lbl.x + lbl.width / 2).toBeCloseTo(box.x + box.width / 2);
+    expect(lbl.y + lbl.height / 2).toBeCloseTo(box.y + box.height / 2);
+  });
+
+  test('arrow label sits on the arc-length midpoint after the rebind', () => {
+    const out = runLocal((s) => {
+      s.addElement('s2', boundLabel('el-lbl', 'el-conn'));
+      s.updateElement('s2', 'el-box', { x: 700, y: 500 });
+    });
+    const conn = out.slides['s2'].elements['el-conn'] as ShapeElement;
+    const lbl = out.slides['s2'].elements['el-lbl'] as TextElement;
+    const mid = pathLabelCenter(conn)!;
+    expect(lbl.x + lbl.width / 2).toBeCloseTo(mid.x);
+    expect(lbl.y + lbl.height / 2).toBeCloseTo(mid.y);
+  });
+
+  test('terminal delete of the container removes the label everywhere incl. registry', () => {
+    const out = runLocal((s) => {
+      s.addElement('s2', boundLabel('el-lbl', 'el-box'));
+      s.deleteElements('s2', ['el-box']);
+    });
+    expect(out.objects['el-box']).toBeUndefined();
+    expect(out.objects['el-lbl']).toBeUndefined();
+    for (const slide of Object.values(out.slides)) {
+      expect(slide.elements['el-box']).toBeUndefined();
+      expect(slide.elements['el-lbl']).toBeUndefined();
+    }
+  });
+
+  test('unhide with position re-anchors the copied label on the container center', () => {
+    const out = runLocal((s) => {
+      s.addElement('s1', boundLabel('el-lbl', 'el-rect'));
+      s.unhideElement('s3', 'el-rect', { x: 100, y: 200 });
+    });
+    const rect = out.slides['s3'].elements['el-rect'];
+    const lbl = out.slides['s3'].elements['el-lbl'] as TextElement;
+    expect(rect).toBeDefined();
+    expect(lbl).toBeDefined();
+    expect(lbl.visible).toBe(true);
+    expect(lbl.x + lbl.width / 2).toBeCloseTo(rect.x + rect.width / 2);
+    expect(lbl.y + lbl.height / 2).toBeCloseTo(rect.y + rect.height / 2);
+  });
+
+  test('keyframes stay self-consistent: moving the container on ONE slide only moves that keyframe label', () => {
+    let dupId = '';
+    const out = runLocal((s) => {
+      // Two keyframes: s2 and a duplicate of it. The label starts already
+      // in its synced position (centred, width = container − 2·pad) so the
+      // duplicated keyframe is self-consistent from the start.
+      s.addElement('s2', boundLabel('el-lbl', 'el-box', { x: 608, y: 430, width: 184 }));
+      dupId = s.duplicateSlide('s2');
+      s.updateElement('s2', 'el-box', { x: 700, y: 480 });
+    });
+    const movedLbl = out.slides['s2'].elements['el-lbl'] as TextElement;
+    const movedBox = out.slides['s2'].elements['el-box'];
+    const dupLbl = out.slides[dupId].elements['el-lbl'] as TextElement;
+    const dupBox = out.slides[dupId].elements['el-box'];
+    // Moved keyframe: label recentred on the moved box.
+    expect(movedLbl.x + movedLbl.width / 2).toBeCloseTo(movedBox.x + movedBox.width / 2);
+    // Untouched keyframe: label still centred on the ORIGINAL box position.
+    expect(dupLbl.x + dupLbl.width / 2).toBeCloseTo(dupBox.x + dupBox.width / 2);
+    expect(dupBox.x).not.toBeCloseTo(movedBox.x);
   });
 });

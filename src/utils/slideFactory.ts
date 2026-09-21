@@ -342,6 +342,35 @@ export function duplicateElement(element: SlideElement): SlideElement {
   };
 }
 
+/**
+ * Duplicate a group of elements together, remapping bound-text `containerId`
+ * refs: a label copied WITH its container points at the container's clone; a
+ * label copied WITHOUT its container is promoted to free text (a dangling
+ * ref would be dropped by migration anyway). Used by copy/paste and the
+ * canvas Duplicate action.
+ */
+export function duplicateElements(elements: SlideElement[]): SlideElement[] {
+  const idMap = new Map<string, string>();
+  for (const el of elements) idMap.set(el.id, generateId());
+  return elements.map((el) => {
+    const copy = {
+      ...JSON.parse(JSON.stringify(el)),
+      id: idMap.get(el.id)!,
+      x: el.x + 20,
+      y: el.y + 20,
+    } as SlideElement;
+    if (copy.type === 'text') {
+      const label = copy as TextElement;
+      if (label.containerId) {
+        const mapped = idMap.get(label.containerId);
+        if (mapped) label.containerId = mapped;
+        else delete label.containerId;
+      }
+    }
+    return copy;
+  });
+}
+
 export function copySlideAsKeyframe(sourceSlide: Slide): Slide {
   const newSlideId = generateId();
   const elements: Record<string, SlideElement> = {};

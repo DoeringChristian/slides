@@ -22,15 +22,35 @@ export const ObjectListDrawer: React.FC = () => {
   const slide = useActiveSlide();
   const objectElements = useObjectElements();
 
+  // Bound-text labels don't get their own rows — their container's row shows
+  // a small label badge instead (the label's lifecycle is chained to the
+  // container everywhere else, so a standalone row would only confuse).
+  const { boundLabelIds, labelledContainerIds } = useMemo(() => {
+    const labels = new Set<string>();
+    const containers = new Set<string>();
+    for (const [id, el] of Object.entries(objectElements)) {
+      if (el?.type === 'text' && el.containerId) {
+        labels.add(id);
+        containers.add(el.containerId);
+      }
+    }
+    return { boundLabelIds: labels, labelledContainerIds: containers };
+  }, [objectElements]);
+
+  const listedObjects = useMemo(
+    () => objects.filter((obj) => !boundLabelIds.has(obj.id)),
+    [objects, boundLabelIds],
+  );
+
   const sortedObjects = useMemo(() => {
-    if (!slide) return objects;
-    return [...objects].sort((a, b) => {
+    if (!slide) return listedObjects;
+    return [...listedObjects].sort((a, b) => {
       const aVisible = !!(slide.elements[a.id]?.visible);
       const bVisible = !!(slide.elements[b.id]?.visible);
       if (aVisible === bVisible) return 0;
       return aVisible ? -1 : 1;
     });
-  }, [objects, slide]);
+  }, [listedObjects, slide]);
 
   const handleToggleVisibility = useCallback(
     (objectId: string, isCurrentlyVisible: boolean) => {
@@ -66,7 +86,7 @@ export const ObjectListDrawer: React.FC = () => {
         className="w-full flex items-center gap-2 px-3 h-7 text-xs font-medium text-gray-500 uppercase hover:bg-gray-50"
       >
         <Layers size={12} />
-        <span>Objects ({objects.length})</span>
+        <span>Objects ({listedObjects.length})</span>
         <span className="ml-auto">
           {objectDrawerOpen ? <ChevronDown size={12} /> : <ChevronUp size={12} />}
         </span>
@@ -75,7 +95,7 @@ export const ObjectListDrawer: React.FC = () => {
       {/* Collapsible content */}
       {objectDrawerOpen && (
         <div className="max-h-[220px] overflow-y-auto border-t border-gray-100">
-          {objects.length === 0 ? (
+          {listedObjects.length === 0 ? (
             <div className="px-3 py-2 text-xs text-gray-400">No objects yet</div>
           ) : (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(90px,1fr))] gap-2 p-2">
@@ -88,6 +108,7 @@ export const ObjectListDrawer: React.FC = () => {
                     key={obj.id}
                     object={obj}
                     element={objectElements[obj.id]}
+                    hasBoundLabel={labelledContainerIds.has(obj.id)}
                     isVisibleOnSlide={isVisibleOnSlide}
                     isSelected={isSelected}
                     isHovered={isHovered}

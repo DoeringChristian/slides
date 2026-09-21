@@ -197,6 +197,10 @@ export function elementToYMap(el: SlideElement): Y.Map<unknown> {
       const t = el as TextElement;
       m.set('text', mkText(t.text));
       m.set('style', mkScalarMap(t.style));
+      // Bound-text container ref. `null` is normalised to absent — the
+      // store never writes null (labels are deleted, not unbound), and
+      // migration strips nulls from loaded decks.
+      setIfDefined(m, 'containerId', t.containerId ?? undefined);
       return m;
     }
     case 'shape': {

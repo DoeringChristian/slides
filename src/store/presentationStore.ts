@@ -1,11 +1,11 @@
 import { create } from 'zustand';
 import { temporal } from 'zundo';
 import * as Y from 'yjs';
-import type { Presentation, Slide, SlideElement, ObjectMeta, SlideTemplate, Resource } from '../types/presentation';
+import type { Presentation, Slide, SlideElement, TextElement, ObjectMeta, SlideTemplate, Resource } from '../types/presentation';
 import { generateId } from '../utils/idGenerator';
 import { createPresentation, createSlide, copySlideAsKeyframe, generateObjectName } from '../utils/slideFactory';
 import { migratePresentation } from '../utils/migrations';
-import { rebindAfterElementsMoved } from '../utils/connectorUtils';
+import { syncDependentsAfterMutation, expandWithBoundTexts } from '../utils/syncDependents';
 import { beforeMutation } from '../utils/autoDraw';
 import { lerpAngle } from '../utils/interpolation';
 import { mirrorTargets, withMirroring } from '../utils/multiSlide';
@@ -35,6 +35,7 @@ import {
   applyChangesToYElement,
 } from '../collab/ySchema';
 import {
+  collectBoundTextIdsInY,
   objectExistsAnywhereInY,
   objectVisibleAnywhereInY,
   purgeObjectInY,
@@ -995,11 +996,11 @@ export const usePresentationStore = create<PresentationStore>()(
             applyChangesToYElement(elMap, changes as Record<string, unknown>);
             getYRoot(doc).set('updatedAt', Date.now());
 
-            // Rebind any connectors whose start/end binds to the moved element.
-            // Snapshot the slide *after* applying our change so the bound
-            // anchor reflects the new geometry, then write back the recomputed
-            // connector endpoints through Y. Mirrors the Zustand fallback
-            // below — both paths must agree or peers diverge.
+            // Sync dependent geometry (connector rebinds + bound-text
+            // follows) after the move. Snapshot the slide *after* applying
+            // our change so dependents see the new geometry, then write the
+            // recomputed patches back through Y. Mirrors the Zustand
+            // fallback below — both paths must agree or peers diverge.
             const moved =
               changes.x !== undefined || changes.y !== undefined ||
               changes.width !== undefined || changes.height !== undefined ||
@@ -1008,9 +1009,9 @@ export const usePresentationStore = create<PresentationStore>()(
             if (!moved) return;
             const slide = yDocToJsonSlideOnly(doc, slideId);
             if (!slide) return;
-            for (const rebound of rebindAfterElementsMoved(slide.elements, slide.elementOrder, new Set([elementId]))) {
-              const connMap = getYElement(doc, slideId, rebound.elementId);
-              if (connMap) applyChangesToYElement(connMap, rebound.changes);
+            for (const dep of syncDependentsAfterMutation(slide.elements, slide.elementOrder, new Set([elementId]))) {
+              const depMap = getYElement(doc, slideId, dep.elementId);
+              if (depMap) applyChangesToYElement(depMap, dep.changes as Record<string, unknown>);
             }
           });
           return;
@@ -1025,11 +1026,11 @@ export const usePresentationStore = create<PresentationStore>()(
           };
 
           // If an element's geometry changed (move / resize / rotate / vertex
-          // edit), update any connectors bound to it — and, for a path's own
-          // vertex edit, re-solve its own edge-mode bindings.
+          // edit), sync dependents: connectors bound to it, its own edge-mode
+          // bindings on a vertex edit, and any bound-text labels.
           if (changes.x !== undefined || changes.y !== undefined || changes.width !== undefined || changes.height !== undefined || changes.rotation !== undefined || (changes as { points?: number[] }).points !== undefined) {
-            for (const rebound of rebindAfterElementsMoved(updatedElements, slide.elementOrder, new Set([elementId]))) {
-              updatedElements[rebound.elementId] = { ...updatedElements[rebound.elementId], ...rebound.changes } as SlideElement;
+            for (const dep of syncDependentsAfterMutation(updatedElements, slide.elementOrder, new Set([elementId]))) {
+              updatedElements[dep.elementId] = { ...updatedElements[dep.elementId], ...dep.changes } as SlideElement;
             }
           }
 
@@ -1067,11 +1068,11 @@ export const usePresentationStore = create<PresentationStore>()(
             }
             getYRoot(doc).set('updatedAt', Date.now());
 
-            // Rebind bound connectors after the batch, exactly like the JSON
+            // Sync dependents after the batch, exactly like the JSON
             // fallback below: snapshot the slide POST-change, run the shared
-            // rebind pass over every element that moved, and write the
-            // recomputed connector geometry back through Y. Both paths must
-            // agree or peers diverge.
+            // sync pass (connector rebinds + bound-text follows) over every
+            // element that moved, and write the recomputed geometry back
+            // through Y. Both paths must agree or peers diverge.
             const movedElementIds = new Set(
               updates
                 .filter(u => u.changes.x !== undefined || u.changes.y !== undefined ||
@@ -1083,9 +1084,9 @@ export const usePresentationStore = create<PresentationStore>()(
             if (movedElementIds.size === 0) return;
             const slide = yDocToJsonSlideOnly(doc, slideId);
             if (!slide) return;
-            for (const rebound of rebindAfterElementsMoved(slide.elements, slide.elementOrder, movedElementIds)) {
-              const connMap = getYElement(doc, slideId, rebound.elementId);
-              if (connMap) applyChangesToYElement(connMap, rebound.changes);
+            for (const dep of syncDependentsAfterMutation(slide.elements, slide.elementOrder, movedElementIds)) {
+              const depMap = getYElement(doc, slideId, dep.elementId);
+              if (depMap) applyChangesToYElement(depMap, dep.changes as Record<string, unknown>);
             }
           });
           return;
@@ -1102,7 +1103,8 @@ export const usePresentationStore = create<PresentationStore>()(
             updatedElements[elementId] = { ...updatedElements[elementId], ...changes } as SlideElement;
           }
 
-          // Handle connector updates for all moved elements
+          // Sync dependents (connector rebinds + bound-text follows) for all
+          // moved elements
           const movedElementIds = new Set(
             updates
               .filter(u => u.changes.x !== undefined || u.changes.y !== undefined ||
@@ -1112,8 +1114,8 @@ export const usePresentationStore = create<PresentationStore>()(
               .map(u => u.elementId)
           );
 
-          for (const rebound of rebindAfterElementsMoved(updatedElements, slide.elementOrder, movedElementIds)) {
-            updatedElements[rebound.elementId] = { ...updatedElements[rebound.elementId], ...rebound.changes } as SlideElement;
+          for (const dep of syncDependentsAfterMutation(updatedElements, slide.elementOrder, movedElementIds)) {
+            updatedElements[dep.elementId] = { ...updatedElements[dep.elementId], ...dep.changes } as SlideElement;
           }
 
           return {
@@ -1144,7 +1146,14 @@ export const usePresentationStore = create<PresentationStore>()(
         if (doc) {
           runInTxn(() => {
             const root = getYRoot(doc);
-            for (const elementId of elementIds) {
+            // Cascade: deleting a container also deletes its bound labels
+            // (expansion computed from this slide's snapshot, same as the
+            // JSON fallback below).
+            const slideJson = yDocToJsonSlideOnly(doc, slideId);
+            const targetIds = slideJson
+              ? expandWithBoundTexts(slideJson.elements, slideJson.elementOrder, elementIds)
+              : elementIds;
+            for (const elementId of targetIds) {
               const elMap = getYElement(doc, slideId, elementId);
               if (!elMap) continue;
               elMap.set('visible', false);
@@ -1152,11 +1161,13 @@ export const usePresentationStore = create<PresentationStore>()(
 
               // If the element is invisible everywhere now, drop it from the
               // object registry, the per-slide elements maps, and free its
-              // resource if nothing else references it.
+              // resource if nothing else references it. Orphaned bound
+              // labels purged by the cascade leave the registry too.
               if (!objectVisibleAnywhereInY(doc, elementId)) {
                 const objects = root.get('objects') as Y.Map<unknown> | undefined;
                 objects?.delete(elementId);
-                purgeObjectInY(doc, elementId);
+                const { purgedBoundTextIds } = purgeObjectInY(doc, elementId);
+                for (const labelId of purgedBoundTextIds) objects?.delete(labelId);
               }
             }
             root.set('updatedAt', Date.now());
@@ -1173,7 +1184,10 @@ export const usePresentationStore = create<PresentationStore>()(
           let objects = { ...state.presentation.objects };
           let resources = { ...state.presentation.resources };
 
-          for (const elementId of elementIds) {
+          // Cascade: deleting a container also deletes its bound labels.
+          const targetIds = expandWithBoundTexts(slide.elements, slide.elementOrder, elementIds);
+
+          for (const elementId of targetIds) {
             if (!slides[slideId].elements[elementId]) continue;
             // Set visible: false on this slide
             const currentSlide = slides[slideId];
@@ -1194,6 +1208,10 @@ export const usePresentationStore = create<PresentationStore>()(
 
               const purged = purgeObjectFromSlides(slides, elementId);
               slides = purged.slides;
+              for (const labelId of purged.purgedBoundTextIds) {
+                const { [labelId]: _removedLabel, ...restObjects } = objects;
+                objects = restObjects;
+              }
               if (purged.resourceIdToRemove) {
                 const { [purged.resourceIdToRemove]: _removedResource, ...remainingResources } = resources;
                 resources = remainingResources;
@@ -1253,17 +1271,28 @@ export const usePresentationStore = create<PresentationStore>()(
         if (doc) {
           runInTxn(() => {
             const root = getYRoot(doc);
-            const elMap = getYElement(doc, slideId, elementId);
-            if (!elMap) return;
-            elMap.set('visible', false);
-            // hideElement (per its existing contract) hides only this slide.
-            // We don't propagate; deleteElements is the action that cascades.
-            if (!objectVisibleAnywhereInY(doc, elementId)) {
-              const objects = root.get('objects') as Y.Map<unknown> | undefined;
-              objects?.delete(elementId);
-              purgeObjectInY(doc, elementId);
+            // Cascade: hiding a container hides its bound labels too.
+            // Same guard as the JSON fallback: no-op when the element isn't
+            // on this slide.
+            const slideJson = yDocToJsonSlideOnly(doc, slideId);
+            if (!slideJson || !slideJson.elements[elementId]) return;
+            const targetIds = expandWithBoundTexts(slideJson.elements, slideJson.elementOrder, [elementId]);
+            let touched = false;
+            for (const id of targetIds) {
+              const elMap = getYElement(doc, slideId, id);
+              if (!elMap) continue;
+              touched = true;
+              elMap.set('visible', false);
+              // hideElement (per its existing contract) hides only this slide.
+              // We don't propagate; deleteElements is the action that cascades.
+              if (!objectVisibleAnywhereInY(doc, id)) {
+                const objects = root.get('objects') as Y.Map<unknown> | undefined;
+                objects?.delete(id);
+                const { purgedBoundTextIds } = purgeObjectInY(doc, id);
+                for (const labelId of purgedBoundTextIds) objects?.delete(labelId);
+              }
             }
-            root.set('updatedAt', Date.now());
+            if (touched) root.set('updatedAt', Date.now());
           });
           return;
         }
@@ -1271,42 +1300,47 @@ export const usePresentationStore = create<PresentationStore>()(
           const slide = state.presentation.slides[slideId];
           if (!slide || !slide.elements[elementId]) return state;
 
-          const slides = {
-            ...state.presentation.slides,
-            [slideId]: {
-              ...slide,
-              elements: {
-                ...slide.elements,
-                [elementId]: { ...slide.elements[elementId], visible: false } as SlideElement,
-              },
-            },
-          };
+          // Cascade: hiding a container hides its bound labels too.
+          const targetIds = expandWithBoundTexts(slide.elements, slide.elementOrder, [elementId]);
 
-          // Check if object is now invisible in all slides - if so, remove it
-          if (!isObjectVisibleAnywhere(slides, elementId)) {
-            // Remove object completely
-            const { [elementId]: _removedObject, ...remainingObjects } = state.presentation.objects;
+          let slides = { ...state.presentation.slides };
+          let objects = state.presentation.objects;
+          let resources = state.presentation.resources;
 
-            const purged = purgeObjectFromSlides(slides, elementId);
-            let resources = state.presentation.resources;
-            if (purged.resourceIdToRemove) {
-              const { [purged.resourceIdToRemove]: _removedResource, ...remainingResources } = resources;
-              resources = remainingResources;
-            }
-
-            return {
-              presentation: {
-                ...state.presentation,
-                objects: remainingObjects,
-                slides: purged.slides,
-                resources,
-                updatedAt: Date.now(),
+          for (const id of targetIds) {
+            const cur = slides[slideId];
+            if (!cur?.elements[id]) continue;
+            slides = {
+              ...slides,
+              [slideId]: {
+                ...cur,
+                elements: {
+                  ...cur.elements,
+                  [id]: { ...cur.elements[id], visible: false } as SlideElement,
+                },
               },
             };
+
+            // Check if object is now invisible in all slides - if so, remove it
+            if (!isObjectVisibleAnywhere(slides, id)) {
+              const { [id]: _removedObject, ...remainingObjects } = objects;
+              objects = remainingObjects;
+
+              const purged = purgeObjectFromSlides(slides, id);
+              slides = purged.slides;
+              for (const labelId of purged.purgedBoundTextIds) {
+                const { [labelId]: _removedLabel, ...restObjects } = objects;
+                objects = restObjects;
+              }
+              if (purged.resourceIdToRemove) {
+                const { [purged.resourceIdToRemove]: _removedResource, ...remainingResources } = resources;
+                resources = remainingResources;
+              }
+            }
           }
 
           return {
-            presentation: { ...state.presentation, slides, updatedAt: Date.now() },
+            presentation: { ...state.presentation, slides, objects, resources, updatedAt: Date.now() },
           };
         });
       },
@@ -1325,41 +1359,67 @@ export const usePresentationStore = create<PresentationStore>()(
             const slideMap = getYSlide(doc, slideId);
             if (!slideMap) return;
 
-            const elMap = getYElement(doc, slideId, elementId);
-            if (elMap) {
-              elMap.set('visible', true);
-              if (position) {
-                elMap.set('x', position.x);
-                elMap.set('y', position.y);
+            const order = (getYRoot(doc).get('slideOrder') as Y.Array<string>).toArray();
+
+            // Unhide one element on this slide (present → set visible, absent
+            // → copy from the nearest slide) and propagate visible:true
+            // forward. Shared by the container and its bound-label cascade.
+            const unhideOne = (id: string, pos?: { x: number; y: number }): boolean => {
+              const elMap = getYElement(doc, slideId, id);
+              if (elMap) {
+                elMap.set('visible', true);
+                if (pos) {
+                  elMap.set('x', pos.x);
+                  elMap.set('y', pos.y);
+                }
+              } else {
+                // Element not on this slide — copy from the nearest slide that has it.
+                const here = order.indexOf(slideId);
+                let sourceJson: SlideElement | null = null;
+                for (let i = here - 1; i >= 0 && !sourceJson; i--) {
+                  const src = getYElement(doc, order[i], id);
+                  if (src) sourceJson = src.toJSON() as SlideElement;
+                }
+                for (let i = here + 1; i < order.length && !sourceJson; i++) {
+                  const src = getYElement(doc, order[i], id);
+                  if (src) sourceJson = src.toJSON() as SlideElement;
+                }
+                if (!sourceJson) return false;
+                const fresh = {
+                  ...JSON.parse(JSON.stringify(sourceJson)),
+                  visible: true,
+                  ...(pos ? { x: pos.x, y: pos.y } : {}),
+                } as SlideElement;
+                const elements = slideMap.get('elements') as Y.Map<unknown> | undefined;
+                const elementOrder = slideMap.get('elementOrder') as Y.Array<string> | undefined;
+                if (!elements || !elementOrder) return false;
+                elements.set(id, elementToYMap(fresh));
+                elementOrder.push([id]);
               }
-            } else {
-              // Element not on this slide — copy from the nearest slide that has it.
-              const order = (getYRoot(doc).get('slideOrder') as Y.Array<string>).toArray();
-              const here = order.indexOf(slideId);
-              let sourceJson: SlideElement | null = null;
-              for (let i = here - 1; i >= 0 && !sourceJson; i--) {
-                const src = getYElement(doc, order[i], elementId);
-                if (src) sourceJson = src.toJSON() as SlideElement;
-              }
-              for (let i = here + 1; i < order.length && !sourceJson; i++) {
-                const src = getYElement(doc, order[i], elementId);
-                if (src) sourceJson = src.toJSON() as SlideElement;
-              }
-              if (!sourceJson) return;
-              const fresh = {
-                ...JSON.parse(JSON.stringify(sourceJson)),
-                visible: true,
-                ...(position ? { x: position.x, y: position.y } : {}),
-              } as SlideElement;
-              const elements = slideMap.get('elements') as Y.Map<unknown> | undefined;
-              const elementOrder = slideMap.get('elementOrder') as Y.Array<string> | undefined;
-              if (!elements || !elementOrder) return;
-              elements.set(elementId, elementToYMap(fresh));
-              elementOrder.push([elementId]);
+              // Propagate visible:true to subsequent slides where the element exists.
+              propagateInY(doc, slideId, id, { visible: true });
+              return true;
+            };
+
+            if (!unhideOne(elementId, position)) return;
+            // Cascade visibility to the container's bound labels (found
+            // anywhere in the deck — the label keyframe may be missing here).
+            for (const labelId of collectBoundTextIdsInY(doc, elementId)) {
+              unhideOne(labelId);
             }
 
-            // Propagate visible:true to subsequent slides where the element exists.
-            propagateInY(doc, slideId, elementId, { visible: true });
+            // Dropped at a new position → run the shared dependent sync so
+            // bound labels / connectors track the container (mirrors the
+            // JSON fallback below).
+            if (position) {
+              const snap = yDocToJsonSlideOnly(doc, slideId);
+              if (snap) {
+                for (const dep of syncDependentsAfterMutation(snap.elements, snap.elementOrder, new Set([elementId]))) {
+                  const depMap = getYElement(doc, slideId, dep.elementId);
+                  if (depMap) applyChangesToYElement(depMap, dep.changes as Record<string, unknown>);
+                }
+              }
+            }
             getYRoot(doc).set('updatedAt', Date.now());
           });
           return;
@@ -1368,67 +1428,107 @@ export const usePresentationStore = create<PresentationStore>()(
           const slide = state.presentation.slides[slideId];
           if (!slide) return state;
 
+          const { slideOrder } = state.presentation;
           let updatedSlides = { ...state.presentation.slides };
 
-          if (slide.elements[elementId]) {
-            // Element exists on this slide — just unhide it
-            const changes: Partial<SlideElement> = { visible: true };
-            if (position) {
-              changes.x = position.x;
-              changes.y = position.y;
-            }
-            updatedSlides[slideId] = {
-              ...slide,
-              elements: {
-                ...slide.elements,
-                [elementId]: { ...slide.elements[elementId], ...changes } as SlideElement,
-              },
-            };
-          } else {
-            // Element not on this slide — copy from nearest slide that has it
-            const { slideOrder } = state.presentation;
-            let sourceEl: SlideElement | null = null;
-            // Search backwards first, then forwards
-            const slideIdx = slideOrder.indexOf(slideId);
-            for (let i = slideIdx - 1; i >= 0; i--) {
-              const s = updatedSlides[slideOrder[i]];
-              if (s?.elements[elementId]) {
-                sourceEl = s.elements[elementId];
-                break;
+          const unhideOne = (id: string, pos?: { x: number; y: number }): boolean => {
+            const cur = updatedSlides[slideId];
+            if (cur.elements[id]) {
+              // Element exists on this slide — just unhide it
+              const changes: Partial<SlideElement> = { visible: true };
+              if (pos) {
+                changes.x = pos.x;
+                changes.y = pos.y;
               }
-            }
-            if (!sourceEl) {
-              for (let i = slideIdx + 1; i < slideOrder.length; i++) {
+              updatedSlides[slideId] = {
+                ...cur,
+                elements: {
+                  ...cur.elements,
+                  [id]: { ...cur.elements[id], ...changes } as SlideElement,
+                },
+              };
+            } else {
+              // Element not on this slide — copy from nearest slide that has it
+              let sourceEl: SlideElement | null = null;
+              // Search backwards first, then forwards
+              const slideIdx = slideOrder.indexOf(slideId);
+              for (let i = slideIdx - 1; i >= 0; i--) {
                 const s = updatedSlides[slideOrder[i]];
-                if (s?.elements[elementId]) {
-                  sourceEl = s.elements[elementId];
+                if (s?.elements[id]) {
+                  sourceEl = s.elements[id];
                   break;
                 }
               }
+              if (!sourceEl) {
+                for (let i = slideIdx + 1; i < slideOrder.length; i++) {
+                  const s = updatedSlides[slideOrder[i]];
+                  if (s?.elements[id]) {
+                    sourceEl = s.elements[id];
+                    break;
+                  }
+                }
+              }
+              if (!sourceEl) return false;
+
+              const newEl = {
+                ...JSON.parse(JSON.stringify(sourceEl)),
+                visible: true,
+                ...(pos ? { x: pos.x, y: pos.y } : {}),
+              } as SlideElement;
+
+              updatedSlides[slideId] = {
+                ...cur,
+                elements: { ...cur.elements, [id]: newEl },
+                elementOrder: [...cur.elementOrder, id],
+              };
             }
-            if (!sourceEl) return state;
 
-            const newEl = {
-              ...JSON.parse(JSON.stringify(sourceEl)),
-              visible: true,
-              ...(position ? { x: position.x, y: position.y } : {}),
-            } as SlideElement;
+            // Propagate visible: true to subsequent slides
+            updatedSlides = propagateToSubsequentSlides(
+              updatedSlides,
+              slideOrder,
+              slideId,
+              id,
+              { visible: true },
+            );
+            return true;
+          };
 
-            updatedSlides[slideId] = {
-              ...slide,
-              elements: { ...slide.elements, [elementId]: newEl },
-              elementOrder: [...slide.elementOrder, elementId],
-            };
+          if (!unhideOne(elementId, position)) return state;
+
+          // Cascade visibility to the container's bound labels (found
+          // anywhere in the deck, deterministic slideOrder × elementOrder).
+          const labelIds: string[] = [];
+          const seenLabels = new Set<string>();
+          for (const sid of slideOrder) {
+            const s = updatedSlides[sid];
+            if (!s) continue;
+            for (const elId of s.elementOrder) {
+              const el = s.elements[elId];
+              if (
+                el?.type === 'text' &&
+                (el as TextElement).containerId === elementId &&
+                !seenLabels.has(elId)
+              ) {
+                seenLabels.add(elId);
+                labelIds.push(elId);
+              }
+            }
           }
+          for (const labelId of labelIds) unhideOne(labelId);
 
-          // Propagate visible: true to subsequent slides
-          updatedSlides = propagateToSubsequentSlides(
-            updatedSlides,
-            state.presentation.slideOrder,
-            slideId,
-            elementId,
-            { visible: true },
-          );
+          // Dropped at a new position → dependent sync (labels/connectors).
+          if (position) {
+            const target = updatedSlides[slideId];
+            const deps = syncDependentsAfterMutation(target.elements, target.elementOrder, new Set([elementId]));
+            if (deps.length > 0) {
+              const elements = { ...target.elements };
+              for (const dep of deps) {
+                elements[dep.elementId] = { ...elements[dep.elementId], ...dep.changes } as SlideElement;
+              }
+              updatedSlides[slideId] = { ...target, elements };
+            }
+          }
 
           return {
             presentation: { ...state.presentation, slides: updatedSlides, updatedAt: Date.now() },
@@ -1561,7 +1661,8 @@ export const usePresentationStore = create<PresentationStore>()(
             const objects = root.get('objects') as Y.Map<unknown> | undefined;
             if (!objects?.has(objectId)) return;
             objects.delete(objectId);
-            purgeObjectInY(doc, objectId);
+            const { purgedBoundTextIds } = purgeObjectInY(doc, objectId);
+            for (const labelId of purgedBoundTextIds) objects.delete(labelId);
             root.set('updatedAt', Date.now());
           });
           return;
@@ -1572,7 +1673,13 @@ export const usePresentationStore = create<PresentationStore>()(
           if (!removedObject) return state;
 
           // Remove from all slides, dropping a now-unreferenced image resource
+          // and cascading to orphaned bound-text labels.
           const purged = purgeObjectFromSlides(state.presentation.slides, objectId);
+          let objects: Record<string, ObjectMeta> = remainingObjects;
+          for (const labelId of purged.purgedBoundTextIds) {
+            const { [labelId]: _removedLabel, ...restObjects } = objects;
+            objects = restObjects;
+          }
           let resources = state.presentation.resources;
           if (purged.resourceIdToRemove) {
             const { [purged.resourceIdToRemove]: _removedResource, ...remainingResources } = resources;
@@ -1582,7 +1689,7 @@ export const usePresentationStore = create<PresentationStore>()(
           return {
             presentation: {
               ...state.presentation,
-              objects: remainingObjects,
+              objects,
               slides: purged.slides,
               resources,
               updatedAt: Date.now(),

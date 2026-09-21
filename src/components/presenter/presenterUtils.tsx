@@ -9,6 +9,7 @@ import { pathD, insetEndpoints, arrowheadGeometry, arrowheadInset, pathArcLength
 import { pathLengthFor } from '../../utils/glyphPaths';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 import { interpolateWithVisibility, lerpColor } from '../../utils/interpolation';
+import { attachLabelMasks } from '../../utils/syncDependents';
 import type { SlideElement, TextElement, ShapeElement, ImageElement, Slide, Resource } from '../../types/presentation';
 import type { CrossfadeSource, TextDissolveSource, WriteEffect } from '../../utils/interpolation';
 
@@ -148,11 +149,18 @@ export function composeSlideFrame(args: {
   const { slideA, slideB, isForward, animProgress, isAnimating } = args;
 
   if (!isAnimating) {
+    const bgColor = getSlideBackground(slideA);
     return {
-      bgColor: getSlideBackground(slideA),
-      renderedElements: slideA.elementOrder
-        .map((id) => slideA.elements[id])
-        .filter((el): el is SlideElement => Boolean(el)),
+      bgColor,
+      // Bound-label masks ride along as synthetic hints so RenderShape
+      // punches the label gap into arrow shafts (shared-renderer rule: the
+      // hint is attached here, where slide context exists).
+      renderedElements: attachLabelMasks(
+        slideA.elementOrder
+          .map((id) => slideA.elements[id])
+          .filter((el): el is SlideElement => Boolean(el)),
+        bgColor,
+      ),
     };
   }
 
@@ -168,7 +176,7 @@ export function composeSlideFrame(args: {
     const interpolated = interpolateWithVisibility(elA, elB, animProgress, isForward);
     if (interpolated) renderedElements.push(interpolated);
   }
-  return { renderedElements, bgColor };
+  return { renderedElements: attachLabelMasks(renderedElements, bgColor), bgColor };
 }
 
 // Merge element orders from two slides for animation

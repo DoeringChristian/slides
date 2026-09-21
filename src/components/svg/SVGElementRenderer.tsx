@@ -3,6 +3,7 @@ import { SVGTextNode } from './SVGTextNode';
 import { SVGShapeNode } from './SVGShapeNode';
 import { SVGImageNode } from './SVGImageNode';
 import type { SlideElement } from '../../types/presentation';
+import type { SvgTextDoc } from '../../utils/textLayout';
 
 interface Props {
   element: SlideElement;
@@ -15,6 +16,8 @@ interface Props {
   onMouseEnter?: (id: string) => void;
   onMouseLeave?: (id: string) => void;
   onDoubleClick?: (id: string) => void;
+  /** Text elements only: measured layout doc (bound-label container grow). */
+  onTextLayout?: (id: string, doc: SvgTextDoc) => void;
 }
 
 export const SVGElementRenderer: React.FC<Props> = React.memo(({
@@ -25,6 +28,7 @@ export const SVGElementRenderer: React.FC<Props> = React.memo(({
   onMouseEnter,
   onMouseLeave,
   onDoubleClick,
+  onTextLayout,
 }) => {
   if (!element.visible) return null;
 
@@ -44,6 +48,7 @@ export const SVGElementRenderer: React.FC<Props> = React.memo(({
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
           onDoubleClick={handleDoubleClick}
+          onLayout={onTextLayout ? (doc) => onTextLayout(element.id, doc) : undefined}
         />
       );
     case 'shape':

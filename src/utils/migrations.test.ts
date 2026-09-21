@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { migratePresentation, migrateElement } from './migrations';
+import { migratePresentation, migrateElement, migrateBoundTextInElements } from './migrations';
 import type {
   Presentation,
   SlideElement,
@@ -529,5 +529,60 @@ describe('WS-4: autoAdvance → slide groups', () => {
     const before = structuredClone(input);
     migratePresentation(input);
     expect(input).toEqual(before);
+  });
+});
+
+// =============================================================================
+// WS-2 Phase 4 bound text: dangling containerId repair
+// =============================================================================
+
+describe('WS-2 Phase 4: dangling containerId migration', () => {
+  test('containerId pointing at an element on the same slide is kept', () => {
+    const container = legacyShape({ id: 'el-box' });
+    const label: TextElement = { ...makeText(), id: 'el-label', containerId: 'el-box' };
+    const elements = { 'el-box': container, 'el-label': label };
+    const out = migrateBoundTextInElements(elements);
+    expect(out).toBe(elements); // clean input → same reference (idempotent fast path)
+    expect((out['el-label'] as TextElement).containerId).toBe('el-box');
+  });
+
+  test('dangling containerId (target absent from the slide) is dropped → free text', () => {
+    const label: TextElement = { ...makeText(), id: 'el-label', containerId: 'el-gone' };
+    const out = migrateBoundTextInElements({ 'el-label': label });
+    expect('containerId' in (out['el-label'] as TextElement)).toBe(false);
+    // Original object untouched.
+    expect(label.containerId).toBe('el-gone');
+  });
+
+  test('explicit containerId: null is normalised to absent', () => {
+    const label: TextElement = { ...makeText(), id: 'el-label', containerId: null };
+    const out = migrateBoundTextInElements({ 'el-label': label });
+    expect('containerId' in (out['el-label'] as TextElement)).toBe(false);
+  });
+
+  test('the check is per-slide: migratePresentation drops the ref only where the container is missing', () => {
+    const container = legacyShape({ id: 'el-box' });
+    const label: TextElement = { ...makeText(), id: 'el-label', containerId: 'el-box' };
+    const deck = makeDeck({ 'el-box': container, 'el-label': { ...label } });
+    deck.slides['s2'] = {
+      id: 's2',
+      elements: { 'el-label': { ...label } }, // container keyframe missing here
+      elementOrder: ['el-label'],
+      background: { type: 'solid', color: '#ffffff' },
+      transition: { duration: 400 },
+      notes: '',
+    };
+    deck.slideOrder = ['s1', 's2'];
+
+    const out = migratePresentation(deck);
+    expect((out.slides['s1'].elements['el-label'] as TextElement).containerId).toBe('el-box');
+    expect('containerId' in (out.slides['s2'].elements['el-label'] as TextElement)).toBe(false);
+  });
+
+  test('idempotent: a second pass is a no-op', () => {
+    const label: TextElement = { ...makeText(), id: 'el-label', containerId: 'el-gone' };
+    const once = migrateBoundTextInElements({ 'el-label': label });
+    const twice = migrateBoundTextInElements(once);
+    expect(twice).toBe(once);
   });
 });

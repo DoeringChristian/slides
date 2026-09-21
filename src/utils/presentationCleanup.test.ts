@@ -251,3 +251,48 @@ describe('repairPresentation (load-time ghost repair)', () => {
     expect(out.slides.s1.elementOrder).toEqual(['text']);
   });
 });
+
+// =============================================================================
+// WS-2 Phase 4 bound text: purge cascade
+// =============================================================================
+
+describe('purgeObjectFromSlides bound-text cascade', () => {
+  const boundLabel = (id: string, containerId: string): TextElement => ({
+    ...text,
+    id,
+    containerId,
+  });
+
+  test('purging a container also purges its bound labels and reports their ids', () => {
+    const slides = {
+      s1: slide('s1', { rect, lbl: boundLabel('lbl', 'rect'), text }, ['rect', 'lbl', 'text']),
+      s2: slide('s2', { rect, lbl: boundLabel('lbl', 'rect') }, ['rect', 'lbl']),
+    };
+    const purged = purgeObjectFromSlides(slides, 'rect');
+    expect(purged.purgedBoundTextIds).toEqual(['lbl']);
+    for (const s of Object.values(purged.slides)) {
+      expect(s.elements['rect']).toBeUndefined();
+      expect(s.elements['lbl']).toBeUndefined();
+      expect(s.elementOrder).not.toContain('rect');
+      expect(s.elementOrder).not.toContain('lbl');
+    }
+    // Unrelated text survives.
+    expect(purged.slides.s1.elements['text']).toBeDefined();
+  });
+
+  test('purging a label directly does not cascade to its container', () => {
+    const slides = {
+      s1: slide('s1', { rect, lbl: boundLabel('lbl', 'rect') }, ['rect', 'lbl']),
+    };
+    const purged = purgeObjectFromSlides(slides, 'lbl');
+    expect(purged.purgedBoundTextIds).toEqual([]);
+    expect(purged.slides.s1.elements['rect']).toBeDefined();
+    expect(purged.slides.s1.elements['lbl']).toBeUndefined();
+  });
+
+  test('purging an object without labels reports an empty cascade', () => {
+    const slides = { s1: slide('s1', { rect, text }, ['rect', 'text']) };
+    const purged = purgeObjectFromSlides(slides, 'rect');
+    expect(purged.purgedBoundTextIds).toEqual([]);
+  });
+});

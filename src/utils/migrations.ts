@@ -1,4 +1,4 @@
-import type { Presentation, Slide, SlideElement, ShapeElement, ConnectorBinding } from '../types/presentation';
+import type { Presentation, Slide, SlideElement, ShapeElement, TextElement, ConnectorBinding } from '../types/presentation';
 import { ANCHOR_TO_UV } from './connectorUtils';
 import { generateId } from './idGenerator';
 
@@ -18,9 +18,33 @@ export function migratePresentation(p: Presentation): Presentation {
     for (const elId of Object.keys(elements)) {
       elements[elId] = migrateElement(elements[elId]);
     }
-    slides[slideId] = { ...slide, elements };
+    slides[slideId] = { ...slide, elements: migrateBoundTextInElements(elements) };
   }
   return migrateAutoAdvanceToGroups({ ...p, slides });
+}
+
+/** Bound text (WS-2 Phase 4): a text element whose `containerId` doesn't
+ *  resolve to an element ON THE SAME SLIDE is a dangling label — the
+ *  container was deleted (or never copied to this keyframe) by a build that
+ *  predates the lifecycle cascades. Dropping the key promotes it to free
+ *  text, which loses nothing (a dangling label already rendered as free
+ *  text; it just couldn't be selected sanely). Explicit `containerId: null`
+ *  is normalised to absent. Idempotent: a clean slide's elements map is
+ *  returned unchanged (same reference). Exported for tests. */
+export function migrateBoundTextInElements(
+  elements: Record<string, SlideElement>,
+): Record<string, SlideElement> {
+  let out: Record<string, SlideElement> | null = null;
+  for (const [elId, el] of Object.entries(elements)) {
+    if (el.type !== 'text') continue;
+    const containerId = (el as TextElement).containerId;
+    if (containerId === undefined) continue;
+    if (containerId !== null && elements[containerId] !== undefined) continue;
+    const { containerId: _dangling, ...rest } = el as TextElement;
+    if (!out) out = { ...elements };
+    out[elId] = rest as SlideElement;
+  }
+  return out ?? elements;
 }
 
 /** Slide-level rule (WS-4): the legacy per-slide `autoAdvance` flag becomes

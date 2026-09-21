@@ -361,3 +361,47 @@ describe('hideElement cascade equivalence (object hidden on every slide)', () =>
     expect(repaired).toEqual(purgedJson);
   });
 });
+
+// =============================================================================
+// WS-2 Phase 4 bound text: purge cascade equivalence
+// =============================================================================
+
+describe('purgeObjectInY bound-text cascade ≡ purgeObjectFromSlides', () => {
+  const boundLabel = (id: string, containerId: string): TextElement => ({
+    ...text,
+    id,
+    containerId,
+  });
+
+  test('purging a container purges its labels on both sides and reports the same ids', () => {
+    const fixture = makePresentation({
+      s1: slide('s1', { rect, lbl: boundLabel('lbl', 'rect'), text }, ['rect', 'lbl', 'text']),
+      s2: slide('s2', { rect, lbl: boundLabel('lbl', 'rect') }, ['rect', 'lbl']),
+    });
+
+    const doc = jsonToYDoc(fixture);
+    let yIds: string[] = [];
+    doc.transact(() => {
+      yIds = purgeObjectInY(doc, 'rect').purgedBoundTextIds;
+    });
+
+    const jsonPurged = purgeObjectFromSlides(fixture.slides, 'rect');
+    expect(yIds).toEqual(jsonPurged.purgedBoundTextIds);
+    expect(yIds).toEqual(['lbl']);
+    expect(yDocToJson(doc)).toEqual({ ...fixture, slides: jsonPurged.slides });
+  });
+
+  test('purging an image container cascades labels AND frees its orphaned resource identically', () => {
+    const fixture = makePresentation({
+      s1: slide('s1', { img1: image('img1', 'res-a'), lbl: boundLabel('lbl', 'img1') }, ['img1', 'lbl']),
+    }, { 'res-a': resource('res-a') });
+
+    const doc = jsonToYDoc(fixture);
+    doc.transact(() => purgeObjectInY(doc, 'img1'));
+
+    const jsonPurged = purgeObjectFromSlides(fixture.slides, 'img1');
+    expect(jsonPurged.resourceIdToRemove).toBe('res-a');
+    const { 'res-a': _res, ...remainingResources } = fixture.resources;
+    expect(yDocToJson(doc)).toEqual({ ...fixture, slides: jsonPurged.slides, resources: remainingResources });
+  });
+});

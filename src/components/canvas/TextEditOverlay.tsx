@@ -14,6 +14,22 @@ import type { TextElement } from '../../types/presentation';
 // it (advance widths from font tables) → caret X lines up with SVG glyphs.
 injectInterFontFace();
 
+/** Commit edited text back to the store. Bound labels (text elements with a
+ *  `containerId`) whose committed text is EMPTY are deleted instead of kept
+ *  as invisible empty labels — double-clicking the container recreates one.
+ *  All three commit sites (blur, Escape, unmount) route through here; a
+ *  second call after the delete is a harmless no-op (element gone). */
+function commitEditedText(slideId: string, textId: string, text: string) {
+  const store = usePresentationStore.getState();
+  const el = store.presentation.slides[slideId]?.elements[textId];
+  if (!el || el.type !== 'text') return;
+  if ((el as TextElement).containerId && text.trim() === '') {
+    store.deleteElements(slideId, [textId]);
+    return;
+  }
+  store.updateElement(slideId, textId, { text });
+}
+
 interface Props {
   stageRef: React.RefObject<HTMLDivElement | null>;
   zoom: number;
@@ -40,7 +56,6 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
   const editingTextId = useEditorStore((s) => s.editingTextId);
   const setEditingTextId = useEditorStore((s) => s.setEditingTextId);
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
-  const updateElement = usePresentationStore((s) => s.updateElement);
   const slide = useActiveSlide();
 
   const editorRef = useRef<HTMLDivElement>(null);
@@ -74,7 +89,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
       const prevId = editingTextIdRef.current;
       const slideId = activeSlideIdRef.current;
       if (prevId && slideId) {
-        usePresentationStore.getState().updateElement(slideId, prevId, { text: liveTextRef.current });
+        commitEditedText(slideId, prevId, liveTextRef.current);
       }
     };
   }, [editingTextId]);
@@ -191,8 +206,15 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
   const prevEditingIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (editingTextId === prevEditingIdRef.current) return;
+    if (!editingTextId) {
+      prevEditingIdRef.current = null;
+      return;
+    }
+    // Don't latch the id until the element is actually renderable — a label
+    // created moments ago may reach the store one microtask later in collab
+    // mode (Y → store sync), and latching early would skip the seed/focus.
+    if (!textElement || !editorRef.current) return;
     prevEditingIdRef.current = editingTextId;
-    if (!editingTextId || !textElement || !editorRef.current) return;
 
     const text = textElement.text || '';
     setLiveText(text);
@@ -465,7 +487,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     if (e.key === 'Escape') {
       e.preventDefault();
       if (activeSlideId && editingTextId) {
-        updateElement(activeSlideId, editingTextId, { text: liveTextRef.current });
+        commitEditedText(activeSlideId, editingTextId, liveTextRef.current);
       }
       setEditingTextId(null);
       return;
@@ -473,7 +495,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     // Stop canvas-level hotkeys (e.g. Backspace deleting the selected
     // element) from firing while we're editing.
     e.stopPropagation();
-  }, [activeSlideId, editingTextId, updateElement, setEditingTextId]);
+  }, [activeSlideId, editingTextId, setEditingTextId]);
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items;
@@ -498,11 +520,10 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     const slideId = activeSlideIdRef.current;
     const textId = editingTextIdRef.current;
     if (slideId && textId) {
-      const finalText = getTextFromEditor();
-      updateElement(slideId, textId, { text: finalText });
+      commitEditedText(slideId, textId, getTextFromEditor());
     }
     setEditingTextId(null);
-  }, [updateElement, setEditingTextId, getTextFromEditor]);
+  }, [setEditingTextId, getTextFromEditor]);
 
   // eslint-disable-next-line react-hooks/refs -- gate on the stage DOM node existing before portaling into it; the node is attached before text editing can start
   if (!textElement || !stageRef.current) return null;

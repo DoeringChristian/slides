@@ -4,6 +4,7 @@ import { useEditorStore } from '../../store/editorStore';
 import { SVGBackground } from './SVGBackground';
 import { RenderElement } from './ElementRenderer';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
+import { attachLabelMasks } from '../../utils/syncDependents';
 import { getElementBounds, getElementCenter } from '../../utils/geometry';
 import type { Slide, SlideElement } from '../../types/presentation';
 
@@ -79,7 +80,10 @@ export const SVGStaticSlide: React.FC<Props> = React.memo(({
   const scale = width / SLIDE_WIDTH;
   const selectedSet = selectedElementIds && selectedElementIds.length > 0 ? new Set(selectedElementIds) : null;
 
-  const elements = slide.elementOrder.map((id) => slide.elements[id]).filter(Boolean);
+  const elements = attachLabelMasks(
+    slide.elementOrder.map((id) => slide.elements[id]).filter(Boolean),
+    slide.background.type === 'solid' ? slide.background.color : '#ffffff',
+  );
 
   return (
     <svg

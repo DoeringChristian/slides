@@ -419,3 +419,31 @@ describe('WS-4 slide groups: groupId round-trip', () => {
     expect('groupId' in out.slides['slide-a']).toBe(false);
   });
 });
+
+// =============================================================================
+// WS-2 Phase 4 bound text: TextElement.containerId round-trip
+// =============================================================================
+
+describe('WS-2 Phase 4 bound text: containerId round-trip', () => {
+  test('text containerId survives jsonToYDoc → yDocToJson', () => {
+    const fixture = makeFixture();
+    const title = fixture.slides['slide-a'].elements['el-title'];
+    (title as { containerId?: string }).containerId = 'el-rect';
+    const out = yDocToJson(jsonToYDoc(fixture));
+    expect((out.slides['slide-a'].elements['el-title'] as { containerId?: string }).containerId).toBe('el-rect');
+    expect(out).toEqual(fixture);
+  });
+
+  test('absent containerId stays absent; explicit null is normalised to absent', () => {
+    const fixture = makeFixture();
+    const doc = jsonToYDoc(fixture);
+    const slides = doc.getMap(ROOT_KEY).get('slides') as Y.Map<Y.Map<unknown>>;
+    const elements = slides.get('slide-a')!.get('elements') as Y.Map<Y.Map<unknown>>;
+    expect(elements.get('el-title')!.has('containerId')).toBe(false);
+
+    const withNull = makeFixture();
+    (withNull.slides['slide-a'].elements['el-title'] as { containerId?: string | null }).containerId = null;
+    const out = yDocToJson(jsonToYDoc(withNull));
+    expect('containerId' in out.slides['slide-a'].elements['el-title']).toBe(false);
+  });
+});

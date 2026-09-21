@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import type { TextElement } from '../../types/presentation';
+import type { SvgTextDoc } from '../../utils/textLayout';
 import { SVGTextPaths } from './SVGTextPaths';
 import { parseBlocks, getBlockFontMultiplier } from '../canvas/CustomMarkdownRenderer';
 import { measureBlockHeight } from '../../utils/textHitTest';
@@ -13,6 +14,9 @@ interface Props {
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
   onDoubleClick?: () => void;
+  /** Measured layout doc from SVGTextPaths — the editor canvas uses it to
+   *  grow a bound label's container when the text outgrows it. */
+  onLayout?: (doc: SvgTextDoc) => void;
 }
 
 // SVGTextNode renders text elements as actual SVG text
@@ -25,6 +29,7 @@ export const SVGTextNode: React.FC<Props> = React.memo(({
   onMouseEnter,
   onMouseLeave,
   onDoubleClick,
+  onLayout,
 }) => {
   // Compute actual rendered text height to size hit rect dynamically
   const hitRectHeight = useMemo(() => {
@@ -63,6 +68,7 @@ export const SVGTextNode: React.FC<Props> = React.memo(({
       <SVGTextPaths
         element={element}
         isEditing={isEditing}
+        onLayout={onLayout}
       />
 
       {/* Transparent hit area for interaction (on top of text, extends below for overflow) */}

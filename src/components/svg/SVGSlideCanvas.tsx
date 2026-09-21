@@ -27,11 +27,19 @@ import { computeGuides } from '../../hooks/useAlignmentGuides';
 import { getMarginLayout, getMarginBounds } from '../../utils/marginLayouts';
 import { snapToGrid as snapToGridFn } from '../../utils/geometry';
 import { isShiftHeld } from '../../utils/keyboard';
-import { SLIDE_WIDTH, SLIDE_HEIGHT, CANVAS_PADDING } from '../../utils/constants';
-import { loadImageFile, loadPdfFile, loadVideoFile, duplicateElement } from '../../utils/slideFactory';
+import { SLIDE_WIDTH, SLIDE_HEIGHT, CANVAS_PADDING, TEXT_BOX_PADDING } from '../../utils/constants';
+import { loadImageFile, loadPdfFile, loadVideoFile, duplicateElements } from '../../utils/slideFactory';
 import { isPointOnTextContent } from '../../utils/textHitTest';
 import { isLinePath } from '../../utils/pathShapes';
+import {
+  attachLabelMasks,
+  createBoundLabel,
+  expandWithBoundTexts,
+  findBoundText,
+  BOUND_TEXT_PADDING,
+} from '../../utils/syncDependents';
 import type { ShapeElement, SlideElement, TextElement } from '../../types/presentation';
+import type { SvgTextDoc } from '../../utils/textLayout';
 import type { Guide } from '../../hooks/useAlignmentGuides';
 
 // Transform a slide-space point into an element's local coordinates (handle rotation)
@@ -73,6 +81,7 @@ export const SVGSlideCanvas: React.FC = () => {
   const addEmptySlide = usePresentationStore((s) => s.addEmptySlide);
   const setActiveSlide = useEditorStore((s) => s.setActiveSlide);
   const addElement = usePresentationStore((s) => s.addElement);
+  const addElements = usePresentationStore((s) => s.addElements);
   const addResource = usePresentationStore((s) => s.addResource);
   const deleteElements = usePresentationStore((s) => s.deleteElements);
 
@@ -118,7 +127,12 @@ export const SVGSlideCanvas: React.FC = () => {
   
   const elements = useMemo(() => {
     if (!slide) return [];
-    return slide.elementOrder.map((id) => slide.elements[id]).filter(Boolean);
+    const list = slide.elementOrder.map((id) => slide.elements[id]).filter(Boolean);
+    // Bound-label masks (synthetic `_labelMask` hint consumed by the shared
+    // RenderShape): arrow shafts get a background-coloured gap under their
+    // label. White fallback for gradient/image backgrounds.
+    const bgColor = slide.background.type === 'solid' ? slide.background.color : '#ffffff';
+    return attachLabelMasks(list, bgColor);
   }, [slide]);
 
   // Sole selected visible path shape (2-point lines are just degenerate
@@ -418,9 +432,13 @@ export const SVGSlideCanvas: React.FC = () => {
       {
         label: 'Duplicate',
         action: () => {
-          const dup = duplicateElement(target);
-          addElement(slideId, dup);
-          setSelectedElements([dup.id]);
+          // Containers bring their bound labels along; ids are remapped so
+          // the copied label points at the copied container.
+          const ids = expandWithBoundTexts(slide.elements, slide.elementOrder, [elementId]);
+          const dups = duplicateElements(ids.map((id) => slide.elements[id]).filter(Boolean));
+          if (dups.length === 0) return;
+          addElements(slideId, dups);
+          setSelectedElements([dups[0].id]);
         },
       },
       {
@@ -447,7 +465,7 @@ export const SVGSlideCanvas: React.FC = () => {
     document.body.appendChild(menu);
     const remove = () => { menu.remove(); document.removeEventListener('click', remove); };
     setTimeout(() => document.addEventListener('click', remove), 0);
-  }, [addElement, deleteElements, setSelectedElements, updateElement]);
+  }, [addElements, deleteElements, setSelectedElements, updateElement]);
 
   const handleSelect = useCallback((id: string, e: React.PointerEvent) => {
     // Ignore middle-click (used for panning) — only meaningful for mouse pointers
@@ -481,7 +499,24 @@ export const SVGSlideCanvas: React.FC = () => {
 
     const metaPressed = e.shiftKey || e.ctrlKey || e.metaKey;
 
-    const clickedElement = currentSlide?.elements[id];
+    let clickedElement = currentSlide?.elements[id];
+
+    // Bound-text forwarding: clicking a label selects (and drags) its
+    // CONTAINER — the container drives the label's geometry, so the label
+    // never gets its own transformer. Skipped while the label itself is
+    // being edited (clicks then belong to the edit session below).
+    if (
+      clickedElement?.type === 'text' &&
+      (clickedElement as TextElement).containerId &&
+      currentEditingTextId !== id
+    ) {
+      const container = currentSlide?.elements[(clickedElement as TextElement).containerId!];
+      if (container) {
+        id = container.id;
+        clickedElement = container;
+      }
+    }
+
     const isTextElement = clickedElement?.type === 'text';
 
     if (currentEditingTextId === id) {
@@ -555,12 +590,27 @@ export const SVGSlideCanvas: React.FC = () => {
   }, [activeSlideId, setSelectedElements, setEditingTextId, screenToSVG, handleElementPointerDown, showElementContextMenu]);
 
   const handleDoubleClick = useCallback((id: string) => {
-    if (!slide) return;
+    if (!slide || !activeSlideId) return;
     const el = slide.elements[id];
-    if (el && el.type === 'text') {
+    if (!el) return;
+    if (el.type === 'text') {
       setEditingTextId(id);
+      return;
     }
-  }, [slide, setEditingTextId]);
+    // Bound text: double-clicking a shape (or arrow/path) opens its label —
+    // creating an empty one centered in the container (bbox center for
+    // shapes, arc-length midpoint for paths) when none exists yet.
+    if (el.type === 'shape' && !el.locked) {
+      const existing = findBoundText(slide, id);
+      if (existing) {
+        setEditingTextId(existing.id);
+        return;
+      }
+      const label = createBoundLabel(el);
+      addElement(activeSlideId, label);
+      setEditingTextId(label.id);
+    }
+  }, [slide, activeSlideId, setEditingTextId, addElement]);
 
   // Touch devices don't have a hover state — painting a hover overlay on
   // tap-release looks like a stuck highlight. Skip the hover branch entirely
@@ -678,13 +728,21 @@ export const SVGSlideCanvas: React.FC = () => {
           const selBottom = y + height;
           return !(el.x > selRight || elRight < x || el.y > selBottom || elBottom < y);
         })
-        .map((el) => el.id);
-      setSelectedElements(selectedIds);
+        .map((el) => {
+          // Bound labels never enter the selection on their own — the
+          // marquee picks their container instead (dedup below).
+          if (el.type === 'text') {
+            const cid = (el as TextElement).containerId;
+            if (cid && slide?.elements[cid]) return cid;
+          }
+          return el.id;
+        });
+      setSelectedElements([...new Set(selectedIds)]);
       justFinishedSelectionDrag.current = true;
     }
 
     setSelectionDrag(null);
-  }, [tool, handleDrawPointerUp, selectionDrag, elements, setSelectedElements]);
+  }, [tool, handleDrawPointerUp, selectionDrag, elements, setSelectedElements, slide]);
 
   // Two-finger pan/zoom via pointer events. Composes with the existing single-
   // pointer drag handlers above — the gesture hook only fires once a second
@@ -769,6 +827,55 @@ export const SVGSlideCanvas: React.FC = () => {
       updateElement(activeSlideId, id, attrs);
     }
   }, [activeSlideId, updateElement]);
+
+  // Bound-label height-grow (EDITOR canvas only): when a label's measured
+  // text outgrows its box, refit the label height (both directions, keeps
+  // its center) and grow the container so the label + padding still fit
+  // (grow-only — users may keep an oversized container). Epsilon guards
+  // stop write loops: doc.height depends only on the label WIDTH, which
+  // this handler never touches, so the geometry converges in one pass.
+  const handleTextLayout = useCallback((textId: string, doc: SvgTextDoc) => {
+    const slideId = useEditorStore.getState().activeSlideId;
+    const currentSlide = usePresentationStore.getState().presentation.slides[slideId];
+    const label = currentSlide?.elements[textId];
+    if (!label || label.type !== 'text') return;
+    const cid = (label as TextElement).containerId;
+    if (!cid) return;
+    const container = currentSlide.elements[cid];
+    if (!container) return;
+
+    const EPSILON = 0.5;
+    const updates: Array<{ elementId: string; changes: Partial<SlideElement> }> = [];
+
+    const labelNeeded = doc.height + 2 * TEXT_BOX_PADDING;
+    if (Math.abs(labelNeeded - label.height) > EPSILON) {
+      updates.push({
+        elementId: textId,
+        changes: {
+          height: labelNeeded,
+          y: label.y + (label.height - labelNeeded) / 2,
+        },
+      });
+    }
+
+    const isPath = container.type === 'shape' && (container as ShapeElement).shapeType === 'path';
+    if (!isPath) {
+      const containerNeeded = labelNeeded + 2 * BOUND_TEXT_PADDING;
+      if (containerNeeded > container.height + EPSILON) {
+        updates.push({
+          elementId: cid,
+          changes: {
+            height: containerNeeded,
+            y: container.y - (containerNeeded - container.height) / 2,
+          },
+        });
+      }
+    }
+
+    if (updates.length > 0) {
+      usePresentationStore.getState().updateElements(slideId, updates);
+    }
+  }, []);
 
   // Path handle update handler (vertex / tangent / binding commits).
   const handlePathUpdate = useCallback((attrs: Partial<ShapeElement>) => {
@@ -1091,6 +1198,7 @@ export const SVGSlideCanvas: React.FC = () => {
               onMouseEnter={handleMouseEnter}
               onMouseLeave={handleMouseLeave}
               onDoubleClick={handleDoubleClick}
+              onTextLayout={handleTextLayout}
             />
           ))}
         </g>
