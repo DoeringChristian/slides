@@ -82,6 +82,20 @@ export async function saveProject(
   return filename;
 }
 
+// Import is always a new file, including when an unrelated file or folder
+// already uses the title-derived name. Enumerate names, not only valid decks.
+export async function saveImportedProject(
+  vault: FileSystemDirectoryHandle,
+  presentation: Presentation,
+): Promise<string> {
+  const taken = new Set<string>();
+  for await (const entry of vault.values()) taken.add(entry.name.toLowerCase());
+  const base = generateFilename(presentation.title).slice(0, -5);
+  let filename = `${base}.json`;
+  for (let n = 2; taken.has(filename.toLowerCase()); n++) filename = `${base}-${n}.json`;
+  return saveProject(vault, presentation, filename);
+}
+
 // Delete a presentation from the vault
 export async function deleteProject(
   vault: FileSystemDirectoryHandle,

@@ -1,4 +1,5 @@
 import type { Doc as YDoc } from 'yjs';
+import { beforeLocalMutation } from '../utils/scrubMutation';
 
 // Tiny module-level singleton tracking the currently-connected collab Y.Doc.
 // Mutating actions in presentationStore consult getActiveDoc() to decide
@@ -12,9 +13,19 @@ import type { Doc as YDoc } from 'yjs';
 export const LOCAL_ORIGIN = Symbol('local-edit');
 
 let activeDoc: YDoc | null = null;
+const activeDocListeners = new Set<() => void>();
+
+/** Identity changes invalidate in-flight gestures even without a transaction. */
+export function subscribeActiveDocChange(listener: () => void): () => void {
+  activeDocListeners.add(listener);
+  return () => { activeDocListeners.delete(listener); };
+}
 
 export function setActiveDoc(doc: YDoc | null) {
+  if (activeDoc === doc) return;
+  beforeLocalMutation();
   activeDoc = doc;
+  activeDocListeners.forEach(listener => listener());
 }
 
 export function getActiveDoc(): YDoc | null {
@@ -26,6 +37,7 @@ export function getActiveDoc(): YDoc | null {
  * have already verified `getActiveDoc()` is non-null.
  */
 export function runInTxn(fn: () => void) {
+  beforeLocalMutation();
   if (!activeDoc) {
     throw new Error('runInTxn called with no active Y.Doc');
   }

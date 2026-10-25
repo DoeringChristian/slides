@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { RefreshCw, Loader2, Settings, Upload, Menu, X } from 'lucide-react';
 import { useVaultStore } from '../../store/vaultStore';
-import { usePresentationStore } from '../../store/presentationStore';
-import { useEditorStore } from '../../store/editorStore';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { ProjectCard, NewProjectCard } from './ProjectCard';
 // NOTE: thumbnailGenerator is imported lazily at the call sites below. It
@@ -13,46 +11,7 @@ import { StorageSettingsDialog } from './StorageSettingsDialog';
 import { getStorageClient } from '../../utils/storageClient';
 import type { Presentation } from '../../types/presentation';
 import { useJoinedProjects, removeJoinedProject } from '../../store/joinedStore';
-import { readSlidesPayload } from '../../utils/standaloneBoot';
-
-function assertPresentation(value: unknown): Presentation {
-  const p = value as Partial<Presentation> | null;
-  if (!p || !Array.isArray(p.slideOrder) || !p.slides) {
-    throw new Error('Invalid presentation file');
-  }
-  return {
-    ...p,
-    id: p.id || crypto.randomUUID(),
-    updatedAt: Date.now(),
-  } as Presentation;
-}
-
-function presentationFromHtmlExport(html: string): Presentation | null {
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  const payload = readSlidesPayload(doc);
-  if (payload === null) return null;
-  return assertPresentation(payload);
-}
-
-async function importPresentationFile(file: File): Promise<Presentation> {
-  const ext = file.name.split('.').pop()?.toLowerCase();
-
-  if (ext === 'pptx') {
-    const { importPptx } = await import('../../utils/importPptx');
-    return importPptx(file);
-  }
-  if (ext === 'odp') {
-    const { importOdp } = await import('../../utils/importOdp');
-    return importOdp(file);
-  }
-
-  const text = await file.text();
-  if (ext === 'html' || ext === 'htm') {
-    const fromHtml = presentationFromHtmlExport(text);
-    if (fromHtml) return fromHtml;
-  }
-  return assertPresentation(JSON.parse(text));
-}
+import { importPresentationFile } from '../../utils/importPresentation';
 
 export const ProjectPickerDialog: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
@@ -74,8 +33,7 @@ export const ProjectPickerDialog: React.FC = () => {
   const duplicateProject = useVaultStore((s) => s.duplicateProject);
   const updateThumbnail = useVaultStore((s) => s.updateThumbnail);
 
-  const loadPresentation = usePresentationStore((s) => s.loadPresentation);
-  const setActiveSlide = useEditorStore((s) => s.setActiveSlide);
+  const importProject = useVaultStore((s) => s.importProject);
 
   // "Shared with me" — projects the user joined via someone else's share URL.
   // Only meaningful in server mode; we still surface them in other modes for
@@ -134,34 +92,10 @@ export const ProjectPickerDialog: React.FC = () => {
     try {
       const presentation = await importPresentationFile(file);
 
-      // Load the presentation and open it
-      loadPresentation(presentation);
-
-      // Set the first slide as active
-      if (presentation.slideOrder.length > 0) {
-        setActiveSlide(presentation.slideOrder[0]);
-      }
-
-      // Save it to storage and open
-      const client = getStorageClient();
-      const firstSlide = presentation.slides[presentation.slideOrder[0]];
-      let thumbnail: string | undefined;
-      if (firstSlide) {
-        try {
-          const { generateThumbnail } = await import('../../utils/thumbnailGenerator');
-          thumbnail = await generateThumbnail(firstSlide, presentation.resources || {});
-        } catch {
-          // Thumbnail generation can fail (e.g. foreignObject in SVG); continue without it
-        }
-      }
-      await client.saveProject(presentation, thumbnail);
-
-      // Reload projects and open the imported one
-      await loadProjects();
-      await openProject(presentation.id);
+      await importProject(presentation);
     } catch (err) {
       console.error('Failed to import presentation:', err);
-      alert('Failed to import presentation. Please check the file format.');
+      alert(`Failed to import presentation: ${err instanceof Error ? err.message : 'Please check the file format.'}`);
     }
 
     // Reset the input

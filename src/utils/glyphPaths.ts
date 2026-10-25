@@ -126,6 +126,27 @@ export function injectInterFontFace(): void {
   document.head.appendChild(style);
 }
 
+// Browsers round CSS font struts at each zoom/font size. Measure their actual
+// baseline once, rather than assuming the ideal half-leading formula is exact.
+const nativeBaselineCache = new Map<string, number>();
+export function nativeTextBaseline(fontSize: number, advance: number, weight: string, fontStyle: string): number {
+  const key = `${fontSize}|${advance}|${weight}|${fontStyle}`;
+  const cached = nativeBaselineCache.get(key);
+  if (cached !== undefined) return cached;
+  const probe = document.createElement('div');
+  probe.style.cssText = `position:absolute;visibility:hidden;white-space:pre;margin:0;padding:0;border:0;font-family:InterEdit;font-size:${fontSize}px;font-weight:${weight};font-style:${fontStyle};line-height:${advance}px;`;
+  probe.textContent = 'x';
+  const marker = document.createElement('span');
+  marker.style.cssText = 'display:inline-block;width:0;height:0;padding:0;margin:0;';
+  probe.appendChild(marker);
+  document.body.appendChild(probe);
+  const baseline = marker.getBoundingClientRect().top - probe.getBoundingClientRect().top;
+  probe.remove();
+  // Do not keep a fallback-font measurement made before InterEdit is ready.
+  if (document.fonts.check(`${fontStyle} ${weight} ${fontSize}px InterEdit`)) nativeBaselineCache.set(key, baseline);
+  return baseline;
+}
+
 // Hidden detached SVG path used to compute path lengths. Browsers cache the
 // underlying path data per-element; we recreate one element and reuse it.
 let lengthProbe: SVGPathElement | null = null;

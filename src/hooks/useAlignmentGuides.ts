@@ -1,6 +1,11 @@
+/** Actual resolved point destination, in slide coordinates. Only point-snap
+ * producers set this; renderers must not infer a destination from a line. */
+export interface SnapDestination { x: number; y: number }
+
 export interface LineGuide {
   type: 'horizontal' | 'vertical';
   position: number;
+  destination?: SnapDestination;
 }
 
 interface SpacingSegment {
@@ -17,12 +22,14 @@ export interface SpacingGuide {
   segments: SpacingSegment[];
 }
 
-export type Guide = LineGuide | SpacingGuide;
+export interface DirectionGuide { destination?: SnapDestination; type: 'direction'; x1: number; y1: number; x2: number; y2: number }
+export type Guide = LineGuide | SpacingGuide | DirectionGuide;
 
 export function guideKey(g: Guide): string {
+  if (g.type === 'direction') return `direction-${g.x1}-${g.y1}-${g.x2}-${g.y2}`;
   return g.type === 'spacing'
     ? `spacing-${g.axis}-${g.at}-${g.segments.map((s) => `${s.from}:${s.to}`).join(',')}`
-    : `${g.type}-${g.position}`;
+    : `${g.type}-${g.position}${g.destination ? `-${g.destination.x}-${g.destination.y}` : ''}`;
 }
 
 interface ElementBounds {
@@ -247,8 +254,37 @@ export function computePointSnap(
   point: { x: number; y: number },
   others: ElementBounds[],
   threshold: number = 5,
-  marginBounds?: MarginBounds | null
+  marginBounds?: MarginBounds | null,
+  rayOrigin?: SnapDestination
 ): { guides: Guide[]; snapX: number | null; snapY: number | null } {
+  // Intersections use the same object/margin candidates as unconstrained snaps.
+  // Compare full displacement, not axis distance: near-parallel rays cannot jump.
+  if (rayOrigin) {
+    const dx = point.x - rayOrigin.x, dy = point.y - rayOrigin.y;
+    const length = Math.hypot(dx, dy);
+    let destination = point, best = threshold + 1;
+    const lines = candidateLines(others, marginBounds);
+    for (const { verticals, horizontals } of lines) {
+      for (const [axis, values] of [['x', verticals], ['y', horizontals]] as const) {
+        const delta = axis === 'x' ? dx : dy;
+        if (Math.abs(delta) < 1e-9) continue;
+        for (const value of values) {
+          const t = (value - rayOrigin[axis]) / delta;
+          const distance = Math.abs(t - 1) * length;
+          if (t >= 0 && distance <= threshold && distance < best) {
+            best = distance;
+            destination = { x: rayOrigin.x + t * dx, y: rayOrigin.y + t * dy };
+          }
+        }
+      }
+    }
+    const guides: Guide[] = [];
+    for (const { verticals, horizontals } of lines) {
+      for (const position of verticals) if (Math.abs(position - destination.x) < 1e-7) guides.push({ type: 'vertical', position, destination });
+      for (const position of horizontals) if (Math.abs(position - destination.y) < 1e-7) guides.push({ type: 'horizontal', position, destination });
+    }
+    return { snapX: destination.x, snapY: destination.y, guides: dedupeGuides(guides) };
+  }
   const guides: Guide[] = [];
   let snapX: number | null = null;
   let snapY: number | null = null;
@@ -273,6 +309,11 @@ export function computePointSnap(
     }
   }
 
+  const destination = { x: snapX ?? point.x, y: snapY ?? point.y };
+  for (const guide of guides) {
+    if ((guide.type === 'vertical' && guide.position === snapX) ||
+        (guide.type === 'horizontal' && guide.position === snapY)) guide.destination = destination;
+  }
   return { guides: dedupeGuides(guides), snapX, snapY };
 }
 

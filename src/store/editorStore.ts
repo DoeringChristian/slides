@@ -1,3 +1,5 @@
+import { getActiveDoc } from '../collab/yDocAdapter';
+import { yDocToJsonSlideOnly } from '../collab/ySchema';
 import { create } from 'zustand';
 import type {
   Tool, SlideElement, EditorState,
@@ -59,6 +61,8 @@ interface EditorStore extends EditorState {
   clearSelection: () => void;
   setZoom: (zoom: number) => void;
   setTool: (tool: Tool) => void;
+  pathExtension: { elementId: string; end: 'start' | 'end' } | null;
+  beginPathExtension: (elementId: string, end: 'start' | 'end') => void;
   setPresenting: (isPresenting: boolean) => void;
   setPresentingSlideIndex: (index: number) => void;
   setShowGrid: (show: boolean) => void;
@@ -83,6 +87,7 @@ export const useEditorStore = create<EditorStore>()((set) => ({
   selectedElementIds: [],
   zoom: 1,
   tool: 'select',
+  pathExtension: null,
   isPresenting: false,
   presentingSlideIndex: 0,
   showGrid: false,
@@ -124,7 +129,11 @@ export const useEditorStore = create<EditorStore>()((set) => ({
   setObjectDrawerOpen: (open) => set({ objectDrawerOpen: open }),
   setHoveredObjectId: (id) => set({ hoveredObjectId: id }),
   setActiveSlide: (slideId) => set((s) => {
-    const slide = usePresentationStore.getState().presentation.slides[slideId];
+    // A collab add/duplicate returns BEFORE the microtask Y→Zustand sync.
+    // Read the authoritative new keyframe, not the stale UI snapshot.
+    const doc = getActiveDoc();
+    const slide = doc ? yDocToJsonSlideOnly(doc, slideId)
+      : usePresentationStore.getState().presentation.slides[slideId];
     const kept = slide
       ? s.selectedElementIds.filter((id) => id in slide.elements)
       : [];
@@ -132,6 +141,7 @@ export const useEditorStore = create<EditorStore>()((set) => ({
     // This allows proper multi-select behavior
     return {
       activeSlideId: slideId,
+      pathExtension: null,
       selectedElementIds: kept,
       editingTextId: null,
     };
@@ -158,8 +168,14 @@ export const useEditorStore = create<EditorStore>()((set) => ({
     ...(s.selectedSlideIds.length > 1 ? { selectedSlideIds: [s.activeSlideId] } : {}),
   })),
   setZoom: (zoom) => set({ zoom: Math.max(0.25, Math.min(3, zoom)) }),
+  beginPathExtension: (elementId, end) => set((s) => {
+    const el = usePresentationStore.getState().presentation.slides[s.activeSlideId]?.elements[elementId];
+    if (!el || el.type !== 'shape' || el.shapeType !== 'path' || el.closed || el.locked || !el.visible || (el.points?.length ?? 0) < 4) return s;
+    return { pathExtension: { elementId, end }, tool: 'line', selectedElementIds: [], editingTextId: null };
+  }),
   setTool: (tool) => set((s) => ({
     tool,
+    pathExtension: null,
     // Preserve selection when switching to 'select', clear when switching to drawing tools
     selectedElementIds: tool === 'select' ? s.selectedElementIds : [],
     editingTextId: tool === 'select' ? s.editingTextId : null,

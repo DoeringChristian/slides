@@ -1,0 +1,47 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+vi.mock('../utils/keyboard', () => ({ isShiftHeld: () => false, isCtrlHeld: () => false }));
+import { usePresentationStore as store } from './presentationStore';
+import { useEditorStore as editor } from './editorStore';
+import { useCreationPreferences } from './creationPreferences';
+import { createPresentation } from '../utils/slideFactory';
+import { composeUserShape } from '../utils/userShapeCreation';
+import { jsonToYDoc, yDocToJson } from '../collab/ySchema';
+import { setActiveDoc } from '../collab/yDocAdapter';
+import { createUndoManagerFor, setActiveUndoManager } from '../collab/activeUndo';
+import { CURATED_ICONS } from '../utils/curatedIcons';
+import { resolveBinding } from '../utils/connectorUtils';
+import type { ShapeElement } from '../types/presentation';
+afterEach(() => { setActiveUndoManager(null); setActiveDoc(null); useCreationPreferences.setState({ styles: {}, iconId: 'house' }); });
+describe.each([false, true])('native vector collab=%s', collab => {
+  it('adds one identity and one undo, roundtrips complete geometry, atomically replaces it; undo never learns', () => {
+    const p = createPresentation(), sid = p.slideOrder[0];
+    p.slides[sid].elements = {}; p.slides[sid].elementOrder = []; p.objects = {};
+    store.setState({ presentation: p }); editor.setState({ activeSlideId: sid, selectedSlideIds: [], autoDrawMode: false });
+    store.temporal.getState().clear();
+    const doc = collab ? jsonToYDoc(p) : null; setActiveDoc(doc);
+    const undo = doc ? createUndoManagerFor(doc) : null; setActiveUndoManager(undo);
+    const read = () => doc ? yDocToJson(doc) : store.getState().presentation;
+    const shape = composeUserShape('icon'); store.getState().addElement(sid, shape);
+    expect(read().slides[sid].elementOrder).toEqual([shape.id]);
+    expect(read().slides[sid].elements[shape.id]).toMatchObject(shape);
+    expect(Object.keys(read().objects)).toEqual([shape.id]);
+    expect(undo?.undoStack.length ?? store.temporal.getState().pastStates.length).toBe(1);
+    if (undo) undo.undo(); else store.temporal.getState().undo();
+    expect(read().slides[sid].elements[shape.id]).toBeUndefined();
+    if (undo) undo.redo(); else store.temporal.getState().redo();
+    undo?.stopCapturing();
+    const geometry = structuredClone(CURATED_ICONS.find(i => i.id === 'plus')!.geometry);
+    store.getState().updateElement(sid, shape.id, { geometry, stroke: '#f00' } as Partial<ShapeElement>);
+    expect((read().slides[sid].elements[shape.id] as ShapeElement).geometry).toEqual(geometry);
+    expect(useCreationPreferences.getState().styles).toEqual({});
+    if (undo) undo.undo(); else store.temporal.getState().undo();
+    expect((read().slides[sid].elements[shape.id] as ShapeElement).geometry).toEqual(shape.geometry);
+    expect(useCreationPreferences.getState().styles).toEqual({});
+    setActiveUndoManager(null); setActiveDoc(null); doc?.destroy();
+  });
+});
+it('icons deliberately bind to box edges, not icon interiors', () => {
+  const icon = composeUserShape('icon', { id: 'icon', x: 100, y: 100, width: 200, height: 100 });
+  const edge = resolveBinding({ elementId: icon.id, mode: 'aim', fixedPoint: [.5, .5], gap: 0 }, icon, { x: 500, y: 150 });
+  expect(edge).toEqual({ x: 300, y: 150 });
+});

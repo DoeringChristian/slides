@@ -1,4 +1,6 @@
+import { textInsets } from './boundTextLayout';
 import JSZip from 'jszip';
+import { officePaint, officeShapeNeedsSvg, officeShapeSvg } from './officeShape';
 import type { Presentation, Slide, TextElement, ShapeElement, ImageElement, SlideBackground, ArrowheadType } from '../types/presentation';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from './constants';
 import { parseBlocks, getBlockFontMultiplier } from '../components/canvas/CustomMarkdownRenderer';
@@ -189,7 +191,8 @@ function buildShapeStyle(el: ShapeElement, slideIndex: number, elIndex: number):
 
   if (!isLine) {
     if (hasFill) {
-      style += `draw:fill="solid" draw:fill-color="${el.fill}" `;
+      const paint = officePaint(el.fill, el.opacity);
+      style += `draw:fill="solid" draw:fill-color="${paint.color}" draw:opacity="${paint.alpha * 100}%" `;
     } else {
       style += `draw:fill="none" `;
     }
@@ -197,14 +200,12 @@ function buildShapeStyle(el: ShapeElement, slideIndex: number, elIndex: number):
 
   if (hasStroke || isLine) {
     const strokeColor = el.stroke || el.fill || '#000000';
-    style += `draw:stroke="solid" svg:stroke-color="${strokeColor}" svg:stroke-width="${cm(el.strokeWidth || 3)}" `;
+    const paint = officePaint(strokeColor, el.opacity);
+    style += `draw:stroke="solid" svg:stroke-color="${paint.color}" svg:stroke-opacity="${paint.alpha * 100}%" svg:stroke-width="${cm(el.strokeWidth || 3)}" `;
   } else if (!isLine) {
     style += `draw:stroke="none" `;
   }
 
-  if (el.opacity < 1) {
-    style += `draw:opacity="${Math.round(el.opacity * 100)}%" `;
-  }
 
   // Arrow markers on the unified path shape — each typed head maps to the
   // nearest stock ODP marker (circle family → "Circle", everything else
@@ -301,6 +302,7 @@ export async function exportOdp(presentation: Presentation): Promise<void> {
         // Text frame graphic style
         autoStyles += `<style:style style:name="${styleName}" style:family="graphic">`;
         autoStyles += `<style:graphic-properties draw:fill="none" draw:stroke="none"`;
+        autoStyles += ` fo:padding="${cm(textInsets(textEl))}"`;
         if (textEl.opacity < 1) {
           autoStyles += ` draw:opacity="${Math.round(textEl.opacity * 100)}%"`;
         }
@@ -320,8 +322,14 @@ export async function exportOdp(presentation: Presentation): Promise<void> {
         bodyContent += `</draw:frame>`;
       } else if (el.type === 'shape') {
         const shapeEl = el as ShapeElement;
-        autoStyles += buildShapeStyle(shapeEl, si, elIndex);
-        bodyContent += buildShapeXml(shapeEl, si, elIndex);
+        if (officeShapeNeedsSvg(shapeEl)) {
+          const path = `Pictures/shape${si}_${elIndex}.svg`;
+          images.push({ path, mime: 'image/svg+xml', data: btoa(officeShapeSvg(shapeEl)) });
+          bodyContent += `<draw:frame svg:x="0cm" svg:y="0cm" svg:width="${cm(SLIDE_WIDTH)}" svg:height="${cm(SLIDE_HEIGHT)}" draw:layer="layout"><draw:image xlink:href="${path}" xlink:type="simple" xlink:show="embed" xlink:actuate="onLoad"/></draw:frame>`;
+        } else {
+          autoStyles += buildShapeStyle(shapeEl, si, elIndex);
+          bodyContent += buildShapeXml(shapeEl, si, elIndex);
+        }
       } else if (el.type === 'image') {
         const imgEl = el as ImageElement;
         if (imgEl.resourceId && resourceImageMap.has(imgEl.resourceId)) {

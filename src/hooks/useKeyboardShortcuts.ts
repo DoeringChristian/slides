@@ -1,3 +1,4 @@
+import { readElementForMutation } from '../store/currentMutation';
 import { useEffect } from 'react';
 import { useEditorStore } from '../store/editorStore';
 import { usePresentationStore } from '../store/presentationStore';
@@ -13,6 +14,8 @@ export function useKeyboardShortcuts() {
     const INTERNAL_MARKER = 'slides-internal-copy';
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Drafts, palettes, vertex handles and text editors own handled keys.
+      if (e.defaultPrevented) return;
       const target = e.target as HTMLElement;
       const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' ||
         target.isContentEditable;
@@ -65,7 +68,7 @@ export function useKeyboardShortcuts() {
       const selectedIds = editor.getState().selectedElementIds;
 
       // Delete — hide elements on current slide, or delete slide if nothing selected
-      if ((e.key === 'Delete' || e.key === 'Backspace') && !isInput) {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !isInput && editor.getState().tool === 'select') {
         if (selectedIds.length > 0) {
           e.preventDefault();
           for (const id of selectedIds) {
@@ -272,9 +275,8 @@ export function useKeyboardShortcuts() {
       }
 
       // Bold/Italic/Underline for text
-      if (ctrl && selectedIds.length === 1) {
-        const slide = store.getState().presentation.slides[activeSlideId];
-        const el = slide?.elements[selectedIds[0]];
+      if (ctrl && selectedIds.length === 1 && ['b', 'i', 'u'].includes(e.key)) {
+        const el = readElementForMutation(activeSlideId, selectedIds[0]);
         if (el && el.type === 'text') {
           const textEl = el as import('../types/presentation').TextElement;
           if (e.key === 'b') {

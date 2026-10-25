@@ -1,23 +1,25 @@
-import React from 'react';
+import React, { useContext } from 'react';
+import { CreationDraftContext } from './CreationDraftContext';
 import { PropertyList } from './PropertyList';
 import {
   Property,
   ColorProperty,
   NumberProperty,
-  RangeProperty,
   CheckboxProperty,
   PreviewSelectProperty,
   ReadoutProperty,
   type PropertyContext,
 } from './Property';
-import type { ShapeElement, ConnectorBinding, PathCurve, StrokeStyle, ArrowheadType, TransitionGroup } from '../../types/presentation';
+import type { ShapeElement, ConnectorBinding, PathCurve, StrokeStyle, FillStyle, ArrowheadType, TransitionGroup } from '../../types/presentation';
 import { bindingFor, resolveBinding, isPinnedBinding } from '../../utils/connectorUtils';
-import { pathBoundsFor, catmullTangents, arrowheadGeometry, strokeDashFor, pathD } from '../../utils/pathShapes';
+import { pathGeometryUpdate, pathPointsInSlide, slidePointToPath } from '../../utils/pathEditing';
+import { catmullTangents, arrowheadGeometry, strokeDashFor, pathD } from '../../utils/pathShapes';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useEditorStore } from '../../store/editorStore';
 import { IconSelect, type IconSelectOption } from '../controls/IconSelect';
 import { PreviewSelect } from '../controls/PreviewSelect';
-import { RenderArrowhead } from '../svg/ElementRenderer';
+import { createShapeElement } from '../../utils/slideFactory';
+import { RenderShape, RenderArrowhead } from '../svg/ElementRenderer';
 
 const isRect = (el: ShapeElement) => el.shapeType === 'rect';
 const isPath = (el: ShapeElement) => el.shapeType === 'path';
@@ -34,7 +36,7 @@ const supportsCornerRadius = (el: ShapeElement) =>
 // ---------------------------------------------------------------------------
 
 /**
- * Checkbox that converts a connector-end binding between edge mode
+ * Checkbox that converts a connector-end binding between aim mode
  * (Excalidraw default: endpoint re-aims at the target's silhouette) and
  * pinned mode (endpoint sticks to a fixed [u,v] point on the target).
  * Toggling derives the new binding FROM THE CURRENTLY RESOLVED endpoint, so
@@ -60,19 +62,24 @@ const BindingPinToggle: React.FC<{
     const last = pts.length - 2;
     const idx = end === 'start' ? 0 : last;
     const adjIdx = end === 'start' ? 2 : last - 2;
-    const point = { x: element.x + pts[idx], y: element.y + pts[idx + 1] };
-    const adj = { x: element.x + pts[adjIdx], y: element.y + pts[adjIdx + 1] };
-    const next: ConnectorBinding = bindingFor(point, target, adj, checked ? 'pinned' : 'edge');
+    const abs = pathPointsInSlide(element);
+    const point = { x: abs[idx], y: abs[idx + 1] };
+    const adj = { x: abs[adjIdx], y: abs[adjIdx + 1] };
+    const next: ConnectorBinding = bindingFor(point, target, checked ? 'pinned' : 'aim');
     // Bake the re-solved endpoint alongside the binding so the stored
     // geometry and the binding always agree (mutation-time baking).
     const resolved = resolveBinding(next, target, adj);
-    const abs = pts.map((v, i) => v + (i % 2 === 0 ? element.x : element.y));
     abs[idx] = resolved.x;
     abs[idx + 1] = resolved.y;
-    const b = pathBoundsFor(abs, element.curve ?? 'linear', !!element.closed, element.tangents);
+    const local = abs.flatMap((_, i) => {
+      if (i % 2) return [];
+      const p = slidePointToPath(element, abs[i], abs[i + 1]);
+      return [p.x, p.y];
+    });
+    const b = pathGeometryUpdate(element, local, element.tangents);
     update({
       [end === 'start' ? 'startBinding' : 'endBinding']: next,
-      x: b.x, y: b.y, width: b.width, height: b.height, points: b.points,
+      ...b,
     } as Partial<ShapeElement>);
   };
 
@@ -119,11 +126,12 @@ class BindingPinProperty extends Property<ShapeElement> {
 }
 
 /** Normal modes are straight, automatic through-point curvature, and manual
- * Bézier. Legacy splines stay selected and render unchanged until an explicit
+ * Bézier. B-splines stay selected and render unchanged until an explicit
  * conversion; dormant manual tangents survive mode switches. */
 class CurveProperty extends Property<ShapeElement> {
   readonly key = 'curve';
   readonly label = 'Curve';
+  override get groupWithPrevious(): boolean { return true; }
   override get transitionGroup(): TransitionGroup { return 'controlPoints'; }
   override get syncFields(): string[] { return ['curve', 'tangents', 'points', 'x', 'y', 'width', 'height']; }
   override visibleFor(el: ShapeElement): boolean { return isPath(el); }
@@ -136,24 +144,18 @@ class CurveProperty extends Property<ShapeElement> {
       { value: 'bezier', label: 'Bezier' },
     ];
     if (mode === 'bspline2' || mode === 'bspline3') {
-      options.push({ value: mode, label: `B-spline (${mode === 'bspline2' ? 'quadratic' : 'cubic'}, legacy)` });
+      options.push({ value: mode, label: `B-spline (${mode === 'bspline2' ? 'quadratic' : 'cubic'})` });
     }
     return <PreviewSelect<PathCurve>
       label={this.label}
+      iconOnly
       value={mode}
       options={options.map((o) => ({ ...o, preview: curvePreview(o.value) }))}
       onChange={(curve) => {
         const points = element.points ?? [];
         const tangents = curve === 'bezier' && element.tangents?.length !== points.length * 2
           ? catmullTangents(points, !!element.closed) : element.tangents;
-        const b = pathBoundsFor(points, curve, !!element.closed, tangents);
-        const dx = b.x + (b.width - element.width) / 2;
-        const dy = b.y + (b.height - element.height) / 2;
-        const angle = element.rotation * Math.PI / 180;
-        update({ curve, ...(tangents ? { tangents } : {}), ...b,
-          x: element.x + (element.width - b.width) / 2 + dx * Math.cos(angle) - dy * Math.sin(angle),
-          y: element.y + (element.height - b.height) / 2 + dx * Math.sin(angle) + dy * Math.cos(angle),
-        });
+        update({ curve, ...pathGeometryUpdate({ ...element, curve }, points, tangents) });
       }}
     />;
   }
@@ -257,6 +259,7 @@ class ArrowheadProperty extends Property<ShapeElement> {
     }));
   }
 
+  override get groupWithPrevious(): boolean { return this.key === 'endHead'; }
   override get transitionGroup(): TransitionGroup { return this._transitionGroup; }
   override visibleFor(el: ShapeElement): boolean { return isPath(el); }
   override disabledFor(el: ShapeElement): boolean { return !!el.closed; }
@@ -281,13 +284,30 @@ class ArrowheadProperty extends Property<ShapeElement> {
  * visibility. PropertyRow draws the standard header (label + SlideSync +
  * TransitionIn/Out + KeyframeButtons) automatically from this metadata.
  */
+class FillStyleProperty extends PreviewSelectProperty<ShapeElement, FillStyle> {
+  override copyFromKeyframe(target: ShapeElement): Partial<ShapeElement> {
+    // Explicit default: Yjs intentionally ignores undefined mutation values.
+    return { fillStyle: target.fillStyle ?? 'solid' };
+  }
+  override differsFromKeyframe(target: ShapeElement, current: ShapeElement): boolean {
+    return (target.fillStyle ?? 'solid') !== (current.fillStyle ?? 'solid');
+  }
+}
+
 const SHAPE_PROPERTIES: Property<ShapeElement>[] = [
-  new ColorProperty<ShapeElement>({ key: 'fill', label: 'Fill', transitionGroup: 'fill' }),
-  // Color swatches are narrow — pack stroke onto the same row as fill so the
-  // panel doesn't burn two full rows on two small rectangles.
+  new ColorProperty<ShapeElement>({ key: 'fill', label: 'Fill', transitionGroup: 'fill', alpha: true }),
   new ColorProperty<ShapeElement>({
-    key: 'stroke', label: 'Stroke', transitionGroup: 'stroke',
-    groupWithPrevious: true,
+    key: 'stroke', label: 'Stroke', transitionGroup: 'stroke', alpha: true,
+  }),
+  new FillStyleProperty({
+    key: 'fillStyle', label: 'Fill Style', iconOnly: true, defaultValue: 'solid', columns: 3,
+    options: (['solid', 'hachure', 'crosshatch'] as const).map(value => ({ value,
+      label: value === 'solid' ? 'Solid' : value === 'hachure' ? 'Hachure' : 'Crosshatch',
+      preview: () => <svg width={44} height={30} viewBox="0 0 44 30" aria-hidden="true">
+        <RenderShape element={createShapeElement('rect', { id: `fill-preview-${value}`, x: 2, y: 2, width: 40, height: 26,
+          cornerRadius: 4, fill: '#555555', fillStyle: value, stroke: '#333333', strokeWidth: 1 })} />
+      </svg>,
+    })),
   }),
   new NumberProperty<ShapeElement>({
     key: 'strokeWidth', label: 'Stroke Width',
@@ -297,11 +317,11 @@ const SHAPE_PROPERTIES: Property<ShapeElement>[] = [
     step: 1, scrubStep: 0.2, precision: 1,
   }),
   new PreviewSelectProperty<ShapeElement, StrokeStyle>({
-    key: 'strokeStyle', label: 'Stroke Style',
+    key: 'strokeStyle', label: 'Stroke Style', iconOnly: true,
     // Lines / arrows / polylines / polygons get the dash control. Filled
     // rect / ellipse / triangle / star don't usually need it; keeping it
     // path-only avoids cluttering the rect panel.
-    visibleFor: isPath,
+    visibleFor: el => isPath(el) || el.shapeType === 'vector',
     defaultValue: 'solid',
     columns: 3,
     options: [
@@ -310,17 +330,22 @@ const SHAPE_PROPERTIES: Property<ShapeElement>[] = [
       { value: 'dotted', label: 'Dotted', preview: () => strokeStylePreview('dotted') },
     ],
   }),
+  new CurveProperty(),
   new NumberProperty<ShapeElement>({
     key: 'cornerRadius', label: 'Corner Radius',
     transitionGroup: 'cornerRadius', min: 0, max: 100, step: 1,
     visibleFor: supportsCornerRadius,
   }),
-  new CurveProperty(),
   new CheckboxProperty<ShapeElement>({ key: 'closed', label: 'Closed path', visibleFor: isPath }),
   // Typed arrowheads. The transition groups keep their historical
   // 'startArrow'/'endArrow' names (persisted in decks).
   new ArrowheadProperty({ key: 'startHead', label: 'Start head', transitionGroup: 'startArrow' }),
   new ArrowheadProperty({ key: 'endHead', label: 'End head', transitionGroup: 'endArrow' }),
+  new ReadoutProperty<ShapeElement>({
+    key: 'geometry', label: 'Vector geometry', transitionGroup: 'controlPoints',
+    syncFields: ['geometry'], visibleFor: el => el.shapeType === 'vector',
+    readout: el => `${el.geometry?.contours.length ?? 0} contours`,
+  }),
   // Binding v2 pin toggles — one per bound end. Not grouped: grouping would
   // leave an empty grid row behind whenever neither end is bound (the
   // wrapper div renders even when every row in the bucket is invisible).
@@ -335,18 +360,18 @@ const SHAPE_PROPERTIES: Property<ShapeElement>[] = [
     visibleFor: isPath,
     readout: (el) => String(((el.points?.length ?? 0) / 2) | 0),
   }),
-  new RangeProperty<ShapeElement>({
-    key: 'opacity', label: 'Opacity',
-    transitionGroup: 'opacity', min: 0, max: 100, scale: 100,
-  }),
 ];
 
 interface Props {
   element: ShapeElement;
 }
 
-export const ShapeProperties: React.FC<Props> = ({ element }) => (
+export const ShapeProperties: React.FC<Props> = ({ element }) => {
+  const draft = useContext(CreationDraftContext);
+  return (
   <div className="space-y-3">
-    <PropertyList properties={SHAPE_PROPERTIES} element={element} />
+    <PropertyList properties={draft ? SHAPE_PROPERTIES.filter(p => !['points', 'geometry', 'startBinding', 'endBinding'].includes(p.key)) : SHAPE_PROPERTIES} element={element} />
+
   </div>
 );
+};

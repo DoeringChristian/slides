@@ -1,4 +1,5 @@
 import React from 'react';
+import type { CurrentChange } from '../../store/currentMutation';
 import { ColorPicker } from '../toolbar/ColorPicker';
 import { Toggle } from '../controls/Toggle';
 import { SelectControl } from '../controls/SelectControl';
@@ -9,7 +10,7 @@ import { PreviewSelect } from '../controls/PreviewSelect';
 // PropertyRow mounts them as ordinary children (where useScrubCommit is
 // legal). The import cycle scrubEditors ⇄ Property is benign: both sides
 // only touch each other's bindings at call time.
-import { NumberEditor, PairEditor, RangeEditor } from './scrubEditors';
+import { ColorEditor, NumberEditor, PairEditor, RangeEditor } from './scrubEditors';
 import type { ScrubSpec } from '../../utils/scrub';
 import type { SlideElement, TransitionGroup } from '../../types/presentation';
 
@@ -76,6 +77,16 @@ export function setNestedPartial<T>(el: T, path: string, value: unknown): Partia
   return root as Partial<T>;
 }
 
+/** Copy only the named leaves, retaining CURRENT siblings. Accumulate each
+ * nested partial so multiple fields sharing a root do not undo one another. */
+export function copyNestedFields<T>(source: T, current: T, fields: string[]): Partial<T> {
+  let changes: Partial<T> = {};
+  for (const field of fields) {
+    changes = { ...changes, ...setNestedPartial({ ...current, ...changes }, field, getNested(source, field)) };
+  }
+  return changes;
+}
+
 export function defaultEquals(a: unknown, b: unknown): boolean {
   if (typeof a === 'number' && typeof b === 'number') return Math.round(a * 100) === Math.round(b * 100);
   return JSON.stringify(a) === JSON.stringify(b);
@@ -87,7 +98,9 @@ export function defaultEquals(a: unknown, b: unknown): boolean {
 
 export interface PropertyContext<T extends object> {
   element: T;
-  update: (changes: Partial<T>) => void;
+  /** Use a callback when changes depend on existing fields/siblings. The
+   * row resolves it from authoritative state after cancelling a scrub. */
+  update: (changes: CurrentChange<T>) => void;
 }
 
 export abstract class Property<T extends object = SlideElement> {
@@ -125,15 +138,7 @@ export abstract class Property<T extends object = SlideElement> {
    *  the current element. Handles dot-notation paths (nested style fields)
    *  by deep-spreading intermediate objects. */
   copyFromKeyframe(target: T, current: T): Partial<T> {
-    let changes: Partial<T> = {};
-    for (const f of this.syncFields) {
-      const value = getNested(target, f);
-      const slice = setNestedPartial(current, f, value);
-      // Merge by spreading top-level keys; nested objects from setNested
-      // already include their siblings spread.
-      changes = { ...changes, ...slice };
-    }
-    return changes;
+    return copyNestedFields(target, current, this.syncFields);
   }
 
   /** Editor body. PropertyRow renders the header (label + buttons) and
@@ -198,6 +203,7 @@ abstract class BaseProperty<T extends object, V> extends Property<T> {
 // ---------------------------------------------------------------------------
 
 interface NumberOpts<T extends object> extends BaseOpts<T> {
+  wrap?: number;
   /** Displayed/scrubbed value = stored value × scale. Bounds, precision,
    * steps and Ctrl snapping are all in DISPLAY units. */
   scale?: number;
@@ -209,10 +215,7 @@ interface NumberOpts<T extends object> extends BaseOpts<T> {
   scrubStep?: number;
   /** Ctrl-during-scrub snap multiple; default 1 (whole values). */
   ctrlSnap?: number;
-  /** Legacy whole-number rounding (good for x/y; off for opacity).
-   *  Equivalent to `precision: 0`; kept so existing panels don't churn. */
-  round?: boolean;
-  /** Decimal places rounded to at commit. Overrides `round`. */
+  /** Decimal places rounded to at commit. */
   precision?: number;
   /** Display-only suffix, e.g. '°' or 'px'. */
   unit?: string;
@@ -221,18 +224,18 @@ interface NumberOpts<T extends object> extends BaseOpts<T> {
   defaultValue?: number;
 }
 
-/** Legacy `round: true` maps to `precision: 0`; explicit precision wins. */
 function scrubSpecFrom(opts: {
   min?: number; max?: number; step?: number; scrubStep?: number;
-  round?: boolean; precision?: number; ctrlSnap?: number;
+  precision?: number; ctrlSnap?: number; wrap?: number;
 }): ScrubSpec {
   return {
+    wrap: opts.wrap,
     min: opts.min,
     max: opts.max,
     step: opts.step,
     scrubStep: opts.scrubStep,
     ctrlSnap: opts.ctrlSnap,
-    precision: opts.precision ?? (opts.round ? 0 : undefined),
+    precision: opts.precision,
   };
 }
 
@@ -284,6 +287,7 @@ export class RangeProperty<T extends object = SlideElement> extends BaseProperty
 }
 
 interface ColorOpts<T extends object> extends BaseOpts<T> {
+  alpha?: boolean;
   allowTransparent?: boolean;
 }
 
@@ -291,10 +295,13 @@ export class ColorProperty<T extends object = SlideElement> extends BaseProperty
   private readonly opts: ColorOpts<T>;
   constructor(opts: ColorOpts<T>) { super(opts); this.opts = opts; }
   renderEditor({ element, update }: PropertyContext<T>) {
+    if (this.opts.alpha) return <ColorEditor element={element} update={update} syncFields={this.syncFields}
+      field={this.key} label={this.label} allowTransparent={this.opts.allowTransparent} />;
     return (
       <ColorPicker
         color={this.get(element)}
-        onChange={(v) => update(this.set(element, v))}
+        label={this.label}
+        onChange={(v) => update(current => this.set(current, v))}
         allowTransparent={this.opts.allowTransparent}
       />
     );
@@ -310,7 +317,7 @@ export class CheckboxProperty<T extends object = SlideElement> extends BasePrope
       <Toggle
         checked={this.get(element) ?? false}
         disabled={this.disabledFor(element)}
-        onChange={(v) => update(this.set(element, v))}
+        onChange={(v) => update(current => this.set(current, v))}
       />
     );
   }
@@ -334,7 +341,7 @@ export class SelectProperty<T extends object = SlideElement, V extends string | 
       <SelectControl
         value={String(v)}
         options={this.opts.options.map((o) => ({ value: String(o.value), label: o.label }))}
-        onChange={(s) => update(this.set(element, parse(s)))}
+        onChange={(s) => update(current => this.set(current, parse(s)))}
         disabled={this.disabledFor(element)}
       />
     );
@@ -342,6 +349,7 @@ export class SelectProperty<T extends object = SlideElement, V extends string | 
 }
 
 interface PreviewSelectOpts<T extends object, V extends string | number> extends BaseOpts<T> {
+  iconOnly?: boolean;
   /** `preview` is a render function over the current element, so a tile can
    *  reflect live element state (e.g. a dash pattern at the element's own
    *  stroke width) — pass `() => node` when the preview is static. */
@@ -364,11 +372,12 @@ export class PreviewSelectProperty<T extends object = SlideElement, V extends st
     return (
       <PreviewSelect<V>
         label={this.label}
+        iconOnly={this.opts.iconOnly}
         options={this.opts.options.map((o) => ({
           value: o.value, label: o.label, preview: o.preview(element),
         }))}
         value={v}
-        onChange={(nv) => update(this.set(element, nv))}
+        onChange={(nv) => update(current => this.set(current, nv))}
         columns={this.opts.columns}
         disabled={this.disabledFor(element)}
       />
@@ -381,8 +390,6 @@ export class PreviewSelectProperty<T extends object = SlideElement, V extends st
 interface PairOpts<T extends object> extends BaseOpts<T> {
   keys: [string, string];
   labels: [string, string];
-  /** Legacy whole-number rounding; equivalent to `precision: 0`. */
-  round?: boolean;
   /** Shared across both axes (previously accepted-but-ignored). */
   min?: number;
   max?: number;

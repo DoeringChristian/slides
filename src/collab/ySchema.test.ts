@@ -77,7 +77,7 @@ function makeFixture(): Presentation {
         elements: {
           'el-title': {
             id: 'el-title',
-            type: 'text',
+            type: 'text', textSizing: 'user-width', boundTextLayout: 'padded',
             x: 100, y: 100, width: 800, height: 200,
             rotation: 0, opacity: 1, locked: false, visible: true,
             text: '# Hello **world**',
@@ -92,7 +92,7 @@ function makeFixture(): Presentation {
           },
           'el-rect': {
             id: 'el-rect',
-            type: 'shape', shapeType: 'rect',
+            type: 'shape', creationPreset: 'rect', shapeType: 'rect',
             x: 100, y: 320, width: 400, height: 200,
             rotation: 0, opacity: 0.9, locked: false, visible: true,
             fill: '#3b82f6', stroke: '#1e40af', strokeWidth: 2, cornerRadius: 8,
@@ -106,7 +106,7 @@ function makeFixture(): Presentation {
           },
           'el-hidden': {
             id: 'el-hidden',
-            type: 'shape', shapeType: 'ellipse',
+            type: 'shape', creationPreset: 'ellipse', shapeType: 'ellipse',
             x: 0, y: 0, width: 50, height: 50,
             rotation: 0, opacity: 1, locked: true, visible: false,
             fill: 'transparent', stroke: '#000', strokeWidth: 1, cornerRadius: 0,
@@ -116,7 +116,7 @@ function makeFixture(): Presentation {
         background: { type: 'solid', color: '#0b0f19' },
         transition: { duration: 400 },
         notes: 'Speaker notes with *emphasis* and a list:\n- one\n- two',
-        autoAdvance: true,
+
         autoAdvanceDelay: 4,
       },
 
@@ -125,18 +125,18 @@ function makeFixture(): Presentation {
         elements: {
           'el-line': {
             id: 'el-line',
-            type: 'shape', shapeType: 'path',
+            type: 'shape', creationPreset: 'line', shapeType: 'path',
             x: 200, y: 200, width: 400, height: 0,
             rotation: 0, opacity: 1, locked: false, visible: true,
             fill: '', stroke: '#fff', strokeWidth: 3, cornerRadius: 0,
             points: [0, 0, 400, 0],
             curve: 'linear',
-            startBinding: { elementId: 'el-rect', anchor: 'right' },
+            startBinding: { elementId: 'el-rect', mode: 'pinned', fixedPoint: [1, .5] },
             endBinding: null,
           },
           'el-arrow': {
             id: 'el-arrow',
-            type: 'shape', shapeType: 'path',
+            type: 'shape', creationPreset: 'line', shapeType: 'path',
             x: 600, y: 400, width: 300, height: 50,
             rotation: 0, opacity: 1, locked: false, visible: true,
             fill: '', stroke: '#f97316', strokeWidth: 4, cornerRadius: 0,
@@ -144,17 +144,17 @@ function makeFixture(): Presentation {
             curve: 'linear',
             endHead: 'triangle',
           },
-          // Binding v2 payloads: edge mode (focus + gap) and pinned mode
+          // Current payloads: aim mode (fixedPoint + gap) and pinned mode
           // (fixedPoint ARRAY value — must survive the Y round-trip).
           'el-conn2': {
             id: 'el-conn2',
-            type: 'shape', shapeType: 'path',
+            type: 'shape', creationPreset: 'line', shapeType: 'path',
             x: 100, y: 100, width: 200, height: 80,
             rotation: 0, opacity: 1, locked: false, visible: true,
             fill: '', stroke: '#fff', strokeWidth: 2, cornerRadius: 0,
             points: [0, 0, 100, 80, 200, 0],
             curve: 'linear',
-            startBinding: { elementId: 'el-rect', mode: 'edge', focus: 0.25, gap: 6 },
+            startBinding: { elementId: 'el-rect', mode: 'aim', fixedPoint: [.5, .5], gap: 6 },
             endBinding: { elementId: 'el-rect', mode: 'pinned', fixedPoint: [0.25, 1] },
           },
           'el-video': {
@@ -204,7 +204,7 @@ function makeFixture(): Presentation {
         elements: {
           'tpl-el-title': {
             id: 'tpl-el-title',
-            type: 'text',
+            type: 'text', textSizing: 'user-width', boundTextLayout: 'padded',
             x: 200, y: 400, width: 1520, height: 280,
             rotation: 0, opacity: 1, locked: false, visible: true,
             text: 'Title',
@@ -281,7 +281,7 @@ describe('jsonToYDoc → yDocToJson', () => {
     const doc = jsonToYDoc(fixture);
     const out = yDocToJson(doc);
     const line = out.slides['slide-b'].elements['el-line'] as import('../types/presentation').ShapeElement;
-    expect(line.startBinding).toEqual({ elementId: 'el-rect', anchor: 'right' });
+    expect(line.startBinding).toEqual({ elementId: 'el-rect', mode: 'pinned', fixedPoint: [1, .5] });
     expect(line.endBinding).toBeNull();
   });
 
@@ -289,7 +289,7 @@ describe('jsonToYDoc → yDocToJson', () => {
     const doc = jsonToYDoc(makeFixture());
     const out = yDocToJson(doc);
     const conn = out.slides['slide-b'].elements['el-conn2'] as import('../types/presentation').ShapeElement;
-    expect(conn.startBinding).toEqual({ elementId: 'el-rect', mode: 'edge', focus: 0.25, gap: 6 });
+    expect(conn.startBinding).toEqual({ elementId: 'el-rect', mode: 'aim', fixedPoint: [.5, .5], gap: 6 });
     expect(conn.endBinding).toEqual({ elementId: 'el-rect', mode: 'pinned', fixedPoint: [0.25, 1] });
     // The Y doc stores a COPY of the array — mutating the source fixture
     // after serialisation must not leak into the doc.
@@ -339,15 +339,20 @@ describe('jsonToYDoc → yDocToJson', () => {
     const elements = slides.get('slide-b')!.get('elements') as Y.Map<Y.Map<unknown>>;
     const conn = elements.get('el-conn2')!;
 
-    // pinned → edge: fixedPoint must NOT survive as a stale merged key.
+    // pinned → aim replaces the fixed point, rather than merging coordinates.
     doc.transact(() => {
       applyChangesToYElement(conn, {
-        endBinding: { elementId: 'el-rect', mode: 'edge', focus: -0.5, gap: 3 },
+        endBinding: { elementId: 'el-rect', mode: 'aim', fixedPoint: [.5, .5], gap: 3 },
       });
     });
     let out = yDocToJson(doc);
     let el = out.slides['slide-b'].elements['el-conn2'] as import('../types/presentation').ShapeElement;
-    expect(el.endBinding).toEqual({ elementId: 'el-rect', mode: 'edge', focus: -0.5, gap: 3 });
+    expect(el.endBinding).toEqual({ elementId: 'el-rect', mode: 'aim', fixedPoint: [.5, .5], gap: 3 });
+
+    // aim → pinned must remove aim-only gap in the same replacement.
+    doc.transact(() => applyChangesToYElement(conn, { endBinding: { elementId: 'el-rect', mode: 'pinned', fixedPoint: [1, .5] } }));
+    expect((yDocToJson(doc).slides['slide-b'].elements['el-conn2'] as import('../types/presentation').ShapeElement).endBinding)
+      .toEqual({ elementId: 'el-rect', mode: 'pinned', fixedPoint: [1, .5] });
 
     // Clearing a binding stores null (not a leftover map).
     doc.transact(() => {

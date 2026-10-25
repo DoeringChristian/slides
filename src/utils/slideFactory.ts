@@ -1,5 +1,5 @@
 import { generateId } from './idGenerator';
-import { DEFAULT_TEXT_STYLE, DEFAULT_SHAPE_PROPS, SLIDE_WIDTH, SLIDE_HEIGHT } from './constants';
+import { DEFAULT_TEXT_STYLE, DEFAULT_SHAPE_PROPS, DEFAULT_RECT_RADIUS, SLIDE_WIDTH, SLIDE_HEIGHT } from './constants';
 import { computeFileHash } from './fileHash';
 import type { Slide, TextElement, ShapeElement, ImageElement, ShapeType, SlideElement, Presentation, Theme, ObjectMeta, Resource } from '../types/presentation';
 
@@ -46,20 +46,20 @@ export function createTextElement(overrides?: Partial<TextElement>): TextElement
     locked: false,
     visible: true,
     text: 'Double-click to edit',
+    textSizing: 'user-width',
+    boundTextLayout: 'padded',
     style: { ...DEFAULT_TEXT_STYLE },
     ...overrides,
   };
 }
 
 export function createShapeElement(shapeType: ShapeType = 'rect', overrides?: Partial<ShapeElement>): ShapeElement {
-  // Stroke-only defaults for path shapes — a freshly-drawn line/polyline
-  // shouldn't ship with a filled body. Once the user toggles `closed` on,
-  // they can pick a fill colour explicitly.
-  const isPath = shapeType === 'path';
+  // New shapes share stroke-only defaults; explicit imports/templates win.
   return {
     id: generateId(),
     type: 'shape',
     shapeType,
+    creationPreset: shapeType === 'vector' ? 'icon' : shapeType === 'path' ? 'line' : shapeType,
     x: 100,
     y: 100,
     width: 200,
@@ -69,7 +69,7 @@ export function createShapeElement(shapeType: ShapeType = 'rect', overrides?: Pa
     locked: false,
     visible: true,
     ...DEFAULT_SHAPE_PROPS,
-    ...(isPath ? { strokeWidth: 3, fill: '' } : {}),
+    cornerRadius: shapeType === 'rect' ? DEFAULT_RECT_RADIUS : 0,
     ...overrides,
   };
 }
@@ -345,8 +345,7 @@ export function duplicateElement(element: SlideElement): SlideElement {
 /**
  * Duplicate a group of elements together, remapping bound-text `containerId`
  * refs: a label copied WITH its container points at the container's clone; a
- * label copied WITHOUT its container is promoted to free text (a dangling
- * ref would be dropped by migration anyway). Used by copy/paste and the
+ * label copied WITHOUT its container is promoted to free text. Used by copy/paste and the
  * canvas Duplicate action.
  */
 export function duplicateElements(elements: SlideElement[]): SlideElement[] {

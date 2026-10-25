@@ -16,6 +16,7 @@ export const EASING_LABELS: Record<EasingType, string> = {
   typewriter: 'Typewriter',
   write: 'Write',
   create: 'Create',
+  extend: 'Extend',
   wipe: 'Wipe',
   slidein: 'Slide In',
   grow: 'Grow',
@@ -58,7 +59,7 @@ export function transitionPropertyValues(element: SlideElement, group: Transitio
       if (element.type !== 'shape') return [];
       const s = element as ShapeElement;
       return [
-        s.points ? s.points.join(',') : '',
+        s.shapeType === 'vector' ? JSON.stringify(s.geometry ?? null) : s.points ? s.points.join(',') : '',
         s.curve ?? 'linear',
         s.closed ? 1 : 0,
       ];

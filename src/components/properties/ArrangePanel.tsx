@@ -16,15 +16,15 @@ import type { SlideElement } from '../../types/presentation';
 const ARRANGE_PROPERTIES: Property<SlideElement>[] = [
   new PairNumberProperty<SlideElement>({
     key: 'position', label: 'Position',
-    transitionGroup: 'position', keys: ['x', 'y'], labels: ['X', 'Y'], round: true,
+    transitionGroup: 'position', keys: ['x', 'y'], labels: ['X', 'Y'], precision: 0,
   }),
   new PairNumberProperty<SlideElement>({
     key: 'size', label: 'Size',
-    transitionGroup: 'size', keys: ['width', 'height'], labels: ['W', 'H'], round: true,
+    transitionGroup: 'size', keys: ['width', 'height'], labels: ['W', 'H'], precision: 0,
   }),
   new NumberProperty<SlideElement>({
     key: 'rotation', label: 'Rotation',
-    transitionGroup: 'rotation', min: 0, max: 360, round: true,
+    transitionGroup: 'rotation', min: 0, wrap: 360, step: 1, precision: 1, unit: '°',
   }),
 ];
 

@@ -1,13 +1,19 @@
+import { SVGTextAutoFitHandle } from '../svg/SVGTextAutoFitHandle';
+import { flushSync } from 'react-dom';
+import { textEditorSourceOffset, textEditorCursorPoint } from '../../utils/textEditorSelection';
 import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import { useEditorStore } from '../../store/editorStore';
-import { usePresentationStore } from '../../store/presentationStore';
 import { useActiveSlide } from '../../store/selectors';
-import { TEXT_BOX_PADDING, CANVAS_PADDING } from '../../utils/constants';
+import { CANVAS_PADDING } from '../../utils/constants';
 import { calculateCursorFromClick } from '../../utils/textHitTest';
-import { layoutSvgText, type SvgTextDoc } from '../../utils/textLayout';
+import { layoutSvgText, textRowMetrics, type SvgTextDoc } from '../../utils/textLayout';
+import { textInsets } from '../../utils/boundTextLayout';
+import type { GesturePatch } from '../../utils/gestureProjection';
 import { maxLabelWidthFor } from '../../utils/syncDependents';
 import { SVGTextPaths } from '../svg/SVGTextPaths';
-import { injectInterFontFace } from '../../utils/glyphPaths';
+import { injectInterFontFace, nativeTextBaseline } from '../../utils/glyphPaths';
+import { beginTextEditSession, getTextEditInitialText } from '../../store/textEditSession';
+import { hasContentSizing, layoutUserText, measureUserText, textSizingWidth } from '../../utils/userTextSizing';
 import type { TextElement } from '../../types/presentation';
 
 // Inject the InterEdit @font-face so the contentEditable uses the SAME font
@@ -15,31 +21,10 @@ import type { TextElement } from '../../types/presentation';
 // it (advance widths from font tables) → caret X lines up with SVG glyphs.
 injectInterFontFace();
 
-/** Commit edited text back to the store. Bound labels (text elements with a
- *  `containerId`) whose committed text is EMPTY are deleted instead of kept
- *  as invisible empty labels — double-clicking the container recreates one.
- *  All three commit sites (blur, Escape, unmount) route through here; a
- *  second call after the delete is a harmless no-op (element gone). */
-function commitEditedText(slideId: string, textId: string, text: string) {
-  const store = usePresentationStore.getState();
-  const el = store.presentation.slides[slideId]?.elements[textId];
-  if (!el || el.type !== 'text') return;
-  if ((el as TextElement).containerId && text.trim() === '') {
-    store.deleteElements(slideId, [textId]);
-    // The deleted label may still be the active edit target (e.g. the
-    // unmount-commit path) — leaving the id dangling renders no overlay
-    // while blocking a fresh edit session from starting.
-    if (useEditorStore.getState().editingTextId === textId) {
-      useEditorStore.getState().setEditingTextId(null);
-    }
-    return;
-  }
-  store.updateElement(slideId, textId, { text });
-}
-
 interface Props {
   stageRef: React.RefObject<HTMLDivElement | null>;
   zoom: number;
+  onPreview: (preview: { slideId: string; label: TextElement; patches: GesturePatch[] } | null) => void;
 }
 
 /**
@@ -59,17 +44,19 @@ interface Props {
  * The old per-line markdown-to-HTML rendering, KaTeX/MathJax fallback, and
  * per-line cache are gone — the production renderer is the only renderer.
  */
-export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
+export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom, onPreview }) => {
   const editingTextId = useEditorStore((s) => s.editingTextId);
   const setEditingTextId = useEditorStore((s) => s.setEditingTextId);
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const slide = useActiveSlide();
 
   const editorRef = useRef<HTMLDivElement>(null);
+  // Initial async hit-testing owns the caret only until the user's first
+  // input/selection gesture. Structural edits restore synchronously below.
+  const initialCaretClaimedRef = useRef(false);
   // eslint-disable-next-line react-hooks/purity -- captures the mount timestamp once; the useRef initializer only runs on mount
   const mountTimeRef = useRef(Date.now());
-  const editingTextIdRef = useRef<string | null>(null);
-  const activeSlideIdRef = useRef<string>(activeSlideId);
+  const sessionRef = useRef<ReturnType<typeof beginTextEditSession> | null>(null);
   const rawLinesRef = useRef<Set<number>>(new Set());
   const [rawLines, setRawLinesState] = useState<Set<number>>(new Set());
   const setRawLines = (next: Set<number>) => {
@@ -81,25 +68,27 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
   // changes, which is way too coarse for "show my edit immediately"). The
   // ref mirror lets ref-only callbacks read the latest value without
   // capturing a stale closure.
-  const [liveText, setLiveText] = useState('');
-  const liveTextRef = useRef('');
+  const [liveText, setLiveText] = useState(() => {
+    const initial = editingTextId ? slide?.elements[editingTextId] : undefined;
+    return initial?.type === 'text' ? getTextEditInitialText(activeSlideId, initial) : '';
+  });
+  const liveTextRef = useRef(liveText);
   // eslint-disable-next-line react-hooks/refs -- latest-value ref pattern: mirrors state for event handlers; read only outside render
   liveTextRef.current = liveText;
 
-  // eslint-disable-next-line react-hooks/refs -- latest-value ref pattern: mirrors state for event handlers; read only outside render
-  activeSlideIdRef.current = activeSlideId;
-
-  // Save text back to the store whenever editingTextId changes away.
+  // This component is keyed by slide + edit id. Cleanup captures that session,
+  // never the current slide's same-ID keyframe. Defer StrictMode's probe cleanup.
+  const mountedRef = useRef(false);
   useEffect(() => {
-    editingTextIdRef.current = editingTextId;
+    mountedRef.current = true;
     return () => {
-      const prevId = editingTextIdRef.current;
-      const slideId = activeSlideIdRef.current;
-      if (prevId && slideId) {
-        commitEditedText(slideId, prevId, liveTextRef.current);
-      }
+      mountedRef.current = false;
+      const session = sessionRef.current;
+      const text = liveTextRef.current;
+      queueMicrotask(() => { if (!mountedRef.current) void session?.finish(text); });
+      onPreview(null);
     };
-  }, [editingTextId]);
+  }, [onPreview]);
 
   // Get the editing element
   const element = editingTextId ? slide?.elements[editingTextId] : null;
@@ -115,12 +104,17 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
   const labelContainer = textElement?.containerId
     ? slide?.elements[textElement.containerId] ?? null
     : null;
-  const editWidth = textElement
+  const [liveSize, setLiveSize] = useState<{ width: number; height: number } | null>(null);
+  const [boundPreview, setBoundPreview] = useState<TextElement | null>(null);
+  const previewElement = boundPreview && textElement?.containerId ? { ...textElement, ...boundPreview } : textElement && liveSize ? { ...textElement, ...liveSize } : textElement;
+  const editWidth = previewElement
     ? labelContainer
-      ? Math.max(textElement.width, maxLabelWidthFor(labelContainer))
-      : textElement.width
+      ? Math.max(previewElement.width, maxLabelWidthFor(labelContainer, previewElement))
+      : previewElement.width
     : 0;
-  const editX = textElement ? textElement.x + (textElement.width - editWidth) / 2 : 0;
+  const editX = previewElement ? previewElement.x + (labelContainer ? (previewElement.width - editWidth) / 2 : 0) : 0;
+  const inset = previewElement ? textInsets(previewElement) : 14;
+  const editHeight = previewElement?.height ?? 0;
 
   // Layout doc from the SVG renderer (cached per text + style + width + raw
   // line set). We pre-compute it from `liveText` so per-line yTop/yBottom
@@ -128,7 +122,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
   // the doc, but pulling it directly avoids a render lag.
   const [doc, setDoc] = useState<SvgTextDoc | null>(null);
   const layoutWidth = textElement
-    ? Math.max(1, editWidth - TEXT_BOX_PADDING * 2)
+    ? textElement.textSizing === 'auto-content' && !labelContainer ? textSizingWidth(textElement) : Math.max(1, editWidth - inset * 2)
     : 1;
   const rawKeyForLayout = useMemo(
     () => Array.from(rawLines).sort((a, b) => a - b).join(','),
@@ -137,43 +131,56 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
   useEffect(() => {
     if (!textElement) return;
     let cancelled = false;
-    layoutSvgText(liveText, textElement.style, layoutWidth, rawLines).then(
+    const layout = textElement.textSizing === 'auto-content' && !labelContainer
+      ? layoutUserText({ ...textElement, text: liveText }, rawLines)
+      : layoutSvgText(liveText, textElement.style, layoutWidth, rawLines);
+    layout.then(
       (d) => { if (!cancelled) setDoc(d); },
       (err) => { if (!cancelled) console.warn('[TextEditOverlay] layout failed', err); },
     );
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveText, textElement?.style.fontSize, textElement?.style.fontWeight, textElement?.style.fontStyle, textElement?.style.color, textElement?.style.lineHeight, textElement?.style.align, layoutWidth, rawKeyForLayout]);
+  }, [liveText, textElement?.style, layoutWidth, rawKeyForLayout]);
 
-  // Build per-source-line start offsets from the latest text (read at call
-  // time via the ref so we never use a stale snapshot from a previous render).
-  const computeLineStartOffsets = (text: string): number[] => {
-    const lines = text.split('\n');
-    const offs: number[] = [];
-    let acc = 0;
-    for (const ln of lines) { offs.push(acc); acc += ln.length + 1; }
-    return offs;
-  };
+  useEffect(() => {
+    if (!textElement || !hasContentSizing(textElement)) return;
+    let cancelled = false;
+    measureUserText({ ...textElement, text: liveText }, rawLines).then(size => {
+      if (cancelled) return;
+      setLiveSize(size);
+      const label = { ...textElement, text: liveText, ...size };
+      onPreview({ slideId: activeSlideId, label, patches: [{ elementId: label.id, changes: label }] });
+    }, () => {});
+    return () => { cancelled = true; };
+  }, [textElement, liveText, rawLines, onPreview, activeSlideId]);
 
-  // (container, domOffset) → absolute source offset.
+  useEffect(() => {
+    if (!textElement?.containerId) return;
+    let cancelled = false;
+    // The mount effect below creates the session in this same effect turn.
+    queueMicrotask(() => {
+      if (cancelled) return;
+      void sessionRef.current?.preview(liveText, rawLines).then(result => {
+        if (cancelled || !result) return;
+        setBoundPreview(result.label);
+        onPreview(result);
+      }, () => {});
+    });
+    return () => { cancelled = true; };
+  }, [textElement, labelContainer, liveText, rawLines, onPreview]);
+
   const domToSourceOffset = useCallback((container: Node, domOffset: number): number => {
     const editor = editorRef.current;
-    if (!editor) return 0;
-    const divs = Array.from(editor.querySelectorAll('div[data-line]'));
-    const offs = computeLineStartOffsets(liveTextRef.current);
-    for (let i = 0; i < divs.length; i++) {
-      if (divs[i].contains(container)) return (offs[i] ?? 0) + domOffset;
-    }
-    return 0;
+    return editor ? textEditorSourceOffset(editor, container, domOffset) : 0;
   }, []);
 
   // Selection start/end as source offsets (sorted ascending).
-  const getSelectionRange = useCallback((): [number, number] => {
+  const getSelectionRange = useCallback((): [number, number] | null => {
     const editor = editorRef.current;
     const sel = window.getSelection();
-    if (!editor || !sel || sel.rangeCount === 0) return [0, 0];
+    if (!editor || !sel || sel.rangeCount === 0) return null;
     const range = sel.getRangeAt(0);
-    if (!editor.contains(range.startContainer)) return [0, 0];
+    if (!editor.contains(range.startContainer) || !editor.contains(range.endContainer)) return null;
     const a = domToSourceOffset(range.startContainer, range.startOffset);
     const b = domToSourceOffset(range.endContainer, range.endOffset);
     return a <= b ? [a, b] : [b, a];
@@ -184,28 +191,12 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     if (!editor) return;
     const selection = window.getSelection();
     if (!selection) return;
-    const divs = Array.from(editor.querySelectorAll('div[data-line]'));
-    const offs = computeLineStartOffsets(liveTextRef.current);
-    for (let i = 0; i < divs.length; i++) {
-      const div = divs[i];
-      const start = offs[i] ?? 0;
-      const end = i + 1 < offs.length ? offs[i + 1] - 1 : start + (div.textContent || '').length;
-      if (offset <= end) {
-        const col = Math.max(0, offset - start);
-        const textNode = Array.from(div.childNodes).find((n) => n.nodeType === Node.TEXT_NODE);
-        const range = document.createRange();
-        if (textNode) {
-          const len = textNode.textContent?.length ?? 0;
-          range.setStart(textNode, Math.min(col, len));
-        } else {
-          range.setStart(div, 0);
-        }
-        range.collapse(true);
-        selection.removeAllRanges();
-        selection.addRange(range);
-        return;
-      }
-    }
+    const [node, column] = textEditorCursorPoint(editor, offset);
+    const range = document.createRange();
+    range.setStart(node, column);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
   }, []);
 
   // Snapshot raw source by joining each line div's textContent.
@@ -239,17 +230,21 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     // mode (Y → store sync), and latching early would skip the seed/focus.
     if (!textElement || !editorRef.current) return;
 
-    const text = textElement.text || '';
-    setLiveText(text);
+    if (!sessionRef.current) {
+      sessionRef.current = beginTextEditSession(activeSlideId, textElement);
+      liveTextRef.current = sessionRef.current.initialText;
+      setLiveText(sessionRef.current.initialText);
+    }
+    const text = liveTextRef.current;
     mountTimeRef.current = Date.now();
 
     const clickPos = useEditorStore.getState().textEditClickPosition;
     let cancelled = false;
     const placeCursor = (initialCursor: number) => {
-      if (cancelled) return;
+      if (cancelled || initialCaretClaimedRef.current) return;
       setRawLines(new Set([text.slice(0, initialCursor).split('\n').length - 1]));
       requestAnimationFrame(() => {
-        if (cancelled || !editorRef.current) return;
+        if (cancelled || initialCaretClaimedRef.current || !editorRef.current) return;
         // Latch only once focus actually lands. A store write between the
         // effect and this frame (e.g. the bound-label height-grow right
         // after creation) re-runs the effect and cancels this attempt —
@@ -274,7 +269,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     // wait on a layout that never resolves and the overlay would open
     // unfocused (freshly created bound labels hit this).
     if (clickPos && text) {
-      calculateCursorFromClick(textElement, clickPos).then(
+      calculateCursorFromClick({ ...textElement, text }, clickPos).then(
         (cur) => placeCursor(cur ?? text.length),
         () => placeCursor(text.length),
       );
@@ -282,7 +277,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
       placeCursor(text.length);
     }
     return () => { cancelled = true; };
-  }, [editingTextId, textElement, setCursorPosition]);
+  }, [editingTextId, activeSlideId, textElement, setCursorPosition]);
 
   // Keep the editable focused while a session is open. Store writes landing
   // right after a label is created (bound-text height-grow, dependent sync)
@@ -305,14 +300,9 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
       if (!sel || sel.rangeCount === 0) return;
       if (!editorRef.current.contains(sel.anchorNode)) return;
       const range = sel.getRangeAt(0);
-      const divs = Array.from(editorRef.current.querySelectorAll('div[data-line]'));
-      let startLine = -1, endLine = -1;
-      for (let i = 0; i < divs.length; i++) {
-        if (divs[i].contains(range.startContainer)) startLine = i;
-        if (divs[i].contains(range.endContainer)) endLine = i;
-        if (startLine >= 0 && endLine >= 0) break;
-      }
-      if (startLine < 0) return;
+      if (!editorRef.current.contains(range.endContainer)) return;
+      const startLine = liveTextRef.current.slice(0, domToSourceOffset(range.startContainer, range.startOffset)).split('\n').length - 1;
+      const endLine = liveTextRef.current.slice(0, domToSourceOffset(range.endContainer, range.endOffset)).split('\n').length - 1;
       const next = new Set<number>();
       const lo = Math.min(startLine, endLine);
       const hi = Math.max(startLine, endLine);
@@ -327,7 +317,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     };
     document.addEventListener('selectionchange', handle);
     return () => document.removeEventListener('selectionchange', handle);
-  }, [editingTextId]);
+  }, [editingTextId, domToSourceOffset]);
 
   useEffect(() => {
     if (!editingTextId) return;
@@ -346,31 +336,20 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     return () => vv.removeEventListener('resize', handle);
   }, [editingTextId]);
 
-  // When we intercept a keystroke in beforeinput (currently only $ auto-
-  // pair) we write the new state via replaceText. Some browsers still fire
-  // the corresponding `input` event afterwards, and handleInput would then
-  // re-read the DOM (which may reflect a partial browser insertion or be
-  // the pre-intercept content) and overwrite our intent. The flag tells
-  // handleInput to skip that one event.
-  const skipNextInputRef = useRef(false);
-
-  // Plain typing path: browser already mutated the text node inside one of
-  // our line divs (single-line, structure unchanged) — just snapshot the
-  // result into state so the SVG re-lays out.
+  // Native single-line input owns its DOM; cancelled beforeinput does not
+  // produce input. Never suppress an unrelated subsequent native keystroke.
   const handleInput = useCallback(() => {
     if (!editorRef.current || !textElement) return;
-    if (skipNextInputRef.current) {
-      skipNextInputRef.current = false;
-      return;
-    }
-    setLiveText(getTextFromEditor());
+    liveTextRef.current = getTextFromEditor();
+    setLiveText(liveTextRef.current);
   }, [getTextFromEditor, textElement]);
 
-  // Replace liveText with newText and place the caret at newCursor on the
-  // next frame (so React's commit of the new line divs has run).
+  // Structural edits must commit their DOM and caret before the next native
+  // event. A deferred frame can lose typing or steal a later user selection.
   const replaceText = useCallback((newText: string, newCursor: number) => {
-    setLiveText(newText);
-    requestAnimationFrame(() => setCursorPosition(newCursor));
+    liveTextRef.current = newText;
+    flushSync(() => setLiveText(newText));
+    setCursorPosition(newCursor);
   }, [setCursorPosition]);
 
   // Apply an Enter at [selStart, selEnd], with bullet / numbered list
@@ -415,8 +394,11 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     const editor = editorRef.current;
     if (!editor || !editingTextId) return;
     const handler = (e: InputEvent) => {
+      initialCaretClaimedRef.current = true;
       const inputType = e.inputType;
-      const [selStart, selEnd] = getSelectionRange();
+      const selection = getSelectionRange();
+      if (!selection) return;
+      const [selStart, selEnd] = selection;
       const text = liveTextRef.current;
       const crossesLine = selStart !== selEnd && text.slice(selStart, selEnd).includes('\n');
 
@@ -468,11 +450,6 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
           //   * otherwise → insert $$ and place caret between them
           if (data === '$' && selStart === selEnd) {
             e.preventDefault();
-            // Suppress the input event that some browsers fire even after
-            // we cancel the beforeinput — otherwise handleInput would
-            // re-read the DOM and clobber the state we set below.
-            skipNextInputRef.current = true;
-            setTimeout(() => { skipNextInputRef.current = false; }, 0);
             const prev = text[selStart - 1];
             const next = text[selStart];
             const prevPrev = text[selStart - 2];
@@ -484,12 +461,19 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
             if (prevPrev === '$' && prev === '$' && next === '$' && nextNext === '$') {
               return;
             }
+            // Between the two CLOSING dollars of $$x$$ is not an empty
+            // inline pair: consume the closer rather than expanding it.
             if (prev === '$' && next === '$' && prevPrev !== '$') {
-              replaceText(text.slice(0, selStart) + '$$' + text.slice(selStart), selStart + 1);
-              return;
+              const lineStart = text.lastIndexOf('\n', selStart - 1) + 1;
+              const beforePair = text.slice(lineStart, selStart - 1);
+              const insideBlock = (beforePair.match(/\$\$/g)?.length ?? 0) % 2 === 1;
+              if (!insideBlock) {
+                replaceText(text.slice(0, selStart) + '$$' + text.slice(selStart), selStart + 1);
+                return;
+              }
             }
             if (next === '$') {
-              requestAnimationFrame(() => setCursorPosition(selStart + 1));
+              setCursorPosition(selStart + 1);
               return;
             }
             replaceText(text.slice(0, selStart) + '$$' + text.slice(selStart), selStart + 1);
@@ -525,21 +509,23 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     };
     editor.addEventListener('beforeinput', handler);
     return () => editor.removeEventListener('beforeinput', handler);
-  }, [editingTextId, getSelectionRange, applyEnter, replaceText]);
+  // In Yjs creation the edit id can precede the element/DOM by one render.
+  // Attach when that element arrives, not only when the id changes.
+  }, [editingTextId, textElement, getSelectionRange, applyEnter, replaceText, setCursorPosition]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    initialCaretClaimedRef.current = true;
     if (e.key === 'Escape') {
       e.preventDefault();
-      if (activeSlideId && editingTextId) {
-        commitEditedText(activeSlideId, editingTextId, liveTextRef.current);
-      }
+      e.stopPropagation();
+      void sessionRef.current?.finish(liveTextRef.current);
       setEditingTextId(null);
       return;
     }
     // Stop canvas-level hotkeys (e.g. Backspace deleting the selected
     // element) from firing while we're editing.
     e.stopPropagation();
-  }, [activeSlideId, editingTextId, setEditingTextId]);
+  }, [setEditingTextId]);
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items;
@@ -551,7 +537,9 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     e.preventDefault();
     const pastedText = e.clipboardData.getData('text/plain');
     if (!pastedText) return;
-    const [selStart, selEnd] = getSelectionRange();
+    const selection = getSelectionRange();
+    if (!selection) return;
+    const [selStart, selEnd] = selection;
     const text = liveTextRef.current;
     replaceText(
       text.slice(0, selStart) + pastedText + text.slice(selEnd),
@@ -561,29 +549,25 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
 
   const handleBlur = useCallback(() => {
     if (Date.now() - mountTimeRef.current < 200) return;
-    const slideId = activeSlideIdRef.current;
-    const textId = editingTextIdRef.current;
-    if (slideId && textId) {
-      commitEditedText(slideId, textId, getTextFromEditor());
-    }
+    void sessionRef.current?.finish(liveTextRef.current);
     setEditingTextId(null);
-  }, [setEditingTextId, getTextFromEditor]);
+  }, [setEditingTextId]);
 
   // eslint-disable-next-line react-hooks/refs -- gate on the stage DOM node existing before portaling into it; the node is attached before text editing can start
   if (!textElement || !stageRef.current) return null;
 
   const { style } = textElement;
-  const padding = TEXT_BOX_PADDING * zoom;
+  const padding = inset * zoom;
   // editX/editWidth are the element box for free text and the wrap-width box
   // (centered on the label) for bound labels — see their derivation above.
   const offsetX = (editX + CANVAS_PADDING) * zoom;
-  const offsetY = (textElement.y + CANVAS_PADDING) * zoom;
+  const offsetY = ((previewElement?.y ?? textElement.y) + CANVAS_PADDING) * zoom;
   const widthPx = editWidth * zoom;
-  const heightPx = textElement.height * zoom;
+  const heightPx = editHeight * zoom;
 
   // Vertical alignment offset based on doc.height (if available) so it
   // matches the SVG render exactly. Falls back to 0 while layout pending.
-  const contentAreaHeight = textElement.height - TEXT_BOX_PADDING * 2;
+  const contentAreaHeight = editHeight - inset * 2;
   const docHeight = doc?.height ?? 0;
   let verticalOffset = 0;
   if (style.verticalAlign === 'middle') {
@@ -594,10 +578,9 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
 
   // Source of truth for the contentEditable's rendered content is liveText
   // (updated synchronously on every keystroke). doc.lines is used for line
-  // div HEIGHTS only — it lags by one async layout cycle, but heights are
-  // visual-only and don't affect cursor X.
+  // div heights; native soft rows use the same synchronous strut as SVG.
   const sourceLines = liveText.split('\n');
-  const defaultLineHeight = style.fontSize * (style.lineHeight ?? 1.2);
+  const defaultLineHeight = textRowMetrics(style.fontSize, style.lineHeight).advance;
 
   // Element passed to SVGTextPaths uses (x:0, y:0) so its internal
   // translate(elementX+padding, elementY+padding+verticalOffset) places the
@@ -605,7 +588,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
   // text:liveText drives the SVG re-layout on every keystroke. width is the
   // edit-box width so a bound label wraps at its container's inner width.
   const localElement: TextElement = {
-    ...textElement, text: liveText, x: 0, y: 0, width: editWidth,
+    ...(previewElement ?? textElement), text: liveText, x: 0, y: 0, rotation: 0, width: editWidth, height: editHeight,
   };
 
   return (
@@ -616,7 +599,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
         top: offsetY,
         width: widthPx,
         height: heightPx,
-        transform: textElement.rotation ? `rotate(${textElement.rotation}deg)` : undefined,
+        transform: previewElement?.rotation ? `rotate(${previewElement.rotation}deg)` : undefined,
         transformOrigin: 'center center',
         zIndex: 1000,
         pointerEvents: 'none',
@@ -626,7 +609,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
       <svg
         width={widthPx}
         height={heightPx}
-        viewBox={`0 0 ${editWidth} ${textElement.height}`}
+        viewBox={`0 0 ${editWidth} ${editHeight}`}
         style={{
           position: 'absolute',
           top: 0,
@@ -635,10 +618,14 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
           overflow: 'visible',
         }}
       >
+        <SVGTextAutoFitHandle element={localElement} zoom={zoom} onAutoFit={() => {
+          void sessionRef.current?.finish(liveTextRef.current, 'auto-content');
+          setEditingTextId(null);
+          useEditorStore.getState().setSelectedElements([textElement.id]);
+        }} />
         <SVGTextPaths
           element={localElement}
           rawLineIndices={rawLines}
-          onLayout={setDoc}
         />
       </svg>
 
@@ -655,6 +642,8 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
         onPaste={handlePaste}
+        onPointerDown={() => { initialCaretClaimedRef.current = true; }}
+        onCompositionStart={() => { initialCaretClaimedRef.current = true; }}
         style={{
           position: 'absolute',
           left: padding,
@@ -667,7 +656,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
           background: 'transparent',
           border: 'none',
           outline: 'none',
-          whiteSpace: 'pre-wrap',
+          whiteSpace: textElement.textSizing === 'auto-content' && !labelContainer ? 'pre' : 'pre-wrap',
           wordBreak: 'break-word',
           overflow: 'visible',
           cursor: 'text',
@@ -698,6 +687,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
             src.startsWith('## ') ? 1.5 :
             src.startsWith('# ') ? 2 : 1;
           const lineFontSize = baseFontSize * m;
+          const row = textRowMetrics(lineFontSize, style.lineHeight);
           // IMPORTANT: render the div CHILDLESS at the React level. When the
           // user types into a contentEditable, the browser mutates the DOM
           // (e.g. replaces a <br> with a text node). If React's vDOM had a
@@ -719,7 +709,9 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
                 padding: 0,
                 height: heightForLine,
                 fontSize: lineFontSize,
-                lineHeight: 1,
+                lineHeight: `${row.advance}px`,
+                position: 'relative',
+                top: row.baseline - nativeTextBaseline(lineFontSize, row.advance, m > 1 ? 'bold' : style.fontWeight, style.fontStyle),
                 color: 'transparent',
                 fontWeight: m > 1 ? 'bold' : 'inherit',
               }}

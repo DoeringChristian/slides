@@ -5,7 +5,8 @@ import { useEditorStore } from '../../store/editorStore';
 import { ResourcePicker } from '../properties/ResourcePicker';
 import { computeResourceUpdate } from '../../utils/imageUtils';
 import { CANVAS_PADDING } from '../../utils/constants';
-import { getElementBounds, getElementCenter } from '../../utils/geometry';
+import { getRotationCenter } from '../../utils/geometry';
+import { useElementVisualBounds, selectionControlMetrics } from '../../utils/shapeVisualBounds';
 import type { SlideElement, ImageElement } from '../../types/presentation';
 
 interface Props {
@@ -27,10 +28,11 @@ export const SelectionActionBar: React.FC<Props> = ({ element, zoom, isSelected 
 
   // Calculate position based on element bounds and zoom
   // For lines/arrows, use actual line bounds; for other elements, use element dimensions
-  const bounds = getElementBounds(element);
-  const center = getElementCenter(element);
-  const centerX = (center.x + CANVAS_PADDING) * zoom;
-  const centerY = (center.y + CANVAS_PADDING) * zoom;
+  const bounds = useElementVisualBounds(element)!;
+  const center = getRotationCenter(element);
+  const centerX = (bounds.x + bounds.width / 2 + CANVAS_PADDING) * zoom;
+  const centerY = (bounds.y + bounds.height / 2 + CANVAS_PADDING) * zoom;
+  const metrics = selectionControlMetrics(element, zoom);
   const width = bounds.width * zoom;
   const height = bounds.height * zoom;
 
@@ -81,7 +83,7 @@ export const SelectionActionBar: React.FC<Props> = ({ element, zoom, isSelected 
           width,
           height,
           transform: `translate(-50%, -50%) rotate(${element.rotation}deg)`,
-          transformOrigin: 'center',
+          transformOrigin: `${(center.x - bounds.x) * zoom}px ${(center.y - bounds.y) * zoom}px`,
           pointerEvents: 'none',
         }}
       >
@@ -91,7 +93,8 @@ export const SelectionActionBar: React.FC<Props> = ({ element, zoom, isSelected 
           style={{
             pointerEvents: 'none',
             top: '100%',
-            marginTop: 8,
+            // Leave the outside resize hit targets accessible at every zoom.
+            marginTop: (metrics.padding + metrics.pathCornerOffset + metrics.cornerTouchRadius + metrics.actionClearance) * zoom,
           }}
         >
           <div

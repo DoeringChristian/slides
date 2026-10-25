@@ -47,18 +47,18 @@ function reusePageAsTemplate(): string {
   const doctype = document.doctype
     ? `<!DOCTYPE ${document.doctype.name}>\n`
     : '<!DOCTYPE html>\n';
-  const html = doctype + document.documentElement.outerHTML;
-  const stripped = html
-    .replace(new RegExp(`<script id="${SLIDES_PAYLOAD_ID}"[\\s\\S]*?</script>\\s*`, 'g'), '')
-    .replace(/<script id="slides-config"[\s\S]*?<\/script>\s*/g, '');
-  // Make sure the sentinel is present so we have somewhere to re-inject.
-  if (stripped.includes(PAYLOAD_SENTINEL)) return stripped;
-  return stripped.replace('</body>', `  ${PAYLOAD_SENTINEL}\n  </body>`);
+  // Do not regex serialized HTML: the compiled exporter itself contains
+  // these script-tag strings, and a regex can eat part of the executable bundle.
+  const root = document.documentElement.cloneNode(true) as HTMLElement;
+  root.querySelectorAll(`script#${SLIDES_PAYLOAD_ID}, script#slides-config`).forEach(node => node.remove());
+  root.querySelector('body')!.appendChild(document.createComment('SLIDES_PAYLOAD'));
+  return doctype + root.outerHTML;
 }
 
-// Escape `</script>` sequences so the JSON can safely live inside a <script> tag.
+// Escape every '<': HTML raw-text parsing also recognizes </script >,
+// </script/> and comment/script states, independently of JSON string quoting.
 function safeScriptJson(value: unknown): string {
-  return JSON.stringify(value).replace(/<\/script>/gi, '<\\/script>');
+  return JSON.stringify(value).replace(/</g, '\\u003c');
 }
 
 function buildPayloadBlock(presentation: Presentation, mode: StandaloneExportMode, editorOrigin: string): string {
@@ -94,7 +94,7 @@ export async function exportStandaloneHtml(presentation: Presentation, opts: Exp
   ]);
   const payload = buildPayloadBlock(embedded, opts.mode, editorOrigin);
   const html = template.includes(PAYLOAD_SENTINEL)
-    ? template.replace(PAYLOAD_SENTINEL, payload)
-    : template.replace('</body>', `  ${payload}\n  </body>`);
+    ? template.replace(PAYLOAD_SENTINEL, () => payload)
+    : template.replace('</body>', () => `  ${payload}\n  </body>`);
   downloadHtml(safeFilename(presentation.title), html);
 }

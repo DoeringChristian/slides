@@ -21,50 +21,17 @@ export interface GroupRun {
   start: number;
 }
 
-/**
- * Compute the maximal contiguous groupId runs (length ≥ 2) of a deck.
- *
- * COLLAB SHIM: live Y docs are never rewritten by migrations, so a legacy
- * deck shared over collab still carries `autoAdvance` flags and no groupIds.
- * When NO slide has a groupId but legacy flags exist, runs are synthesized
- * from each maximal run of consecutive `autoAdvance: true` slides plus its
- * immediate successor (the slide the last flag advances INTO) — reproducing
- * the legacy playback exactly. Synthetic runs get a `legacy-…` groupId that
- * exists on no slide (so Ungroup UI knows it can't strip them).
- */
-export function groupRuns(
-  slideOrder: string[],
-  slides: Record<string, Slide>,
-): GroupRun[] {
+/** Compute maximal contiguous groupId runs (length ≥ 2). */
+export function groupRuns(slideOrder: string[], slides: Record<string, Slide>): GroupRun[] {
   const runs: GroupRun[] = [];
-  const hasGroupIds = slideOrder.some((id) => slides[id]?.groupId);
-  if (hasGroupIds) {
-    let i = 0;
-    while (i < slideOrder.length) {
-      const gid = slides[slideOrder[i]]?.groupId;
-      if (!gid) { i++; continue; }
-      let j = i + 1;
-      while (j < slideOrder.length && slides[slideOrder[j]]?.groupId === gid) j++;
-      if (j - i >= 2) runs.push({ groupId: gid, slideIds: slideOrder.slice(i, j), start: i });
-      i = j;
-    }
-    return runs;
-  }
-  // Legacy shim: synthesize runs from autoAdvance flags.
   let i = 0;
   while (i < slideOrder.length) {
-    if (!slides[slideOrder[i]]?.autoAdvance) { i++; continue; }
-    let j = i;
-    while (j < slideOrder.length && slides[slideOrder[j]]?.autoAdvance) j++;
-    const end = Math.min(j + 1, slideOrder.length); // + the slide advanced into
-    if (end - i >= 2) {
-      runs.push({
-        groupId: `legacy-autoadvance-${slideOrder[i]}`,
-        slideIds: slideOrder.slice(i, end),
-        start: i,
-      });
-    }
-    i = end;
+    const gid = slides[slideOrder[i]]?.groupId;
+    if (!gid) { i++; continue; }
+    let j = i + 1;
+    while (j < slideOrder.length && slides[slideOrder[j]]?.groupId === gid) j++;
+    if (j - i >= 2) runs.push({ groupId: gid, slideIds: slideOrder.slice(i, j), start: i });
+    i = j;
   }
   return runs;
 }

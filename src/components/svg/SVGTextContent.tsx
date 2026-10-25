@@ -1,7 +1,7 @@
 import React, { useMemo, memo } from 'react';
 import type { TextElement } from '../../types/presentation';
 import { renderMarkdownToHtml, containerStyleForMarkdown } from '../canvas/CustomMarkdownRenderer';
-import { TEXT_BOX_PADDING } from '../../utils/constants';
+import { textInsets, textInkOverflow } from '../../utils/boundTextLayout';
 
 interface Props {
   element: TextElement;
@@ -42,7 +42,8 @@ export const SVGTextContent: React.FC<Props> = memo(({
   const cy = elementY + height / 2;
   const transform = rotation ? `rotate(${rotation}, ${cx}, ${cy})` : undefined;
 
-  const padding = TEXT_BOX_PADDING;
+  const padding = textInsets(element);
+  const ink = textInkOverflow(element);
 
   // Allow text to overflow the bottom edge by extending foreignObject
   const bottomOverflow = 500;
@@ -53,15 +54,16 @@ export const SVGTextContent: React.FC<Props> = memo(({
       <defs>
         <clipPath id={clipId}>
           <rect
-            x={elementX + padding}
-            y={elementY + padding}
-            width={width - padding * 2}
-            height={height - padding * 2 + bottomOverflow}
+            x={elementX + padding - ink}
+            y={elementY + padding - ink}
+            width={width - padding * 2 + ink * 2}
+            height={height - padding * 2 + bottomOverflow + ink * 2}
           />
         </clipPath>
       </defs>
       <g clipPath={`url(#${clipId})`}>
         <foreignObject
+          overflow={ink ? 'visible' : undefined}
           x={elementX + padding}
           y={elementY + padding}
           width={width - padding * 2}
@@ -93,6 +95,9 @@ export const SVGTextContent: React.FC<Props> = memo(({
     prevProps.opacity === nextProps.opacity &&
     prevProps.clipIdPrefix === nextProps.clipIdPrefix &&
     prev.text === next.text &&
+    prev.textSizing === next.textSizing &&
+    prev.containerId === next.containerId &&
+    prev.boundTextLayout === next.boundTextLayout &&
     prev.width === next.width &&
     prev.height === next.height &&
     prev.x === next.x &&

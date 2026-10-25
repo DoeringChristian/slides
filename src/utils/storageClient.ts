@@ -140,7 +140,7 @@ function createServerClient(serverUrl: string): StorageClient {
   return {
     async listProjects(): Promise<ProjectMeta[]> {
       const projects = await fetchJSON<ProjectMeta[]>('/api/projects');
-      // Add empty filename for compatibility
+      // Server projects have no filesystem filename.
       return projects.map((p) => ({ ...p, filename: '' }));
     },
 

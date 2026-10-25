@@ -1,7 +1,13 @@
+import { resolveShapePaint } from '../../utils/shapePaint';
 import React from 'react';
 import type { ShapeElement } from '../../types/presentation';
 import { RenderShape } from './ElementRenderer';
-import { isLinePath } from '../../utils/pathShapes';
+import { getRotationCenter } from '../../utils/geometry';
+import { shapeToSvgPaths } from '../../utils/shapeToPath';
+import { parsePaintColor, noPaint } from '../../utils/paintColor';
+import { useEditorStore } from '../../store/editorStore';
+import { useElementVisualBounds } from '../../utils/shapeVisualBounds';
+import { SVGStrokeClip } from './SVGStrokeClip';
 
 interface Props {
   element: ShapeElement;
@@ -13,80 +19,38 @@ interface Props {
 }
 
 export const SVGShapeNode: React.FC<Props> = React.memo(({
-  element,
-  disableInteraction,
-  onPointerDown,
-  onMouseEnter,
-  onMouseLeave,
-  onDoubleClick,
+  element, disableInteraction, onPointerDown, onMouseEnter, onMouseLeave, onDoubleClick,
 }) => {
-  // Rotate around the center of the element
-  const cx = element.x + element.width / 2;
-  const cy = element.y + element.height / 2;
+  const selected = useEditorStore(s => s.selectedElementIds.includes(element.id));
+  const bounds = useElementVisualBounds(selected && !disableInteraction ? element : null);
+  const zoom = useEditorStore(s => s.zoom);
+  const { x: cx, y: cy } = getRotationCenter(element);
   const transform = element.rotation ? `rotate(${element.rotation}, ${cx}, ${cy})` : undefined;
-
-  const interactionStyle: React.CSSProperties = {
-    cursor: disableInteraction ? 'default' : (element.locked ? 'default' : 'move'),
-    pointerEvents: disableInteraction ? 'none' : 'auto',
-    touchAction: 'none',
-  };
-
-  const interactionHandlers = disableInteraction ? {} : {
-    onPointerDown,
-    onMouseEnter,
-    onMouseLeave,
-    onDoubleClick,
-  };
-
-  // 2-vertex linear path (line / arrow) uses a different rotation center
-  // (line midpoint, not bounding box) and needs an invisible wider line for
-  // easier selection — handle separately from the standard bbox case.
-  if (isLinePath(element)) {
-    const pts = element.points ?? [0, 0, element.width, 0];
-    const lineCx = element.x + (pts[0] + pts[2]) / 2;
-    const lineCy = element.y + (pts[1] + pts[3]) / 2;
-    const lineTransform = element.rotation ? `rotate(${element.rotation}, ${lineCx}, ${lineCy})` : undefined;
-
-    return (
-      <g data-element-id={element.id}>
-        {/* Visual rendering (uses bounding box center rotation - acceptable for lines) */}
-        <RenderShape element={element} />
-        {/* Invisible wider line for easier selection */}
-        <g transform={lineTransform}>
-          <line
-            x1={element.x + pts[0]}
-            y1={element.y + pts[1]}
-            x2={element.x + pts[2]}
-            y2={element.y + pts[3]}
-            stroke="transparent"
-            strokeWidth={20}
-            style={interactionStyle}
-            {...(disableInteraction ? {} : {
-              onPointerDown,
-              onMouseEnter,
-              onMouseLeave,
-            })}
-          />
-        </g>
-      </g>
-    );
-  }
-
-  // For closed shapes (rect, ellipse, triangle, star):
-  // RenderShape renders the visual, transparent rect on top handles interaction
+  // Input consumes the same paint regions/contours/arrowheads as Create/export.
+  // Native SVG fill-rule picking preserves unselected icon holes.
+  const paint = resolveShapePaint(element);
+  const paths = disableInteraction ? [] : shapeToSvgPaths(element);
+  const painted = (color: string | undefined) => !noPaint(color ?? '') && (parsePaintColor(color ?? '')?.a ?? 1) > 0;
   return (
     <g data-element-id={element.id}>
       <RenderShape element={element} />
-      <g transform={transform}>
-        <rect
-          x={element.x}
-          y={element.y}
-          width={element.width}
-          height={element.height}
-          fill="transparent"
-          style={interactionStyle}
-          {...interactionHandlers}
-        />
+      <g className="shape-input" transform={transform}
+        style={{ cursor: element.locked ? 'default' : 'move', touchAction: 'none' }}
+        onPointerDown={onPointerDown} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} onDoubleClick={onDoubleClick}>
+        {bounds && !disableInteraction && <rect data-selected-body
+          x={bounds.x} y={bounds.y} width={bounds.width} height={bounds.height}
+          fill="transparent" style={{ pointerEvents: 'all' }} />}
+        {paths.map((path, i) => {
+          const fill = painted(path.fillSourceColor ?? path.fillColor);
+          const stroke = painted(path.strokeColor) && paint.strokeWidth > 0 && path.createRole !== 'fill';
+          return <g key={i} transform={path.transform}>
+            {fill && <path d={path.fillD ?? path.d} fill="transparent" fillRule={path.fillRule} style={{ pointerEvents: 'fill' }} />}
+            {stroke && <SVGStrokeClip paths={path.shaftClipPaths ?? []}>
+              <path d={path.d} fill="none" stroke="transparent" strokeWidth={paint.strokeWidth + 8 / zoom}
+                strokeLinecap="round" strokeLinejoin="round" style={{ pointerEvents: 'stroke' }} />
+            </SVGStrokeClip>}
+          </g>;
+        })}
       </g>
     </g>
   );

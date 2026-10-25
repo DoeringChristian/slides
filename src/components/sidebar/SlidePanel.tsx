@@ -7,7 +7,8 @@ import { usePresentationStore } from '../../store/presentationStore';
 import { useEditorStore } from '../../store/editorStore';
 import { useOrderedSlides, useGroupRuns } from '../../store/selectors';
 import { areSlidesContiguous, groupColorFor } from '../../utils/presenterAdvance';
-import { Plus, ArrowDown, ArrowUp, Blend, FilePlus2, LayoutTemplate, Group, Ungroup } from 'lucide-react';
+import { foldedSlideIds, slideGroupRunKey } from '../../utils/slideGroupEditing';
+import { ChevronDown, ChevronRight, Scissors, Minus, Plus, ArrowDown, ArrowUp, Blend, FilePlus2, LayoutTemplate, Group, Ungroup } from 'lucide-react';
 import { TemplatePicker } from './TemplatePicker';
 import type { DragEndEvent } from '@dnd-kit/core';
 
@@ -94,6 +95,8 @@ export const SlidePanel: React.FC = () => {
   const slidesById = usePresentationStore((s) => s.presentation.slides);
   const groupSlides = usePresentationStore((s) => s.groupSlides);
   const ungroupSlides = usePresentationStore((s) => s.ungroupSlides);
+  const splitSlideGroup = usePresentationStore((s) => s.splitSlideGroup);
+  const removeSlideFromGroup = usePresentationStore((s) => s.removeSlideFromGroup);
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const setActiveSlide = useEditorStore((s) => s.setActiveSlide);
   const selectedSlideIds = useEditorStore((s) => s.selectedSlideIds);
@@ -105,6 +108,15 @@ export const SlidePanel: React.FC = () => {
 
   // Slide-group runs + per-slide visuals (colored rail, joined corners).
   const runs = useGroupRuns();
+  const [collapsedRuns, setCollapsedRuns] = useState<Set<string>>(() => new Set());
+  const toggleRun = (key: string) => setCollapsedRuns(previous => {
+    const next = new Set(previous);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    return next;
+  });
+  const foldedIds = foldedSlideIds(runs, collapsedRuns, activeSlideId);
+  const runBySlide = new Map(runs.flatMap(run => run.slideIds.map(id => [id, run] as const)));
+  const activeRun = runBySlide.get(activeSlideId);
   const groupInfoBySlide = useMemo(() => {
     const map = new Map<string, SlideGroupInfo>();
     for (const run of runs) {
@@ -239,6 +251,11 @@ export const SlidePanel: React.FC = () => {
       items.push({ label: `Group ${selectedSlideIds.length} slides`, action: () => { groupSlides(selectedSlideIds); } });
     }
     if (slidesById[slideId]?.groupId) {
+      const run = runs.find(r => r.slideIds.includes(slideId));
+      if (run && run.slideIds[0] !== slideId) {
+        items.push({ label: 'Split group before this slide', action: () => splitSlideGroup(slideId) });
+      }
+      items.push({ label: 'Remove slide from group', action: () => removeSlideFromGroup(slideId) });
       items.push({ label: 'Ungroup', action: () => { ungroupSlides([slideId]); } });
     }
 
@@ -253,7 +270,7 @@ export const SlidePanel: React.FC = () => {
     document.body.appendChild(menu);
     const remove = () => { menu.remove(); document.removeEventListener('click', remove); };
     setTimeout(() => document.addEventListener('click', remove), 0);
-  }, [slideOrder, addSlide, deleteSlide, duplicateSlide, setActiveSlide, selectedSlideIds, slidesById, groupSlides, ungroupSlides]);
+  }, [slideOrder, addSlide, deleteSlide, duplicateSlide, setActiveSlide, selectedSlideIds, slidesById, groupSlides, ungroupSlides, runs, splitSlideGroup, removeSlideFromGroup]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent, slideId: string) => {
     e.preventDefault();
@@ -345,11 +362,43 @@ export const SlidePanel: React.FC = () => {
           </button>
         </div>
       </div>
+      {activeRun && (
+        <div className="px-2 py-1 border-b text-xs flex items-center gap-1">
+          <span className="flex-1 text-gray-500">Active slide's group</span>
+          <button title="Split group before active slide"
+            aria-label="Split group before active slide"
+            disabled={activeRun.slideIds[0] === activeSlideId}
+            className="p-1 rounded hover:bg-gray-100 disabled:opacity-30"
+            onClick={() => splitSlideGroup(activeSlideId)}><Scissors size={16} /></button>
+          <button title="Remove active slide from group (keep slide)"
+            aria-label="Remove active slide from group"
+            className="p-1 rounded hover:bg-gray-100 disabled:opacity-30"
+            onClick={() => removeSlideFromGroup(activeSlideId)}><Minus size={16} /></button>
+        </div>
+      )}
       <div className="flex-1 overflow-y-auto pt-6" onClick={handleEmptySpaceClick}>
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={slideOrder} strategy={verticalListSortingStrategy}>
-            {slides.map((slide, index) => (
-              <React.Fragment key={slide.id}>
+          <SortableContext items={slideOrder.filter(id => !foldedIds.has(id))} strategy={verticalListSortingStrategy}>
+            {slides.map((slide, index) => {
+              const run = runBySlide.get(slide.id);
+              const key = run && slideGroupRunKey(run);
+              const folded = !!key && collapsedRuns.has(key);
+              return <React.Fragment key={slide.id}>
+                {run?.slideIds[0] === slide.id && (
+                  <button type="button" data-slide-group={key}
+                    aria-expanded={!folded}
+                    title={folded ? 'Expand slide group' : 'Collapse slide group (active slide stays visible)'}
+                    className="mx-2 mb-2 px-2 py-1 flex flex-wrap items-center gap-1 text-xs text-left rounded bg-gray-100 hover:bg-gray-200"
+                    style={{ borderLeft: `3px solid ${groupColorFor(run.groupId)}` }}
+                    onClick={() => toggleRun(key!)}>
+                    {folded ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                    Group · {run.slideIds.length} slides
+                    {run.slideIds.includes(activeSlideId) && <span className="text-blue-600"> · active</span>}
+                    {run.slideIds.some(id => selectedSlideIds.includes(id)) &&
+                      <span> · {run.slideIds.filter(id => selectedSlideIds.includes(id)).length} selected</span>}
+                  </button>
+                )}
+                {!foldedIds.has(slide.id) && <>
                 {index === 0 && (
                   <SlideInsertRow
                     afterIndex={-1}
@@ -361,7 +410,7 @@ export const SlidePanel: React.FC = () => {
                   />
                 )}
 
-                <div
+                <div data-slide-id={slide.id}
                   onContextMenu={(e) => handleContextMenu(e, slide.id)}
                   onPointerDown={(e) => handleSlidePointerDown(e, slide.id)}
                   onPointerMove={handleSlidePointerMove}
@@ -381,16 +430,17 @@ export const SlidePanel: React.FC = () => {
                   />
                 </div>
 
-                <SlideInsertRow
+                {!folded && <SlideInsertRow
                   afterIndex={index}
                   hasPrevious={true}
                   hasNext={index < slides.length - 1}
                   onInsert={handleInsert}
                   onInsertEmpty={handleInsertEmpty}
                   onOpenTemplatePicker={handleOpenTemplatePicker}
-                />
-              </React.Fragment>
-            ))}
+                />}
+                </>}
+              </React.Fragment>;
+            })}
           </SortableContext>
         </DndContext>
       </div>

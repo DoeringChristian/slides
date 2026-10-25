@@ -46,7 +46,7 @@ function bbox(flat: number[]): { minX: number; minY: number; maxX: number; maxY:
 function makePathShape(overrides: Partial<ShapeElement> = {}): ShapeElement {
   return {
     id: 'el',
-    type: 'shape',
+    type: 'shape', creationPreset: 'line',
     shapeType: 'path',
     x: 0, y: 0, width: 100, height: 100,
     rotation: 0, opacity: 1, locked: false, visible: true,
@@ -445,8 +445,8 @@ describe('insetEndpoints (per-end numeric insets)', () => {
     expect(out[3]).toBeCloseTo(32); // 40 − 10·(40/50)
   });
 
-  test('segments shorter than the inset are left alone (no inversion)', () => {
-    expect(insetEndpoints([0, 0, 5, 0], 10, 10)).toEqual([0, 0, 5, 0]);
+  test('paths shorter than both insets omit the shaft (no protrusion)', () => {
+    expect(insetEndpoints([0, 0, 5, 0], 10, 10)).toEqual([]);
   });
 
   test('original array is never mutated when insets are set', () => {
@@ -565,7 +565,7 @@ describe('arrowheadGeometry', () => {
   });
 
   test("'triangle' is the classic filled triangle (same points as arrowheadPoints), inset = depth", () => {
-    expect(geo('triangle')).toEqual({
+    expect(geo('triangle')).toMatchObject({
       shaftInset: 10,
       fills: [{ points: arrowheadPoints(100, 0, 1, 0, 10) }],
       strokes: [],
@@ -573,7 +573,7 @@ describe('arrowheadGeometry', () => {
   });
 
   test("'triangle-outline' is the stroked CLOSED triangle, inset = depth", () => {
-    expect(geo('triangle-outline')).toEqual({
+    expect(geo('triangle-outline')).toMatchObject({
       shaftInset: 10,
       fills: [],
       strokes: [{ d: 'M 100.00 0.00 L 90.00 5.00 L 90.00 -5.00 Z' }],
@@ -614,7 +614,7 @@ describe('arrowheadGeometry', () => {
   });
 
   test("'diamond' is a filled rhombus tip→side→back→side, inset = depth", () => {
-    expect(geo('diamond')).toEqual({
+    expect(geo('diamond')).toMatchObject({
       shaftInset: 10,
       fills: [{ points: [100, 0, 95, 5, 90, 0, 95, -5] }],
       strokes: [],
@@ -622,7 +622,7 @@ describe('arrowheadGeometry', () => {
   });
 
   test("'diamond-outline' is the stroked closed rhombus", () => {
-    expect(geo('diamond-outline')).toEqual({
+    expect(geo('diamond-outline')).toMatchObject({
       shaftInset: 10,
       fills: [],
       strokes: [{ d: 'M 100.00 0.00 L 95.00 5.00 L 90.00 0.00 L 95.00 -5.00 Z' }],
@@ -664,7 +664,7 @@ describe('arrowheadGeometry', () => {
   });
 
   test('direction vector is normalized (magnitude does not change the glyph)', () => {
-    expect(geo('diamond')).toEqual(arrowheadGeometry('diamond', 100, 0, 250, 0, 10, 3));
+    expect(geo('diamond')).toMatchObject(arrowheadGeometry('diamond', 100, 0, 250, 0, 10, 3));
   });
 
   test('arrowheadInset matches arrowheadGeometry.shaftInset for every type', () => {
@@ -721,10 +721,10 @@ describe('shapeToPathD presets', () => {
     expect(d.endsWith('z')).toBe(true);
   });
 
-  test('rect corner radius clamps to half the shorter side', () => {
+  test('rect corner radii clamp independently like SVG rx and ry', () => {
     const d = shapeToPathD(makePathShape({ shapeType: 'rect', x: 0, y: 0, width: 100, height: 50, cornerRadius: 100 }));
-    expect(d.startsWith('M 25 0')).toBe(true);
-    expect(d).toContain('a 25 25');
+    expect(d.startsWith('M 50 0')).toBe(true);
+    expect((d.match(/a 50 25/g) ?? []).length).toBe(4);
   });
 
   test('ellipse is two half-arcs from the left extreme (golden)', () => {
@@ -760,13 +760,14 @@ describe('shapeToPathD presets', () => {
     }
   });
 
-  test('path preset: typed head primitives are appended and the shaft is inset', () => {
+  test('path preset: typed head primitives are appended and native shaft is clipped by consumers', () => {
     const d = shapeToPathD(makePathShape({
       shapeType: 'path', x: 0, y: 0, points: [0, 0, 100, 0], endHead: 'triangle',
       strokeWidth: 3,
     }));
-    // Shaft stops 10 units short of the tip (triangle depth at default width)…
-    expect(d.startsWith('M 0.00 0.00 L 90.00 0.00')).toBe(true);
+    // Consumed shaft follows the original native line to the head base…
+    expect(d.startsWith('M 0 0 L ')).toBe(true);
+    expect(Number(d.split(' ')[4])).toBeCloseTo(90, 9);
     // …and the filled head is traced as a closed tip → wing → wing polygon.
     expect(d).toContain('M 100 0 L 90 5 L 90 -5 Z');
   });

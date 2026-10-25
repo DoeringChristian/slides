@@ -110,6 +110,22 @@ export function textVerticalOffset(
   return 0;
 }
 
+/** The plain-text strut shared by SVG rows and native editing line boxes. */
+export function textRowMetrics(fontSize: number, lineHeight: number) {
+  const baseline = fontSize * 0.8;
+  const advance = baseline + fontSize * 0.4 * (lineHeight || 1.2);
+  return { baseline, advance };
+}
+
+const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+// Typographic breakable spaces are word boundaries, not emergency word splits.
+// NBSP (00A0), figure space (2007), and narrow NBSP (202F) deliberately stay
+// inside their word. Only ASCII spaces/tabs hang in the alignment pass below.
+// Keep ASCII runs separate so their trailing suffix can hang even when a
+// typographic space immediately precedes it; the latter still takes up width.
+const breakableTextSpaces = /([ \t]+|[\u2000-\u2006\u2008-\u200a\u205f\u3000]+)/;
+const onlyBreakableTextSpaces = /^[ \t\u2000-\u2006\u2008-\u200a\u205f\u3000]+$/;
+
 function escapeXml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
@@ -307,8 +323,8 @@ export async function layoutSvgText(
 
       // Empty paragraph → advance one line and continue (mirrors the HTML
       // renderer's `&nbsp;` placeholder behaviour).
-      if (!block.displayContent.trim() && block.type === 'paragraph') {
-        yCursor += blockFontSize * lineHeight;
+      if (!block.displayContent && block.type === 'paragraph') {
+        yCursor += textRowMetrics(blockFontSize, lineHeight).advance;
         linesOut.push({
           yTop: lineYTop,
           yBottom: yCursor,
@@ -394,38 +410,45 @@ export async function layoutSvgText(
 
         const font = pickFont(weight, fontStyle);
 
-        // Word-level wrap (split on whitespace but keep whitespace tokens).
-        // Width comes from opentype advance widths — the SAME calc used for
-        // path emission, so wrap positions cannot disagree with the final
-        // pen positions.
-        const words = txt.split(/(\s+)/);
-        for (const word of words) {
-          if (!word) continue;
-          const { endX } = textToGlyphPaths(word, font, blockFontSize, 0, 0);
-          const wpx = endX;
-          const isWhitespace = !word.trim();
-          if (!isWhitespace && curLineWidth + wpx > boxWidth && curLineWidth > 0) {
-            startNewLine();
-          }
-          if (isWhitespace && curLineWidth === 0) continue; // drop leading whitespace
+        // Match native pre-wrap + overflow-wrap:break-word: preserve spaces,
+        // hang trailing spaces for alignment, and split only overlong words at
+        // grapheme boundaries (never inside a surrogate pair/combining cluster).
+        const placeText = (value: string, widthPx: number) => {
           lines[lines.length - 1].push({
-            kind: 'text',
-            text: word,
-            widthPx: wpx,
-            weight,
-            fontStyle,
-            decoration,
-            color,
+            kind: 'text', text: value, widthPx, weight, fontStyle, decoration, color,
           });
-          curLineWidth += wpx;
+          curLineWidth += widthPx;
+        };
+        for (const word of txt.split(breakableTextSpaces)) {
+          if (!word) continue;
+          const wpx = textToGlyphPaths(word, font, blockFontSize, 0, 0).endX;
+          const isWhitespace = onlyBreakableTextSpaces.test(word);
+          if (!isWhitespace && curLineWidth + wpx > boxWidth && curLineWidth > 0) startNewLine();
+          if (!isWhitespace && wpx > boxWidth) {
+            let run = '';
+            let runWidth = 0;
+            for (const { segment } of graphemes.segment(word)) {
+              const nextWidth = textToGlyphPaths(run + segment, font, blockFontSize, 0, 0).endX;
+              if (run && curLineWidth + nextWidth > boxWidth) {
+                placeText(run, runWidth);
+                startNewLine();
+                run = segment;
+                runWidth = textToGlyphPaths(segment, font, blockFontSize, 0, 0).endX;
+              } else {
+                run += segment;
+                runWidth = nextWidth;
+              }
+            }
+            if (run) placeText(run, runWidth);
+          } else placeText(word, wpx);
         }
       }
       maxLineWidth = Math.max(maxLineWidth, curLineWidth);
 
       // Render each line.
-      for (const line of lines) {
+      for (const [rowIndex, line] of lines.entries()) {
         if (line.length === 0) {
-          yCursor += blockFontSize * lineHeight;
+          yCursor += textRowMetrics(blockFontSize, lineHeight).advance;
           continue;
         }
         // Per-line baseline metrics. Math glyphs extend by `aboveBaseline`
@@ -440,14 +463,23 @@ export async function layoutSvgText(
         );
         const mathAbove = mathUnits.reduce((m, u) => Math.max(m, u.aboveBaseline), 0);
         const mathBelow = mathUnits.reduce((m, u) => Math.max(m, u.belowBaseline), 0);
-        const textAbove = blockFontSize * 0.8;
-        const textBelow = blockFontSize * 0.4 * lineHeight;
+        const metrics = textRowMetrics(blockFontSize, lineHeight);
+        const textAbove = metrics.baseline;
+        const textBelow = metrics.advance - metrics.baseline;
         const aboveBaseline = Math.max(textAbove, mathAbove);
         const belowBaseline = Math.max(textBelow, mathBelow + blockFontSize * 0.1);
         const lineHeightPx = aboveBaseline + belowBaseline;
         const baseline = yCursor + aboveBaseline;
 
-        const lineContentWidth = line.reduce((a, u) => a + u.widthPx, 0);
+        // Spaces before a soft wrap hang; fitting spaces at a source-line
+        // end (including before an explicit newline) still take up width.
+        let contentEnd = line.length;
+        while (rowIndex < lines.length - 1 && contentEnd > 0) {
+          const last = line[contentEnd - 1];
+          if (last.kind !== 'text' || !/^[ \t]+$/.test(last.text)) break;
+          contentEnd--;
+        }
+        const lineContentWidth = line.slice(0, contentEnd).reduce((a, u) => a + u.widthPx, 0);
         let xOffset = 0;
         if (style.align === 'center') xOffset = Math.max(0, (boxWidth - lineContentWidth) / 2);
         else if (style.align === 'right') xOffset = Math.max(0, boxWidth - lineContentWidth);

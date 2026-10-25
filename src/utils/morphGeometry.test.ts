@@ -18,7 +18,7 @@ import type { ShapeElement } from '../types/presentation';
 function makeShape(overrides: Partial<ShapeElement> = {}): ShapeElement {
   return {
     id: 'el-shape',
-    type: 'shape',
+    type: 'shape', creationPreset: 'rect',
     shapeType: 'rect',
     x: 0, y: 0, width: 100, height: 50,
     rotation: 0, opacity: 1, locked: false, visible: true,

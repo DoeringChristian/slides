@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState, memo } from 'react';
 import type { TextElement } from '../../types/presentation';
 import type { WriteEffect } from '../../utils/interpolation';
-import { TEXT_BOX_PADDING } from '../../utils/constants';
+import { textInsets, textInkOverflow } from '../../utils/boundTextLayout';
 import { layoutSvgText, textVerticalOffset, type SvgTextDoc } from '../../utils/textLayout';
 import { prewarmFonts } from '../../utils/glyphPaths';
+import { layoutUserText } from '../../utils/userTextSizing';
 import { RenderPaths } from './RenderPaths';
 import { SVGTextContent } from './SVGTextContent';
 
@@ -27,15 +28,12 @@ interface Props {
    *  match the rendered glyph positions exactly. */
   onLayout?: (doc: SvgTextDoc) => void;
   /** Extra cushion (px) added around the clip rect. Defaults to a small
-   *  cushion for BOUND LABELS (whose box hugs the laid-out text, so glyph
+   *  cushion for bound labels and explicit free sizing (whose box hugs text, so glyph
    *  ink that overhangs its advance width — italics, LaTeX radicals,
-   *  descenders — would otherwise get shaved) and to 0 for free text boxes
-   *  (legacy clip unchanged). */
+   *  descenders — would otherwise get shaved). */
   clipPadding?: number;
 }
 
-/** Default clip cushion for bound labels (see `clipPadding`). */
-const LABEL_CLIP_PADDING = 6;
 
 /**
  * Renders a text element as native SVG paths via opentype.js (Inter) for plain
@@ -58,8 +56,8 @@ export const SVGTextPaths: React.FC<Props> = memo(({
   clipPadding,
 }) => {
   const { style, x: elementX, y: elementY, width, height, rotation } = element;
-  const padding = TEXT_BOX_PADDING;
-  const clipPad = clipPadding ?? (element.containerId ? LABEL_CLIP_PADDING : 0);
+  const padding = textInsets(element);
+  const clipPad = clipPadding ?? textInkOverflow(element);
   const bottomOverflow = 500;
   const clipId = `${clipIdPrefix}-${element.id}`;
 
@@ -73,10 +71,12 @@ export const SVGTextPaths: React.FC<Props> = memo(({
     : '';
 
   const layoutPromise = useMemo(
-    () => layoutSvgText(element.text || '', style, Math.max(1, width - padding * 2), rawLineIndices),
+    () => element.textSizing === 'auto-content' && !element.containerId
+      ? layoutUserText(element, rawLineIndices)
+      : layoutSvgText(element.text || '', style, Math.max(1, width - padding * 2), rawLineIndices),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [element.text, style.fontSize, style.fontWeight, style.fontStyle,
-     style.color, style.lineHeight, style.align, width, padding, rawKey],
+     style.color, style.fontFamily, style.textDecoration, style.lineHeight, style.align, width, padding, rawKey, element.textSizing, element.containerId],
   );
 
   const [doc, setDoc] = useState<SvgTextDoc | null>(null);
@@ -153,6 +153,8 @@ export const SVGTextPaths: React.FC<Props> = memo(({
     prev.clipIdPrefix === next.clipIdPrefix &&
     prev.clipPadding === next.clipPadding &&
     a.containerId === b.containerId &&
+    a.textSizing === b.textSizing &&
+    a.boundTextLayout === b.boundTextLayout &&
     a.text === b.text &&
     a.width === b.width &&
     a.height === b.height &&

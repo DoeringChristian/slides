@@ -23,7 +23,7 @@ import type {
 function makeShape(overrides: Partial<ShapeElement> = {}): ShapeElement {
   return {
     id: 'el-shape',
-    type: 'shape',
+    type: 'shape', creationPreset: 'rect',
     shapeType: 'rect',
     x: 0, y: 0, width: 100, height: 50,
     rotation: 0, opacity: 1, locked: false, visible: true,
@@ -35,7 +35,7 @@ function makeShape(overrides: Partial<ShapeElement> = {}): ShapeElement {
 function makeText(overrides: Partial<TextElement> = {}): TextElement {
   return {
     id: 'el-text',
-    type: 'text',
+    type: 'text', textSizing: 'user-width', boundTextLayout: 'padded',
     x: 10, y: 20, width: 300, height: 80,
     rotation: 0, opacity: 1, locked: false, visible: true,
     text: 'hello',
@@ -97,7 +97,7 @@ describe('lerpColor', () => {
   test('non-hex colors snap at the midpoint instead of blending', () => {
     expect(lerpColor('red', 'blue', 0.49)).toBe('red');
     expect(lerpColor('red', 'blue', 0.5)).toBe('blue');
-    expect(lerpColor('', '#ffffff', 0.4)).toBe('');
+    expect(lerpColor('', '#ffffff', 0.4)).toBe('rgba(255, 255, 255, 0.4)');
   });
 });
 
@@ -527,14 +527,14 @@ describe('path shape interpolation', () => {
     expect(at1.points).toEqual(sb.points);
   });
 
-  test('bezier ↔ bezier with differing vertex counts falls into the sampled morph', () => {
+  test('bezier ↔ bezier with unrelated differing vertex counts falls into the sampled morph', () => {
     const sa = makeShape({
       shapeType: 'path', curve: 'bezier',
       points: [0, 0, 100, 0],
     });
     const sb = makeShape({
       shapeType: 'path', curve: 'bezier',
-      points: [0, 0, 100, 0, 100, 100],
+      points: [0, 0, 100, 20, 100, 100],
     });
     const mid = interpolateElement(sa, sb, 0.5) as ShapeElement;
     expect(mid.curve).toBe('linear');

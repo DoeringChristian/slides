@@ -3,6 +3,7 @@ import type { Doc as YDoc } from 'yjs';
 import { usePresentationStore } from '../store/presentationStore';
 import { yDocToJson } from './ySchema';
 import type { Presentation } from '../types/presentation';
+import { getActiveDoc } from './yDocAdapter';
 
 // On every Y.Doc update — local or remote — re-derive the full Presentation
 // JSON and replace it in the Zustand store. Yjs's `.toJSON()` recursion is
@@ -21,6 +22,7 @@ export function useYToStoreSync(doc: YDoc | null) {
     if (!doc) return;
 
     let scheduled = false;
+    let disposed = false;
     const apply = () => {
       if (scheduled) return;
       // Coalesce bursts of updates in the same tick into a single setState
@@ -28,6 +30,7 @@ export function useYToStoreSync(doc: YDoc | null) {
       scheduled = true;
       queueMicrotask(() => {
         scheduled = false;
+        if (disposed || getActiveDoc() !== doc) return;
         try {
           const presentation = yDocToJson(doc) as Presentation;
           usePresentationStore.setState({ presentation });
@@ -45,6 +48,7 @@ export function useYToStoreSync(doc: YDoc | null) {
     doc.on('update', apply);
 
     return () => {
+      disposed = true;
       doc.off('update', apply);
     };
   }, [doc]);

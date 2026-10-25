@@ -43,6 +43,8 @@ export interface ScrubInputProps {
   /** Fired exactly once per completed gesture / edit, with the committed
    *  (clamped + rounded) value. Not fired when nothing changed. */
   onCommit: (value: number) => void;
+  /** Discrete typing/nudges, independent of any cancelled pointer session. */
+  onEditCommit?: (value: number) => void;
   /** Live-preview hook: fired on every scrub move with the value a release
    *  at this instant would commit. Pair with onScrubStart/onScrubCancel. */
   onPreview?: (value: number) => void;
@@ -66,6 +68,7 @@ export interface ScrubInputProps {
 export const ScrubInput: React.FC<ScrubInputProps> = ({
   value,
   onCommit,
+  onEditCommit,
   onPreview,
   onScrubStart,
   onScrubCancel,
@@ -220,7 +223,7 @@ export const ScrubInput: React.FC<ScrubInputProps> = ({
       // null (garbage input) → revert silently.
       if (parsed !== null) {
         const committed = commitValue(parsed, specRef.current);
-        if (committed !== valueRef.current) onCommitRef.current(committed);
+        if (committed !== valueRef.current) (onEditCommit ?? onCommit)(committed);
       }
     }
     setMode('display');
@@ -233,7 +236,7 @@ export const ScrubInput: React.FC<ScrubInputProps> = ({
     const committed = commitValue(base + delta, s);
     setEditDraft(formatValue(committed, s));
     // Each arrow press commits (the field stays in edit mode).
-    if (committed !== valueRef.current) onCommitRef.current(committed);
+    if (committed !== valueRef.current) (onEditCommit ?? onCommit)(committed);
   };
 
   const box = `w-full ${compact ? 'h-7 text-xs' : 'h-8 text-sm'} border border-gray-300 rounded px-2`;

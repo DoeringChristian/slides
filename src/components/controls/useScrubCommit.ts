@@ -1,11 +1,18 @@
-import { useEffect, useRef, useState } from 'react';
+import { CreationDraftContext } from '../properties/CreationDraftContext';
+import { useContext, useEffect, useRef, useState } from 'react';
+import { ownScrubMutation, registerScrubMutation } from '../../utils/scrubMutation';
+import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { getActiveUndoManager, beginScrubCapture } from '../../collab/activeUndo';
-import { getNested, setNestedPartial } from '../properties/Property';
+import { copyNestedFields } from '../properties/Property';
+import type { CurrentChange } from '../../store/currentMutation';
 
 /**
  * Scrub-commit protocol: live canvas preview during a drag-to-scrub gesture
  * with EXACTLY ONE undo entry, in both undo systems.
+ *
+ * Unrelated local actions invalidate and cancel the gesture before writing;
+ * later pointer events are inert. Explicit typed/nudge edits remain usable.
  *
  * The ordering is the critical piece:
  *
@@ -35,6 +42,8 @@ export interface ScrubHandles<C> {
   /** Write a change set to the store. Previews, the pre-scrub restore, and
    *  the final commit all route through the same writer. */
   apply: (changes: C) => void;
+  /** Accepted edit boundary; previews/restores never call this. */
+  commit?: (changes: C) => void;
   /** Capture the restore payload: applying its result must put every field
    *  the scrub can touch back to its current (pre-scrub) value. */
   snapshot: () => C;
@@ -50,52 +59,71 @@ export interface ScrubSession<C> {
    *  value, arrow-key nudge) that should produce its own undo entry. */
   end: (finalChanges: C) => void;
   cancel: () => void;
+  /** Typed values/nudges are not the tail of an invalidated pointer gesture. */
+  commitDiscrete: (changes: C) => void;
 }
 
 export function runScrubSession<C>(handles: ScrubHandles<C>): ScrubSession<C> {
   let active = false;
+  let invalidated = false;
   let snap: C | null = null;
-
+  let release: (() => void) | undefined;
+  const apply = (changes: C) => ownScrubMutation(() => handles.apply(changes));
+  const commit = (changes: C) => (handles.commit ?? handles.apply)(changes);
+  const close = (cancelled: boolean, finalChanges?: C) => {
+    active = false;
+    release?.(); release = undefined;
+    try {
+      apply(snap as C);
+    } finally {
+      handles.resume();
+      try {
+        if (!cancelled) ownScrubMutation(() => commit(finalChanges as C));
+      } finally {
+        ownScrubMutation(() => handles.finish?.(cancelled));
+        snap = null;
+      }
+    }
+  };
   return {
     begin() {
       if (active) return;
-      // Snapshot BEFORE pausing so a (theoretical) side effect of pause can't
-      // sneak into the restore payload; nothing has previewed yet.
-      snap = handles.snapshot();
-      handles.pause();
-      active = true;
+      release = registerScrubMutation(() => {
+        invalidated = true;
+        if (active) close(true);
+      });
+      invalidated = false;
+      try {
+        snap = handles.snapshot();
+        handles.pause();
+        active = true;
+      } catch (error) {
+        release(); release = undefined;
+        handles.resume();
+        throw error;
+      }
     },
-
     preview(changes: C) {
       if (!active) return;
-      handles.apply(changes);
-    },
-
-    end(finalChanges: C) {
-      if (!active) {
-        // No scrub in flight: a discrete commit (edit mode, arrow keys).
-        handles.apply(finalChanges);
-        return;
+      try { apply(changes); } catch (error) {
+        invalidated = true;
+        close(true);
+        throw error;
       }
-      active = false;
-      // CRITICAL ORDER — restore the pre-scrub state while history is still
-      // paused, resume, THEN apply the final value. The state zundo records
-      // as "past" on the final write is the restored (pre-scrub) state.
-      // All three run in the same handler so React batches the paint.
-      handles.apply(snap as C);
-      handles.resume();
-      handles.apply(finalChanges);
-      handles.finish?.(false);
-      snap = null;
     },
-
+    end(finalChanges: C) {
+      if (invalidated) return;
+      if (!active) { commit(finalChanges); return; }
+      close(false, finalChanges);
+    },
     cancel() {
-      if (!active) return;
-      active = false;
-      handles.apply(snap as C);
-      handles.resume();
-      handles.finish?.(true);
-      snap = null;
+      invalidated = true;
+      if (active) close(true);
+    },
+    commitDiscrete(changes: C) {
+      if (active) close(true);
+      invalidated = false;
+      commit(changes);
     },
   };
 }
@@ -105,16 +133,12 @@ export function runScrubSession<C>(handles: ScrubHandles<C>): ScrubSession<C> {
  *  their intermediate objects from the element, so sibling fields under
  *  e.g. `style` survive the round-trip). */
 export function snapshotFields<E>(element: E, fields: string[]): Partial<E> {
-  let changes: Partial<E> = {};
-  for (const f of fields) {
-    changes = { ...changes, ...setNestedPartial(element, f, getNested(element, f)) };
-  }
-  return changes;
+  return copyNestedFields(element, element, fields);
 }
 
 export interface UseScrubCommitArgs<T extends object> {
   element: T;
-  update: (changes: Partial<T>) => void;
+  update: ((changes: CurrentChange<T>) => void) & { commit?: (changes: CurrentChange<T>) => void };
   /** All field paths the gesture may touch (the property's `syncFields`),
    *  snapshotted at begin() and restored at end()/cancel(). */
   syncFields: string[];
@@ -130,7 +154,9 @@ export interface UseScrubCommitArgs<T extends object> {
  */
 export function useScrubCommit<T extends object>(
   { element, update, syncFields }: UseScrubCommitArgs<T>,
-): ScrubSession<Partial<T>> {
+): ScrubSession<CurrentChange<T>> {
+  const draft = useContext(CreationDraftContext);
+  const draftRef = useRef(draft);
   const elementRef = useRef(element);
   const updateRef = useRef(update);
   const syncFieldsRef = useRef(syncFields);
@@ -139,6 +165,7 @@ export function useScrubCommit<T extends object>(
   // it across gestures.
   const finishCaptureRef = useRef<((cancelled: boolean) => void) | undefined>(undefined);
   useEffect(() => {
+    draftRef.current = draft;
     elementRef.current = element;
     updateRef.current = update;
     syncFieldsRef.current = syncFields;
@@ -152,25 +179,38 @@ export function useScrubCommit<T extends object>(
   // exactly once (it owns gesture state), and an empty-dep useMemo is only a
   // caching hint the compiler may discard.
   const [session] = useState(
-    () => runScrubSession<Partial<T>>({
+    () => runScrubSession<CurrentChange<T>>({
       pause: () => {
+        if (draftRef.current) return;
         usePresentationStore.temporal.getState().pause();
         // Collab: force a capture boundary so the scrub's writes never
         // merge backwards into whatever was captured before the gesture.
         finishCaptureRef.current = beginScrubCapture(getActiveUndoManager());
       },
       resume: () => {
+        if (draftRef.current) return;
         usePresentationStore.temporal.getState().resume();
       },
       apply: (changes) => updateRef.current(changes),
-      snapshot: () => snapshotFields(elementRef.current, syncFieldsRef.current),
+      commit: (changes) => (updateRef.current.commit ?? updateRef.current)(changes),
+      snapshot: () => {
+        const source = elementRef.current, fields = syncFieldsRef.current;
+        // The captured values belong to the gesture; sibling values do not.
+        return current => copyNestedFields(source, current, fields);
+      },
       finish: (cancelled) => {
+        draftRef.current?.discard();
         finishCaptureRef.current?.(cancelled);
         finishCaptureRef.current = undefined;
       },
     }),
   );
   /* eslint-enable react-hooks/refs */
+
+  useEffect(() => useEditorStore.subscribe((next, previous) => {
+    if (next.activeSlideId !== previous.activeSlideId
+      || next.selectedElementIds.join() !== previous.selectedElementIds.join()) session.cancel();
+  }), [session]);
 
   // Never leave history paused if the row unmounts mid-scrub (element
   // deleted, panel switched): unwind like a cancel. No-op when idle.

@@ -16,22 +16,28 @@ export interface PreviewSelectProps<V extends string | number> {
   columns?: number;
   disabled?: boolean;
   className?: string;
+  /** Recognizable property previews need no repeated value label. */
+  iconOnly?: boolean;
   /** Animation selectors use an icon trigger and keep their options open. */
   trigger?: React.ReactNode;
   triggerClassName?: string;
   closeOnSelect?: boolean;
   previewHeight?: number;
   footer?: React.ReactNode;
+  searchable?: boolean;
+  alwaysChoose?: boolean;
 }
 
 /** Shared animation/property palette: compact current-value trigger, anchored
  * portal, preview tiles, and optional settings. Callers supply only the real
  * preview geometry, not another picker implementation. */
 export function PreviewSelect<V extends string | number>({
-  label, options, value, onChange, columns = 3, disabled, className,
-  trigger, triggerClassName, closeOnSelect = true, previewHeight = 40, footer,
+  label, options, value, onChange, columns = 3, disabled, className, iconOnly = false,
+  trigger, triggerClassName, closeOnSelect = true, previewHeight = 40, footer, searchable = false, alwaysChoose = false,
 }: PreviewSelectProps<V>): React.ReactElement {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const filtered = options.filter(o => o.label.toLowerCase().includes(query.toLowerCase()));
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const id = useId();
@@ -40,7 +46,11 @@ export function PreviewSelect<V extends string | number>({
 
   useEffect(() => {
     if (!isOpen) return;
-    menuRef.current?.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus();
+    // Portal placement starts hidden; focus after its layout pass makes it visible.
+    const focusFrame = requestAnimationFrame(() => {
+      if (searchable) menuRef.current?.querySelector<HTMLInputElement>('input')?.focus();
+      else menuRef.current?.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus();
+    });
     const onPointer = (e: PointerEvent) => {
       if (!menuRef.current?.contains(e.target as Node) && !buttonRef.current?.contains(e.target as Node)) setOpen(false);
     };
@@ -55,10 +65,11 @@ export function PreviewSelect<V extends string | number>({
     document.addEventListener('pointerdown', onPointer);
     document.addEventListener('keydown', onKey, true);
     return () => {
+      cancelAnimationFrame(focusFrame);
       document.removeEventListener('pointerdown', onPointer);
       document.removeEventListener('keydown', onKey, true);
     };
-  }, [isOpen]);
+  }, [isOpen, searchable]);
 
   return (
     <div className={className}>
@@ -72,17 +83,26 @@ export function PreviewSelect<V extends string | number>({
         aria-controls={isOpen ? id : undefined}
         title={`${label}: ${selected?.label ?? value}`}
         className={triggerClassName ?? 'w-full h-8 px-2 border border-gray-300 rounded flex items-center gap-2 text-xs text-gray-700 hover:bg-gray-50 disabled:opacity-50'}
-        onClick={() => setOpen(!open)}
+        onClick={() => { setQuery(''); setOpen(!open); }}
       >
         {trigger ?? <>
-          <span className="flex items-center justify-center w-16 h-6 overflow-hidden shrink-0" aria-hidden="true">{selected?.preview}</span>
-          <span className="truncate flex-1 text-left">{selected?.label ?? value}</span>
+          <span className={`flex items-center justify-center h-6 overflow-hidden ${iconOnly ? 'flex-1 min-w-0' : 'w-16 shrink-0'}`} aria-hidden="true">{selected?.preview}</span>
+          {!iconOnly && <span className="truncate flex-1 text-left">{selected?.label ?? value}</span>}
           <ChevronDown size={12} />
         </>}
       </button>
       {isOpen && <PalettePanel anchorRef={buttonRef} menuRef={menuRef}>
         <div id={id} role="dialog" aria-label={label}>
           <div className="text-xs font-medium text-gray-500 mb-2 px-1">{label}</div>
+          {searchable && <input type="search" aria-label={`Search ${label.toLowerCase()}`} value={query}
+            className="w-full mb-3 px-2 py-1 border rounded text-sm" placeholder="Search icons…"
+            onChange={e => setQuery(e.target.value)} onKeyDown={e => {
+              if (e.key === 'ArrowDown' || e.key === 'Enter') {
+                e.preventDefault(); menuRef.current?.querySelector<HTMLButtonElement>('[role="radio"]')?.focus();
+              }
+              e.stopPropagation();
+            }} />}
+          {filtered.length === 0 && <p role="status" className="text-sm text-gray-500">No matches</p>}
           <div
             role="radiogroup"
             aria-label={label}
@@ -100,7 +120,7 @@ export function PreviewSelect<V extends string | number>({
               buttons[next]?.focus();
             }}
           >
-            {options.map((o) => {
+            {filtered.map((o) => {
               const active = o.value === value;
               return <button
                 key={String(o.value)}
@@ -109,8 +129,13 @@ export function PreviewSelect<V extends string | number>({
                 aria-checked={active}
                 aria-label={o.label}
                 title={o.label}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault(); e.stopPropagation(); e.currentTarget.click();
+                  }
+                }}
                 onClick={() => {
-                  if (!active) onChange(o.value);
+                  if (!active || alwaysChoose) onChange(o.value);
                   if (closeOnSelect) { setOpen(false); buttonRef.current?.focus(); }
                 }}
                 className={`flex flex-col items-stretch rounded overflow-hidden border ${active ? 'border-blue-500 ring-1 ring-blue-300' : 'border-gray-200 hover:border-gray-400'}`}

@@ -33,6 +33,7 @@ export interface SliderWithReadoutProps {
   /** Display-only suffix on the readout (e.g. '%'). */
   unit?: string;
   onCommit: (value: number) => void;
+  onEditCommit?: (value: number) => void;
   onPreview?: (value: number) => void;
   onScrubStart?: () => void;
   onScrubCancel?: () => void;
@@ -48,6 +49,7 @@ export const SliderWithReadout: React.FC<SliderWithReadoutProps> = ({
   step = 1,
   unit,
   onCommit,
+  onEditCommit,
   onPreview,
   onScrubStart,
   onScrubCancel,
@@ -123,10 +125,10 @@ export const SliderWithReadout: React.FC<SliderWithReadoutProps> = ({
       draftRef.current = v;
       setDraft(v);
       if (onPreviewRef.current) onPreviewRef.current(v / scaleRef.current);
-      else onCommitRef.current(v / scaleRef.current); // legacy continuous mode
+      else onCommitRef.current(v / scaleRef.current); // continuous mode (without a scrub session)
     } else {
       // Keyboard nudge on a focused slider: discrete commit per press.
-      onCommitRef.current(v / scaleRef.current);
+      (onEditCommit ?? onCommit)(v / scaleRef.current);
     }
   };
 
@@ -170,6 +172,7 @@ export const SliderWithReadout: React.FC<SliderWithReadoutProps> = ({
           spec={readoutSpec}
           unit={unit}
           onCommit={(v) => onCommit(v / scale)}
+          onEditCommit={onEditCommit && ((v) => onEditCommit(v / scale))}
           onPreview={onPreview && ((v) => onPreview(v / scale))}
           onScrubStart={onScrubStart}
           onScrubCancel={onScrubCancel}

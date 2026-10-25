@@ -11,8 +11,7 @@ import type { Slide, SlideElement, ObjectMeta } from '../types/presentation';
 export { groupRuns } from '../utils/presenterAdvance';
 export type { GroupRun } from '../utils/presenterAdvance';
 
-/** Maximal contiguous slide-group runs of the current deck (incl. the
- *  legacy autoAdvance collab shim). */
+/** Maximal contiguous slide-group runs of the current deck. */
 export function useGroupRuns(): GroupRun[] {
   const slides = usePresentationStore((s) => s.presentation.slides);
   const order = usePresentationStore((s) => s.presentation.slideOrder);

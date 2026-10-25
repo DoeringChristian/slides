@@ -6,8 +6,8 @@
  * object and playback morphs between what used to be two different objects.
  *
  * Conflict policy (user decision): TARGET WINS — on slides where both objects
- * exist, the target's element is kept and the source's is dropped there (the
- * dropped slide ids are reported so the UI can tell the user).
+ * are visible, the target is kept and the source is dropped (reported).
+ * A visible source replaces a hidden target; hidden/hidden keeps the target.
  *
  * These helpers are pure slide-map rewrites; the object registry
  * (`presentation.objects`) is owned by the caller (the store action drops the
@@ -55,8 +55,14 @@ export function canMergeObjects(
   return sourceExists;
 }
 
-/** Informational: slide ids where BOTH objects exist — the slides on which a
- *  merge would drop the source element (target wins). */
+/** Hidden keyframes carry animation geometry but are not visible conflicts.
+ * A visible counterpart wins; otherwise the existing target wins. */
+export function mergeKeyframeDecision(source: SlideElement, target?: SlideElement): 'source' | 'target' | 'conflict' {
+  if (!target || (source.visible !== false && target.visible === false)) return 'source';
+  return source.visible !== false && target.visible !== false ? 'conflict' : 'target';
+}
+
+/** Visible conflicts only: the target wins and the user is notified. */
 export function mergeObjectConflictSlideIds(
   slides: Record<string, Slide>,
   targetId: string,
@@ -64,7 +70,8 @@ export function mergeObjectConflictSlideIds(
   slideOrder?: readonly string[],
 ): string[] {
   return slideIds(slides, slideOrder).filter(
-    (sid) => slides[sid].elements[sourceId] !== undefined && slides[sid].elements[targetId] !== undefined,
+    (sid) => !!slides[sid].elements[sourceId]
+      && mergeKeyframeDecision(slides[sid].elements[sourceId], slides[sid].elements[targetId]) === 'conflict',
   );
 }
 
@@ -132,9 +139,22 @@ export function mergeObjectInSlides(
     const src = slide.elements[sourceId];
     if (!src) continue;
     const { [sourceId]: _removed, ...remainingElements } = slide.elements;
-    if (slide.elements[targetId]) {
-      // Conflict: keep the target's element, drop the source's here.
-      droppedOnSlides.push(sid);
+    const decision = mergeKeyframeDecision(src, slide.elements[targetId]);
+    // A losing container's separate label must not cover the winning label.
+    // Preserve that hidden keyframe/identity for history and other slides.
+    const winnerId = decision === 'source' ? sourceId : targetId;
+    const loserId = decision === 'source' ? targetId : sourceId;
+    const winnerHasLabel = Object.values(slide.elements).some(el => el.type === 'text' && el.containerId === winnerId);
+    if (winnerHasLabel && slide.elements[loserId]) {
+      for (const [id, el] of Object.entries(remainingElements)) {
+        if (el.type === 'text' && el.containerId === loserId) {
+          const { containerId: _displacedContainer, ...detached } = el;
+          remainingElements[id] = { ...detached, visible: false };
+        }
+      }
+    }
+    if (decision !== 'source') {
+      if (decision === 'conflict') droppedOnSlides.push(sid);
       merged[sid] = {
         ...slide,
         elements: remainingElements,
@@ -149,7 +169,7 @@ export function mergeObjectInSlides(
           ...remainingElements,
           [targetId]: { ...src, id: targetId } as SlideElement,
         },
-        elementOrder: slide.elementOrder.map((id) => (id === sourceId ? targetId : id)),
+        elementOrder: slide.elementOrder.filter(id => id !== targetId).map((id) => (id === sourceId ? targetId : id)),
       };
     }
   }

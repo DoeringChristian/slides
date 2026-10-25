@@ -1,3 +1,6 @@
+import { ColorPicker } from '../toolbar/ColorPicker';
+import { withPaintAlpha, withPaintRgb } from '../../utils/paintColor';
+import type { CurrentChange } from '../../store/currentMutation';
 import { ScrubInput } from '../controls/ScrubInput';
 import { ScrubPair } from '../controls/ScrubPair';
 import { SliderWithReadout } from '../controls/SliderWithReadout';
@@ -15,9 +18,9 @@ import type { ScrubSpec } from '../../utils/scrub';
  * live-preview protocol onto one shared session:
  *   onScrubStart → begin, onPreview → preview, onCommit → end,
  *   onScrubCancel → cancel.
- * Discrete edits (typed values, arrow keys) still land in `end`, which
- * degrades to a plain update when no scrub is in flight — those stay
- * individual undo entries by design.
+ * Discrete edits (typed values, arrow keys) use `commitDiscrete`. Changes
+ * are lazy callbacks: the row resolves their current element only after
+ * cancelling another scrub, or inside this gesture's owned write scope.
  *
  * (They live in their own file, not Property.tsx, so react-refresh sees a
  * components-only module.)
@@ -25,8 +28,20 @@ import type { ScrubSpec } from '../../utils/scrub';
 
 interface ScrubEditorBaseProps<T extends object> {
   element: T;
-  update: (changes: Partial<T>) => void;
+  update: (changes: CurrentChange<T>) => void;
   syncFields: string[];
+}
+
+export function ColorEditor<T extends object>({ element, update, syncFields, field, label, allowTransparent }: ScrubEditorBaseProps<T> & {
+  field: string; label: string; allowTransparent?: boolean;
+}) {
+  const scrub = useScrubCommit({ element, update, syncFields });
+  const alpha = (v: number): CurrentChange<T> => current => setNestedPartial(current, field, withPaintAlpha(getNested(current, field) as string, v / 100));
+  return <ColorPicker color={getNested(element, field) as string} label={label} allowTransparent={allowTransparent} palette={field === 'fill' ? 'fill' : 'stroke'}
+    onChange={v => scrub.commitDiscrete(current => setNestedPartial(current, field, v))}
+    onRgbChange={v => scrub.commitDiscrete(current => setNestedPartial(current, field, withPaintRgb(getNested(current, field) as string, v)))}
+    alphaControl={{ onScrubStart: scrub.begin, onPreview: v => scrub.preview(alpha(v)),
+      onCommit: v => scrub.end(alpha(v)), onEditCommit: v => scrub.commitDiscrete(alpha(v)), onScrubCancel: scrub.cancel }} />;
 }
 
 export function NumberEditor<T extends object>({
@@ -46,8 +61,9 @@ export function NumberEditor<T extends object>({
       unit={unit}
       disabled={disabled}
       onScrubStart={scrub.begin}
-      onPreview={(v) => scrub.preview(changesFor(element, v))}
-      onCommit={(v) => scrub.end(changesFor(element, v))}
+      onPreview={(v) => scrub.preview(current => changesFor(current, v))}
+      onCommit={(v) => scrub.end(current => changesFor(current, v))}
+      onEditCommit={(v) => scrub.commitDiscrete(current => changesFor(current, v))}
       onScrubCancel={scrub.cancel}
     />
   );
@@ -64,7 +80,7 @@ export function PairEditor<T extends object>({
   // One session covers both axes (they share syncFields, so the snapshot
   // restores both); only one axis scrubs at a time.
   const scrub = useScrubCommit({ element, update, syncFields });
-  const changesFor = (i: 0 | 1, v: number) => setNestedPartial(element, keys[i], v);
+  const changesFor = (current: T, i: 0 | 1, v: number) => setNestedPartial(current, keys[i], v);
   return (
     <ScrubPair
       values={[
@@ -74,8 +90,9 @@ export function PairEditor<T extends object>({
       labels={labels}
       specs={[spec, spec]}
       onScrubStart={() => scrub.begin()}
-      onPreview={(i, v) => scrub.preview(changesFor(i, v))}
-      onCommit={(i, v) => scrub.end(changesFor(i, v))}
+      onPreview={(i, v) => scrub.preview(current => changesFor(current, i, v))}
+      onCommit={(i, v) => scrub.end(current => changesFor(current, i, v))}
+      onEditCommit={(i, v) => scrub.commitDiscrete(current => changesFor(current, i, v))}
       onScrubCancel={() => scrub.cancel()}
       compact
       disabled={disabled}
@@ -102,8 +119,9 @@ export function RangeEditor<T extends object>({
       scale={scale}
       disabled={disabled}
       onScrubStart={scrub.begin}
-      onPreview={(v) => scrub.preview(changesFor(element, v))}
-      onCommit={(v) => scrub.end(changesFor(element, v))}
+      onPreview={(v) => scrub.preview(current => changesFor(current, v))}
+      onCommit={(v) => scrub.end(current => changesFor(current, v))}
+      onEditCommit={(v) => scrub.commitDiscrete(current => changesFor(current, v))}
       onScrubCancel={scrub.cancel}
     />
   );

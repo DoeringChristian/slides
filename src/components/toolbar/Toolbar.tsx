@@ -1,3 +1,4 @@
+import { IconsMenu } from './IconsMenu';
 import React from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
@@ -133,6 +134,7 @@ export const Toolbar: React.FC = () => {
         </button>
       ))}
 
+      <IconsMenu />
       <div className="w-px h-6 bg-gray-300 mx-1" />
 
       <button onClick={handleCopy} className="p-1.5 rounded hover:bg-gray-100 text-gray-600 disabled:opacity-30" disabled={selectedIds.length === 0} title="Copy (Ctrl+C)">

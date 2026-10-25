@@ -5,7 +5,6 @@ import {
   Property,
   ColorProperty,
   NumberProperty,
-  RangeProperty,
   PreviewSelectProperty,
   TextPreviewProperty,
 } from './Property';
@@ -60,9 +59,10 @@ const TEXT_PROPERTIES: Property<TextElement>[] = [
     transitionGroup: 'lineHeight', min: 0.5, max: 3,
     step: 0.1, scrubStep: 0.02, precision: 2,
   }),
-  new RangeProperty<TextElement>({
+  new NumberProperty<TextElement>({
     key: 'opacity', label: 'Opacity',
     transitionGroup: 'opacity', min: 0, max: 100, scale: 100,
+    step: 1, scrubStep: 0.5, precision: 1,
   }),
 ];
 

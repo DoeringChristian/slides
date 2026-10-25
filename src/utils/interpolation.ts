@@ -1,6 +1,10 @@
+import { interpolateVectorGeometry } from './vectorGeometry';
+import { parsePaintColor, formatPaintColor, noPaint } from './paintColor';
+import { stationaryPathPair } from './pathInterpolation';
+import { bsplineExtensionPair } from './bsplineExtension';
+import { pathGeometryInBox, pathPointsInSlide, slidePointToPath } from './pathEditing';
 import type { SlideElement, TextElement, ShapeElement, ImageElement, EasingType, ArrowheadType } from '../types/presentation';
-import { clamp } from './geometry';
-import { resamplePath, catmullTangents } from './pathShapes';
+import { resamplePath, catmullTangents, supportsPathClosure, pathEndpointDirection, type PathClosureEffect, type PathExtensionEffect, type ExtendEffect } from './pathShapes';
 import { lerpMorphedPaths, morphShapeOutlines, outlineIsClosed } from './morphGeometry';
 
 export function lerp(a: number, b: number, t: number): number {
@@ -24,6 +28,7 @@ function applyEasing(t: number, easing: EasingType | undefined): number {
     case 'typewriter':
     case 'fadebyglyph':
     case 'create':
+    case 'extend':
     case 'wipe':
     case 'slidein':
     case 'grow':
@@ -124,36 +129,15 @@ function lerpColorEased(a: string, b: string, t: number, easing: EasingType | un
   return lerpColor(a, b, applyEasing(t, easing));
 }
 
-function parseHex(hex: string): [number, number, number] {
-  const h = hex.replace('#', '');
-  if (h.length === 3) {
-    return [
-      parseInt(h[0] + h[0], 16),
-      parseInt(h[1] + h[1], 16),
-      parseInt(h[2] + h[2], 16),
-    ];
-  }
-  return [
-    parseInt(h.slice(0, 2), 16),
-    parseInt(h.slice(2, 4), 16),
-    parseInt(h.slice(4, 6), 16),
-  ];
-}
-
-function toHex(r: number, g: number, b: number): string {
-  const rr = clamp(Math.round(r), 0, 255).toString(16).padStart(2, '0');
-  const gg = clamp(Math.round(g), 0, 255).toString(16).padStart(2, '0');
-  const bb = clamp(Math.round(b), 0, 255).toString(16).padStart(2, '0');
-  return `#${rr}${gg}${bb}`;
-}
-
 export function lerpColor(a: string, b: string, t: number): string {
-  if (!a || !b || !a.startsWith('#') || !b.startsWith('#')) {
-    return t < 0.5 ? a : b;
-  }
-  const [ar, ag, ab] = parseHex(a);
-  const [br, bg, bb] = parseHex(b);
-  return toHex(lerp(ar, br, t), lerp(ag, bg, t), lerp(ab, bb, t));
+  const ca = parsePaintColor(a), cb = parsePaintColor(b);
+  if (!ca || !cb) return t < 0.5 ? a : b;
+  // Missing paint fades the other colour without introducing a black fringe.
+  const rgbA = noPaint(a) ? cb : ca;
+  const rgbB = noPaint(b) ? ca : cb;
+  if (t === 0 && noPaint(a)) return a;
+  if (t === 1 && noPaint(b)) return b;
+  return formatPaintColor({ r: lerp(rgbA.r, rgbB.r, t), g: lerp(rgbA.g, rgbB.g, t), b: lerp(rgbA.b, rgbB.b, t), a: lerp(ca.a, cb.a, t) });
 }
 
 function lerpPoints(a: number[], b: number[], t: number): number[] {
@@ -344,11 +328,46 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
     visible: true,
   };
 
+  // Compound vectors must never enter the single-outline morph.
+  // Crossfade unsupported topology (including text-vector) at the independently
+  // interpolated design box. Same topology interpolates normalized coordinates.
+  const aVector = a.type === 'shape' && a.shapeType === 'vector';
+  const bVector = b.type === 'shape' && b.shapeType === 'vector';
+  if ((aVector || bVector) && (a.type === 'shape' || a.type === 'text') && (b.type === 'shape' || b.type === 'text')) {
+    const geometryT = applyEasing(t, a.type === b.type ? tr.controlPoints ?? 'linear' : tr.morph ?? 'const');
+    const box = { x: base.x, y: base.y, width: base.width, height: base.height, rotation: base.rotation, opacity: base.opacity, visible: true };
+    // Geometry progress never owns paint or box progress, even at const cuts.
+    const paint = a.type === 'shape' && b.type === 'shape' ? {
+      fill: lerpColor(a.fill, b.fill, applyEasing(t, tr.fill)),
+      fillStyle: applyEasing(t, tr.fill) < 0.5 ? a.fillStyle : b.fillStyle,
+      stroke: lerpColor(a.stroke, b.stroke, applyEasing(t, tr.stroke)),
+      strokeWidth: lerpEased(a.strokeWidth, b.strokeWidth, t, tr.strokeWidth),
+    } : {};
+    const layer = (element: SlideElement): SlideElement => ({ ...element, ...box,
+      ...(element.type === 'shape' ? paint : {}),
+      ...(element.type === 'shape' && element.shapeType === 'path' ? pathGeometryInBox(element, box.width, box.height) : {}),
+    });
+    if (aVector && bVector && a.geometry && b.geometry) {
+      const geometry = interpolateVectorGeometry(a.geometry, b.geometry, geometryT);
+      if (geometry) return { ...b, ...box, ...paint, geometry };
+    }
+    const from = layer(a), to = layer(b);
+    if (geometryT <= 0) return from;
+    if (geometryT >= 1) return to;
+    return { ...to, _vectorCrossfade: {
+      from: { ...from, opacity: baseOpacity * (1 - geometryT) },
+      to: { ...to, opacity: baseOpacity * geometryT },
+    } } as SlideElement & { _vectorCrossfade: { from: SlideElement; to: SlideElement } };
+  }
+
   // Text elements
   if (a.type === 'text' && b.type === 'text') {
     const ta = a as TextElement;
     const tb = b as TextElement;
     const contentEasing = tr.content ?? 'const';
+    const textLayout = t < 0.5 ? ta : tb;
+    const layoutFields = { textSizing: textLayout.textSizing, boundTextLayout: textLayout.boundTextLayout,
+      containerId: textLayout.containerId, boundTextBaselineHeight: textLayout.boundTextBaselineHeight };
 
     // Glyph-level content change. Both Write and Typewriter share the same
     // mechanics — the only differences are the per-glyph render formula
@@ -379,6 +398,7 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
         return {
           ...base,
           type: 'text',
+          ...layoutFields,
           text: sourceText,
           opacity: baseOpacity,
           style: {
@@ -398,6 +418,8 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
       return {
         ...base,
         type: 'text',
+        textSizing: tb.textSizing, boundTextLayout: tb.boundTextLayout,
+        containerId: tb.containerId, boundTextBaselineHeight: tb.boundTextBaselineHeight,
         text: tb.text,
         opacity: baseOpacity,
         style: {
@@ -419,6 +441,7 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
     const result: TextElement & { _dissolveText?: TextDissolveSource } = {
       ...base,
       type: 'text',
+      ...layoutFields,
       text: textResult.text,
       opacity: baseOpacity * textResult.opacityMultiplier,
       style: {
@@ -465,6 +488,7 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
         type: 'shape',
         shapeType: 'path',
         fill: lerpColor(sa.fill, sb.fill, fillT),
+        fillStyle: fillT < 0.5 ? sa.fillStyle : sb.fillStyle,
         stroke: lerpColor(sa.stroke, sb.stroke, strokeT),
         strokeWidth: lerpEased(sa.strokeWidth, sb.strokeWidth, t, tr.strokeWidth),
         cornerRadius: 0,
@@ -506,13 +530,82 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
       && (aCurve !== bCurve || aClosed !== bClosed
         || ((aIsBezier || bIsBezier) && !bezierPairLerp)
         || ((aCurve === 'smooth' || bCurve === 'smooth') && sa.points?.length !== sb.points?.length));
+    const closurePair = sa.shapeType === 'path' && sb.shapeType === 'path'
+      && aCurve === bCurve && aClosed !== bClosed && sa.points?.length === sb.points?.length
+      && supportsPathClosure(sa) && supportsPathClosure(sb);
+    let pathClosure: PathClosureEffect | undefined;
+    let pathExtension: PathExtensionEffect | undefined;
     let nextCurve: ShapeElement['curve'] | undefined = t < 0.5 ? sa.curve : sb.curve;
     let nextClosed: boolean | undefined = t < 0.5 ? sa.closed : sb.closed;
     let nextPoints: number[] | undefined;
     let nextTangents: number[] | undefined = t < 0.5 ? sa.tangents : sb.tangents;
     if (sa.points && sb.points) {
       const ease = tr.controlPoints ?? 'linear';
-      if (pathsMorph && t > 0 && t < 1) {
+      const splineExtension = t > 0 && t < 1 ? bsplineExtensionPair(sa, sb) : null;
+      const stationary = sa.shapeType === 'path' && sb.shapeType === 'path'
+        && t > 0 && t < 1 ? stationaryPathPair(sa, sb) : null;
+      if (t === 0 || t === 1) {
+        nextPoints = t === 0 ? sa.points : sb.points;
+        nextTangents = t === 0 ? sa.tangents : sb.tangents;
+      } else if (closurePair) {
+        const easedT = applyEasing(t, ease);
+        // Local design-box interpolation keeps authored pose/size independent
+        // of controlPoints. No world-pinning or global arc-length resampling.
+        const ag = pathGeometryInBox(sa, base.width, base.height);
+        const bg = pathGeometryInBox(sb, base.width, base.height);
+        nextPoints = ag.points!.map((v, i) => lerp(v, bg.points![i], easedT));
+        nextTangents = aIsBezier ? ag.tangents!.map((v, i) => lerp(v, bg.tangents![i], easedT))
+          : easedT < 0.5 ? sa.tangents : sb.tangents;
+        nextCurve = easedT < 0.5 ? sa.curve : sb.curve;
+        const progress = lerp(Number(aClosed), Number(bClosed), easedT);
+        nextClosed = progress === 1;
+        // Keep paint even when const geometry is already at an endpoint.
+        pathClosure = { progress, fillOpacity: lerp(Number(aClosed), Number(bClosed), fillT) };
+      } else if (splineExtension) {
+        const easedT = applyEasing(t, ease);
+        const endpoint = easedT === 0 ? sa : easedT === 1 ? sb : undefined;
+        // Const must keep the actual native representation, not just an
+        // approximation of its shape. Only normalization bookkeeping cancels.
+        const world = endpoint ? pathPointsInSlide(endpoint)
+          : splineExtension.a.map((v, i) => lerp(v, splineExtension.b[i], easedT));
+        nextPoints = [];
+        for (let i = 0; i < world.length; i += 2) {
+          const local = slidePointToPath({ ...sa, x: base.x, y: base.y, width: base.width, height: base.height, rotation: base.rotation }, world[i], world[i + 1]);
+          nextPoints.push(local.x, local.y);
+        }
+        nextCurve = endpoint ? endpoint.curve : 'linear';
+        nextTangents = undefined;
+        if (!endpoint) {
+          const direction = (end: 'start' | 'end') => {
+            const ad = pathEndpointDirection(sa.points!, aCurve, false, undefined, end);
+            const bd = pathEndpointDirection(sb.points!, bCurve, false, undefined, end);
+            const angle = lerpAngle(Math.atan2(ad.dy, ad.dx) * 180 / Math.PI,
+              Math.atan2(bd.dy, bd.dx) * 180 / Math.PI, easedT) * Math.PI / 180;
+            return { dx: Math.cos(angle), dy: Math.sin(angle) };
+          };
+          pathExtension = { startDirection: direction('start'), endDirection: direction('end') };
+        }
+      } else if (stationary) {
+        const easedT = applyEasing(t, ease);
+        // A const interior edit keeps the actual native endpoint topology,
+        // while paint and bbox properties retain their independent clocks.
+        const endpoint = stationary.interior ? easedT === 0 ? sa : easedT === 1 ? sb : undefined : undefined;
+        const world = endpoint ? pathPointsInSlide(endpoint)
+          : stationary.a.map((v, i) => lerp(v, stationary.b[i], easedT));
+        nextPoints = [];
+        for (let i = 0; i < world.length; i += 2) {
+          const local = slidePointToPath({ ...sa, x: base.x, y: base.y, width: base.width, height: base.height, rotation: base.rotation },
+            world[i], world[i + 1]);
+          nextPoints.push(local.x, local.y);
+        }
+        if (endpoint) {
+          nextCurve = endpoint.curve;
+          nextTangents = endpoint.tangents;
+        } else if (aIsBezier || (aCurve === 'smooth' && sa.points.length !== sb.points.length)) {
+          nextCurve = 'bezier';
+          nextTangents = stationary.aTangents.map((v, i) => lerp(v, stationary.bTangents[i], easedT));
+        }
+      } else if (pathsMorph && t > 0 && t < 1) {
         nextPoints = lerpMorphedPaths(
           sa.points, aCurve, aClosed, sa.tangents,
           sb.points, bCurve, bClosed, sb.tangents,
@@ -564,6 +657,7 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
       type: 'shape',
       shapeType: t < 0.5 ? sa.shapeType : sb.shapeType,
       fill: lerpColor(sa.fill, sb.fill, fillT),
+      fillStyle: fillT < 0.5 ? sa.fillStyle : sb.fillStyle,
       stroke: lerpColor(sa.stroke, sb.stroke, strokeT),
       strokeWidth: lerpEased(sa.strokeWidth, sb.strokeWidth, t, tr.strokeWidth),
       cornerRadius: lerpEased(sa.cornerRadius, sb.cornerRadius, t, tr.cornerRadius),
@@ -575,6 +669,8 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
       endHead: nextEndHead,
       _startArrowAlpha: startArrowAlpha,
       _endArrowAlpha: endArrowAlpha,
+      ...(pathClosure ? { _pathClosure: pathClosure } : {}),
+      ...(pathExtension ? { _pathExtension: pathExtension } : {}),
       startBinding: t < 0.5 ? sa.startBinding : sb.startBinding,
       endBinding: t < 0.5 ? sa.endBinding : sb.endBinding,
     } as ShapeElement & { _startArrowAlpha?: number; _endArrowAlpha?: number };
@@ -715,12 +811,40 @@ function buildVisibilityFx(
     case 'typewriter':  return mk('typewriter');
     case 'fadebyglyph': return mk('fadebyglyph');
     case 'create':      return mk('create',   { tipDraw: options?.create?.tipDraw });
+    // 'extend' is NOT a WriteEffect mode: it's pure geometry, so it rides on
+    // the element as `_extendFx` instead (see buildExtendFx).
     case 'wipe':        return mk('wipe',    { from: options?.wipe?.from });
     case 'slidein':     return mk('slidein', { from: options?.slidein?.from });
     case 'grow':        return mk('grow',    { anchor: options?.grow?.anchor });
     case 'iris':        return mk('iris',    { cx: options?.iris?.cx, cy: options?.iris?.cy });
     default:            return null;
   }
+}
+
+/** Try to build an `extend` descriptor for a visibility transition.
+ *
+ *  Unlike every `WriteEffect` mode this animation is pure GEOMETRY, so it does
+ *  not go through `_writeFx`/the presenter at all: the descriptor rides on the
+ *  element as `_extendFx` and `pathArrowGeometry` — the one geometry source the
+ *  editor canvas, presenter, standalone/viewer builds, Create and the PDF export
+ *  all funnel through — resolves it into an arc-length prefix of the path's own
+ *  route. The typed arrowheads then come out of that prefix's own endpoints, so
+ *  the end glyph rides the growing tip at its normal size and stroke.
+ *
+ *  Returns null for anything with no route to grow along (text, images, filled
+ *  primitives like rect/ellipse/star, degenerate vertex lists), which falls
+ *  through to the ordinary opacity ramp. `progress` spans the FULL transition
+ *  window and is already direction-mapped by the caller, so backward playback
+ *  simply retracts the path toward its first vertex. */
+function buildExtendFx(
+  element: SlideElement,
+  easing: import('../types/presentation').EasingType | undefined,
+  progress: number,
+): ExtendEffect | null {
+  if (easing !== 'extend' || element.type !== 'shape') return null;
+  const shape = element as ShapeElement;
+  if (shape.shapeType !== 'path' || (shape.points?.length ?? 0) < 4) return null;
+  return { progress: Math.max(0, Math.min(1, progress)) };
 }
 
 // Build an interpolated element for visibility transitions
@@ -746,6 +870,10 @@ export function interpolateWithVisibility(
   // Backward: disappearing element (A, which was B in forward) has the settings
   if (aVisible && !bVisible) {
     const easing = elA.transitions?.visibility ?? defaultVisibilityEasing(elA);
+    const extend = buildExtendFx(elA, easing, 1 - t);
+    if (extend) {
+      return { ...elA, visible: true, _extendFx: extend } as SlideElement & { _extendFx: ExtendEffect };
+    }
     const fx = buildVisibilityFx(easing, elA.transitions?.visibilityOptions, 1 - t, 'out');
     if (fx) {
       return { ...elA, visible: true, _writeFx: fx } as SlideElement & { _writeFx: WriteEffect };
@@ -761,6 +889,10 @@ export function interpolateWithVisibility(
   // !aVisible && bVisible
   const target = elB!;
   const easing = target.transitions?.visibility ?? defaultVisibilityEasing(target);
+  const extend = buildExtendFx(target, easing, t);
+  if (extend) {
+    return { ...target, visible: true, _extendFx: extend } as SlideElement & { _extendFx: ExtendEffect };
+  }
   const fx = buildVisibilityFx(easing, target.transitions?.visibilityOptions, t, 'in');
   if (fx) {
     return { ...target, visible: true, _writeFx: fx } as SlideElement & { _writeFx: WriteEffect };

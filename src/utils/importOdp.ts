@@ -1,3 +1,4 @@
+import { withPaintAlpha } from './paintColor';
 import JSZip from 'jszip';
 import type { Presentation, SlideBackground, SlideElement } from '../types/presentation';
 import { createPresentation, createSlide, createTextElement, createShapeElement, createImageElement, createResource } from './slideFactory';
@@ -253,13 +254,14 @@ export async function importOdp(file: File): Promise<Presentation> {
           }
         }
       } else if (tagName === 'rect') {
-        const fillColor = getGraphicPropFromStyle(child, styleMap, 'draw:fill-color') || '#4285f4';
-        const strokeColor = getGraphicPropFromStyle(child, styleMap, 'svg:stroke-color') || '#2962ff';
+        const fillColor = getGraphicPropFromStyle(child, styleMap, 'draw:fill') === 'none' ? '' : withPaintAlpha(getGraphicPropFromStyle(child, styleMap, 'draw:fill-color') || '#4285f4', parseFloat(getGraphicPropFromStyle(child, styleMap, 'draw:opacity') || '100') / 100);
+        const strokeColor = withPaintAlpha(getGraphicPropFromStyle(child, styleMap, 'svg:stroke-color') || '#2962ff', parseFloat(getGraphicPropFromStyle(child, styleMap, 'svg:stroke-opacity') || '100') / 100);
         const strokeWidthStr = getGraphicPropFromStyle(child, styleMap, 'svg:stroke-width');
         const strokeWidth = strokeWidthStr ? parseDimension(strokeWidthStr) : 0;
         const noStroke = getGraphicPropFromStyle(child, styleMap, 'draw:stroke') === 'none';
 
         const el = createShapeElement('rect', {
+          cornerRadius: parseDimension(child.getAttribute('draw:corner-radius')),
           x: pos.x,
           y: pos.y,
           width: Math.max(pos.width, 10),
@@ -271,8 +273,8 @@ export async function importOdp(file: File): Promise<Presentation> {
         });
         elements.push(el);
       } else if (tagName === 'ellipse' || tagName === 'circle') {
-        const fillColor = getGraphicPropFromStyle(child, styleMap, 'draw:fill-color') || '#4285f4';
-        const strokeColor = getGraphicPropFromStyle(child, styleMap, 'svg:stroke-color') || '#2962ff';
+        const fillColor = getGraphicPropFromStyle(child, styleMap, 'draw:fill') === 'none' ? '' : withPaintAlpha(getGraphicPropFromStyle(child, styleMap, 'draw:fill-color') || '#4285f4', parseFloat(getGraphicPropFromStyle(child, styleMap, 'draw:opacity') || '100') / 100);
+        const strokeColor = withPaintAlpha(getGraphicPropFromStyle(child, styleMap, 'svg:stroke-color') || '#2962ff', parseFloat(getGraphicPropFromStyle(child, styleMap, 'svg:stroke-opacity') || '100') / 100);
         const strokeWidthStr = getGraphicPropFromStyle(child, styleMap, 'svg:stroke-width');
         const strokeWidth = strokeWidthStr ? parseDimension(strokeWidthStr) : 0;
         const noStroke = getGraphicPropFromStyle(child, styleMap, 'draw:stroke') === 'none';
@@ -294,7 +296,7 @@ export async function importOdp(file: File): Promise<Presentation> {
         const x2 = parseDimension(child.getAttribute('svg:x2'));
         const y2 = parseDimension(child.getAttribute('svg:y2'));
 
-        const strokeColor = getGraphicPropFromStyle(child, styleMap, 'svg:stroke-color') || '#000000';
+        const strokeColor = withPaintAlpha(getGraphicPropFromStyle(child, styleMap, 'svg:stroke-color') || '#000000', parseFloat(getGraphicPropFromStyle(child, styleMap, 'svg:stroke-opacity') || '100') / 100);
         const strokeWidthStr = getGraphicPropFromStyle(child, styleMap, 'svg:stroke-width');
         const strokeWidth = strokeWidthStr ? parseDimension(strokeWidthStr) : 3;
 
@@ -304,6 +306,7 @@ export async function importOdp(file: File): Promise<Presentation> {
         const minY = Math.min(y1, y2);
 
         const el = createShapeElement('path', {
+        creationPreset: markerEnd ? 'arrow' : 'line',
           curve: 'linear',
           // Import fidelity: any end marker lifts to the classic triangle.
           ...(markerEnd ? { endHead: 'triangle' as const } : {}),
@@ -321,8 +324,8 @@ export async function importOdp(file: File): Promise<Presentation> {
         const enhancedGeoms = child.getElementsByTagNameNS('urn:oasis:names:tc:opendocument:xmlns:drawing:1.0', 'enhanced-geometry');
         const geomType = enhancedGeoms.length > 0 ? enhancedGeoms[0].getAttribute('draw:type') : null;
 
-        const fillColor = getGraphicPropFromStyle(child, styleMap, 'draw:fill-color') || '#4285f4';
-        const strokeColor = getGraphicPropFromStyle(child, styleMap, 'svg:stroke-color') || '#2962ff';
+        const fillColor = getGraphicPropFromStyle(child, styleMap, 'draw:fill') === 'none' ? '' : withPaintAlpha(getGraphicPropFromStyle(child, styleMap, 'draw:fill-color') || '#4285f4', parseFloat(getGraphicPropFromStyle(child, styleMap, 'draw:opacity') || '100') / 100);
+        const strokeColor = withPaintAlpha(getGraphicPropFromStyle(child, styleMap, 'svg:stroke-color') || '#2962ff', parseFloat(getGraphicPropFromStyle(child, styleMap, 'svg:stroke-opacity') || '100') / 100);
         const strokeWidthStr = getGraphicPropFromStyle(child, styleMap, 'svg:stroke-width');
         const strokeWidth = strokeWidthStr ? parseDimension(strokeWidthStr) : 0;
         const noStroke = getGraphicPropFromStyle(child, styleMap, 'draw:stroke') === 'none';

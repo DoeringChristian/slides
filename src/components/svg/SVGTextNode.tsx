@@ -4,7 +4,7 @@ import type { SvgTextDoc } from '../../utils/textLayout';
 import { SVGTextPaths } from './SVGTextPaths';
 import { parseBlocks, getBlockFontMultiplier } from '../canvas/CustomMarkdownRenderer';
 import { measureBlockHeight } from '../../utils/textHitTest';
-import { TEXT_BOX_PADDING } from '../../utils/constants';
+import { textInsets } from '../../utils/boundTextLayout';
 
 interface Props {
   element: TextElement;
@@ -38,7 +38,7 @@ export const SVGTextNode: React.FC<Props> = React.memo(({
 
     const { fontSize, fontFamily, fontWeight, lineHeight } = style;
     const lineHeightMultiplier = lineHeight || 1.2;
-    const contentWidth = width - TEXT_BOX_PADDING * 2;
+    const contentWidth = width - textInsets(element) * 2;
     const blocks = parseBlocks(text);
 
     let totalHeight = 0;
@@ -53,7 +53,7 @@ export const SVGTextNode: React.FC<Props> = React.memo(({
       );
     }
 
-    const renderedContentHeight = totalHeight + TEXT_BOX_PADDING * 2;
+    const renderedContentHeight = totalHeight + textInsets(element) * 2;
     return Math.max(element.height, renderedContentHeight);
   }, [element]);
 

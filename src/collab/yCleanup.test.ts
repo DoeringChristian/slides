@@ -41,7 +41,7 @@ const base = {
 const text: TextElement = {
   ...base,
   id: 'text',
-  type: 'text',
+  type: 'text', textSizing: 'user-width', boundTextLayout: 'padded',
   text: 'hello',
   style: {
     fontFamily: 'Inter',
@@ -59,7 +59,7 @@ const text: TextElement = {
 const rect: ShapeElement = {
   ...base,
   id: 'rect',
-  type: 'shape',
+  type: 'shape', creationPreset: 'rect',
   shapeType: 'rect',
   fill: '#fff',
   stroke: '#000',

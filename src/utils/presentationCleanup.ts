@@ -58,7 +58,7 @@ function isResourceReferencedInTemplates(
 }
 
 /**
- * Load-time repair for decks corrupted before `deleteSlide` learned to GC:
+ * Load-time registry integrity repair:
  * drops object-registry entries with zero element occurrences on any slide
  * (ghost objects) and resources referenced by no slide (and no template).
  * Idempotent — a clean deck is returned as the same object, unchanged.
@@ -117,6 +117,21 @@ function removeElementFromSlides(
       continue;
     }
     const { [elementId]: _removed, ...remainingElements } = slide.elements;
+    // Purging (unlike hiding) removes the target permanently. Detach only
+    // references, leaving the stored world geometry of connectors unchanged.
+    for (const [id, element] of Object.entries(remainingElements)) {
+      if (element.type === 'shape') {
+        const start = element.startBinding?.elementId === elementId;
+        const end = element.endBinding?.elementId === elementId;
+        if (start || end) remainingElements[id] = {
+          ...element,
+          ...(start ? { startBinding: null } : {}),
+          ...(end ? { endBinding: null } : {}),
+        };
+      } else if (element.type === 'group' && element.childIds.includes(elementId)) {
+        remainingElements[id] = { ...element, childIds: element.childIds.filter(id => id !== elementId) };
+      }
+    }
     cleaned[sid] = {
       ...slide,
       elements: remainingElements,

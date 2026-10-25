@@ -1,4 +1,14 @@
-import React, { useRef, useCallback, useMemo, useState, useEffect, useLayoutEffect, type DragEvent } from 'react';
+import { SVGTextAutoFitHandle } from './SVGTextAutoFitHandle';
+import { canAutoFitText } from '../../utils/textAutoFit';
+import { textHoverOwner } from '../../utils/textHoverOwner';
+import { autoFitText, hasPendingTextFinish, subscribeTextFinishes, textFinishRevision } from '../../store/textEditSession';
+import { getActiveDoc } from '../../collab/yDocAdapter';
+import { boundTextMeasurementKey } from '../../utils/boundTextLayout';
+import { readSlideForMutation } from '../../store/currentMutation';
+import { updateShapeStyleFromCurrent } from '../../store/shapeStyleMutation';
+import { planElementTranslation } from '../../utils/elementTranslation';
+import { screenPixelsToSlide } from '../../utils/screenSpace';
+import React, { useSyncExternalStore, useRef, useCallback, useMemo, useState, useEffect, useLayoutEffect, type DragEvent } from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useActiveSlide, useObjectElements } from '../../store/selectors';
@@ -10,9 +20,11 @@ import { SVGGridOverlay } from './SVGGridOverlay';
 import { SVGAlignmentGuides } from './SVGAlignmentGuides';
 import { SVGMarginGuides } from './SVGMarginGuides';
 import { SVGHoverOverlay } from './SVGHoverOverlay';
+import { type ConnectorDockCue, supportsConnectorDocks } from '../../utils/connectorUtils';
 import { SVGConnectorHighlight } from './SVGConnectorHighlight';
 import { SVGDrawingPreview, SVGPolyDraftPreview } from './SVGDrawingPreview';
-import { SVGDragPreview, type DragPreviewState } from './SVGDragPreview';
+import { projectGestureScene, type GesturePatch } from '../../utils/gestureProjection';
+import { readGestureSlide } from './useCanvasGestureGuard';
 import { SVGSelectionDrag } from './SVGSelectionDrag';
 import { SVGSelectionTransformer } from './SVGSelectionTransformer';
 import { SVGPeerSelectionOverlay } from './SVGPeerSelectionOverlay';
@@ -26,11 +38,10 @@ import { SelectionActionBar } from '../canvas/SelectionActionBar';
 import { computeGuides } from '../../hooks/useAlignmentGuides';
 import { getMarginLayout, getMarginBounds } from '../../utils/marginLayouts';
 import { snapToGrid as snapToGridFn } from '../../utils/geometry';
-import { isShiftHeld } from '../../utils/keyboard';
+import { isShiftHeld, isMetaHeld } from '../../utils/keyboard';
 import { SLIDE_WIDTH, SLIDE_HEIGHT, CANVAS_PADDING } from '../../utils/constants';
 import { loadImageFile, loadPdfFile, loadVideoFile, duplicateElements } from '../../utils/slideFactory';
 import { isPointOnTextContent } from '../../utils/textHitTest';
-import { isLinePath } from '../../utils/pathShapes';
 import {
   attachLabelMasks,
   createBoundLabel,
@@ -67,9 +78,11 @@ function toLocalPoint(el: SlideElement, pos: { x: number; y: number }): { x: num
  * is re-read after the async layout hop — the label may have been deleted or
  * mutated in between.
  */
-function refitBoundLabel(textId: string): void {
+function refitBoundLabel(textId: string, canRefit: () => boolean): void {
+  if (!canRefit()) return;
   const slideId = useEditorStore.getState().activeSlideId;
-  const currentSlide = usePresentationStore.getState().presentation.slides[slideId];
+  if (hasPendingTextFinish(slideId, textId)) return;
+  const currentSlide = readSlideForMutation(slideId);
   const label = currentSlide?.elements[textId];
   if (!label || label.type !== 'text') return;
   const cid = (label as TextElement).containerId;
@@ -79,24 +92,26 @@ function refitBoundLabel(textId: string): void {
 
   const text = (label as TextElement).text || '';
   const style = (label as TextElement).style;
-  layoutSvgText(text, style, labelWrapWidthFor(container)).then(
+  const activeDoc = getActiveDoc();
+  const presentationId = usePresentationStore.getState().presentation.id;
+  const signature = boundTextMeasurementKey(container, label);
+  layoutSvgText(text, style, labelWrapWidthFor(container, label)).then(
     (doc) => {
-      const s = usePresentationStore.getState().presentation.slides[slideId];
+      if (!canRefit() || hasPendingTextFinish(slideId, textId)) return;
+      const s = readSlideForMutation(slideId);
       const lbl = s?.elements[textId];
       const cont = s?.elements[cid];
       if (!lbl || lbl.type !== 'text' || !cont) return;
       const cur = lbl as TextElement;
-      // Text changed while measuring → stale doc; the new text's own layout
-      // will re-enter through onLayout. (A style change mid-flight re-enters
-      // the same way, so the last fit always wins — no staleness check
-      // possible on style: the collab path rebuilds style object identities.)
-      if ((cur.text || '') !== text) return;
+      if (useEditorStore.getState().activeSlideId !== slideId ||
+          getActiveDoc() !== activeDoc || usePresentationStore.getState().presentation.id !== presentationId ||
+          boundTextMeasurementKey(cont, lbl) !== signature) return;
       const fit = fitLabelToDoc(cont, cur, doc);
       const updates: Array<{ elementId: string; changes: Partial<SlideElement> }> = [];
       if (fit.label) updates.push({ elementId: textId, changes: fit.label });
       if (fit.container) updates.push({ elementId: cid, changes: fit.container });
       if (updates.length > 0) {
-        usePresentationStore.getState().updateElements(slideId, updates);
+        usePresentationStore.getState().updateElements(slideId, updates, true);
       }
     },
     () => {}, // layout failure → renderer falls back too; keep the old box
@@ -114,6 +129,7 @@ export const SVGSlideCanvas: React.FC = () => {
   const setSelectedElements = useEditorStore((s) => s.setSelectedElements);
   const clearSelection = useEditorStore((s) => s.clearSelection);
   const setEditingTextId = useEditorStore((s) => s.setEditingTextId);
+  useSyncExternalStore(subscribeTextFinishes, textFinishRevision, textFinishRevision);
   const editingTextId = useEditorStore((s) => s.editingTextId);
     const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const showGrid = useEditorStore((s) => s.showGrid);
@@ -135,9 +151,21 @@ export const SVGSlideCanvas: React.FC = () => {
   const objectElements = useObjectElements();
 
   const [dragGuides, setDragGuides] = useState<Guide[]>([]);
-  const [connectorHighlightId, setConnectorHighlightId] = useState<string | null>(null);
-  const [dragPreview, setDragPreview] = useState<DragPreviewState[] | null>(null);
-  const [transformPreview, setTransformPreview] = useState<DragPreviewState | null>(null);
+  const [connectorHighlight, setConnectorHighlight] = useState<{ elementId: string; dock?: ConnectorDockCue | null } | null>(null);
+  const setConnectorHighlightId = useCallback((elementId: string | null, dock?: ConnectorDockCue | null) => {
+    setConnectorHighlight(elementId ? { elementId, dock } : null);
+  }, []);
+  const [gesturePreview, setGesturePreview] = useState<{ slideId: string; elements: SlideElement[] } | null>(null);
+  const previewActiveRef = useRef(false);
+  const canRefit = useCallback(() => !previewActiveRef.current && !useEditorStore.getState().editingTextId, []);
+  const clearGesturePreview = useCallback(() => { previewActiveRef.current = false; setGesturePreview(null); }, []);
+  const publishGesturePreview = useCallback((patches: GesturePatch[], batch = true) => {
+    previewActiveRef.current = true;
+    const source = readGestureSlide();
+    if (source) setGesturePreview({ slideId: source.id, elements: projectGestureScene(source, patches, batch) });
+  }, []);
+  const [pathPointEditing, setPathPointEditing] = useState(false);
+  const [textPreview, setTextPreview] = useState<{ slideId: string; label: TextElement; patches: GesturePatch[] } | null>(null);
 
   // Pending scroll adjustment after zoom (applied in useLayoutEffect)
   const pendingScrollRef = useRef<{ left: number; top: number } | null>(null);
@@ -181,6 +209,10 @@ export const SVGSlideCanvas: React.FC = () => {
     return attachLabelMasks(list, bgColor);
   }, [slide]);
 
+  const displayElements = gesturePreview?.slideId === activeSlideId ? gesturePreview.elements
+    : textPreview && textPreview.slideId === activeSlideId && textPreview.label.id === editingTextId && slide
+      ? projectGestureScene(slide, textPreview.patches, true, true) : elements;
+
   // Sole selected visible path shape (2-point lines are just degenerate
   // polys) — gets the unified vertex/endpoint/tangent handles instead of
   // the standard transformer.
@@ -194,17 +226,17 @@ export const SVGSlideCanvas: React.FC = () => {
   }, [selectedElementIds, slide]);
 
   // Sole selected unlocked shape that supports the on-canvas corner-radius
-  // handle: rects, and closed LINEAR paths (cornerRadius is forced to 0 for
+  // handle: rects, and LINEAR paths with corners (cornerRadius is forced to 0 for
   // every other configuration).
   const soleSelectedCornerElement = useMemo(() => {
     if (selectedElementIds.length !== 1 || !slide) return null;
     const el = slide.elements[selectedElementIds[0]];
     if (!el || !el.visible || el.locked || el.type !== 'shape') return null;
     const s = el as ShapeElement;
-    const closedLinearPath = s.shapeType === 'path'
-      && (s.closed ?? false)
+    const linearPath = s.shapeType === 'path'
+      && (s.points?.length ?? 0) >= 6
       && (s.curve ?? 'linear') === 'linear';
-    return s.shapeType === 'rect' || closedLinearPath ? s : null;
+    return s.shapeType === 'rect' || linearPath ? s : null;
   }, [selectedElementIds, slide]);
 
   const justFinishedSelectionDrag = useRef(false);
@@ -215,10 +247,10 @@ export const SVGSlideCanvas: React.FC = () => {
   // Drawing hook (pointer-based — mouse, touch, stylus all flow through here).
   // Gets the connector-highlight setter so bind-while-drawing can outline the
   // shape a line/arrow endpoint is about to bind to.
-  const { drawState, guides: drawingGuides, polyDraft, handlePointerDown: handleDrawPointerDown, handlePointerMove: handleDrawPointerMove, handlePointerUp: handleDrawPointerUp, justFinishedDrawing } = useSVGDrawing(setConnectorHighlightId);
+  const { drawState, guides: drawingGuides, polyDraft, commitPolyDraft, cancelPolyDraft, handlePointerDown: handleDrawPointerDown, handlePointerMove: handleDrawPointerMove, handlePointerLeave: handleDrawPointerLeave, handlePointerUp: handleDrawPointerUp, refreshIconPlacement, justFinishedDrawing } = useSVGDrawing(setConnectorHighlightId);
 
   // Combine drag and drawing guides
-  const guides = drawState.isDrawing ? drawingGuides : dragGuides;
+  const guides = drawState.isDrawing || polyDraft ? drawingGuides : dragGuides;
 
   // Long-press detection on canvas elements (touch / stylus only). 500 ms hold
   // without > 8 px movement shows a small context menu. Declared up here so
@@ -249,11 +281,14 @@ export const SVGSlideCanvas: React.FC = () => {
     return true;
   }, [cancelElementLongPress]);
 
+  const pendingSelectionToggle = useRef<string[] | null>(null);
+
   // Drag handling
   const handleDragStart = useCallback((id: string) => {
+    pendingSelectionToggle.current = null;
     // Read fresh state to avoid stale closures from React.memo'd children
     const currentSelectedIds = useEditorStore.getState().selectedElementIds;
-    const currentSlide = usePresentationStore.getState().presentation.slides[activeSlideId];
+    const currentSlide = readGestureSlide();
 
     // Capture initial positions of all selected elements for multi-element drag
     dragStartPositions.current.clear();
@@ -270,16 +305,17 @@ export const SVGSlideCanvas: React.FC = () => {
     if (!currentSelectedIds.includes(id)) {
       setSelectedElements([id]);
     }
-  }, [activeSlideId, setSelectedElements]);
+  }, [setSelectedElements]);
 
   // Snap a dragged element's position to grid and alignment guides. Returns
   // the position unchanged (with no guides) when snapping is off or the
   // element is missing.
   const computeDragSnap = useCallback((id: string, x: number, y: number): { snappedX: number; snappedY: number; guides: Guide[] } => {
-    const el = slide?.elements[id];
+    const source = readGestureSlide();
+    const el = source?.elements[id];
     const { snapToGrid: snappingEnabled, showGrid: isGridVisible, gridSize: grid, marginLayoutId: currentMarginLayoutId } = useEditorStore.getState();
-    // Shift key disables snapping for precise placement
-    const effectiveSnapping = snappingEnabled && !isShiftHeld();
+    // Cmd disables magnets; Shift constrains the raw body translation.
+    const effectiveSnapping = snappingEnabled && !isMetaHeld();
     if (!effectiveSnapping || !el) return { snappedX: x, snappedY: y, guides: [] };
 
     const marginLayout = getMarginLayout(currentMarginLayoutId);
@@ -287,13 +323,13 @@ export const SVGSlideCanvas: React.FC = () => {
 
     // Filter out all elements being dragged for guide computation
     const draggedIds = new Set(dragStartPositions.current.keys());
-    const others = elements
+    const others = (source ? source.elementOrder.map(id => source.elements[id]).filter(Boolean) : [])
       .filter((e) => !draggedIds.has(e.id) && e.visible)
       .map((e) => ({ x: e.x, y: e.y, width: e.width, height: e.height }));
 
     // Compute guides based on the dragged element
     const dragged = { x, y, width: el.width, height: el.height };
-    const result = computeGuides(dragged, others, 5, marginBounds);
+    const result = computeGuides(dragged, others, screenPixelsToSlide(5, zoom), marginBounds);
 
     let snappedX = x;
     let snappedY = y;
@@ -305,16 +341,26 @@ export const SVGSlideCanvas: React.FC = () => {
     if (result.snapX !== null) snappedX = result.snapX;
     if (result.snapY !== null) snappedY = result.snapY;
 
+    const origin = dragStartPositions.current.get(id);
+    if (isShiftHeld() && origin) {
+      if (Math.abs(x - origin.x) >= Math.abs(y - origin.y)) {
+        snappedY = origin.y;
+        return { snappedX, snappedY, guides: result.guides.filter(g => g.type !== 'spacing' && g.type === 'vertical') };
+      }
+      snappedX = origin.x;
+      return { snappedX, snappedY, guides: result.guides.filter(g => g.type !== 'spacing' && g.type === 'horizontal') };
+    }
     return { snappedX, snappedY, guides: result.guides };
-  }, [slide, elements]);
+  }, [zoom]);
 
   const handleDragMove = useCallback((id: string, x: number, y: number) => {
     // Any actual movement cancels the long-press timer — drag and long-press
     // are mutually exclusive.
     cancelElementLongPress();
 
-    if (!slide) return;
-    const el = slide.elements[id];
+    const source = readGestureSlide();
+    if (!source) return;
+    const el = source.elements[id];
     if (!el) return;
 
     // Get the original position of the dragged element for delta calculation
@@ -328,30 +374,8 @@ export const SVGSlideCanvas: React.FC = () => {
     const snappedDeltaX = snappedX - originalPos.x;
     const snappedDeltaY = snappedY - originalPos.y;
 
-    // Create previews for all dragged elements
-    const previews: DragPreviewState[] = [];
-    for (const [elementId, startPos] of dragStartPositions.current) {
-      const element = slide.elements[elementId];
-      if (!element) continue;
-
-      const newX = startPos.x + snappedDeltaX;
-      const newY = startPos.y + snappedDeltaY;
-      const isLine = element.type === 'shape' && isLinePath(element as ShapeElement);
-
-      previews.push({
-        isDragging: true,
-        elementType: isLine ? 'line' : 'rect',
-        x: newX,
-        y: newY,
-        width: element.width,
-        height: element.height,
-        rotation: element.rotation,
-        points: isLine ? (element as ShapeElement).points : undefined,
-      });
-    }
-
-    setDragPreview(previews.length > 0 ? previews : null);
-  }, [slide, computeDragSnap, cancelElementLongPress]);
+    publishGesturePreview(planElementTranslation(source.elements, dragStartPositions.current, { x: snappedDeltaX, y: snappedDeltaY }));
+  }, [computeDragSnap, cancelElementLongPress, publishGesturePreview]);
 
   const justFinishedElementDrag = useRef(false);
 
@@ -363,6 +387,9 @@ export const SVGSlideCanvas: React.FC = () => {
     // also enter edit mode.
     if (consumeLongPress()) return;
     justFinishedElementDrag.current = false;
+    if (pendingSelectionToggle.current) {
+      setSelectedElements(pendingSelectionToggle.current); pendingSelectionToggle.current = null; return;
+    }
 
     // Tap-again-on-text enters edit mode (armed in handleSelect on pointerdown)
     if (pendingTextEdit.current && pendingTextEdit.current.id === id) {
@@ -371,24 +398,25 @@ export const SVGSlideCanvas: React.FC = () => {
     }
     pendingTextEdit.current = null;
     dragStartPositions.current.clear();
-  }, [consumeLongPress, setEditingTextId]);
+  }, [consumeLongPress, setEditingTextId, setSelectedElements]);
 
   const handleDragEnd = useCallback((id: string, x: number, y: number) => {
     // If a long-press just fired, swallow the rest of this pointerup — we
     // showed a menu, don't also commit the drag.
     if (consumeLongPress()) {
       setDragGuides([]);
-      setDragPreview(null);
+      clearGesturePreview();
       return;
     }
     setDragGuides([]);
-    setDragPreview(null);
+    clearGesturePreview();
     // The drag slop in useSVGDrag guarantees onDragEnd only fires after real
     // movement — a slop-less release goes to handleElementClick instead.
     justFinishedElementDrag.current = true;
     pendingTextEdit.current = null;
 
-    if (!activeSlideId || !slide) {
+    const source = readGestureSlide();
+    if (!activeSlideId || !source) {
       dragStartPositions.current.clear();
       return;
     }
@@ -407,33 +435,7 @@ export const SVGSlideCanvas: React.FC = () => {
     const snappedDeltaY = snappedY - originalPos.y;
 
     // Collect all updates for batch operation (single undo entry)
-    const updates: Array<{ elementId: string; changes: Partial<ShapeElement> & { x: number; y: number } }> = [];
-    for (const [elementId, startPos] of dragStartPositions.current) {
-      const element = slide.elements[elementId];
-      if (!element) continue;
-
-      const newX = startPos.x + snappedDeltaX;
-      const newY = startPos.y + snappedDeltaY;
-
-      // Only include if position actually changed
-      if (newX !== element.x || newY !== element.y) {
-        const changes: Partial<ShapeElement> & { x: number; y: number } = { x: newX, y: newY };
-        // Dragging a whole bound arrow tears its endpoints off their anchors,
-        // so the bindings are stale — without clearing them, the endpoint
-        // teleports back the next time the bound-to element moves.
-        // (Phase 1 refines this to keep a binding whose endpoint is still
-        // within the bind threshold.)
-        if (
-          element.type === 'shape' &&
-          (element as ShapeElement).shapeType === 'path' &&
-          ((element as ShapeElement).startBinding || (element as ShapeElement).endBinding)
-        ) {
-          changes.startBinding = null;
-          changes.endBinding = null;
-        }
-        updates.push({ elementId, changes });
-      }
-    }
+    const updates = planElementTranslation(source.elements, dragStartPositions.current, { x: snappedDeltaX, y: snappedDeltaY });
 
     // Batch update all elements (single undo operation)
     if (updates.length > 0) {
@@ -441,11 +443,12 @@ export const SVGSlideCanvas: React.FC = () => {
     }
 
     dragStartPositions.current.clear();
-  }, [activeSlideId, updateElements, slide, computeDragSnap, consumeLongPress]);
+  }, [activeSlideId, updateElements, computeDragSnap, consumeLongPress, clearGesturePreview]);
 
   const { handlePointerDown: handleElementPointerDown } = useSVGDrag({
     zoom,
     onDragStart: handleDragStart,
+    onDragCancel: () => { pendingTextEdit.current = null; pendingSelectionToggle.current = null; cancelElementLongPress(); clearGesturePreview(); setDragGuides([]); dragStartPositions.current.clear(); },
     onDragMove: handleDragMove,
     onDragEnd: handleDragEnd,
     onClick: handleElementClick,
@@ -514,6 +517,7 @@ export const SVGSlideCanvas: React.FC = () => {
   }, [addElements, deleteElements, setSelectedElements, updateElement]);
 
   const handleSelect = useCallback((id: string, e: React.PointerEvent) => {
+    pendingSelectionToggle.current = null;
     // Ignore middle-click (used for panning) — only meaningful for mouse pointers
     if (e.pointerType === 'mouse' && e.button === 1) return;
     // Ignore non-primary mouse buttons (right click). Touch/stylus always pass.
@@ -591,7 +595,13 @@ export const SVGSlideCanvas: React.FC = () => {
       const ids = currentSelectedIds.includes(id)
         ? currentSelectedIds.filter((sid) => sid !== id)
         : [...currentSelectedIds, id];
-      setSelectedElements(ids);
+      if (clickedElement?.locked) {
+        setSelectedElements(ids);
+      } else {
+        pendingSelectionToggle.current = ids;
+        if (!currentSelectedIds.includes(id)) setSelectedElements(ids);
+        handleElementPointerDown(id, clickedElement?.x || 0, clickedElement?.y || 0, e);
+      }
     } else {
       // Only reset selection if clicking on an unselected element
       // This preserves multi-selection when dragging one of the selected elements
@@ -713,6 +723,7 @@ export const SVGSlideCanvas: React.FC = () => {
 
   // Selection drag handlers (pointer-based; mouse/touch/stylus all share this path)
   const handleCanvasPointerDown = useCallback((e: React.PointerEvent) => {
+    pendingSelectionToggle.current = null;
     // Remember where this gesture STARTED for handleStageClick (see there).
     {
       const t = e.target as Element;
@@ -751,9 +762,9 @@ export const SVGSlideCanvas: React.FC = () => {
     setSelectionDrag((prev) => prev ? { ...prev, currentX: pos.x, currentY: pos.y } : null);
   }, [tool, handleDrawPointerMove, screenToSVG, selectionDrag?.isSelecting]);
 
-  const handleCanvasPointerUp = useCallback(() => {
+  const handleCanvasPointerUp = useCallback((e: React.PointerEvent) => {
     if (tool !== 'select') {
-      handleDrawPointerUp();
+      handleDrawPointerUp(e, screenToSVG);
       return;
     }
 
@@ -788,7 +799,7 @@ export const SVGSlideCanvas: React.FC = () => {
     }
 
     setSelectionDrag(null);
-  }, [tool, handleDrawPointerUp, selectionDrag, elements, setSelectedElements, slide]);
+  }, [tool, handleDrawPointerUp, screenToSVG, selectionDrag, elements, setSelectedElements, slide]);
 
   // Two-finger pan/zoom via pointer events. Composes with the existing single-
   // pointer drag handlers above — the gesture hook only fires once a second
@@ -799,7 +810,7 @@ export const SVGSlideCanvas: React.FC = () => {
       gestureActiveRef.current = true;
       // Cancel any in-flight single-pointer drag UI so it doesn't fight us.
       setDragGuides([]);
-      setDragPreview(null);
+      clearGesturePreview();
       setSelectionDrag(null);
     },
     onGesture: (frame: GestureFrame) => {
@@ -837,42 +848,31 @@ export const SVGSlideCanvas: React.FC = () => {
 
   // Transform handlers
   const handleTransformStart = useCallback(() => {
+    pendingSelectionToggle.current = null;
     // Exit text edit mode when starting any transform
     if (editingTextId) {
       setEditingTextId(null);
     }
   }, [editingTextId, setEditingTextId]);
 
-  const handleTransform = useCallback((id: string, attrs: Record<string, number>) => {
-    // Show preview instead of updating element directly (better performance)
-    const el = slide?.elements[id];
-    if (!el) return;
-
-    const isLine = el.type === 'shape' && isLinePath(el as ShapeElement);
-    setTransformPreview({
-      isDragging: true,
-      elementType: isLine ? 'line' : 'rect',
-      x: attrs.x ?? el.x,
-      y: attrs.y ?? el.y,
-      width: attrs.width ?? el.width,
-      height: attrs.height ?? el.height,
-      rotation: attrs.rotation ?? el.rotation,
-      cursorX: attrs.cursorX,
-      cursorY: attrs.cursorY,
-      points: isLine ? (el as ShapeElement).points : undefined,
-    });
-  }, [slide]);
-
   const justFinishedTransform = useRef(false);
-
-  const handleTransformEnd = useCallback((id: string, attrs: Record<string, number>) => {
-    setTransformPreview(null);
-    // eslint-disable-next-line react-hooks/immutability -- ref-flag pattern: set on transform end, consumed by the following background click; event-handler-only mutation
+  const handleBatchTransform = useCallback((updates: GesturePatch[]) => {
+    publishGesturePreview(updates);
+  }, [publishGesturePreview]);
+  const handleBatchTransformEnd = useCallback((updates: GesturePatch[]) => {
+    clearGesturePreview();
+    // eslint-disable-next-line react-hooks/immutability -- event-only completion flag
     justFinishedTransform.current = true;
-    if (activeSlideId) {
-      updateElement(activeSlideId, id, attrs);
-    }
-  }, [activeSlideId, updateElement]);
+    if (activeSlideId && updates.length) updateElements(activeSlideId, updates);
+  }, [activeSlideId, updateElements, clearGesturePreview]);
+  const handlePathPreview = useCallback((attrs: Partial<ShapeElement> | null) => {
+    if (attrs && soleSelectedPathElement) publishGesturePreview([{ elementId: soleSelectedPathElement.id, changes: attrs }], false);
+    else clearGesturePreview();
+  }, [soleSelectedPathElement, publishGesturePreview, clearGesturePreview]);
+  const handleRadiusPreview = useCallback((attrs: Partial<ShapeElement> | null) => {
+    if (attrs && soleSelectedCornerElement) publishGesturePreview([{ elementId: soleSelectedCornerElement.id, changes: attrs }], false);
+    else clearGesturePreview();
+  }, [soleSelectedCornerElement, publishGesturePreview, clearGesturePreview]);
 
   // Bound-label hug-the-text refit (EDITOR canvas only, Excalidraw model):
   // whenever a label's text has been measured, re-lay it out at the WRAP
@@ -884,8 +884,8 @@ export const SVGSlideCanvas: React.FC = () => {
   // wrap width, container geometry), none of which the fit itself changes
   // except a symmetric container height grow that converges in one pass.
   const handleTextLayout = useCallback((textId: string, _doc: SvgTextDoc) => {
-    refitBoundLabel(textId);
-  }, []);
+    if (!previewActiveRef.current && !useEditorStore.getState().editingTextId) refitBoundLabel(textId, canRefit);
+  }, [canRefit]);
 
   // A container RESIZE changes the wrap width, but SVGTextPaths only re-lays
   // a label out when the label's own props change — so re-run the fit for
@@ -901,16 +901,16 @@ export const SVGSlideCanvas: React.FC = () => {
       if (!el || el.type !== 'text') continue;
       const cid = (el as TextElement).containerId;
       const container = cid ? slide.elements[cid] : undefined;
-      if (container) parts.push(`${id}:${labelWrapWidthFor(container).toFixed(2)}`);
+      if (container) parts.push(`${id}:${labelWrapWidthFor(container, el).toFixed(2)}`);
     }
     return parts.join('|');
   }, [slide]);
   useEffect(() => {
     if (!labelWrapKey) return;
     for (const part of labelWrapKey.split('|')) {
-      refitBoundLabel(part.slice(0, part.lastIndexOf(':')));
+      refitBoundLabel(part.slice(0, part.lastIndexOf(':')), canRefit);
     }
-  }, [labelWrapKey]);
+  }, [labelWrapKey, canRefit, gesturePreview, editingTextId]);
 
   // Path handle update handler (vertex / tangent / binding commits).
   const handlePathUpdate = useCallback((attrs: Partial<ShapeElement>) => {
@@ -1012,6 +1012,28 @@ export const SVGSlideCanvas: React.FC = () => {
     scrollParent.scrollTop = canvasH / 2;
     initialScrollDone.current = true;
   }, [viewport, zoom]);
+
+  // While an icon is pressed, keep its preview under the stationary pointer
+  // through zoom, scroll, and layout offsets. Run after the zoom scroll effects;
+  // only a changed canvas mapping replays the candidate, with no document write.
+  useLayoutEffect(() => {
+    if (tool !== 'icon' || !drawState.isDrawing) return;
+    let frame = 0;
+    let previousBounds = '';
+    const refresh = () => {
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (rect) {
+        const bounds = [rect.left, rect.top, rect.width, rect.height].join(',');
+        if (bounds !== previousBounds) {
+          previousBounds = bounds;
+          refreshIconPlacement(screenToSVG);
+        }
+      }
+      frame = requestAnimationFrame(refresh);
+    };
+    refresh();
+    return () => cancelAnimationFrame(frame);
+  }, [tool, drawState.isDrawing, screenToSVG, refreshIconPlacement]);
 
   // Zoom with wheel toward cursor position
   useEffect(() => {
@@ -1120,10 +1142,12 @@ export const SVGSlideCanvas: React.FC = () => {
   // Hovered element
   const hoveredElement = useMemo(() => {
     if (!hoveredObjectId) return null;
-    return slide?.elements[hoveredObjectId] ?? objectElements[hoveredObjectId] ?? null;
-  }, [hoveredObjectId, slide, objectElements]);
+    const raw = slide?.elements[hoveredObjectId] ?? objectElements[hoveredObjectId] ?? null;
+    return textHoverOwner(raw, slide?.elements ?? {}, selectedElementIds, editingTextId);
+  }, [hoveredObjectId, slide, objectElements, selectedElementIds, editingTextId]);
 
-  const isHoveredVisibleOnSlide = hoveredObjectId ? !!(slide?.elements[hoveredObjectId]?.visible) : false;
+  const isHoveredVisibleOnSlide = hoveredElement ? !!slide?.elements[hoveredElement.id]?.visible : false;
+  const autoFitElement = !editingTextId && selectedElementIds.length === 1 ? slide?.elements[selectedElementIds[0]] : null;
 
   // Visible elements for selection action bar
   const visibleElements = useMemo(() => {
@@ -1192,13 +1216,21 @@ export const SVGSlideCanvas: React.FC = () => {
           gesture.onPointerMove(e);
           if (!gestureActiveRef.current) handleCanvasPointerMove(e);
         }}
+        onPointerLeave={handleDrawPointerLeave}
         onPointerUp={(e) => {
           gesture.onPointerUp(e);
-          handleCanvasPointerUp();
+          handleCanvasPointerUp(e);
         }}
         onPointerCancel={(e) => {
           gesture.onPointerCancel(e);
-          handleCanvasPointerUp();
+          if (tool !== 'select') cancelPolyDraft();
+          else setSelectionDrag(null);
+        }}
+        onDoubleClick={(e) => {
+          if (tool !== 'select' && polyDraft) {
+            e.preventDefault();
+            commitPolyDraft();
+          }
         }}
       >
         {/* Background layer */}
@@ -1222,8 +1254,8 @@ export const SVGSlideCanvas: React.FC = () => {
         </g>
 
         {/* Content layer */}
-        <g className="content-layer">
-          {elements.map((el) => (
+        <g className="content-layer" data-gesture-preview={gesturePreview ? true : undefined}>
+          {displayElements.filter((el) => el.id !== polyDraft?.extension?.source.id).map((el) => (
             <SVGElementRenderer
               key={el.id}
               element={el}
@@ -1233,7 +1265,7 @@ export const SVGSlideCanvas: React.FC = () => {
               onMouseEnter={handleMouseEnter}
               onMouseLeave={handleMouseLeave}
               onDoubleClick={handleDoubleClick}
-              onTextLayout={handleTextLayout}
+              onTextLayout={gesturePreview || textPreview || editingTextId ? undefined : handleTextLayout}
             />
           ))}
         </g>
@@ -1246,21 +1278,21 @@ export const SVGSlideCanvas: React.FC = () => {
           <SVGSelectionDrag selectionDrag={selectionDrag} zoom={zoom} />
           <SVGDrawingPreview drawState={drawState} tool={tool} zoom={zoom} />
           <SVGPolyDraftPreview polyDraft={polyDraft} zoom={zoom} />
-          <SVGDragPreview preview={dragPreview} zoom={zoom} />
-          <SVGDragPreview preview={transformPreview} zoom={zoom} />
           <SVGPeerSelectionOverlay slideId={activeSlideId || null} elements={elements} zoom={zoom} />
 
-          {/* Selection transformer — suppressed for a sole selected path
-              shape (it gets the unified vertex/endpoint handles instead). */}
-          {unlockedSelectedIds.length > 0 && !soleSelectedPathElement && (
+          {/* Final user rule: a sole single-segment open path uses endpoint
+              controls; multisegment and group selections retain box resize. */}
+          {unlockedSelectedIds.length > 0 && !pathPointEditing && !(soleSelectedPathElement && !soleSelectedPathElement.closed && soleSelectedPathElement.points?.length === 4) && (
             <SVGSelectionTransformer
-              elements={elements}
+              elements={textPreview && editingTextId ? displayElements : elements}
+              displayElements={displayElements}
               selectedIds={unlockedSelectedIds}
               zoom={zoom}
               svgRef={svgRef}
               onTransformStart={handleTransformStart}
-              onTransform={handleTransform}
-              onTransformEnd={handleTransformEnd}
+              onBatchTransform={handleBatchTransform}
+              onBatchTransformEnd={handleBatchTransformEnd}
+              onTransformCancel={clearGesturePreview}
               onGuidesChange={setDragGuides}
             />
           )}
@@ -1278,12 +1310,15 @@ export const SVGSlideCanvas: React.FC = () => {
               B-splines, béziers — vertex / midpoint / endpoint / tangent). */}
           {soleSelectedPathElement && !soleSelectedPathElement.locked && (
             <SVGPathHandles
-              key={soleSelectedPathElement.id}
+              key={`path:${activeSlideId}:${soleSelectedPathElement.id}`}
               element={soleSelectedPathElement}
               elements={elements}
               zoom={zoom}
               svgRef={svgRef}
+              onPreview={handlePathPreview}
+              displayElement={displayElements.find(el => el.id === soleSelectedPathElement.id) as ShapeElement}
               onUpdate={handlePathUpdate}
+              onEditingChange={setPathPointEditing}
               onTransformStart={handleTransformStart}
               onGuidesChange={setDragGuides}
               onConnectorHighlight={setConnectorHighlightId}
@@ -1293,17 +1328,27 @@ export const SVGSlideCanvas: React.FC = () => {
           {/* Corner-radius handle (rects + closed linear paths). */}
           {soleSelectedCornerElement && (
             <SVGCornerRadiusHandle
+              key={`radius:${activeSlideId}:${soleSelectedCornerElement.id}`}
+              onPreview={handleRadiusPreview}
+              displayElement={displayElements.find(el => el.id === soleSelectedCornerElement.id) as ShapeElement}
               element={soleSelectedCornerElement}
               zoom={zoom}
               svgRef={svgRef}
-              onUpdate={(attrs) => activeSlideId && updateElement(activeSlideId, soleSelectedCornerElement.id, attrs)}
+              onUpdate={(attrs) => {
+                if (!activeSlideId) return;
+                updateShapeStyleFromCurrent(activeSlideId, soleSelectedCornerElement, attrs);
+              }}
               onTransformStart={handleTransformStart}
             />
           )}
 
           {/* Connector highlight */}
-          {connectorHighlightId && slide && slide.elements[connectorHighlightId] && (
-            <SVGConnectorHighlight element={slide.elements[connectorHighlightId]} />
+          {connectorHighlight && displayElements.filter(el => el.id === connectorHighlight.elementId && el.visible !== false && !el.locked).map(element => (
+            <SVGConnectorHighlight key={element.id} element={element} zoom={zoom} dock={supportsConnectorDocks(element) ? connectorHighlight.dock : null} />
+          ))}
+
+          {!gesturePreview && canAutoFitText(autoFitElement) && (
+            <SVGTextAutoFitHandle element={autoFitElement} zoom={zoom} onAutoFit={() => { void autoFitText(activeSlideId, autoFitElement); }} />
           )}
 
           {/* Hover overlay */}
@@ -1314,9 +1359,14 @@ export const SVGSlideCanvas: React.FC = () => {
       </svg>
 
       {/* HTML overlays */}
-      <TextEditOverlay stageRef={containerRef} zoom={zoom} />
+      <TextEditOverlay key={`${activeSlideId}:${editingTextId}`} stageRef={containerRef} zoom={zoom} onPreview={setTextPreview} />
       <CropOverlay stageRef={containerRef} zoom={zoom} />
-      {visibleElements.map((el) => (
+      {/* Unmount actions during manipulation: no stale native hit targets.
+          Body previews start only after drag slop; extension uses its own draft. */}
+      {!editingTextId && !gesturePreview && !polyDraft?.extension && visibleElements.filter(el => selectedElementIds.includes(el.id) && !visibleElements.some(label =>
+        label.type === 'text' && (label.id === el.id || label.containerId === el.id)
+        && (editingTextId === label.id || hasPendingTextFinish(activeSlideId, label.id))
+      )).map((el) => (
         <SelectionActionBar
           key={el.id}
           element={el}

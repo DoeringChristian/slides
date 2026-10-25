@@ -1,6 +1,8 @@
+import { CONTROL_THEME } from './controlTheme';
 import React from 'react';
 import { usePresentationStore } from '../../store/presentationStore';
-import { getElementBounds, getElementCenter } from '../../utils/geometry';
+import { getRotationCenter } from '../../utils/geometry';
+import { useElementVisualBounds, selectionControlMetrics } from '../../utils/shapeVisualBounds';
 import { RenderShape } from './ElementRenderer';
 import type { SlideElement, ShapeElement, ImageElement } from '../../types/presentation';
 
@@ -10,7 +12,7 @@ interface Props {
   zoom?: number;
 }
 
-const HIGHLIGHT_COLOR = '#f59e0b';
+const HIGHLIGHT_COLOR = CONTROL_THEME.color;
 const GHOST_OPACITY = 0.35;
 
 const GhostImage: React.FC<{ element: ImageElement }> = ({ element }) => {
@@ -89,18 +91,16 @@ const GhostElement: React.FC<{ element: SlideElement }> = ({ element }) => {
 };
 
 const HighlightRect: React.FC<{ element: SlideElement; zoom: number }> = ({ element, zoom }) => {
-  const bounds = getElementBounds(element);
-  const center = getElementCenter(element);
+  const bounds = useElementVisualBounds(element)!;
+  const center = getRotationCenter(element);
   const transform = element.rotation ? `rotate(${element.rotation}, ${center.x}, ${center.y})` : undefined;
 
   // Scale sizes inversely with zoom to keep them constant on screen
-  const padding = 3 / zoom;
-  const strokeW = 2 / zoom;
-  const radius = 3 / zoom;
-  const dashArray = `${6 / zoom} ${3 / zoom}`;
+  const padding = selectionControlMetrics(element, zoom).padding;
+  const strokeW = 1 / zoom;
 
   return (
-    <g transform={transform} style={{ pointerEvents: 'none' }}>
+    <g className="hover-outline" transform={transform} style={{ pointerEvents: 'none' }}>
       <rect
         x={bounds.x - padding}
         y={bounds.y - padding}
@@ -109,9 +109,6 @@ const HighlightRect: React.FC<{ element: SlideElement; zoom: number }> = ({ elem
         fill="none"
         stroke={HIGHLIGHT_COLOR}
         strokeWidth={strokeW}
-        rx={radius}
-        ry={radius}
-        strokeDasharray={dashArray}
       />
     </g>
   );

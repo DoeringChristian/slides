@@ -1,11 +1,13 @@
+import { resizeKeepsBinding } from './resizeGeometry';
+import { sameTranslation, verifiedTranslations } from './elementTranslation';
+import { screenPixelsToSlide } from './screenSpace';
 import type {
   SlideElement,
   ShapeElement,
   ConnectorBinding,
   BindingMode,
-  BindingAnchor,
 } from '../types/presentation';
-import { pathBoundsFor } from './pathShapes';
+import { pathPointsInSlide, slidePointToPath, pathGeometryUpdate } from './pathEditing';
 
 export interface Pt { x: number; y: number }
 
@@ -36,52 +38,12 @@ function getRotationOrigin(el: SlideElement): Pt {
   return { x: el.x + el.width / 2, y: el.y + el.height / 2 };
 }
 
-/** Legacy 5-anchor → [u,v] fixed-point mapping (binding v2 migration). */
-export const ANCHOR_TO_UV: Record<BindingAnchor, [number, number]> = {
-  center: [0.5, 0.5],
-  top: [0.5, 0],
-  bottom: [0.5, 1],
-  left: [0, 0.5],
-  right: [1, 0.5],
-};
-
-/** Effective mode of a binding: explicit `mode` wins; a legacy `anchor`
- *  implies 'pinned' (it maps to a fixedPoint); otherwise 'edge'. */
 export function effectiveBindingMode(binding: ConnectorBinding): BindingMode {
-  return binding.mode ?? (binding.anchor !== undefined ? 'pinned' : 'edge');
+  return binding.mode;
 }
 
 export function isPinnedBinding(binding: ConnectorBinding): boolean {
   return effectiveBindingMode(binding) === 'pinned';
-}
-
-/** Legacy helper (still used for the 5-anchor mapping in tests / migration
- *  equivalence checks): absolute position of a named anchor on an element,
- *  honoring rotation. */
-export function getAnchorPoint(
-  element: SlideElement,
-  anchor: string
-): Pt | null {
-  if (!element) return null;
-
-  const cx = element.x + element.width / 2;
-  const cy = element.y + element.height / 2;
-  const rotation = element.rotation || 0;
-  const origin = getRotationOrigin(element);
-
-  // Get anchor point in local (unrotated) coordinates
-  let localPoint: Pt;
-  switch (anchor) {
-    case 'center': localPoint = { x: cx, y: cy }; break;
-    case 'top': localPoint = { x: cx, y: element.y }; break;
-    case 'bottom': localPoint = { x: cx, y: element.y + element.height }; break;
-    case 'left': localPoint = { x: element.x, y: cy }; break;
-    case 'right': localPoint = { x: element.x + element.width, y: cy }; break;
-    default: localPoint = { x: cx, y: cy };
-  }
-
-  // Rotate the anchor point around the element's rotation origin
-  return rotatePoint(localPoint.x, localPoint.y, origin.x, origin.y, rotation);
 }
 
 // =============================================================================
@@ -236,6 +198,7 @@ function localSilhouetteT(el: SlideElement, fx: number, fy: number, dx: number, 
         return rayRoundedRectT(fx, fy, dx, dy, x, y, w, h, r);
       }
       default:
+        // Vectors/icons deliberately bind to their design box, not detail strokes.
         // Path shapes are never binding targets; fall through to bbox.
         return rayRoundedRectT(fx, fy, dx, dy, x, y, w, h, 0);
     }
@@ -273,15 +236,6 @@ export function silhouetteIntersect(target: SlideElement, from: Pt, toward: Pt):
   return rotation ? rotatePoint(hx, hy, origin.x, origin.y, rotation) : { x: hx, y: hy };
 }
 
-/** Distance from the target's center to its silhouette along `dir`
- *  (unnormalized ok). Falls back to half the smaller bbox dimension for
- *  degenerate shapes. Local-frame helper for the focus parameterization. */
-function perpExtent(target: SlideElement, c: Pt, dir: Pt): number {
-  const hit = silhouetteIntersect(target, c, { x: c.x + dir.x, y: c.y + dir.y });
-  if (hit) return Math.hypot(hit.x - c.x, hit.y - c.y);
-  return Math.max(EPS, Math.min(target.width, target.height) / 2);
-}
-
 // =============================================================================
 // Binding resolution (binding → point) and inverse (point → binding)
 // =============================================================================
@@ -290,29 +244,14 @@ function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
 }
 
-function pinnedUV(binding: ConnectorBinding): [number, number] {
-  if (binding.fixedPoint) return binding.fixedPoint;
-  if (binding.anchor && ANCHOR_TO_UV[binding.anchor]) return ANCHOR_TO_UV[binding.anchor];
-  return [0.5, 0.5];
+/** Object-local focus transformed with the target, never the visible endpoint. */
+export function bindingAimPoint(binding: ConnectorBinding, target: SlideElement): Pt {
+  const [u, v] = binding.fixedPoint;
+  const c = getRotationOrigin(target);
+  return rotatePoint(target.x + u * target.width, target.y + v * target.height, c.x, c.y, target.rotation || 0);
 }
 
-/**
- * Absolute endpoint position a binding resolves to.
- *
- *  pinned — fixedPoint [u,v] mapped into the target's bbox, rotated with it.
- *           (Legacy `anchor` bindings resolve through the same path via the
- *           ANCHOR_TO_UV mapping, so unmigrated in-memory decks still work.)
- *  edge   — Excalidraw-style: a focus point is placed on the chord through
- *           the target's center perpendicular to the (otherEndAbs → center)
- *           axis (focus 0 = center, ±1 = the silhouette-grazing ends of the
- *           chord); the endpoint is the silhouette intersection of the ray
- *           otherEndAbs → focusPoint, pulled back toward otherEndAbs by
- *           `gap`.
- *
- * `otherEndAbs` is the vertex ADJACENT to the bound endpoint (for a 2-point
- * line, the opposite endpoint) — same semantics as Excalidraw's
- * adjacentPoint.
- */
+/** Resolve a local aim against the silhouette or a fixed pin against the box. */
 export function resolveBinding(
   binding: ConnectorBinding,
   target: SlideElement,
@@ -320,108 +259,38 @@ export function resolveBinding(
 ): Pt {
   const c = getRotationOrigin(target);
 
+  if (effectiveBindingMode(binding) === 'aim') {
+    const focus = bindingAimPoint(binding, target);
+    const dx = otherEndAbs.x - focus.x, dy = otherEndAbs.y - focus.y;
+    const length = Math.hypot(dx, dy);
+    if (length < EPS) return focus;
+    const hit = silhouetteIntersect(target, focus, otherEndAbs);
+    // Upstream updateBoundPoint safeguard intent: when no exposed span exists
+    // (origin inside target, tiny/overlapping targets), focus avoids inversion.
+    if (!hit) return focus;
+    const distance = Math.hypot(hit.x - focus.x, hit.y - focus.y);
+    const gap = Math.max(0, binding.gap ?? 0);
+    if (distance + gap >= length - EPS) return focus;
+    return { x: hit.x + dx / length * gap, y: hit.y + dy / length * gap };
+  }
+
   if (effectiveBindingMode(binding) === 'pinned') {
-    const [u, v] = pinnedUV(binding);
+    const [u, v] = binding.fixedPoint;
     const lx = target.x + u * target.width;
     const ly = target.y + v * target.height;
     return rotatePoint(lx, ly, c.x, c.y, target.rotation || 0);
   }
 
-  const focus = clamp(binding.focus ?? 0, -1, 1);
-  const gap = Math.max(0, binding.gap ?? 0);
-
-  const axisX = c.x - otherEndAbs.x;
-  const axisY = c.y - otherEndAbs.y;
-  const axisLen = Math.hypot(axisX, axisY);
-  if (axisLen < EPS) return c; // degenerate: other end sits on the center
-
-  // Focus point on the perpendicular chord through the center.
-  let focusPoint = c;
-  if (focus !== 0) {
-    const perp = { x: -axisY / axisLen, y: axisX / axisLen };
-    const dir = focus >= 0 ? perp : { x: -perp.x, y: -perp.y };
-    const extent = perpExtent(target, c, dir);
-    focusPoint = {
-      x: c.x + dir.x * Math.abs(focus) * extent,
-      y: c.y + dir.y * Math.abs(focus) * extent,
-    };
-  }
-
-  const hit = silhouetteIntersect(target, otherEndAbs, focusPoint);
-  if (!hit) return focusPoint;
-  const rayX = focusPoint.x - otherEndAbs.x;
-  const rayY = focusPoint.y - otherEndAbs.y;
-  const rayLen = Math.hypot(rayX, rayY);
-  if (rayLen < EPS) return hit;
-  const ux = rayX / rayLen;
-  const uy = rayY / rayLen;
-  const hitDist = (hit.x - otherEndAbs.x) * ux + (hit.y - otherEndAbs.y) * uy;
-  const d = Math.max(0, hitDist - gap);
-  return { x: otherEndAbs.x + ux * d, y: otherEndAbs.y + uy * d };
+  throw new Error('Unsupported connector binding mode');
 }
 
-/**
- * Inverse of `resolveBinding`: derive the binding that makes the endpoint
- * `point` (absolute) resolve back to (approximately) itself.
- *
- *  edge   — ports Excalidraw's calculateFocusAndGap: focus = signed ratio of
- *           the chord offset where the line otherEndAbs → point crosses the
- *           perpendicular axis through the center; gap = how far short of
- *           the silhouette the point sits along that line (0 when the point
- *           is on/inside the silhouette — resolving then pulls it onto the
- *           outline).
- *  pinned — fixedPoint = the point's [u,v] in the target's unrotated bbox,
- *           clamped to [0,1]².
- *
- * ROUND-TRIP INVARIANT: for a point outside the silhouette on a line that
- * crosses it, resolveBinding(bindingFor(p, …), …) ≈ p.
- */
-export function bindingFor(
-  point: Pt,
-  target: SlideElement,
-  otherEndAbs: Pt,
-  mode: BindingMode,
-): ConnectorBinding {
+/** Capture an object-local point for aim or pinned tracking. */
+export function bindingFor(point: Pt, target: SlideElement, mode: BindingMode): ConnectorBinding {
   const c = getRotationOrigin(target);
-
-  if (mode === 'pinned') {
-    const local = rotatePoint(point.x, point.y, c.x, c.y, -(target.rotation || 0));
-    const u = target.width > EPS ? clamp((local.x - target.x) / target.width, 0, 1) : 0.5;
-    const v = target.height > EPS ? clamp((local.y - target.y) / target.height, 0, 1) : 0.5;
-    return { elementId: target.id, mode: 'pinned', fixedPoint: [u, v] };
-  }
-
-  const axisX = c.x - otherEndAbs.x;
-  const axisY = c.y - otherEndAbs.y;
-  const axisLen = Math.hypot(axisX, axisY);
-
-  let focus = 0;
-  if (axisLen >= EPS) {
-    const perp = { x: -axisY / axisLen, y: axisX / axisLen };
-    // Solve otherEnd + t·(point−otherEnd) = c + s·perp for the signed chord
-    // offset s (Cramer's rule). Degenerate (line ∥ perp axis) → focus 0.
-    const dX = point.x - otherEndAbs.x;
-    const dY = point.y - otherEndAbs.y;
-    const eX = c.x - otherEndAbs.x;
-    const eY = c.y - otherEndAbs.y;
-    const det = -dX * perp.y + perp.x * dY;
-    if (Math.abs(det) > EPS) {
-      const s = (dX * eY - dY * eX) / det;
-      const dir = s >= 0 ? perp : { x: -perp.x, y: -perp.y };
-      const extent = perpExtent(target, c, dir);
-      focus = clamp(s / extent, -1, 1);
-    }
-  }
-
-  let gap = 0;
-  const hit = silhouetteIntersect(target, otherEndAbs, point);
-  if (hit) {
-    const distPoint = Math.hypot(point.x - otherEndAbs.x, point.y - otherEndAbs.y);
-    const distHit = Math.hypot(hit.x - otherEndAbs.x, hit.y - otherEndAbs.y);
-    gap = Math.max(0, distHit - distPoint);
-  }
-
-  return { elementId: target.id, mode: 'edge', focus, gap };
+  const local = rotatePoint(point.x, point.y, c.x, c.y, -(target.rotation || 0));
+  const u = target.width > EPS ? clamp((local.x - target.x) / target.width, 0, 1) : 0.5;
+  const v = target.height > EPS ? clamp((local.y - target.y) / target.height, 0, 1) : 0.5;
+  return { elementId: target.id, mode, fixedPoint: [u, v], ...(mode === 'aim' ? { gap: 0 } : {}) };
 }
 
 /** Signed shortest distance to the rendered silhouette (negative inside).
@@ -469,30 +338,57 @@ export function silhouetteDistance(target: SlideElement, point: Pt): number {
   return Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - r;
 }
 
-/** Infer intent ONLY from the raw (possibly angle-constrained) drop point.
- * Within 12 screen pixels of the silhouette, keep sliding edge semantics;
- * deeper inside, pin the exact point. Both drawing and editing call this. */
-export function bindingForDrop(point: Pt, target: SlideElement, adjacent: Pt, zoom = 1): ConnectorBinding {
-  const mode = silhouetteDistance(target, point) < -12 / Math.max(zoom, EPS) ? 'pinned' : 'edge';
-  return bindingFor(point, target, adjacent, mode);
+export interface ConnectorDockCue { point: Pt; binding: ConnectorBinding; active: boolean }
+export type ConnectorHighlightCallback = (elementId: string | null, dock?: ConnectorDockCue | null) => void;
+
+/** Bounded counterpart of Excalidraw c0ad61c utils.getSnapOutlineMidPoint:
+ * rotated side midpoints, exterior-only, simple binding zoom budget. Use the
+ * nearest candidate for BOTH paint and acquisition (upstream paint/picker differ
+ * on tiny targets). No guessed triangle/star/icon bounding-box docks. */
+export function supportsConnectorDocks(target: SlideElement): boolean {
+  return target.visible !== false && !target.locked && target.width > EPS && target.height > EPS
+    && (target.type === 'image' || (target.type === 'text' && !target.containerId)
+      || (target.type === 'shape' && (target.shapeType === 'rect' || target.shapeType === 'ellipse')));
+}
+
+export function connectorDockCue(point: Pt, target: SlideElement, zoom = 1, angleLocked = false, rayOrigin?: Pt): ConnectorDockCue | null {
+  if ((angleLocked && !rayOrigin) || !supportsConnectorDocks(target) || silhouetteDistance(target, point) < -EPS) return null;
+  const threshold = clamp(15 / (Math.min(Math.max(zoom, EPS), 1) * 1.5), 15, 30)
+    + (target.type === 'shape' ? target.strokeWidth / 2 : 0);
+  const candidates = ([[1, .5], [.5, 1], [0, .5], [.5, 0]] as [number, number][]).map(fixedPoint => bindingAimPoint({ elementId: target.id, mode: 'pinned', fixedPoint }, target));
+  let nearest = candidates[0], distance = Infinity;
+  for (const candidate of candidates) {
+    if (angleLocked && rayOrigin && !pointOnBindingRay(point, rayOrigin, candidate)) continue;
+    const d = Math.hypot(point.x - candidate.x, point.y - candidate.y);
+    if (d < distance) { nearest = candidate; distance = d; }
+  }
+  if (distance > threshold * 2) return null;
+  return { point: nearest, binding: bindingFor(nearest, target, 'pinned'), active: distance <= threshold };
+}
+
+/** New attachments aim into the object.
+ * Outside drops acquire the center; interior drops preserve the exact local aim.
+ * This also keeps off-ray proximity acquisition rejectable under Shift. */
+export function bindingForDrop(point: Pt, target: SlideElement): ConnectorBinding {
+  const focus = silhouetteDistance(target, point) <= 0 ? point : getRotationOrigin(target);
+  return bindingFor(focus, target, 'aim');
 }
 
 // =============================================================================
 // Target picking
 // =============================================================================
 
-/** Excalidraw-style bind threshold: scales with the target (small shapes get
- *  the 16-unit floor, large ones cap at 32) and grows when zoomed out so
- *  binding stays reachable on screen. */
+/** Size-based acquisition budget (16–32 SCREEN pixels), converted at every
+ * zoom, not just below 1. Keep the existing smaller budget for tiny targets. */
 function bindThreshold(el: SlideElement, zoom?: number): number {
   const base = Math.max(16, Math.min(0.5 * Math.min(el.width, el.height), 32));
-  return zoom !== undefined && zoom < 1 ? base / zoom : base;
+  return screenPixelsToSlide(base, zoom);
 }
 
 /**
  * Binding-target lookup, v2 (Excalidraw semantics): an element binds when
  * `point` is INSIDE its silhouette or within a size-scaled threshold of it
- * (max(16, min(0.5·minDim, 32)) slide units, divided by zoom when < 1).
+ * (max(16, min(0.5·minDim, 32)) screen pixels, divided by zoom).
  *
  * `elements` must be in z-order (bottom → top, i.e. `elementOrder` order —
  * exactly what the canvas / drawing call sites pass); the TOPMOST matching
@@ -512,6 +408,9 @@ export function getBindingTarget2(
     const el = elements[i];
     if (!el || el.id === excludeId) continue;
     if (el.visible === false || el.locked) continue;
+    // A bound label is part of its container, not an independent target.
+    // Let the container's silhouette and eligibility decide acquisition.
+    if (el.type === 'text' && el.containerId) continue;
     if (el.type === 'shape' && (el as ShapeElement).shapeType === 'path') continue;
     if (silhouetteDistance(el, point) <= bindThreshold(el, zoom)) return el;
   }
@@ -535,13 +434,15 @@ export interface RebindResult {
  *
  * `elements` must be the POST-move slide snapshot (target geometry already
  * updated); `movedIds` is the set of elements whose geometry changed this
- * mutation. Two triggers per bound end:
+ * mutation. Optional `beforeElements` verifies rigid co-translations, whose
+ * endpoints must not be re-solved. Otherwise, two triggers per bound end:
  *   - the binding's TARGET is in `movedIds` (any mode), or
- *   - the path ITSELF is in `movedIds` and the binding is edge-mode — the
- *     edge solution depends on the ray direction, so the path's own geometry
- *     change (vertex edit) re-solves its ends. Pinned / legacy-anchor ends
- *     of a moved path are left alone (a dragged connector keeps its points;
- *     whole-arrow drags clear bindings at the call site).
+ *   - the path ITSELF is in `movedIds` and the binding is aim-mode — the
+ *     solution depends on the ray direction, so the path's own geometry
+ *     change (vertex edit) re-solves its ends. Pinned ends
+ *     of a moved path are left alone only when their target did not move
+ *     (whole-arrow drags clear external bindings at the call site). Verified
+ *     co-translations / uniform co-resizes above bypass both triggers.
  *
  * One shared implementation for all four store call sites (updateElement /
  * updateElements × Y / JSON) — the two paths MUST stay semantically
@@ -554,9 +455,11 @@ export function rebindAfterElementsMoved(
   elements: Record<string, SlideElement>,
   elementOrder: readonly string[],
   movedIds: ReadonlySet<string>,
+  beforeElements?: Record<string, SlideElement>,
 ): RebindResult[] {
   const results: RebindResult[] = [];
   if (movedIds.size === 0) return results;
+  const translations = beforeElements ? verifiedTranslations(beforeElements, elements, movedIds) : undefined;
 
   for (const elId of elementOrder) {
     const el = elements[elId];
@@ -567,63 +470,120 @@ export function rebindAfterElementsMoved(
     if (!pts || pts.length < 4) continue;
 
     const selfMoved = movedIds.has(elId);
-    const needsSolve = (binding: ConnectorBinding | null | undefined): binding is ConnectorBinding => {
+    const straightPair = pts.length === 4 && (shape.curve ?? 'linear') === 'linear';
+    const needsSolve = (binding: ConnectorBinding | null | undefined, end: 'startBinding' | 'endBinding'): binding is ConnectorBinding => {
       if (!binding || !elements[binding.elementId]) return false;
-      if (selfMoved) return effectiveBindingMode(binding) === 'edge';
-      return movedIds.has(binding.elementId);
+      const beforeShape = beforeElements?.[elId];
+      const oppositeKey = end === 'startBinding' ? 'endBinding' : 'startBinding';
+      const opposite = shape[oppositeKey];
+      const pairedAim = straightPair && binding.mode === 'aim' && opposite && elements[opposite.elementId];
+      // Creation solves against raw adjacent vertices, so re-solving already
+      // snapped endpoints is not idempotent. Preserve a verified rigid move,
+      // but never exempt endpoint/parameter edits or unequal target deltas.
+      if (beforeShape?.type === 'shape' &&
+          JSON.stringify(beforeShape[end]) === JSON.stringify(binding) &&
+          (!pairedAim || (JSON.stringify(beforeShape[oppositeKey]) === JSON.stringify(opposite) && sameTranslation(translations?.get(elId), translations?.get(opposite!.elementId)))) &&
+          sameTranslation(translations?.get(elId), translations?.get(binding.elementId))) return false;
+      const oldTarget = beforeElements?.[binding.elementId];
+      if (selfMoved && beforeShape?.type === 'shape' && oldTarget &&
+          resizeKeepsBinding(beforeShape, shape, oldTarget, elements[binding.elementId], end) &&
+          (!pairedAim || (!!beforeElements?.[opposite!.elementId] && resizeKeepsBinding(beforeShape, shape, beforeElements[opposite!.elementId], elements[opposite!.elementId], oppositeKey)))) return false;
+      if (selfMoved) return !isPinnedBinding(binding) || movedIds.has(binding.elementId);
+      return movedIds.has(binding.elementId) || (straightPair && !!opposite && (binding.mode === 'aim' || opposite.mode === 'aim') && movedIds.has(opposite.elementId));
     };
-    const solveStart = needsSolve(shape.startBinding);
-    const solveEnd = needsSolve(shape.endBinding);
+    const solveStart = needsSolve(shape.startBinding, 'startBinding');
+    const solveEnd = needsSolve(shape.endBinding, 'endBinding');
     if (!solveStart && !solveEnd) continue;
 
     // Working set: every vertex in absolute slide coords. Only the bound
     // first / last vertices get overwritten — interior vertices keep their
     // absolute positions, so a curved path holds its shape.
-    const abs = pts.map((v, i) => v + (i % 2 === 0 ? shape.x : shape.y));
+    const abs = pathPointsInSlide(shape);
     const last = abs.length - 2;
     // Adjacent vertices from the PRE-pass snapshot (both ends solved against
     // the same snapshot, mirroring Excalidraw's updateBoundPoint).
-    const startAdj: Pt = { x: abs[2], y: abs[3] };
-    const endAdj: Pt = { x: abs[last - 2], y: abs[last - 1] };
+    const rawEndAdj = { x: abs[last - 2], y: abs[last - 1] };
+    const oppositeAim = (binding: ConnectorBinding | null | undefined, fallback: Pt) =>
+      straightPair && binding && elements[binding.elementId]
+        ? bindingAimPoint(binding, elements[binding.elementId]) : fallback;
+    const startAdj = oppositeAim(shape.endBinding, { x: abs[2], y: abs[3] });
+    const endAdj = oppositeAim(shape.startBinding, { x: abs[last - 2], y: abs[last - 1] });
 
     if (solveStart) {
-      const p = resolveBinding(shape.startBinding!, elements[shape.startBinding!.elementId], startAdj);
+      const p = resolveBinding(shape.startBinding!, elements[shape.startBinding!.elementId], effectiveBindingMode(shape.startBinding!) === 'aim' ? startAdj : { x: abs[2], y: abs[3] });
       abs[0] = p.x;
       abs[1] = p.y;
     }
     if (solveEnd) {
-      const p = resolveBinding(shape.endBinding!, elements[shape.endBinding!.elementId], endAdj);
+      const p = resolveBinding(shape.endBinding!, elements[shape.endBinding!.elementId], effectiveBindingMode(shape.endBinding!) === 'aim' ? endAdj : rawEndAdj);
       abs[last] = p.x;
       abs[last + 1] = p.y;
     }
 
+    // Overlapping two-target outlines can reverse endpoint order. As upstream,
+    // use focus points for the exceptional collapsed span, never stale geometry.
+    if (straightPair && shape.startBinding?.mode === 'aim' && shape.endBinding?.mode === 'aim') {
+      const dx = startAdj.x - endAdj.x, dy = startAdj.y - endAdj.y;
+      if ((abs[2] - abs[0]) * dx + (abs[3] - abs[1]) * dy <= EPS) {
+        abs[0] = endAdj.x; abs[1] = endAdj.y; abs[2] = startAdj.x; abs[3] = startAdj.y;
+      }
+    }
+
     // Curve-aware bounds: bezier tangent bulges count toward the box
     // (identical to pathBounds for every other curve mode).
-    const b = pathBoundsFor(abs, shape.curve ?? 'linear', shape.closed ?? false, shape.tangents);
+    const local: number[] = [];
+    for (let i = 0; i < abs.length; i += 2) {
+      const p = slidePointToPath(shape, abs[i], abs[i + 1]);
+      local.push(p.x, p.y);
+    }
+    const b = pathGeometryUpdate(shape, local, shape.tangents);
     results.push({
       elementId: elId,
-      changes: { x: b.x, y: b.y, width: b.width, height: b.height, points: b.points },
+      changes: { x: b.x!, y: b.y!, width: b.width!, height: b.height!, points: b.points! },
     });
   }
   return results;
+}
+
+/** Keep explicit angle constraints on their original forward ray. Nearby targets
+ * may be acquired without intersecting that ray; focus clamping must not bend it. */
+export function pointOnBindingRay(point: Pt, adjacent: Pt, resolved: Pt): boolean {
+  const dx = point.x - adjacent.x, dy = point.y - adjacent.y;
+  const rx = resolved.x - adjacent.x, ry = resolved.y - adjacent.y;
+  const length = Math.hypot(dx, dy);
+  return length > EPS && Math.abs(dx * ry - dy * rx) / length < 1e-7 && dx * rx + dy * ry >= 0;
+}
+
+/** One acquisition/solution/constraint decision shared by preview and commit. */
+export function bindingDrop(point: Pt, adjacent: Pt, elements: SlideElement[], excludeId: string, zoom?: number, preserveRay = false, allowDock = true) {
+  const target = getBindingTarget2(point, elements, excludeId, zoom);
+  if (!target) return null;
+  const dock = allowDock ? connectorDockCue(point, target, zoom, preserveRay, adjacent) : null;
+  const binding = dock?.active ? dock.binding : bindingForDrop(point, target);
+  const resolved = resolveBinding(binding, target, adjacent);
+  if (preserveRay && !pointOnBindingRay(point, adjacent, resolved)) return null;
+  return { target, binding, point: resolved, dock };
 }
 
 /**
  * Bind-while-drawing commit helper (pure, DOM-free): given a freshly drawn
  * path's vertices in ABSOLUTE slide coords, find binding targets for the
  * first and last vertex (getBindingTarget2 semantics: inside or near the
- * silhouette, topmost wins), infer edge/pinned intent, and snap each bound
- * vertex to its binding's resolved position (identity for points outside
- * the silhouette; points inside get pulled onto the outline).
+ * silhouette, topmost wins), store normalized aims, and snap each bound
+ * vertex to its binding's visible silhouette position. Outside proximity
+ * acquisition aims at the center; interior drops retain their relative aim.
  *
  * The caller decides whether to call at all (Meta/Cmd held ⇒ binding
- * suppressed) and re-derives x/y/width/height from the returned vertices
- * via `pathBounds`.
+ * suppressed). `preserveRay` (Shift) rejects attachment solutions that bend
+ * either terminal's raw ray. The caller re-derives x/y/width/height from the
+ * returned vertices via `pathBounds`.
  */
 export function bindDraftEndpoints(
   absPoints: number[],
   elements: SlideElement[],
   zoom?: number,
+  preserveRay = false,
+  retainedStart?: ConnectorBinding | null,
 ): { absPoints: number[]; startBinding: ConnectorBinding | null; endBinding: ConnectorBinding | null } {
   const out = absPoints.slice();
   let startBinding: ConnectorBinding | null = null;
@@ -632,17 +592,44 @@ export function bindDraftEndpoints(
     const last = out.length - 2;
     const bindEnd = (idx: number, adjIdx: number): ConnectorBinding | null => {
       const pt: Pt = { x: out[idx], y: out[idx + 1] };
-      const target = getBindingTarget2(pt, elements, '', zoom);
-      if (!target) return null;
       const adj: Pt = { x: absPoints[adjIdx], y: absPoints[adjIdx + 1] };
-      const binding = bindingForDrop(pt, target, adj, zoom);
-      const snapped = resolveBinding(binding, target, adj);
-      out[idx] = snapped.x;
-      out[idx + 1] = snapped.y;
-      return binding;
+      const drop = bindingDrop(pt, adj, elements, '', zoom, preserveRay);
+      if (!drop) return null;
+      out[idx] = drop.point.x;
+      out[idx + 1] = drop.point.y;
+      return drop.binding;
     };
-    startBinding = bindEnd(0, 2);
+    const retainedTarget = retainedStart && elements.find(el => el.id === retainedStart.elementId && supportsConnectorDocks(el));
+    if (retainedStart && retainedTarget) {
+      startBinding = retainedStart;
+      const start = resolveBinding(retainedStart, retainedTarget, { x: out[2], y: out[3] });
+      out[0] = start.x; out[1] = start.y;
+    } else startBinding = retainedStart === undefined ? bindEnd(0, 2) : null;
     endBinding = bindEnd(last, last - 2);
   }
+  if (out.length === 4 && startBinding && endBinding) {
+    const a = elements.find(el => el.id === startBinding!.elementId)!;
+    const b = elements.find(el => el.id === endBinding!.elementId)!;
+    const af = bindingAimPoint(startBinding, a), bf = bindingAimPoint(endBinding, b);
+    let ap = resolveBinding(startBinding, a, bf), bp = resolveBinding(endBinding, b, af);
+    if ((bp.x - ap.x) * (bf.x - af.x) + (bp.y - ap.y) * (bf.y - af.y) <= EPS) { ap = af; bp = bf; }
+    if (!preserveRay || (pointOnBindingRay({ x: absPoints[0], y: absPoints[1] }, { x: absPoints[2], y: absPoints[3] }, ap) && pointOnBindingRay({ x: absPoints[2], y: absPoints[3] }, { x: absPoints[0], y: absPoints[1] }, bp))) {
+      out.splice(0, 4, ap.x, ap.y, bp.x, bp.y);
+    } else {
+      // A latched start is the origin of the explicit Shift ray, not a new
+      // acquisition. Reject only an incompatible end; never erase that pin.
+      return { absPoints: absPoints.slice(), startBinding: retainedStart ? startBinding : null, endBinding: null };
+    }
+  }
   return { absPoints: out, startBinding, endBinding };
+}
+
+export interface BindingAimGuide { endpoint: Pt; focus: Pt }
+export function bindingAimGuides(abs: number[], start: ConnectorBinding | null | undefined, end: ConnectorBinding | null | undefined, elements: SlideElement[]): BindingAimGuide[] {
+  return ([start, end] as const).flatMap((binding, i) => {
+    const target = elements.find(el => el.id === binding?.elementId);
+    if (binding?.mode !== 'aim' || !target || abs.length < 4) return [];
+    const idx = i === 0 ? 0 : abs.length - 2;
+    return [{ endpoint: { x: abs[idx], y: abs[idx + 1] }, focus: bindingAimPoint(binding, target) }];
+  });
 }

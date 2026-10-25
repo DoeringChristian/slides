@@ -1,4 +1,5 @@
 import React from 'react';
+import type { CurrentChange } from '../../store/currentMutation';
 import { Property } from './Property';
 
 /**
@@ -12,7 +13,7 @@ import { Property } from './Property';
 interface Props<T extends object> {
   property: Property<T>;
   element: T;
-  update: (changes: Partial<T>) => void;
+  update: (changes: CurrentChange<T>) => void;
 }
 
 export function SlidePropertyRow<T extends object>({

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useEditorStore } from '../../store/editorStore';
-import { usePresentationStore } from '../../store/presentationStore';
+import { updateElementFromCurrent, type CurrentChange } from '../../store/currentMutation';
 import { useSelectedElements } from '../../store/selectors';
 import { ColorPicker } from './ColorPicker';
 import { ScrubInput } from '../controls/ScrubInput';
@@ -18,11 +18,11 @@ import type { TextElement, TextStyle } from '../../types/presentation';
  */
 const FontSizeInput: React.FC<{
   element: TextElement;
-  update: (changes: Partial<TextElement>) => void;
+  update: (changes: CurrentChange<TextElement>) => void;
 }> = ({ element, update }) => {
   const scrub = useScrubCommit({ element, update, syncFields: ['style.fontSize'] });
-  const changesFor = (v: number): Partial<TextElement> => ({
-    style: { ...element.style, fontSize: v },
+  const changesFor = (current: TextElement, v: number): Partial<TextElement> => ({
+    style: { ...current.style, fontSize: v },
   });
   return (
     <div className="w-14">
@@ -33,8 +33,9 @@ const FontSizeInput: React.FC<{
         // arrows step by 1, whole-number commits.
         spec={{ min: 6, max: 200, step: 1, scrubStep: 0.5, precision: 0 }}
         onScrubStart={scrub.begin}
-        onPreview={(v) => scrub.preview(changesFor(v))}
-        onCommit={(v) => scrub.end(changesFor(v))}
+        onPreview={(v) => scrub.preview(current => changesFor(current, v))}
+        onCommit={(v) => scrub.end(current => changesFor(current, v))}
+        onEditCommit={(v) => scrub.commitDiscrete(current => changesFor(current, v))}
         onScrubCancel={scrub.cancel}
       />
     </div>
@@ -43,7 +44,6 @@ const FontSizeInput: React.FC<{
 
 export const TextFormatBar: React.FC = () => {
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
-  const updateElement = usePresentationStore((s) => s.updateElement);
   const selectedElements = useSelectedElements();
 
   const textEl = selectedElements[0] as TextElement | undefined;
@@ -51,10 +51,11 @@ export const TextFormatBar: React.FC = () => {
 
   const style = textEl.style;
 
-  const updateStyle = (changes: Partial<TextStyle>) => {
-    updateElement(activeSlideId, textEl.id, {
-      style: { ...style, ...changes },
-    } as Partial<TextElement>);
+  const update = (changes: CurrentChange<TextElement>) => updateElementFromCurrent(activeSlideId, textEl, changes);
+  const updateStyle = (changes: CurrentChange<TextStyle>) => {
+    update(current => ({ style: { ...current.style,
+      ...(typeof changes === 'function' ? changes(current.style) : changes),
+    } }));
   };
 
   return (
@@ -71,32 +72,32 @@ export const TextFormatBar: React.FC = () => {
 
       <FontSizeInput
         element={textEl}
-        update={(changes) => updateElement(activeSlideId, textEl.id, changes)}
+        update={update}
       />
 
       <button
-        onClick={() => updateStyle({ fontWeight: style.fontWeight === 'bold' ? 'normal' : 'bold' })}
+        onClick={() => updateStyle(current => ({ fontWeight: current.fontWeight === 'bold' ? 'normal' : 'bold' }))}
         className={`p-1 rounded ${style.fontWeight === 'bold' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-600'}`}
         title="Bold (Ctrl+B)"
       >
         <Bold size={14} />
       </button>
       <button
-        onClick={() => updateStyle({ fontStyle: style.fontStyle === 'italic' ? 'normal' : 'italic' })}
+        onClick={() => updateStyle(current => ({ fontStyle: current.fontStyle === 'italic' ? 'normal' : 'italic' }))}
         className={`p-1 rounded ${style.fontStyle === 'italic' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-600'}`}
         title="Italic (Ctrl+I)"
       >
         <Italic size={14} />
       </button>
       <button
-        onClick={() => updateStyle({ textDecoration: style.textDecoration === 'underline' ? 'none' : 'underline' })}
+        onClick={() => updateStyle(current => ({ textDecoration: current.textDecoration === 'underline' ? 'none' : 'underline' }))}
         className={`p-1 rounded ${style.textDecoration === 'underline' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-600'}`}
         title="Underline (Ctrl+U)"
       >
         <Underline size={14} />
       </button>
       <button
-        onClick={() => updateStyle({ textDecoration: style.textDecoration === 'line-through' ? 'none' : 'line-through' })}
+        onClick={() => updateStyle(current => ({ textDecoration: current.textDecoration === 'line-through' ? 'none' : 'line-through' }))}
         className={`p-1 rounded ${style.textDecoration === 'line-through' ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100 text-gray-600'}`}
       >
         <Strikethrough size={14} />
@@ -120,6 +121,7 @@ export const TextFormatBar: React.FC = () => {
         color={style.color}
         onChange={(color) => updateStyle({ color })}
         label="Text Color"
+        compact
       />
     </div>
   );

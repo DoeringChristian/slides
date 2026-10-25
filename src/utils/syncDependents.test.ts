@@ -45,7 +45,7 @@ function rect(id: string, over?: Partial<ShapeElement>): ShapeElement {
   return {
     ...base,
     id,
-    type: 'shape',
+    type: 'shape', creationPreset: 'rect',
     shapeType: 'rect',
     fill: '#fff',
     stroke: '#000',
@@ -59,7 +59,7 @@ function path(id: string, over?: Partial<ShapeElement>): ShapeElement {
   return {
     ...base,
     id,
-    type: 'shape',
+    type: 'shape', creationPreset: 'line',
     shapeType: 'path',
     fill: '',
     stroke: '#000',
@@ -78,7 +78,7 @@ function label(id: string, containerId: string, over?: Partial<TextElement>): Te
   return {
     ...base,
     id,
-    type: 'text',
+    type: 'text', textSizing: 'user-width', boundTextLayout: 'padded',
     text: 'Label',
     style: { ...style },
     containerId,
@@ -390,4 +390,11 @@ describe('duplicateElements (containerId remap)', () => {
     expect(lblCopy.containerId).toBeUndefined();
     expect('containerId' in lblCopy).toBe(false);
   });
+});
+
+
+test('rotated path label uses the rendered arc midpoint, not unrotated x/y', () => {
+  const container = path('rotated', { x: 100, y: 50, width: 100, height: 100, rotation: 90, points: [0, 0, 100, 0] });
+  const anchor = pathLabelCenter(container)!;
+  expect(anchor.x).toBeCloseTo(200); expect(anchor.y).toBeCloseTo(100);
 });

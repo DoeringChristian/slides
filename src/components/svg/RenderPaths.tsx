@@ -1,18 +1,38 @@
-import React from 'react';
+import { SVGStrokeCoverage } from './SVGStrokeCoverage';
+import type { NativeStrokePlan } from '../../utils/nativeStrokePlan';
+import React, { useId } from 'react';
+import { SVGStrokeClip } from './SVGStrokeClip';
 import type { WriteEffect } from '../../utils/interpolation';
+import { parsePaintColor } from '../../utils/paintColor';
 
 /** One renderable SVG path used by every glyph/path-based animation. */
 export interface SvgPath {
   d: string;
+  /** Original fill region; terminal consumption affects only stroke coverage. */
+  fillD?: string;
+  strokePlan?: NativeStrokePlan | null;
+  fillRule?: 'evenodd' | 'nonzero';
+  /** Vector paint roles share one non-staggered Create clock. */
+  createRole?: 'fill' | 'stroke';
+  /** Shared shaft-only cuts; glyph paths never carry these. */
+  shaftClipPaths?: string[];
   transform: string;
   /** Total path length used both for budget calculations and as the
    *  stroke-dasharray value. In SCREEN-pixel space. */
   length: number;
   /** Fill colour applied during the FILL phase. */
   fillColor: string;
-  /** Stroke colour during the REVEAL phase. Defaults to `fillColor` (matches
-   *  text behaviour); shapes may pass a separate stroke colour. */
+  /** Independent topology paint alpha, multiplied by animation/colour alpha. */
+  fillOpacity?: number;
+  /** Source colour when fillColor is a paint-server URL (e.g. hatch).
+   *  Used only to detect visible fill; never replaces the remembered RGB. */
+  fillSourceColor?: string;
+  /** Actual shape stroke, or glyph reveal stroke. Defaults to `fillColor`
+   *  for text. Shape input picking consumes this paint, not the tracing pen. */
   strokeColor?: string;
+  /** Create may trace a fill-only shape before filling it. This pen paint
+   *  must not manufacture a stroke in steady rendering or input geometry. */
+  traceStrokeColor?: string;
   /** Math glyphs render inside a heavy scale-down transform; without
    *  non-scaling-stroke their stroke width shrinks to invisibility. */
   nonScalingStroke: boolean;
@@ -103,6 +123,7 @@ interface RenderPathsProps {
  * stroke — so the transition end-state matches the steady frame exactly.
  */
 export const RenderPaths: React.FC<RenderPathsProps> = ({ paths, writeFx, strokeWidth }) => {
+  const coverageId = useId();
   const T = writeFx ? writeFx.t : Number.POSITIVE_INFINITY;
   const mode: WriteEffect['mode'] = writeFx?.mode ?? 'write';
   const N = paths.length;
@@ -113,7 +134,16 @@ export const RenderPaths: React.FC<RenderPathsProps> = ({ paths, writeFx, stroke
     <g>
       {paths.map((p, i) => {
         let frame;
-        switch (mode) {
+        if (mode === 'create' && p.createRole) {
+          // Outline first; paint regions may close contours for fill, but those
+          // closing edges are never traced. Stroke paint remains after reveal.
+          const reveal = Math.max(0, Math.min(1, T / 0.7));
+          frame = {
+            dashOffset: p.createRole === 'stroke' ? p.length * (1 - reveal) : 0,
+            fillOpacity: p.createRole === 'fill' ? Math.max(0, Math.min(1, (T - 0.7) / 0.3)) : 0,
+            strokeOpacity: p.createRole === 'stroke' && T > 0 ? 1 : 0,
+          };
+        } else switch (mode) {
           case 'typewriter':
             frame = typewriterGlyphFrame(i, T, N);
             break;
@@ -123,22 +153,27 @@ export const RenderPaths: React.FC<RenderPathsProps> = ({ paths, writeFx, stroke
           case 'write':
           case 'create':
           default: {
-            // 'none' fill or unset → there's nothing to fill (open path);
-            // tell writeGlyphFrame to hold the stroke through the FILL
-            // window so the line doesn't flash off at the end.
-            const hasFill = !!p.fillColor && p.fillColor !== 'none' && p.fillColor !== 'transparent';
+            // Zero-alpha paint has no visible fill, even when represented by
+            // a hatch URL. Hold the stroke just as for a no-colour sentinel.
+            const hasFill = (parsePaintColor(p.fillSourceColor ?? p.fillColor)?.a ?? 1) > 0;
             frame = writeGlyphFrame(p.length, i, lag, T, glyphSpan, hasFill);
             break;
           }
         }
-        const strokeCol = p.strokeColor ?? p.fillColor;
+        const separateFill = !!p.strokePlan || !!p.shaftClipPaths?.length || p.fillD !== undefined;
+        const strokeCol = p.traceStrokeColor ?? p.strokeColor ?? p.fillColor;
         return (
-          <path
-            key={i}
+          <g key={i} transform={p.transform || undefined}>
+          {separateFill && (
+            <path d={p.fillD ?? p.d} fill={p.fillColor} fillOpacity={frame.fillOpacity * (p.fillOpacity ?? 1)} stroke="none" />
+          )}
+          <SVGStrokeClip paths={p.shaftClipPaths ?? []}>
+          {p.strokePlan ? <SVGStrokeCoverage plan={p.strokePlan} color={strokeCol} width={strokeWidth}
+            dash={p.length} offset={frame.dashOffset} opacity={frame.strokeOpacity} instanceId={`${coverageId}-${i}`} /> : <path
             d={p.d}
-            transform={p.transform || undefined}
-            fill={p.fillColor}
-            fillOpacity={frame.fillOpacity}
+            fillRule={p.fillRule}
+            fill={separateFill ? 'none' : p.fillColor}
+            fillOpacity={frame.fillOpacity * (p.fillOpacity ?? 1)}
             stroke={strokeCol}
             strokeOpacity={frame.strokeOpacity}
             strokeWidth={strokeWidth}
@@ -147,7 +182,9 @@ export const RenderPaths: React.FC<RenderPathsProps> = ({ paths, writeFx, stroke
             strokeDasharray={p.length}
             strokeDashoffset={frame.dashOffset}
             vectorEffect={p.nonScalingStroke ? 'non-scaling-stroke' : undefined}
-          />
+          />}
+          </SVGStrokeClip>
+          </g>
         );
       })}
     </g>

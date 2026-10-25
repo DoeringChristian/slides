@@ -1,4 +1,6 @@
 import PptxGenJS from 'pptxgenjs';
+import { officePaint, officeShapeNeedsSvg, officeShapeSvg } from './officeShape';
+import { SLIDE_WIDTH, SLIDE_HEIGHT } from './constants';
 import type { Presentation, Slide, TextElement, ShapeElement, ImageElement, SlideBackground, ArrowheadType } from '../types/presentation';
 
 /** Nearest PptxGenJS line-end type for a typed arrowhead. PowerPoint's
@@ -31,7 +33,7 @@ function pptxArrowFor(
       return 'triangle';
   }
 }
-import { TEXT_BOX_PADDING } from './constants';
+import { textInsets } from './boundTextLayout';
 import { parseBlocks, getBlockFontMultiplier } from '../components/canvas/CustomMarkdownRenderer';
 
 // Conversion: app px → inches (pptxgenjs uses inches)
@@ -124,7 +126,7 @@ function addTextElement(slide: PptxGenJS.Slide, el: TextElement) {
     y: el.y * PX_TO_INCH,
     w: el.width * PX_TO_INCH,
     h: el.height * PX_TO_INCH,
-    margin: [TEXT_BOX_PADDING * PX_TO_INCH, TEXT_BOX_PADDING * PX_TO_INCH, TEXT_BOX_PADDING * PX_TO_INCH, TEXT_BOX_PADDING * PX_TO_INCH] as [number, number, number, number],
+    margin: [textInsets(el) * PX_TO_INCH, textInsets(el) * PX_TO_INCH, textInsets(el) * PX_TO_INCH, textInsets(el) * PX_TO_INCH] as [number, number, number, number],
     align: el.style.align as PptxGenJS.HAlign,
     valign: el.style.verticalAlign as PptxGenJS.VAlign,
     rotate: el.rotation || 0,
@@ -135,21 +137,25 @@ function addTextElement(slide: PptxGenJS.Slide, el: TextElement) {
 }
 
 function addShapeElement(slide: PptxGenJS.Slide, el: ShapeElement) {
+  if (officeShapeNeedsSvg(el)) {
+    slide.addImage({ data: `data:image/svg+xml;base64,${btoa(officeShapeSvg(el))}`, x: 0, y: 0,
+      w: SLIDE_WIDTH * PX_TO_INCH, h: SLIDE_HEIGHT * PX_TO_INCH });
+    return;
+  }
+  const fill = officePaint(el.fill, el.opacity), stroke = officePaint(el.stroke, el.opacity);
   const x = el.x * PX_TO_INCH;
   const y = el.y * PX_TO_INCH;
   const w = el.width * PX_TO_INCH;
   const h = el.height * PX_TO_INCH;
-  const transparency = Math.round((1 - el.opacity) * 100);
-
   const hasFill = el.fill && el.fill !== 'transparent' && el.fill !== 'none' && el.fill !== '';
   const hasStroke = el.stroke && el.stroke !== 'none' && el.stroke !== '' && el.strokeWidth > 0;
 
   const fillProps: PptxGenJS.ShapeFillProps | undefined = hasFill
-    ? { color: hexWithoutHash(el.fill), transparency }
-    : undefined;
+    ? { color: hexWithoutHash(fill.color), transparency: (1 - fill.alpha) * 100 }
+    : { color: 'FFFFFF', transparency: 100 };
   const lineProps: PptxGenJS.ShapeLineProps | undefined = hasStroke
-    ? { color: hexWithoutHash(el.stroke), width: el.strokeWidth }
-    : undefined;
+    ? { color: hexWithoutHash(stroke.color), width: el.strokeWidth, transparency: (1 - stroke.alpha) * 100 }
+    : { color: '000000', transparency: 100 };
 
   switch (el.shapeType) {
     case 'rect': {
@@ -207,7 +213,8 @@ function addShapeElement(slide: PptxGenJS.Slide, el: ShapeElement) {
       slide.addShape('line', {
         x, y, w, h,
         line: {
-          color: hexWithoutHash(strokeColor),
+          color: hexWithoutHash(officePaint(strokeColor).color),
+          transparency: (1 - officePaint(strokeColor, el.opacity).alpha) * 100,
           width: el.strokeWidth || 3,
           ...(endArrowType ? { endArrowType } : {}),
           ...(beginArrowType ? { beginArrowType } : {}),

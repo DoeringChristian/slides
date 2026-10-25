@@ -3,7 +3,7 @@ import { PreviewSelect } from '../controls/PreviewSelect';
 import {
   ChevronLeft, ChevronRight, Minus, TrendingUp, Spline, Layers,
   Type, ArrowRightLeft, PenLine, Pencil, MoveHorizontal,
-  ArrowRightFromLine, Maximize, Circle, Sparkles,
+  ArrowRightFromLine, Maximize, Circle, Sparkles, MoveRight,
 } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
@@ -37,6 +37,7 @@ const EASING_ICONS: Record<EasingType, React.ReactNode> = {
   typewriter: <Type size={ICON_SIZE} />,
   write: <PenLine size={ICON_SIZE} />,
   create: <Pencil size={ICON_SIZE} />,
+  extend: <MoveRight size={ICON_SIZE} />,
   wipe: <MoveHorizontal size={ICON_SIZE} />,
   slidein: <ArrowRightFromLine size={ICON_SIZE} />,
   grow: <Maximize size={ICON_SIZE} />,

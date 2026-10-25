@@ -65,6 +65,21 @@ function removeElementFromYSlides(doc: Y.Doc, elementId: string): string | null 
     }
 
     elements!.delete(elementId);
+    // Keep reference repair in the caller's deletion transaction; do not
+    // resolve bindings again or change the surviving connector geometry.
+    for (const remaining of elements!.values()) {
+      if (remaining.get('type') === 'shape') {
+        for (const key of ['startBinding', 'endBinding']) {
+          const binding = remaining.get(key) as Y.Map<unknown> | null | undefined;
+          if (binding?.get('elementId') === elementId) remaining.set(key, null);
+        }
+      } else if (remaining.get('type') === 'group') {
+        const children = remaining.get('childIds') as Y.Array<string>;
+        for (let i = children.length - 1; i >= 0; i--) {
+          if (children.get(i) === elementId) children.delete(i, 1);
+        }
+      }
+    }
     const elementOrder = slide?.get('elementOrder') as Y.Array<string> | undefined;
     if (elementOrder) {
       const idx = elementOrder.toArray().indexOf(elementId);

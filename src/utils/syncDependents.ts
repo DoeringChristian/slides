@@ -25,7 +25,9 @@
 import type { Slide, SlideElement, ShapeElement, TextElement } from '../types/presentation';
 import { rebindAfterElementsMoved } from './connectorUtils';
 import { pathArcLength, pointAtArcLength } from './pathShapes';
+import { pathPointToSlide } from './pathEditing';
 import { createTextElement } from './slideFactory';
+import { boundTextBaseline, boundTextUsableRect, boundTextUsableSize, isMeasuredBoundText, supportsMeasuredBoundText, type BoundTextFitContext } from './boundTextLayout';
 import { DEFAULT_TEXT_STYLE, TEXT_BOX_PADDING } from './constants';
 
 /** Gap kept between a container's edge and its bound label on each side. */
@@ -56,13 +58,15 @@ export function findBoundTextIn(
   elementOrder: readonly string[],
   containerId: string,
 ): TextElement | null {
+  let hidden: TextElement | null = null;
   for (const id of elementOrder) {
     const el = elements[id];
-    if (el && el.type === 'text' && (el as TextElement).containerId === containerId) {
-      return el as TextElement;
+    if (el?.type === 'text' && el.containerId === containerId) {
+      if (el.visible !== false) return el;
+      hidden ??= el;
     }
   }
-  return null;
+  return hidden;
 }
 
 /**
@@ -112,7 +116,7 @@ export function pathLabelCenter(container: ShapeElement): { x: number; y: number
   const total = pathArcLength(pts, curve, closed, container.tangents);
   const mid = pointAtArcLength(pts, curve, closed, total / 2, container.tangents);
   if (!mid) return null;
-  return { x: container.x + mid.x, y: container.y + mid.y };
+  return pathPointToSlide(container, mid.x, mid.y);
 }
 
 /** Anchor point a bound label is centered on: arc-length midpoint for path
@@ -131,7 +135,8 @@ function labelAnchorFor(container: SlideElement): { x: number; y: number } {
  * at). Shapes: container width minus the edge gap on each side; arrows/paths
  * have no box to derive it from and use the fixed PATH_LABEL_WIDTH.
  */
-export function maxLabelWidthFor(container: SlideElement): number {
+export function maxLabelWidthFor(container: SlideElement, label?: TextElement): number {
+  if (label && isMeasuredBoundText(container, label)) return boundTextUsableSize(container, container.width);
   if (isPathContainer(container)) return PATH_LABEL_WIDTH;
   return Math.max(MIN_LABEL_WIDTH, container.width - 2 * BOUND_TEXT_PADDING);
 }
@@ -140,11 +145,14 @@ export function maxLabelWidthFor(container: SlideElement): number {
  *  minus the text element's own inner padding. Every consumer that lays a
  *  label out for FITTING (editor canvas refit, edit overlay) must wrap at
  *  this width; the element box then shrinks to the laid-out extent. */
-export function labelWrapWidthFor(container: SlideElement): number {
+export function labelWrapWidthFor(container: SlideElement, label?: TextElement): number {
+  if (label && isMeasuredBoundText(container, label)) return maxLabelWidthFor(container, label);
   return Math.max(1, maxLabelWidthFor(container) - 2 * TEXT_BOX_PADDING);
 }
 
 export interface LabelFit {
+  /** Resulting measured height, including a return exactly to the stored box. */
+  fittedHeight?: number;
   /** Hug-the-text label box (x/y/width/height), or null when already fitted. */
   label: Partial<TextElement> | null;
   /** Grow-only container change so label + gap still fit, or null. */
@@ -173,7 +181,25 @@ export function fitLabelToDoc(
   container: SlideElement,
   label: TextElement,
   doc: { width: number; height: number },
+  context?: BoundTextFitContext,
 ): LabelFit {
+  if (isMeasuredBoundText(container, label)) {
+    const currentHeight = context?.currentHeight ?? container.height;
+    const baseline = context?.baselineHeight ?? boundTextBaseline(container, label);
+    const usableHeight = boundTextUsableSize(container, currentHeight);
+    // Passive refits may grow but must never replay an edit's shrink history.
+    const shouldFit = doc.height > usableHeight || (!!context && currentHeight > baseline && doc.height < usableHeight);
+    const needed = container.type === 'shape' && container.shapeType === 'ellipse'
+      ? Math.round((Math.ceil(doc.height) + 10) * Math.SQRT2) : Math.ceil(doc.height) + 10;
+    const height = shouldFit ? needed : currentHeight;
+    const width = Math.min(maxLabelWidthFor(container, label), Math.max(1, doc.width + 0.001));
+    const usable = boundTextUsableRect({ ...container, height });
+    const fitted = { x: usable.x + (usable.width - width) / 2,
+      y: usable.y + (usable.height - doc.height) / 2, width, height: doc.height, rotation: container.rotation };
+    const changed = Object.entries(fitted).some(([key, value]) => Math.abs(value - (label[key as keyof typeof fitted] as number)) > (key === 'x' || key === 'y' ? EPS : FIT_EPS));
+    return { fittedHeight: height, label: changed ? fitted : null,
+      container: Math.abs(height - container.height) > FIT_EPS ? { height } : null };
+  }
   const width = Math.min(
     Math.max(MIN_LABEL_WIDTH, doc.width + 2 * TEXT_BOX_PADDING),
     maxLabelWidthFor(container),
@@ -220,26 +246,30 @@ export function boundLabelChangesFor(
   container: SlideElement,
   label: TextElement,
 ): Partial<TextElement> | null {
-  const width = Math.min(label.width, maxLabelWidthFor(container));
-  const anchor = labelAnchorFor(container);
+  const width = Math.min(label.width, maxLabelWidthFor(container, label));
+  const usable = isMeasuredBoundText(container, label) ? boundTextUsableRect(container) : null;
+  const anchor = usable ? { x: usable.x + usable.width / 2, y: usable.y + usable.height / 2 } : labelAnchorFor(container);
   const x = anchor.x - width / 2;
   const y = anchor.y - label.height / 2;
   if (
     Math.abs(x - label.x) < EPS &&
     Math.abs(y - label.y) < EPS &&
-    Math.abs(width - label.width) < EPS
+    Math.abs(width - label.width) < EPS &&
+    (!isMeasuredBoundText(container, label) || label.rotation === container.rotation)
   ) {
     return null;
   }
-  return Math.abs(width - label.width) < EPS ? { x, y } : { x, y, width };
+  return { x, y, ...(Math.abs(width - label.width) < EPS ? {} : { width }),
+    ...(isMeasuredBoundText(container, label) ? { rotation: container.rotation } : {}) };
 }
 
 /** Fresh empty bound label for a container: a SMALL box (the text hugs into
  *  it as it's typed — the refit pass grows it), centered per the placement
  *  rules above (bbox center for shapes, arc midpoint for paths). */
 export function createBoundLabel(container: SlideElement): TextElement {
+  const measured = supportsMeasuredBoundText(container);
   const height =
-    DEFAULT_TEXT_STYLE.fontSize * DEFAULT_TEXT_STYLE.lineHeight + 2 * TEXT_BOX_PADDING;
+    DEFAULT_TEXT_STYLE.fontSize * DEFAULT_TEXT_STYLE.lineHeight + (measured ? 0 : 2 * TEXT_BOX_PADDING);
   const width = Math.min(MIN_LABEL_WIDTH, maxLabelWidthFor(container));
   const center = labelAnchorFor(container);
   return createTextElement({
@@ -249,6 +279,7 @@ export function createBoundLabel(container: SlideElement): TextElement {
     height,
     text: '',
     containerId: container.id,
+    ...(measured ? { boundTextLayout: 'measured' as const, boundTextBaselineHeight: Math.max(1, container.height), rotation: container.rotation } : {}),
     style: { ...DEFAULT_TEXT_STYLE, align: 'center', verticalAlign: 'middle' },
   });
 }
@@ -272,10 +303,15 @@ export function syncDependentsAfterMutation(
   elements: Record<string, SlideElement>,
   elementOrder: readonly string[],
   movedIds: ReadonlySet<string>,
+  beforeElements?: Record<string, SlideElement>,
+  measuredFit = false,
+  mutationBeforeElements = beforeElements,
 ): DependentSync[] {
   if (movedIds.size === 0) return [];
 
-  const rebinds = rebindAfterElementsMoved(elements, elementOrder, movedIds);
+  // Full mutation context is also available to verified extension matching,
+  // but must not enable bulk-gesture exemptions for ordinary updateElement.
+  const rebinds = rebindAfterElementsMoved(elements, elementOrder, movedIds, beforeElements);
   const results: DependentSync[] = rebinds.map((r) => ({
     elementId: r.elementId,
     changes: r.changes as Partial<SlideElement>,
@@ -306,7 +342,12 @@ export function syncDependentsAfterMutation(
     // by the epsilon check; anything else re-anchors it).
     const container = working[cid];
     if (!container) continue;
-    const changes = boundLabelChangesFor(container, label);
+    let changes = boundLabelChangesFor(container, label);
+    const before = mutationBeforeElements?.[cid];
+    if (!measuredFit && before && isMeasuredBoundText(container, label) &&
+        (before.width !== container.width || before.height !== container.height)) {
+      changes = { ...changes, boundTextBaselineHeight: Math.max(1, container.height) };
+    }
     if (changes) results.push({ elementId: id, changes });
   }
 

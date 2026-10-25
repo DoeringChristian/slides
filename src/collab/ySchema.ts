@@ -2,11 +2,10 @@
 // src/types/presentation.ts). Functions are deterministic and pure: build a
 // fresh Y.Doc from a JSON Presentation, or materialise a Y.Doc back to JSON.
 //
-// The schema lives in one place so the converter, the adapter (Phase 5), and
-// the server's cold-start migration (Phase 3) can all reference it without
-// drift.
+// Shared by the converter and adapter to prevent schema drift.
 
 import * as Y from 'yjs';
+import { assertCurrentPresentation } from '../utils/currentPresentation';
 import type {
   Presentation,
   Slide,
@@ -34,6 +33,7 @@ export const ROOT_KEY = 'presentation';
  * empty Y.Doc. The caller owns the returned doc.
  */
 export function jsonToYDoc(presentation: Presentation, doc: Y.Doc = new Y.Doc()): Y.Doc {
+  assertCurrentPresentation(presentation);
   const root = doc.getMap(ROOT_KEY);
   doc.transact(() => {
     populateRoot(root, presentation);
@@ -53,7 +53,7 @@ export function yDocToJson(doc: Y.Doc): Presentation {
   // Yjs' .toJSON() recurses through every nested Y type, returning plain
   // strings / arrays / objects. The schema is laid out so the recursion
   // matches the Presentation TypeScript shape exactly.
-  return root.toJSON() as Presentation;
+  return assertCurrentPresentation(root.toJSON() as Presentation);
 }
 
 // =============================================================================
@@ -151,7 +151,6 @@ export function slideToYMap(slide: Slide): Y.Map<unknown> {
   s.set('transition', mkScalarMap(slide.transition));
   s.set('notes', mkText(slide.notes));
   setIfDefined(s, 'hidden', slide.hidden);
-  setIfDefined(s, 'autoAdvance', slide.autoAdvance);
   setIfDefined(s, 'autoAdvanceDelay', slide.autoAdvanceDelay);
   setIfDefined(s, 'groupId', slide.groupId);
   return s;
@@ -196,17 +195,24 @@ export function elementToYMap(el: SlideElement): Y.Map<unknown> {
     case 'text': {
       const t = el as TextElement;
       m.set('text', mkText(t.text));
+      setIfDefined(m, 'textSizing', t.textSizing);
+      setIfDefined(m, 'boundTextLayout', t.boundTextLayout);
+      setIfDefined(m, 'boundTextBaselineHeight', t.boundTextBaselineHeight);
       m.set('style', mkScalarMap(t.style));
       // Bound-text container ref. `null` is normalised to absent — the
       // store never writes null (labels are deleted, not unbound), and
-      // migration strips nulls from loaded decks.
+      // Null and absent both mean free-standing text.
       setIfDefined(m, 'containerId', t.containerId ?? undefined);
       return m;
     }
     case 'shape': {
       const s = el as ShapeElement;
       m.set('shapeType', s.shapeType);
+      setIfDefined(m, 'creationPreset', s.creationPreset);
+      if (s.geometry) m.set('geometry', JSON.parse(JSON.stringify(s.geometry)));
       m.set('fill', s.fill);
+      setIfDefined(m, 'fillStyle', s.fillStyle);
+      setIfDefined(m, 'strokeStyle', s.strokeStyle);
       m.set('stroke', s.stroke);
       m.set('strokeWidth', s.strokeWidth);
       m.set('cornerRadius', s.cornerRadius);
@@ -321,8 +327,12 @@ export function applyChangesToYElement(elMap: Y.Map<unknown>, changes: Record<st
   for (const [key, value] of Object.entries(changes)) {
     if (value === undefined) continue;
     // Connector bindings are REPLACED wholesale, never key-merged: switching
-    // a binding's mode (edge ⇄ pinned) must drop the other mode's fields
-    // (focus/gap vs fixedPoint), exactly like the JSON path's object spread.
+    // a binding's mode (aim ⇄ pinned) must drop aim-only gap metadata, exactly like the JSON path's object spread.
+    // Compound geometry is one atomic value, never a nested key merge.
+    if (key === 'geometry') {
+      elMap.set(key, value === null ? null : JSON.parse(JSON.stringify(value)));
+      continue;
+    }
     if (key === 'startBinding' || key === 'endBinding') {
       elMap.set(key, value !== null && typeof value === 'object' ? mkScalarMap(value) : value);
       continue;

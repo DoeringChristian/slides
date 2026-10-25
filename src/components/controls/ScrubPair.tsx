@@ -15,6 +15,7 @@ export interface ScrubPairProps {
   specs: [ScrubSpec, ScrubSpec];
   units?: [string | undefined, string | undefined];
   onCommit: (index: 0 | 1, value: number) => void;
+  onEditCommit?: (index: 0 | 1, value: number) => void;
   /** Live-preview pass-throughs (see ScrubInput / useScrubCommit): a shared
    *  session works because only one axis scrubs at a time. */
   onPreview?: (index: 0 | 1, value: number) => void;
@@ -31,6 +32,7 @@ export const ScrubPair: React.FC<ScrubPairProps> = ({
   specs,
   units,
   onCommit,
+  onEditCommit,
   onPreview,
   onScrubStart,
   onScrubCancel,
@@ -47,6 +49,7 @@ export const ScrubPair: React.FC<ScrubPairProps> = ({
         spec={specs[i]}
         unit={units?.[i]}
         onCommit={(v) => onCommit(i, v)}
+        onEditCommit={onEditCommit && ((v) => onEditCommit(i, v))}
         onPreview={onPreview && ((v) => onPreview(i, v))}
         onScrubStart={onScrubStart && (() => onScrubStart(i))}
         onScrubCancel={onScrubCancel && (() => onScrubCancel(i))}

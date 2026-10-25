@@ -1,7 +1,8 @@
+import { textInsets, textInkOverflow } from './boundTextLayout';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Slide, SlideElement, TextElement, ShapeElement, ImageElement, Resource } from '../types/presentation';
-import { SLIDE_WIDTH, SLIDE_HEIGHT, TEXT_BOX_PADDING } from './constants';
+import { SLIDE_WIDTH, SLIDE_HEIGHT } from './constants';
 import { renderMarkdownToHtml } from '../components/canvas/CustomMarkdownRenderer';
 import { RenderShape } from '../components/svg/ElementRenderer';
 import { attachLabelMasks } from './syncDependents';
@@ -29,7 +30,8 @@ import { attachLabelMasks } from './syncDependents';
 // Render text element to SVG string
 function renderTextElement(element: TextElement): string {
   const { text, style, x, y, width, height, rotation, opacity } = element;
-  const padding = TEXT_BOX_PADDING;
+  const padding = textInsets(element);
+  const ink = textInkOverflow(element);
 
   const htmlContent = renderMarkdownToHtml(text || '', style, 1);
 
@@ -49,8 +51,8 @@ function renderTextElement(element: TextElement): string {
 
   return `
     <g transform="${transform}" opacity="${opacity}">
-      <foreignObject x="${x + padding}" y="${y + padding}" width="${width - padding * 2}" height="${height - padding * 2}">
-        <div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;font-family:${style.fontFamily};font-style:${style.fontStyle};color:${style.color};text-align:${style.align};${textDecoration}word-wrap:break-word;overflow-wrap:break-word;white-space:pre-wrap;overflow:hidden;${verticalAlignStyle}">
+      <foreignObject x="${x + padding}" y="${y + padding}" width="${width - padding * 2}" height="${height - padding * 2}"${ink ? ' overflow="visible"' : ''}>
+        <div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%;font-family:${style.fontFamily};font-style:${style.fontStyle};color:${style.color};text-align:${style.align};${textDecoration}word-wrap:break-word;overflow-wrap:break-word;white-space:pre-wrap;overflow:${ink ? 'visible' : 'hidden'};${verticalAlignStyle}">
           ${htmlContent}
         </div>
       </foreignObject>

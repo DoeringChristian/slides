@@ -1,3 +1,4 @@
+import { withPaintAlpha } from './paintColor';
 import JSZip from 'jszip';
 import type { Presentation, ShapeType, SlideBackground, SlideElement } from '../types/presentation';
 import { createPresentation, createSlide, createTextElement, createShapeElement, createResource } from './slideFactory';
@@ -58,10 +59,12 @@ function getElementByTag(parent: Element | Document, ns: string, localName: stri
 function parseColor(solidFillEl: Element | null): string | null {
   if (!solidFillEl) return null;
 
+  const alpha = getElementByTag(solidFillEl, NS.a, 'alpha')?.getAttribute('val');
+  const paint = (color: string) => alpha === undefined || alpha === null ? color : withPaintAlpha(color, Number(alpha) / 100000);
   const srgb = getElementByTag(solidFillEl, NS.a, 'srgbClr');
   if (srgb) {
     const val = srgb.getAttribute('val');
-    if (val) return '#' + val;
+    if (val) return paint('#' + val);
   }
 
   const scheme = getElementByTag(solidFillEl, NS.a, 'schemeClr');
@@ -73,7 +76,7 @@ function parseColor(solidFillEl: Element | null): string | null {
       'accent4': '#ffc000', 'accent5': '#5b9bd5', 'accent6': '#70ad47',
       'lt1': '#ffffff', 'dk1': '#000000', 'lt2': '#e7e6e6', 'dk2': '#44546a',
     };
-    if (val && themeMap[val]) return themeMap[val];
+    if (val && themeMap[val]) return paint(themeMap[val]);
   }
 
   return null;
@@ -408,7 +411,7 @@ function processGroupShape(
       }));
     } else if (mappedShape) {
       const solidFill = spPr ? directChild(spPr, NS.a, 'solidFill') : null;
-      const fillColor = parseColor(solidFill) || '#4285f4';
+      const fillColor = spPr && directChild(spPr, NS.a, 'noFill') ? '' : (parseColor(solidFill) || '#4285f4');
       const ln = spPr ? directChild(spPr, NS.a, 'ln') : null;
       let strokeColor = '#2962ff';
       let strokeWidth = 0;
@@ -569,7 +572,7 @@ export async function importPptx(file: File): Promise<Presentation> {
         }));
       } else if (mappedShape) {
         const solidFill = spPr ? directChild(spPr, NS.a, 'solidFill') : null;
-        const fillColor = parseColor(solidFill) || '#4285f4';
+        const fillColor = spPr && directChild(spPr, NS.a, 'noFill') ? '' : (parseColor(solidFill) || '#4285f4');
         const ln = spPr ? directChild(spPr, NS.a, 'ln') : null;
         let strokeColor = '#2962ff';
         let strokeWidth = 0;
@@ -710,6 +713,7 @@ export async function importPptx(file: File): Promise<Presentation> {
       }
 
       elements.push(createShapeElement('path', {
+        creationPreset: endArrow ? 'arrow' : 'line',
         curve: 'linear',
         // Import fidelity: any tail marker lifts to the classic triangle.
         ...(endArrow ? { endHead: 'triangle' as const } : {}),

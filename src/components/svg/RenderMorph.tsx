@@ -2,8 +2,9 @@ import React, { useEffect, useReducer } from 'react';
 import type { SlideElement, TextElement, ShapeElement } from '../../types/presentation';
 import type { MorphFx } from '../../utils/interpolation';
 import { lerp, lerpColor } from '../../utils/interpolation';
-import { TEXT_BOX_PADDING } from '../../utils/constants';
-import { getLayoutSync, layoutSvgText, textVerticalOffset, type SvgTextDoc } from '../../utils/textLayout';
+import { textInsets } from '../../utils/boundTextLayout';
+import { textVerticalOffset, type SvgTextDoc } from '../../utils/textLayout';
+import { getUserTextLayoutSync, layoutUserText } from '../../utils/userTextSizing';
 import { samplePathD } from '../../utils/glyphPaths';
 import {
   shapeToUnitOutline,
@@ -52,7 +53,7 @@ function textGeomKey(text: TextElement, boxWidth: number): string {
   return [
     text.text,
     s.fontSize, s.fontWeight, s.fontStyle, s.lineHeight, s.align, s.verticalAlign,
-    boxWidth, text.height,
+    boxWidth, text.height, textInsets(text), text.textSizing, s.color, s.fontFamily, s.textDecoration,
   ].join('|');
 }
 
@@ -76,7 +77,7 @@ function buildPairing(
   const hit = pairingCache.get(key);
   if (hit) return hit;
 
-  const vOff = textVerticalOffset(textEl.style.verticalAlign, textEl.height, TEXT_BOX_PADDING, doc.height);
+  const vOff = textVerticalOffset(textEl.style.verticalAlign, textEl.height, textInsets(textEl), doc.height);
   const glyphs: number[][] = [];
   const glyphColors: string[] = [];
   for (const p of doc.paths) {
@@ -86,14 +87,14 @@ function buildPairing(
     if (raw.length === 2 * SAMPLES_PER_GLYPH) {
       for (let i = 0; i < raw.length; i += 2) {
         const [x, y] = applyMat(mat, raw[i], raw[i + 1]);
-        pts.push(x + TEXT_BOX_PADDING, y + TEXT_BOX_PADDING + vOff);
+        pts.push(x + textInsets(textEl), y + textInsets(textEl) + vOff);
       }
     } else {
       // Sampling unavailable (or degenerate d): collapse the glyph to its
       // pen position so the pair still animates instead of vanishing.
       const [x, y] = applyMat(mat, 0, 0);
       for (let i = 0; i < SAMPLES_PER_GLYPH; i++) {
-        pts.push(x + TEXT_BOX_PADDING, y + TEXT_BOX_PADDING + vOff);
+        pts.push(x + textInsets(textEl), y + textInsets(textEl) + vOff);
       }
     }
     glyphs.push(pts);
@@ -143,8 +144,8 @@ export const RenderMorph: React.FC<{ element: SlideElement }> = ({ element }) =>
   const textEl = (from?.type === 'text' ? from : to?.type === 'text' ? to : null) as TextElement | null;
   const shapeEl = (from?.type === 'shape' ? from : to?.type === 'shape' ? to : null) as ShapeElement | null;
 
-  const boxWidth = textEl ? Math.max(1, textEl.width - TEXT_BOX_PADDING * 2) : 1;
-  const doc = textEl ? getLayoutSync(textEl.text || '', textEl.style, boxWidth) : null;
+  const boxWidth = textEl ? Math.max(1, textEl.width - textInsets(textEl) * 2) : 1;
+  const doc = textEl ? getUserTextLayoutSync(textEl) : null;
 
   // Async layout kick — re-render once the layout lands. (Reducer bump
   // instead of storing the doc: getLayoutSync is the single source of
@@ -153,7 +154,7 @@ export const RenderMorph: React.FC<{ element: SlideElement }> = ({ element }) =>
   useEffect(() => {
     if (doc || !textEl) return;
     let live = true;
-    layoutSvgText(textEl.text || '', textEl.style, boxWidth).then(
+    layoutUserText(textEl).then(
       () => { if (live) bump(); },
       () => {},
     );

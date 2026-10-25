@@ -15,10 +15,12 @@ export const MORPH_TYPES: EasingType[] = ['const', 'linear', 'ease'];
 
 // Visibility easings differ by element type:
 // - text:  glyph reveal (write/typewriter/fadebyglyph) + visual wrappers
-// - shape: outline create + visual wrappers
+// - shape: outline create + route extend (paths only) + visual wrappers
 // - image: visual wrappers (no glyphs / no outline trace)
 export const TEXT_VISIBILITY_TYPES:  EasingType[] = ['const', 'linear', 'ease', 'write', 'fadebyglyph', 'wipe', 'slidein', 'grow', 'iris'];
-export const SHAPE_VISIBILITY_TYPES: EasingType[] = ['const', 'linear', 'ease', 'create', 'wipe', 'slidein', 'grow', 'iris'];
+// 'extend' only has a route to grow along on `path` shapes; on a filled
+// primitive it degrades to the plain opacity ramp (see buildExtendFx).
+export const SHAPE_VISIBILITY_TYPES: EasingType[] = ['const', 'linear', 'ease', 'create', 'extend', 'wipe', 'slidein', 'grow', 'iris'];
 export const IMAGE_VISIBILITY_TYPES: EasingType[] = ['const', 'linear', 'ease', 'wipe', 'slidein', 'grow', 'iris'];
 
 // Content easings — text only.

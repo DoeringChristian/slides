@@ -19,7 +19,8 @@ export const PalettePanel: React.FC<{
   anchorRef: React.RefObject<HTMLButtonElement | null>;
   menuRef: React.RefObject<HTMLDivElement | null>;
   children: React.ReactNode;
-}> = ({ anchorRef, menuRef, children }) => {
+  width?: number;
+}> = ({ anchorRef, menuRef, children, width: panelWidth = PANEL_W }) => {
   const panelRef = useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = useState<{
     top: number; left: number; maxHeight: number; visible: boolean;
@@ -32,7 +33,7 @@ export const PalettePanel: React.FC<{
     const panelHeight = panelRef.current?.offsetHeight ?? 0;
 
     // Horizontal: right-align to the button, clamp to viewport.
-    const width = Math.min(PANEL_W, window.innerWidth - 2 * VIEWPORT_PAD);
+    const width = Math.min(panelWidth, window.innerWidth - 2 * VIEWPORT_PAD);
     const desiredLeft = rect.right - width;
     const left = Math.min(
       Math.max(VIEWPORT_PAD, desiredLeft),
@@ -72,7 +73,7 @@ export const PalettePanel: React.FC<{
       }
       return { top, left, maxHeight, visible: true };
     });
-  }, [anchorRef]);
+  }, [anchorRef, panelWidth]);
 
   // Run on every render so a content height change (options panel toggling,
   // selection-driven layout shifts) re-runs the placement.
@@ -103,7 +104,7 @@ export const PalettePanel: React.FC<{
       style={{
         top: pos.top,
         left: pos.left,
-        width: `min(${PANEL_W}px, calc(100vw - ${2 * VIEWPORT_PAD}px))`,
+        width: `min(${panelWidth}px, calc(100vw - ${2 * VIEWPORT_PAD}px))`,
         maxHeight: pos.maxHeight || undefined,
         visibility: pos.visible ? 'visible' : 'hidden',
       }}

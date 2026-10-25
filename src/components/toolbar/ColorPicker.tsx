@@ -1,27 +1,58 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { PRESET_COLORS } from '../../utils/constants';
+import { QUICK_PAINT_COLORS } from '../../utils/quickPaintColors';
+import { ScrubInput, type ScrubInputProps } from '../controls/ScrubInput';
+import { PalettePanel } from '../controls/PalettePanel';
+import { noPaint, parsePaintColor, paintHex } from '../../utils/paintColor';
+
+const checkerboard = { backgroundImage: 'conic-gradient(#ddd 25%, white 0 50%, #ddd 0 75%, white 0)', backgroundSize: '8px 8px' };
 
 interface Props {
   color: string;
   onChange: (color: string) => void;
   label?: string;
   allowTransparent?: boolean;
+  palette?: 'fill' | 'stroke';
+  /** Dense floating toolbars retain the same picker without inline presets. */
+  compact?: boolean;
+  /** Shape paint alpha; the caller owns scrub transactions/current-state writes. */
+  alphaControl?: Omit<ScrubInputProps, 'value' | 'spec'>;
+  onRgbChange?: (rgb: string) => void;
 }
 
-export const ColorPicker: React.FC<Props> = ({ color, onChange, label = 'Color', allowTransparent = true }) => {
+function PaintChip({ color }: { color: string }) {
+  return <span className="block w-full h-full rounded border border-gray-300 relative overflow-hidden" style={checkerboard}>
+    <span className="absolute inset-0" style={{ backgroundColor: noPaint(color) ? 'transparent' : color }} />
+    {noPaint(color) && <span className="absolute inset-0" style={{ background: 'linear-gradient(45deg, transparent 47%, #ef4444 47%, #ef4444 53%, transparent 53%)' }} />}
+  </span>;
+}
+
+export const ColorPicker: React.FC<Props> = ({ color, onChange, label = 'Color', allowTransparent = true, palette = 'stroke', compact = false, alphaControl, onRgbChange }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [hexInput, setHexInput] = useState(color);
-  const [alignRight, setAlignRight] = useState(false);
+  const dirtyHex = useRef(false);
   const ref = useRef<HTMLDivElement>(null);
+  const anchorRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync the hex text field when the color changes from outside the picker
+    if (!isOpen) return;
+    // The portal is initially hidden until its layout pass positions it.
+    const frame = requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
+    return () => cancelAnimationFrame(frame);
+  }, [isOpen]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- external paint/alpha changes refresh the custom field
     setHexInput(color);
+    dirtyHex.current = false;
   }, [color]);
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
+      if (!ref.current?.contains(e.target as Node) && !menuRef.current?.contains(e.target as Node)) {
+        dirtyHex.current = false;
         setIsOpen(false);
       }
     };
@@ -29,114 +60,82 @@ export const ColorPicker: React.FC<Props> = ({ color, onChange, label = 'Color',
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
-  // Recompute alignment when the viewport changes (rotation, devtools resize)
-  // so the picker doesn't go off-screen.
-  useEffect(() => {
-    if (!isOpen) return;
-    const recompute = () => {
-      if (ref.current) {
-        const rect = ref.current.getBoundingClientRect();
-        setAlignRight(rect.left + 224 > window.innerWidth);
-      }
-    };
-    window.addEventListener('resize', recompute);
-    window.addEventListener('orientationchange', recompute);
-    return () => {
-      window.removeEventListener('resize', recompute);
-      window.removeEventListener('orientationchange', recompute);
-    };
-  }, [isOpen]);
-
-  const isTransparent = color === 'transparent' || color === 'none';
+  const isTransparent = noPaint(color);
+  const parsed = parsePaintColor(color);
+  const choose = (value: string) => {
+    dirtyHex.current = false;
+    if (noPaint(value) && !allowTransparent) return;
+    if (noPaint(value)) onChange('transparent');
+    else (onRgbChange ?? onChange)(value);
+    setIsOpen(false);
+  };
+  const commitHex = () => {
+    if (!dirtyHex.current) return;
+    dirtyHex.current = false;
+    const val = hexInput.trim().toLowerCase();
+    if (!parsePaintColor(val) || (!allowTransparent && noPaint(val))) return;
+    if (!alphaControl && !/^#[0-9a-f]{6}$/.test(val) && !noPaint(val)) return;
+    if (val === color.toLowerCase()) return;
+    if (noPaint(val)) onChange('transparent');
+    else if (/^#[0-9a-f]{3}$|^#[0-9a-f]{6}$/.test(val)) (onRgbChange ?? onChange)(val);
+    else onChange(val);
+  };
 
   return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => {
-          if (!isOpen && ref.current) {
-            const rect = ref.current.getBoundingClientRect();
-            setAlignRight(rect.left + 224 > window.innerWidth);
-          }
-          setIsOpen(!isOpen);
-        }}
-        className="flex items-center gap-1 p-1 rounded hover:bg-gray-100"
-        title={label}
-      >
-        <div
-          className="w-4 h-4 rounded border border-gray-300 relative overflow-hidden"
-          style={{ backgroundColor: isTransparent ? 'white' : color }}
-        >
-          {isTransparent && (
-            <div
-              className="absolute inset-0"
-              style={{
-                background: 'linear-gradient(45deg, transparent 45%, #ef4444 45%, #ef4444 55%, transparent 55%)',
-              }}
-            />
-          )}
-        </div>
+    <div className={compact ? 'relative shrink-0' : 'relative flex flex-wrap items-center gap-1.5 w-full min-w-0'} ref={ref} role="group" aria-label={`${label} colors`}
+      onKeyDown={e => {
+        // Alpha scrubbing polls the window's modifier tracker, including when
+        // focus stays in this picker's portaled hex input during the drag.
+        if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
+        if (!e.ctrlKey && !e.metaKey) e.stopPropagation();
+      }}>
+      {!compact && QUICK_PAINT_COLORS[palette].map(c => <button key={c} type="button"
+        aria-label={`${label}: ${noPaint(c) ? 'No color' : c}`}
+        aria-pressed={noPaint(c) ? isTransparent : !isTransparent && !!parsed && paintHex(parsed) === c}
+        title={noPaint(c) ? 'No color' : c}
+        disabled={noPaint(c) && !allowTransparent}
+        onMouseDown={() => { dirtyHex.current = false; }}
+        onClick={() => choose(c)}
+        className="disabled:opacity-40 disabled:cursor-not-allowed w-7 h-7 shrink-0 p-0.5 rounded hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500 aria-pressed:ring-1 aria-pressed:ring-violet-500">
+        <PaintChip color={c} />
+      </button>)}
+      <button ref={anchorRef} type="button"
+        onMouseDown={() => { dirtyHex.current = false; }}
+        onClick={() => { setHexInput(color); dirtyHex.current = false; setIsOpen(!isOpen); }}
+        className={`${compact ? 'w-6 h-6 p-1' : 'w-7 h-7 p-0.5 ml-1 ring-1 ring-gray-300'} shrink-0 rounded hover:bg-gray-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-500`}
+        title={label} aria-label={`${label}: current/custom color (${color || 'No color'})`} aria-haspopup="dialog" aria-expanded={isOpen}>
+        <PaintChip color={color} />
       </button>
-
-      {isOpen && (
-        <div
-          className={`absolute top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 p-3 z-50 w-56 ${alignRight ? 'right-0' : 'left-0'}`}
-          style={{ maxWidth: 'calc(100vw - 1rem)' }}
-        >
-          {allowTransparent && (
-            <button
-              onClick={() => { onChange('transparent'); setIsOpen(false); }}
-              className={`w-full h-7 rounded border mb-2 flex items-center justify-center gap-2 text-xs text-gray-600 ${isTransparent ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200 hover:border-gray-400'}`}
-            >
-              <div
-                className="w-4 h-4 rounded border border-gray-300 relative overflow-hidden bg-white"
-              >
-                <div
-                  className="absolute inset-0"
-                  style={{
-                    background: 'linear-gradient(45deg, transparent 45%, #ef4444 45%, #ef4444 55%, transparent 55%)',
-                  }}
-                />
-              </div>
-              No color
-            </button>
-          )}
+      {isOpen && <PalettePanel anchorRef={anchorRef} menuRef={menuRef} width={224}>
+        <div role="dialog" aria-label={`${label} custom color`} onKeyDown={e => {
+          if (e.key === 'Escape') {
+            e.stopPropagation(); dirtyHex.current = false; setHexInput(color); setIsOpen(false); anchorRef.current?.focus();
+          }
+        }}>
+          {allowTransparent && <button type="button" onMouseDown={() => { dirtyHex.current = false; }} onClick={() => choose('transparent')}
+            className={`w-full h-7 rounded border mb-2 flex items-center justify-center gap-2 text-xs text-gray-600 ${isTransparent ? 'border-violet-500 ring-2 ring-violet-200' : 'border-gray-200 hover:border-gray-400'}`}>
+            <span className="w-4 h-4"><PaintChip color="transparent" /></span>No color
+          </button>}
           <div className="grid grid-cols-6 gap-1 mb-2">
-            {PRESET_COLORS.map((c) => (
-              <button
-                key={c}
-                onClick={() => { onChange(c); setIsOpen(false); }}
-                className={`w-7 h-7 rounded border ${c === color ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200 hover:border-gray-400'}`}
-                style={{ backgroundColor: c }}
-              />
-            ))}
+            {PRESET_COLORS.map(c => <button key={c} type="button" aria-label={`${label}: ${c}`} onMouseDown={() => { dirtyHex.current = false; }} onClick={() => choose(c)}
+              className={`w-7 h-7 rounded border ${c === color ? 'border-violet-500 ring-2 ring-violet-200' : 'border-gray-200 hover:border-gray-400'}`}
+              style={{ backgroundColor: c }} />)}
           </div>
+          {alphaControl && <div className="flex items-center gap-2 my-2" aria-label={`${label} alpha`}>
+            <span className="text-xs text-gray-500">Alpha</span>
+            <ScrubInput {...alphaControl} value={(parsed?.a ?? 1) * 100}
+              spec={{ min: 0, max: 100, step: 1, scrubStep: 0.5, precision: 1 }}
+              disabled={!parsed || isTransparent} unit="%" compact />
+          </div>}
           <div className="flex items-center gap-2 mt-2">
             <span className="text-xs text-gray-500">Hex:</span>
-            <input
-              type="text"
-              value={hexInput}
-              onChange={(e) => setHexInput(e.target.value)}
-              onBlur={() => {
-                const val = hexInput.toLowerCase();
-                if (/^#[0-9a-fA-F]{6}$/.test(hexInput) || val === 'transparent' || val === 'none') {
-                  onChange(val === 'none' ? 'transparent' : hexInput);
-                }
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  const val = hexInput.toLowerCase();
-                  if (/^#[0-9a-fA-F]{6}$/.test(hexInput) || val === 'transparent' || val === 'none') {
-                    onChange(val === 'none' ? 'transparent' : hexInput);
-                    setIsOpen(false);
-                  }
-                }
-              }}
-              className="flex-1 h-6 text-xs border border-gray-300 rounded px-2"
-              placeholder="#000000"
-            />
+            <input ref={inputRef} type="text" value={hexInput} aria-label={`${label} color`} title={parsed ? paintHex(parsed) : color}
+              onChange={e => { dirtyHex.current = true; setHexInput(e.target.value); }} onBlur={commitHex}
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commitHex(); setIsOpen(false); anchorRef.current?.focus(); } }}
+              className="min-w-0 flex-1 h-6 text-xs border border-gray-300 rounded px-2" placeholder="#000000" />
           </div>
         </div>
-      )}
+      </PalettePanel>}
     </div>
   );
 };

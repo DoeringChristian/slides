@@ -1,7 +1,9 @@
+import { resolveShapePaint, rectangleRadii } from './shapePaint';
+import { resolveShapeGeometry } from './vectorGeometry';
 import type { ShapeElement } from '../types/presentation';
 import type { SvgPath } from '../components/svg/RenderPaths';
 import { pathLengthFor } from './glyphPaths';
-import { pathD, insetEndpoints, arrowheadGeometry } from './pathShapes';
+import { pathArrowGeometry, type ClosurePathShape, type ExtendPathShape } from './pathShapes';
 
 /**
  * Convert a ShapeElement to its outline path d-string. Used by the Create
@@ -10,25 +12,26 @@ import { pathD, insetEndpoints, arrowheadGeometry } from './pathShapes';
  * space (no transform applied).
  */
 export function shapeToPathD(shape: ShapeElement): string {
-  const { x, y, width: w, height: h, shapeType, cornerRadius, points } = shape;
+  const { x, y, width: w, height: h, shapeType, points } = shape;
 
   switch (shapeType) {
+    case 'vector': return resolveShapeGeometry(shape).strokes.join(' ');
     case 'rect': {
-      const r = Math.min(cornerRadius ?? 0, w / 2, h / 2);
-      if (r <= 0) {
+      const { rx, ry } = rectangleRadii(shape);
+      if (rx <= 0 || ry <= 0) {
         return `M ${x} ${y} h ${w} v ${h} h ${-w} z`;
       }
       // Rounded rectangle.
       return [
-        `M ${x + r} ${y}`,
-        `h ${w - 2 * r}`,
-        `a ${r} ${r} 0 0 1 ${r} ${r}`,
-        `v ${h - 2 * r}`,
-        `a ${r} ${r} 0 0 1 ${-r} ${r}`,
-        `h ${-(w - 2 * r)}`,
-        `a ${r} ${r} 0 0 1 ${-r} ${-r}`,
-        `v ${-(h - 2 * r)}`,
-        `a ${r} ${r} 0 0 1 ${r} ${-r}`,
+        `M ${x + rx} ${y}`,
+        `h ${w - 2 * rx}`,
+        `a ${rx} ${ry} 0 0 1 ${rx} ${ry}`,
+        `v ${h - 2 * ry}`,
+        `a ${rx} ${ry} 0 0 1 ${-rx} ${ry}`,
+        `h ${-(w - 2 * rx)}`,
+        `a ${rx} ${ry} 0 0 1 ${-rx} ${-ry}`,
+        `v ${-(h - 2 * ry)}`,
+        `a ${rx} ${ry} 0 0 1 ${rx} ${-ry}`,
         'z',
       ].join(' ');
     }
@@ -72,26 +75,8 @@ export function shapeToPathD(shape: ShapeElement): string {
     case 'path': {
       const pts = points ?? [];
       if (pts.length < 4) return '';
-      const closed = shape.closed ?? false;
-      const curve = shape.curve ?? 'linear';
-      // Translate the relative vertices into absolute slide-space coords.
       const abs = pts.map((v, i) => v + (i % 2 === 0 ? x : y));
-      const sw = shape.strokeWidth || (closed ? 0 : 3);
-      // Typed arrowheads from the ONE shared helper (endpoint-chord
-      // direction, like every other renderer).
-      const last = abs.length - 2;
-      const startGeo = shape.startHead && shape.startHead !== 'none'
-        ? arrowheadGeometry(shape.startHead, abs[0], abs[1], abs[0] - abs[2], abs[1] - abs[3], 10, sw)
-        : null;
-      const endGeo = shape.endHead && shape.endHead !== 'none'
-        ? arrowheadGeometry(shape.endHead, abs[last], abs[last + 1], abs[last] - abs[last - 2], abs[last + 1] - abs[last - 1], 10, sw)
-        : null;
-      // Shorten the shaft at solid-head endpoints so the Write/Create pen
-      // doesn't draw through the glyph.
-      const shaftPts = insetEndpoints(abs, startGeo?.shaftInset ?? 0, endGeo?.shaftInset ?? 0);
-      const cornerR = curve === 'linear' ? (shape.cornerRadius ?? 0) : 0;
-      // Tangents are vertex-relative, so they need no abs translation.
-      const main = pathD(shaftPts, curve, closed, cornerR, shape.tangents);
+      const { startGeo, endGeo, d: main } = pathArrowGeometry({ ...shape, points: abs });
       // Append the head primitives to the path so the Create pen traces
       // through them in order — fills as closed polygon outlines, strokes
       // and circle d-strings verbatim.
@@ -132,6 +117,17 @@ export function shapeToPathD(shape: ShapeElement): string {
  * geometries in the deck, which is small.
  */
 const geomCache = new Map<string, { d: string; length: number }>();
+// Headed Create splits the shaft and glyphs; retain the same no-layout-per-frame
+// guarantee for these individually measured paths.
+const headedLengthCache = new Map<string, number>();
+function headedPathLength(d: string): number {
+  let length = headedLengthCache.get(d);
+  if (length === undefined) {
+    length = pathLengthFor(d);
+    headedLengthCache.set(d, length);
+  }
+  return length;
+}
 
 function shapeGeometryKey(shape: ShapeElement): string {
   // Only the fields that affect the d-string.
@@ -147,19 +143,61 @@ function shapeGeometryKey(shape: ShapeElement): string {
     shape.endHead ?? 'none',
     // Head size scales with strokeWidth, so it's part of the geometry key.
     shape.strokeWidth ?? 0,
+    // An in-flight `extend` prefix changes the d-string every frame.
+    (shape as ExtendPathShape)._extendFx?.progress ?? '',
   ].join('|');
 }
 
 /**
- * Build the SvgPath array for a shape's Create animation. Returns ONE entry
- * (single outline) — RenderPaths' stagger naturally degrades to "no stagger"
- * for N=1, and the REVEAL → FILL pacing runs across the full window.
+ * Build the SvgPath array for Create. Headed paths separate shaft and glyphs
+ * so shaft cuts cannot erase heads or paint across outlined head holes.
+ * Other shapes keep a single outline and the existing no-stagger timing.
  *
  * The d-string + path length are cached by geometry; fill/stroke colours are
  * applied on top and DON'T trigger a re-compute (they live on the SvgPath,
  * not the cache key).
  */
-export function shapeToSvgPaths(shape: ShapeElement): SvgPath[] {
+export function shapeToSvgPaths(shape: ShapeElement, fillPaint = shape.fill || 'transparent'): SvgPath[] {
+  const paint = resolveShapePaint(shape, fillPaint);
+  if (shape.shapeType === 'vector') {
+    const geometry = resolveShapeGeometry(shape);
+    return [
+      ...geometry.fills.map(region => ({ d: region.d, fillColor: fillPaint, fillSourceColor: shape.fill,
+        strokeColor: 'none', fillRule: region.rule, createRole: 'fill' as const })),
+      { d: geometry.strokes.join(' '), fillColor: 'none', strokeColor: paint.stroke, createRole: 'stroke' as const },
+    ].map(path => ({ ...path, transform: '',
+      // Dash phase resets at each M. Using the compound SUM would leave every
+      // short contour invisible at the start. One stroke operation preserves
+      // paint alpha at intersections; the longest contour defines its clock.
+      length: path.createRole === 'stroke' ? Math.max(0, ...geometry.strokes.map(headedPathLength)) : headedPathLength(path.d),
+      nonScalingStroke: false }));
+  }
+  const closure = (shape as ClosurePathShape)._pathClosure;
+  if (shape.shapeType === 'path' && (closure || shape.startHead && shape.startHead !== 'none' || shape.endHead && shape.endHead !== 'none')) {
+    const geo = pathArrowGeometry(shape);
+    const strokeColor = paint.stroke;
+    const transform = `translate(${shape.x}, ${shape.y})`;
+    const path = (d: string, fillColor: string, shaftClipPaths?: string[]): SvgPath => ({
+      d, length: headedPathLength(d), transform, fillColor, strokeColor, nonScalingStroke: false, shaftClipPaths,
+    });
+    const paths: SvgPath[] = geo.d || geo.strokePlan ? [{
+      ...path(geo.d, closure ? 'none' : paint.fill, geo.shaftClipPaths),
+      fillD: geo.fillD, strokePlan: geo.strokePlan,
+      length: geo.strokePlan?.length ?? headedPathLength(geo.d),
+      fillSourceColor: closure ? 'none' : shape.closed ? shape.fill : 'none',
+    }] : [];
+    if (closure) paths.unshift({ ...path(geo.fillD, paint.fill), strokeColor: 'none',
+      fillSourceColor: shape.fill, fillOpacity: closure.fillOpacity, createRole: 'fill' });
+    for (const head of [geo.startGeo, geo.endGeo]) {
+      if (!head) continue;
+      for (const f of head.fills) {
+        const d = 'd' in f ? f.d : f.points.reduce((d, v, i) => d + (i % 2 ? ` ${v}` : `${i ? ' L' : 'M'} ${v}`), '') + ' Z';
+        paths.push(path(d, strokeColor));
+      }
+      for (const stroke of head.strokes) paths.push(path(stroke.d, 'none'));
+    }
+    return paths;
+  }
   const key = shapeGeometryKey(shape);
   let entry = geomCache.get(key);
   if (!entry) {
@@ -175,13 +213,17 @@ export function shapeToSvgPaths(shape: ShapeElement): SvgPath[] {
   // would otherwise blink the line off for one frame before the steady
   // render takes over.
   const isOpenPath = shape.shapeType === 'path' && !(shape.closed ?? false);
-  const fillColor = isOpenPath ? 'none' : (shape.fill || 'transparent');
+  const fillColor = isOpenPath ? 'none' : fillPaint;
   return [{
     d: entry.d,
     transform: '',
     length: entry.length,
     fillColor,
-    strokeColor: shape.stroke || shape.fill || '#000',
+    fillSourceColor: isOpenPath ? 'none' : shape.fill,
+    strokeColor: paint.stroke,
+    // Preserve the existing ordinary-shape Create outline pen, even when
+    // steady paint has no stroke. Picking deliberately ignores this field.
+    ...(shape.shapeType !== 'path' ? { traceStrokeColor: shape.stroke || shape.fill || '#000' } : {}),
     nonScalingStroke: false,
   }];
 }
@@ -190,4 +232,5 @@ export function shapeToSvgPaths(shape: ShapeElement): SvgPath[] {
  *  normal operation — distinct geometries simply add new entries. */
 export function clearShapePathCache(): void {
   geomCache.clear();
+  headedLengthCache.clear();
 }

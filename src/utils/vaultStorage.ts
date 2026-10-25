@@ -95,14 +95,26 @@ export interface StoredProject {
 export async function saveProjectToIDB(project: StoredProject): Promise<void> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(PROJECTS_STORE, 'readwrite');
-    const store = transaction.objectStore(PROJECTS_STORE);
-    const request = store.put(project);
-
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve();
-
-    transaction.oncomplete = () => db.close();
+    let settled = false;
+    const finish = (error?: unknown) => {
+      if (settled) return;
+      settled = true;
+      db.close(); // IndexedDB lets any pending transaction finish before closing.
+      if (error) reject(error);
+      else resolve();
+    };
+    try {
+      const transaction = db.transaction(PROJECTS_STORE, 'readwrite');
+      // A successful put can still be rolled back. Activation must wait for
+      // the transaction commit, not merely the request's success event.
+      transaction.oncomplete = () => finish();
+      transaction.onabort = () => finish(transaction.error || new Error('Project save transaction aborted.'));
+      transaction.onerror = () => finish(transaction.error || new Error('Project save transaction failed.'));
+      const request = transaction.objectStore(PROJECTS_STORE).put(project);
+      request.onerror = () => finish(request.error || new Error('Project save request failed.'));
+    } catch (error) {
+      finish(error);
+    }
   });
 }
 

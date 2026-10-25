@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import type { Slide, SlideElement, ShapeElement, TextElement, ImageElement, Resource } from '../types/presentation';
-import { SLIDE_WIDTH, SLIDE_HEIGHT, TEXT_BOX_PADDING } from './constants';
-import { pathD, arrowheadGeometry, insetEndpoints, strokeDashFor } from './pathShapes';
+import { SLIDE_WIDTH, SLIDE_HEIGHT } from './constants';
+import { pathArrowGeometry, pathD, arrowheadGeometry, strokeDashFor } from './pathShapes';
 import { renderSlideToSVG } from './svgRenderer';
 
 // =============================================================================
@@ -229,17 +229,16 @@ describe('svgRenderer geometry (stable across renderer unification)', () => {
     const startGeo = arrowheadGeometry('triangle', 0, 0, 0 - 120, 0 - 40, 10, 3);
     const endGeo = arrowheadGeometry('triangle', 240, 10, 240 - 120, 10 - 40, 10, 3);
 
-    // Shaft geometry must come from the shared pathShapes helpers, inset
-    // per-end by each head's shaftInset.
+    // Rounded shafts retain native corners; head silhouettes cut only stroke.
     const path = firstTag(svg, 'path');
-    const expectedD = pathD(insetEndpoints(points, startGeo.shaftInset, endGeo.shaftInset), 'linear', false, 8);
+    const expectedD = pathArrowGeometry(el).d;
     expect(path.attrs.d).toBe(expectedD);
     expect(path.attrs.fill).toBe('none'); // open path never fills
-    expect(path.attrs.stroke).toBe('#0000ff');
+    expect(path.attrs.stroke).toBe('#0000ff'); // single-run native coverage fast path
     expect(nums(path.attrs['stroke-width'])[0]).toBe(3);
     expect(path.attrs['stroke-linecap']).toBe('round');
     expect(path.attrs['stroke-linejoin']).toBe('round');
-    expect(nums(path.attrs.opacity)[0]).toBeCloseTo(0.7);
+    expect(path.attrs.opacity).toBeUndefined(); // composed with heads once on the parent
 
     // Position via translate(x, y) on an inner g.
     const translated = tagsOf(svg, 'g').filter(g => (g.attrs.transform ?? '').includes('translate'));
@@ -247,7 +246,7 @@ describe('svgRenderer geometry (stable across renderer unification)', () => {
     expectNumsClose(nums(translated[0].attrs.transform), [800, 500]);
 
     // Arrowhead triangles at the ORIGINAL (un-inset) endpoints, wrapped in
-    // a <g> that carries opacity × head alpha.
+    // a <g> that carries head alpha; element opacity wraps the composition.
     const polys = tagsOf(svg, 'polygon');
     expect(polys.length).toBe(2);
     const startFill = startGeo.fills[0] as { points: number[] };
@@ -257,9 +256,7 @@ describe('svgRenderer geometry (stable across renderer unification)', () => {
     expect(polys[0].attrs.fill).toBe('#0000ff');
     expect(polys[1].attrs.fill).toBe('#0000ff');
     const headGroups = tagsOf(svg, 'g').filter(g => g.attrs.opacity !== undefined);
-    expect(headGroups.length).toBe(2);
-    expect(nums(headGroups[0].attrs.opacity)[0]).toBeCloseTo(0.7);
-    expect(nums(headGroups[1].attrs.opacity)[0]).toBeCloseTo(0.7);
+    expect(headGroups.map(g => Number(g.attrs.opacity))).toEqual([0.7, 1, 1]);
   });
 
   test('open head type (crowfoot-many): stroked V, no polygon, no shaft inset', () => {
@@ -341,7 +338,7 @@ describe('svgRenderer geometry (stable across renderer unification)', () => {
   test('text element: foreignObject box, padding, style passthrough', () => {
     const el: TextElement = {
       ...baseEl,
-      id: 'txt1', type: 'text',
+      id: 'txt1', type: 'text', textSizing: 'user-width', boundTextLayout: 'padded',
       x: 200, y: 300, width: 400, height: 150,
       rotation: 15,
       text: 'Hello **world**',
@@ -353,10 +350,10 @@ describe('svgRenderer geometry (stable across renderer unification)', () => {
     };
     const svg = renderOne(el);
     const fo = firstTag(svg, 'foreignObject');
-    expect(nums(fo.attrs.x)[0]).toBe(200 + TEXT_BOX_PADDING);
-    expect(nums(fo.attrs.y)[0]).toBe(300 + TEXT_BOX_PADDING);
-    expect(nums(fo.attrs.width)[0]).toBe(400 - 2 * TEXT_BOX_PADDING);
-    expect(nums(fo.attrs.height)[0]).toBe(150 - 2 * TEXT_BOX_PADDING);
+    expect(nums(fo.attrs.x)[0]).toBe(200);
+    expect(nums(fo.attrs.y)[0]).toBe(300);
+    expect(nums(fo.attrs.width)[0]).toBe(400);
+    expect(nums(fo.attrs.height)[0]).toBe(150);
     // Rotation around the element centre.
     const gs = tagsOf(svg, 'g').filter(g => (g.attrs.transform ?? '').includes('rotate'));
     expectNumsClose(nums(gs[0].attrs.transform), [15, 400, 375]);

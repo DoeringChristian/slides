@@ -14,6 +14,12 @@ options — evaluated in `src/utils/interpolation.ts` and rendered by
 
 ## Rules
 
+- **Pre-release compatibility policy.** Backward compatibility is not required.
+  Prefer one coherent current schema/API; remove obsolete compatibility code
+  rather than adding old-format adapters or migration frameworks. Preserve
+  current save/load/export, JSON/Yjs parity, undo/cancel and collaboration.
+  Never delete/reset user files or uncommitted work; report breaking changes
+  explicitly and keep cleanup within the assigned scope.
 - **Dual-path store rule.** Every mutating action in
   `src/store/presentationStore.ts` writes to Yjs (via `getActiveDoc()` /
   `runInTxn`) when a collab doc is active, and to plain JSON state otherwise.

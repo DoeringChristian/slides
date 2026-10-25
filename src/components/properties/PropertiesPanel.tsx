@@ -1,3 +1,5 @@
+import { CreationProperties } from './CreationProperties';
+import { creationKeyForTool, useCreationPreferences } from '../../store/creationPreferences';
 import React from 'react';
 import { ArrowLeft, ArrowRight } from 'lucide-react';
 import { useSelectedElements, useActiveSlide, usePreviousSlideElement, useNextSlideElement } from '../../store/selectors';
@@ -17,6 +19,9 @@ const isMorphable = (el: SlideElement | undefined): boolean =>
   el?.type === 'text' || el?.type === 'shape';
 
 export const PropertiesPanel: React.FC = () => {
+  const tool = useEditorStore(s => s.tool);
+  const iconId = useCreationPreferences(s => s.iconId);
+  const creationKey = creationKeyForTool(tool);
   const selected = useSelectedElements();
   const slide = useActiveSlide();
   const element = selected.length === 1 ? selected[0] : null;
@@ -42,6 +47,14 @@ export const PropertiesPanel: React.FC = () => {
 
   // Hide header for image/text elements (controls are in their respective Properties components)
   const showHeader = !element || (element.type !== 'image' && element.type !== 'text');
+
+  if (creationKey) {
+    return <div className="w-64 bg-white border-l border-gray-200 flex flex-col shrink-0 overflow-y-auto">
+      <h2 className="p-3 text-sm font-medium border-b">Create {creationKey === 'icon' ? 'icon' : creationKey}</h2>
+      <div className="p-3"><CreationProperties key={`${activeSlideId}:${tool}:${iconId}`} tool={tool} creationKey={creationKey} /></div>
+      <p className="p-3 text-xs text-gray-500">Drag on the slide to create. Styles are remembered on this browser.</p>
+    </div>;
+  }
 
   return (
     <div className="w-64 bg-white border-l border-gray-200 flex flex-col shrink-0 overflow-y-auto">

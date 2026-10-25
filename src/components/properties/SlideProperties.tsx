@@ -1,4 +1,5 @@
 import React from 'react';
+import { readSlideForMutation, type CurrentChange } from '../../store/currentMutation';
 import { Link2, Ungroup } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
@@ -35,6 +36,7 @@ class SlideBackgroundProperty extends Property<Slide> {
       <ColorPicker
         color={color}
         label="Background Color"
+        palette="fill"
         onChange={(c) => update({ background: { type: 'solid', color: c } })}
       />
     );
@@ -80,7 +82,10 @@ export const SlideProperties: React.FC<Props> = ({ slide }) => {
   // Dispatch adapter: Partial<Slide> → the existing dual-path actions.
   // Nested partials arrive with their siblings spread (setNestedPartial),
   // so `transition` / `background` are always complete objects here.
-  const update = (changes: Partial<Slide>) => {
+  const update = (change: CurrentChange<Slide>) => {
+    const current = readSlideForMutation(activeSlideId);
+    if (!current) return;
+    const changes = typeof change === 'function' ? change(current) : change;
     if (changes.background !== undefined) {
       updateSlideBackground(activeSlideId, changes.background);
     }
@@ -111,8 +116,6 @@ export const SlideProperties: React.FC<Props> = ({ slide }) => {
             {!isLastInRun && (
               <SlidePropertyRow property={HOLD_PROPERTY} element={slide} update={update} />
             )}
-            {/* Legacy shim runs (collab docs still on autoAdvance flags) have
-                no groupId on the slide — nothing to ungroup. */}
             {slide.groupId && (
               <button
                 onClick={() => ungroupSlides([slide.id])}

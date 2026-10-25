@@ -1,18 +1,24 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useCanvasGestureGuard } from './useCanvasGestureGuard';
+import { CONTROL_THEME } from './controlTheme';
+import { SVGAdjustmentGlyph } from './SVGAdjustmentGlyph';
+import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import type { ShapeElement } from '../../types/presentation';
-import { pathD } from '../../utils/pathShapes';
+import { cornerRadiusControl, cornerRadiusClearance, readRadiusControlObstacles, type CornerRadiusPlacement } from '../../utils/cornerRadiusControl';
+import { useCoarsePointer } from '../../hooks/useCoarsePointer';
 import { useScreenToSVG } from './useScreenToSVG';
 
 interface Props {
-  /** Sole-selected 'rect' shape or closed LINEAR path shape. */
+  /** Sole-selected rectangle or linear path with a roundable vertex. */
   element: ShapeElement;
+  displayElement?: ShapeElement;
+  onPreview?: (attrs: Partial<ShapeElement> | null) => void;
   zoom: number;
   svgRef?: React.RefObject<SVGSVGElement | null>;
   onUpdate: (attrs: Partial<ShapeElement>) => void;
   onTransformStart?: () => void;
 }
 
-const COLOR = '#4285f4';
+const COLOR = CONTROL_THEME.color;
 /** Minimum inset from the corner (screen px / zoom) so the handle stays
  *  grabbable at cornerRadius 0. */
 const MIN_INSET = 12;
@@ -23,12 +29,20 @@ const MIN_INSET = 12;
  * preview is committed once on release; cancellation never touches the store. */
 export const SVGCornerRadiusHandle: React.FC<Props> = ({
   element,
+  displayElement, onPreview,
   zoom,
   svgRef,
   onUpdate,
   onTransformStart,
 }) => {
-  const maxR = Math.min(element.width, element.height) / 2;
+  const { start: startGuard, finish: finishGuard } = useCanvasGestureGuard();
+  const visualElement = displayElement ?? element;
+  const control = cornerRadiusControl(element);
+  const coarse = useCoarsePointer();
+  const maxR = control?.maxRadius ?? 0;
+  const axisX = control?.dx ?? 1, axisY = control?.dy ?? 0;
+  // Paths round back from vertex 2; rectangles still increase along +X.
+  const dragDirection = element.shapeType === 'path' ? -1 : 1;
   const storedR = Math.max(0, Math.min(element.cornerRadius ?? 0, maxR));
 
   const [liveR, setLiveR] = useState<number | null>(null);
@@ -40,28 +54,74 @@ export const SVGCornerRadiusHandle: React.FC<Props> = ({
 
   const screenToSVG = useScreenToSVG(svgRef, zoom);
 
-  const displayR = liveR ?? storedR;
-  const inset = Math.max(displayR, Math.min(MIN_INSET / zoom, element.width / 2));
+  const visualControl = cornerRadiusControl(visualElement) ?? control;
+  const visualMaxR = visualControl?.maxRadius ?? maxR;
+  const displayR = liveR ?? Math.min(visualElement.cornerRadius ?? 0, visualMaxR);
+  const inset = Math.min(visualControl?.segmentLength ? visualControl.segmentLength / 2 : Infinity,
+    Math.max(displayR, Math.min(MIN_INSET / zoom, visualMaxR)));
+  const hitRadius = Math.min((coarse ? 12 : 6) / zoom, element.shapeType === 'rect' ? visualElement.height / 3 : maxR / 2);
+  const frameRef = useRef<SVGGElement>(null);
+  const [placement, setPlacement] = useState<{ key: string; interval: CornerRadiusPlacement | null } | null>(null);
+  const [dragPlacement, setDragPlacement] = useState<CornerRadiusPlacement | null>(null);
+  // Radius is deliberately absent: choose a stable finite interval once.
+  const placementKey = JSON.stringify([element.shapeType, visualElement.shapeType, visualElement.closed, visualElement.curve, hitRadius, visualElement.x, visualElement.y, visualElement.width, visualElement.height,
+    visualElement.rotation, visualElement.points, visualElement.startBinding, visualElement.endBinding, zoom, coarse]);
+  useLayoutEffect(() => {
+    const frame = frameRef.current;
+    if (!frame || element.shapeType !== 'path' || dragging) return;
+    const measure = () => {
+      const obstacles = readRadiusControlObstacles(frame, zoom);
+      const current = cornerRadiusControl(visualElement);
+      if (!obstacles || !current) { setPlacement(previous => previous === null ? previous : null); return; }
+      const interval = cornerRadiusClearance({ ...current, x: visualElement.x + current.x, y: visualElement.y + current.y }, zoom, hitRadius, obstacles);
+      setPlacement(previous => previous?.key === placementKey && previous.interval?.start === interval?.start && previous.interval?.end === interval?.end ? previous : { key: placementKey, interval });
+    };
+    measure();
+    // Observe only relevant sibling controls, never this knob or scene paint.
+    const observeControls = () => frame.ownerSVGElement?.querySelectorAll('.path-handles, .selection-transformer').forEach(node => observer.observe(node,
+      { subtree: true, childList: true, attributes: true, attributeFilter: ['cx', 'cy', 'r', 'x', 'y', 'width', 'height', 'transform', 'style'] }));
+    const observer = new MutationObserver(() => { observeControls(); measure(); });
+    observeControls();
+    if (frame.parentElement) observer.observe(frame.parentElement, { childList: true });
+    return () => observer.disconnect();
+    // placementKey captures geometry; projected radius must not restart measurement.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [placementKey, dragging]);
+  const interval = dragPlacement ?? (placement?.key === placementKey ? placement.interval : null);
+  const ready = element.shapeType !== 'path' || interval != null;
+  const along = element.shapeType === 'path' && interval && maxR > 0
+    ? interval.end - Math.max(0, Math.min(1, displayR / maxR)) * (interval.end - interval.start)
+    : inset;
 
-  const cx = element.x + element.width / 2;
-  const cy = element.y + element.height / 2;
+  const handleX = visualElement.x + (visualControl?.x ?? 0) + (visualControl?.dx ?? 1) * along;
+  const handleY = visualElement.y + (visualControl?.y ?? 0) + (visualControl?.dy ?? 0) * along;
+  const cx = visualElement.x + visualElement.width / 2;
+  const cy = visualElement.y + visualElement.height / 2;
   const rotation = element.rotation || 0;
-  const transform = rotation ? `rotate(${rotation}, ${cx}, ${cy})` : undefined;
+  const displayRotation = visualElement.rotation || 0;
+  const transform = displayRotation ? `rotate(${displayRotation}, ${cx}, ${cy})` : undefined;
+
+  const cancel = useCallback(() => {
+    finishGuard(); gestureRef.current = null; liveRRef.current = null;
+    setLiveR(null); setDragging(false); setDragPlacement(null); onPreview?.(null);
+  }, [finishGuard, onPreview]);
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (!ready || (e.pointerType === 'mouse' && e.button !== 0)) return;
     e.preventDefault();
     e.stopPropagation();
     try {
       (e.currentTarget as Element).setPointerCapture(e.pointerId);
     } catch { /* ignore */ }
+    if (!startGuard(cancel, [element])) return;
     const pos = screenToSVG(e.clientX, e.clientY);
     gestureRef.current = { pointerId: e.pointerId, ...pos };
     onTransformStart?.();
     liveRRef.current = storedR;
     setLiveR(storedR);
+    setDragPlacement(interval);
     setDragging(true);
-  }, [storedR, onTransformStart, screenToSVG]);
+  }, [storedR, onTransformStart, screenToSVG, startGuard, cancel, element, ready, interval]);
 
   useEffect(() => {
     if (!dragging) return;
@@ -72,18 +132,15 @@ export const SVGCornerRadiusHandle: React.FC<Props> = ({
       e.preventDefault();
       const pos = screenToSVG(e.clientX, e.clientY);
       const rad = rotation * Math.PI / 180;
-      const dx = (pos.x - start.x) * Math.cos(rad) + (pos.y - start.y) * Math.sin(rad);
-      const r = Math.max(0, Math.min(storedR + dx, maxR));
+      const localDx = (pos.x - start.x) * Math.cos(rad) + (pos.y - start.y) * Math.sin(rad);
+      const localDy = -(pos.x - start.x) * Math.sin(rad) + (pos.y - start.y) * Math.cos(rad);
+      const delta = (localDx * axisX + localDy * axisY) * dragDirection;
+      const r = Math.max(0, Math.min(storedR + delta, maxR));
       liveRRef.current = r;
       setLiveR(r);
+      onPreview?.({ cornerRadius: Math.round(r * 100) / 100 });
     };
 
-    const cancel = () => {
-      gestureRef.current = null;
-      liveRRef.current = null;
-      setLiveR(null);
-      setDragging(false);
-    };
     const onUp = (e: PointerEvent) => {
       if (e.pointerId !== gestureRef.current?.pointerId) return;
       onMove(e);
@@ -97,88 +154,49 @@ export const SVGCornerRadiusHandle: React.FC<Props> = ({
       if (e.pointerId === gestureRef.current?.pointerId) cancel();
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancel(); }
     };
     window.addEventListener('pointermove', onMove, { passive: false });
     window.addEventListener('pointerup', onUp, { passive: false });
     window.addEventListener('pointercancel', onCancel);
-    window.addEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
     window.addEventListener('blur', cancel);
     window.addEventListener('lostpointercapture', onCancel);
     return () => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onCancel);
-      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keydown', onKey, true);
       window.removeEventListener('blur', cancel);
       window.removeEventListener('lostpointercapture', onCancel);
     };
-  }, [dragging, rotation, storedR, maxR, screenToSVG, onUpdate]);
+  }, [dragging, rotation, axisX, axisY, dragDirection, storedR, maxR, screenToSVG, onUpdate, onPreview, cancel]);
 
-  // Live dashed preview of the rounded outline while dragging.
-  let preview: React.ReactNode = null;
-  if (dragging) {
-    const dashProps = {
-      fill: 'none' as const,
-      stroke: COLOR,
-      strokeWidth: Math.max(2 / zoom, 1),
-      strokeDasharray: `${4 / zoom} ${3 / zoom}`,
-      opacity: 0.8,
-      style: { pointerEvents: 'none' as const },
-    };
-    if (element.shapeType === 'rect') {
-      preview = (
-        <rect
-          x={element.x}
-          y={element.y}
-          width={element.width}
-          height={element.height}
-          rx={displayR}
-          {...dashProps}
-        />
-      );
-    } else if (element.points && element.points.length >= 4) {
-      preview = (
-        <path
-          d={pathD(element.points, 'linear', true, displayR)}
-          transform={`translate(${element.x} ${element.y})`}
-          {...dashProps}
-        />
-      );
-    }
-  }
+  if (!control || maxR <= 0) return null;
 
   return (
-    <g className="corner-radius-handle" transform={transform}>
-      {preview}
+    <g ref={frameRef} className="corner-radius-handle" transform={transform} visibility={ready ? undefined : 'hidden'}>
       {/* Guide from the corner to the handle while dragging. */}
       {dragging && (
         <line
-          x1={element.x}
-          y1={element.y}
-          x2={element.x + inset}
-          y2={element.y}
+          x1={visualElement.x + control.x}
+          y1={visualElement.y + control.y}
+          x2={handleX}
+          y2={handleY}
           stroke={COLOR}
-          strokeWidth={1 / zoom}
+          strokeWidth={CONTROL_THEME.strokeWidth / zoom}
           style={{ pointerEvents: 'none' }}
         />
       )}
       <circle
-        cx={element.x + inset}
-        cy={element.y}
-        r={12 / zoom}
+        cx={handleX}
+        cy={handleY}
+        r={hitRadius}
         fill="transparent"
-        style={{ cursor: 'ew-resize', touchAction: 'none', pointerEvents: 'all' }}
+        style={{ cursor: 'ew-resize', touchAction: 'none', pointerEvents: ready ? 'all' : 'none' }}
         onPointerDown={handlePointerDown}
       />
-      <path
-        d={`M ${element.x + inset} ${element.y - 4 / zoom} l ${4 / zoom} ${4 / zoom} l ${-4 / zoom} ${4 / zoom} l ${-4 / zoom} ${-4 / zoom} Z`}
-        fill="#fbbc04"
-        stroke={COLOR}
-        strokeWidth={2 / zoom}
-        style={{ cursor: 'ew-resize', touchAction: 'none' }}
-        onPointerDown={handlePointerDown}
-      />
+      <SVGAdjustmentGlyph x={handleX} y={handleY} zoom={zoom} />
     </g>
   );
 };

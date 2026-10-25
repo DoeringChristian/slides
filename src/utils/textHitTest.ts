@@ -1,7 +1,9 @@
 import type { TextElement } from '../types/presentation';
 import { parseBlocks, getBlockFontMultiplier, parseInlineSegments } from '../components/canvas/CustomMarkdownRenderer';
-import { TEXT_BOX_PADDING } from './constants';
-import { getLayoutSync, layoutSvgText, type SvgTextDoc } from './textLayout';
+import { nativeTextBaseline } from './glyphPaths';
+import { textInsets } from './boundTextLayout';
+import { textRowMetrics, type SvgTextDoc } from './textLayout';
+import { getUserTextLayoutSync, layoutUserText } from './userTextSizing';
 
 interface Point { x: number; y: number }
 
@@ -18,11 +20,11 @@ export function isPointOnTextContent(element: TextElement, point: Point): boolea
   const { text, width, height, style } = element;
   if (!text || text.trim() === '') return false;
 
-  const padding = TEXT_BOX_PADDING;
+  const padding = textInsets(element);
 
   // Border margin: clicks near box edges always start a drag, not edit mode.
   // Only enforced within the original bounds (not below for overflow).
-  const borderMargin = 8;
+  const borderMargin = padding === 0 ? 0 : 8;
   if (point.x < borderMargin || point.x > width - borderMargin ||
       (point.y < height && (point.y < borderMargin || point.y > height - borderMargin))) {
     return false;
@@ -30,7 +32,7 @@ export function isPointOnTextContent(element: TextElement, point: Point): boolea
 
   const contentWidth = width - padding * 2;
   const contentHeight = height - padding * 2;
-  const doc = getLayoutSync(text, style, contentWidth);
+  const doc = getUserTextLayoutSync(element);
   const renderedHeight = doc?.height ?? contentHeight;
 
   let textY = padding;
@@ -61,7 +63,7 @@ export function measureBlockHeight(
 ): number {
   // Match the SVG renderer's per-line factor: a baseline at 0.8 * fontSize
   // plus a descender of 0.4 * lineHeight * fontSize.
-  const totalLineFactor = 0.8 + 0.4 * lineHeight;
+  const row = textRowMetrics(fontSize, lineHeight);
   const container = document.createElement('div');
   container.style.cssText = `
     position: absolute;
@@ -70,11 +72,11 @@ export function measureBlockHeight(
     font-size: ${fontSize}px;
     font-family: 'InterEdit', ${fontFamily};
     font-weight: ${fontWeight};
-    line-height: 1;
+    line-height: ${row.advance}px;
     white-space: pre-wrap;
     word-break: break-word;
     margin: 0;
-    padding: 0 0 ${fontSize * Math.max(0, totalLineFactor - 1)}px 0;
+    padding: 0;
     font-kerning: none;
     font-feature-settings: "kern" 0;
   `;
@@ -82,7 +84,7 @@ export function measureBlockHeight(
   document.body.appendChild(container);
   const measured = container.getBoundingClientRect().height;
   document.body.removeChild(container);
-  return Math.max(measured, fontSize * totalLineFactor);
+  return Math.max(measured, row.advance);
 }
 
 /**
@@ -108,12 +110,12 @@ export async function calculateCursorFromClick(
   const { text, width, height, style } = element;
   if (!text) return 0;
 
-  const padding = TEXT_BOX_PADDING;
+  const padding = textInsets(element);
   const contentWidth = width - padding * 2;
   const contentHeight = height - padding * 2;
 
-  const doc = getLayoutSync(text, style, contentWidth)
-    ?? await layoutSvgText(text, style, contentWidth);
+  const doc = getUserTextLayoutSync(element)
+    ?? await layoutUserText(element);
 
   let verticalOffset = 0;
   if (style.verticalAlign === 'middle') verticalOffset = Math.max(0, (contentHeight - doc.height) / 2);
@@ -141,6 +143,8 @@ export async function calculateCursorFromClick(
     fontSize: blockFontSize,
     fontFamily: style.fontFamily,
     fontWeight: blockFontWeight,
+    fontStyle: style.fontStyle,
+    lineHeight: style.lineHeight,
     align: style.align,
     boxWidth: contentWidth,
     clickX: xInContent,
@@ -163,6 +167,8 @@ interface CharLookup {
   fontSize: number;
   fontFamily: string;
   fontWeight: string;
+  fontStyle: string;
+  lineHeight: number;
   align: string;
   boxWidth: number;
   clickX: number;
@@ -176,6 +182,8 @@ interface CharLookup {
  * so the browser's per-char advance widths match opentype.js's.
  */
 function findCharIndexAt(opts: CharLookup): number {
+  const row = textRowMetrics(opts.fontSize, opts.lineHeight);
+  const nativeTop = row.baseline - nativeTextBaseline(opts.fontSize, row.advance, opts.fontWeight, opts.fontStyle);
   const container = document.createElement('div');
   container.style.cssText = `
     position: absolute;
@@ -184,7 +192,8 @@ function findCharIndexAt(opts: CharLookup): number {
     font-size: ${opts.fontSize}px;
     font-family: 'InterEdit', ${opts.fontFamily};
     font-weight: ${opts.fontWeight};
-    line-height: 1;
+    font-style: ${opts.fontStyle};
+    line-height: ${row.advance}px;
     white-space: pre-wrap;
     word-break: break-word;
     text-align: ${opts.align};
@@ -213,7 +222,7 @@ function findCharIndexAt(opts: CharLookup): number {
     range.setEnd(textNode, mid + 1);
     const rect = range.getBoundingClientRect();
     const charX = rect.left - containerRect.left;
-    const charY = rect.top - containerRect.top;
+    const charY = rect.top - containerRect.top + nativeTop;
     if (opts.clickY < charY || (Math.abs(opts.clickY - charY) < rect.height && opts.clickX < charX + rect.width / 2)) {
       high = mid;
     } else {

@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import type { ProjectMeta } from '../types/vault';
+import type { Presentation } from '../types/presentation';
+import { setActiveDoc } from '../collab/yDocAdapter';
 import { isFileSystemAccessSupported } from '../types/vault';
 import {
   saveVaultHandle,
@@ -11,6 +13,7 @@ import {
   listProjects as listProjectsFS,
   loadProject as loadProjectFS,
   saveProject as saveProjectFS,
+  saveImportedProject,
   deleteProject as deleteProjectFS,
   duplicateProject as duplicateProjectFS,
 } from '../utils/projectFiles';
@@ -25,6 +28,7 @@ import { usePresentationStore } from './presentationStore';
 import { useEditorStore } from './editorStore';
 import { getJoinedProject, updateJoinedProjectMeta } from './joinedStore';
 import { createPresentation } from '../utils/slideFactory';
+import { assertPresentation } from '../utils/currentPresentation';
 
 const supportsFileSystem = isFileSystemAccessSupported();
 
@@ -68,6 +72,7 @@ interface VaultStore {
   // Project management
   loadProjects: () => Promise<void>;
   createProject: (title?: string) => Promise<void>;
+  importProject: (presentation: Presentation) => Promise<void>;
   openProject: (id: string) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
   duplicateProject: (id: string) => Promise<void>;
@@ -280,6 +285,35 @@ export const useVaultStore = create<VaultStore>()((set, get) => ({
     }
   },
 
+  importProject: async (source: Presentation) => {
+    const { vaultHandle, storageMode, isLoading } = get();
+    if (isLoading) throw new Error('Another project operation is in progress. Please try again.');
+    set({ isLoading: true, error: null });
+    try {
+      // Only the project identity changes. Keyframe/object/resource identities
+      // and metadata belong to the imported deck, not to a new factory deck.
+      const presentation = { ...source, id: crypto.randomUUID() };
+      let project: ProjectMeta;
+      if (storageMode === 'filesystem') {
+        if (!vaultHandle) throw new Error('Select a vault folder before importing.');
+        const filename = await saveImportedProject(vaultHandle, presentation);
+        project = { id: presentation.id, title: presentation.title, filename,
+          createdAt: presentation.createdAt, updatedAt: presentation.updatedAt };
+      } else {
+        project = await getStorageClient().saveProject(presentation);
+      }
+      // No current project/store/doc changes until the selected backend saves.
+      set(state => ({ projects: [project, ...state.projects] }));
+      await get().openProject(presentation.id);
+      if (get().activeProjectId !== presentation.id) throw new Error(get().error || 'Failed to open imported project.');
+    } catch (error) {
+      set({ error: (error as Error).message });
+      throw error;
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
   openProject: async (id: string) => {
     const { vaultHandle, projects, storageMode } = get();
     // Owned projects are in `projects`; joined projects come via joinedStore
@@ -309,11 +343,14 @@ export const useVaultStore = create<VaultStore>()((set, get) => ({
         }
       }
 
+      // A rejected open must leave the current collaborative session attached.
+      // Validate before any document switch; the store also guards direct loads.
+      assertPresentation(presentation);
+      // The old room must not mirror queued updates over the newly loaded
+      // project while React tears down/reconnects the collaboration effect.
+      setActiveDoc(null);
       usePresentationStore.getState().loadPresentation(presentation);
-
-      if (presentation.slideOrder.length > 0) {
-        useEditorStore.getState().setActiveSlide(presentation.slideOrder[0]);
-      }
+      useEditorStore.getState().setActiveSlide(presentation.slideOrder[0] ?? '');
 
       set({
         activeProjectId: id,

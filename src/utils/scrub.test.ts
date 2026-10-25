@@ -239,3 +239,28 @@ describe('formatValue', () => {
     expect(formatValue(-0, {})).toBe('0');
   });
 });
+
+
+describe('cyclic ScrubSpec', () => {
+  const angle: ScrubSpec = { min: 0, wrap: 360, step: 1, precision: 1 };
+  it('wraps backwards and forwards, including large negative typed values', () => {
+    expect(applyScrubDelta(0, -1, angle, false)).toBe(359);
+    expect(applyScrubDelta(359, 1, angle, false)).toBe(0);
+    expect(parseInput('-721.25', angle)).toBe(358.75);
+    expect(commitValue(1080, angle)).toBe(0);
+  });
+  it('keeps unrounded fine accumulation and wraps after Ctrl/precision rounding', () => {
+    const draft = applyScrubDelta(0, -1, angle, true);
+    expect(draft).toBeCloseTo(359.9);
+    expect(commitValue(draft, angle, 1)).toBe(0);
+    expect(commitValue(draft, angle)).toBeCloseTo(359.9);
+    expect(commitValue(359.96, angle)).toBe(0);
+    expect(runSequence(0, [{ dx: -0.1, fine: true }, { dx: -0.1, fine: true }], angle)).toBeCloseTo(359.98);
+  });
+  it('supports a nonzero interval origin and does not wrap bounded controls', () => {
+    expect(clampValue(-181, { min: -180, wrap: 360 })).toBe(179);
+    expect(clampValue(180, { min: -180, wrap: 360 })).toBe(-180);
+    expect(applyScrubDelta(99, 5, { min: 0, max: 100 }, false)).toBe(100);
+    expect(applyScrubDelta(0, -5, { min: 0, max: 20 }, false)).toBe(0);
+  });
+});

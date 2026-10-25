@@ -1,9 +1,12 @@
 import React from 'react';
 import type { SlideElement, ShapeElement } from '../../types/presentation';
+import { bindingAimPoint, type ConnectorDockCue } from '../../utils/connectorUtils';
 import { shapeToPathD } from '../../utils/shapeToPath';
 
 interface Props {
   element: SlideElement;
+  zoom: number;
+  dock?: ConnectorDockCue | null;
 }
 
 /**
@@ -14,7 +17,7 @@ interface Props {
  * bounding box. Text / image targets bind to their bounding box, so they
  * keep a rect outline.
  */
-export const SVGConnectorHighlight: React.FC<Props> = ({ element }) => {
+export const SVGConnectorHighlight: React.FC<Props> = ({ element, zoom, dock }) => {
   // Rotate around the center of the element (same convention as the renderer).
   const cx = element.x + element.width / 2;
   const cy = element.y + element.height / 2;
@@ -27,13 +30,14 @@ export const SVGConnectorHighlight: React.FC<Props> = ({ element }) => {
 
   const strokeProps = {
     fill: 'none',
-    stroke: '#4285f4',
-    strokeWidth: 2,
-    strokeDasharray: '6 3',
+    stroke: '#6abdfc',
+    strokeWidth: Math.max(element.type === 'shape' ? Math.min(element.strokeWidth, 4) : 0, 1.75) / Math.max(.25, zoom),
   } as const;
 
+  const dockPoint = dock ? bindingAimPoint(dock.binding, element) : null;
   return (
-    <g transform={transform} style={{ pointerEvents: 'none' }}>
+    <g data-connector-highlight={element.id} style={{ pointerEvents: 'none' }}>
+    <g transform={transform}>
       {outlineD ? (
         <path d={outlineD} {...strokeProps} />
       ) : (
@@ -45,6 +49,8 @@ export const SVGConnectorHighlight: React.FC<Props> = ({ element }) => {
           {...strokeProps}
         />
       )}
+    </g>
+    {dockPoint && <circle data-connector-dock={dock!.active ? 'active' : 'near'} cx={dockPoint.x} cy={dockPoint.y} r={4 / zoom} fill={dock!.active ? '#6abdfc' : 'rgba(65,65,65,.5)'} />}
     </g>
   );
 };

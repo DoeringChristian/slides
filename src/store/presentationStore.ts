@@ -1,15 +1,18 @@
 import { create } from 'zustand';
 import { temporal } from 'zundo';
+import { guardLocalActions, beforeLocalMutation } from '../utils/scrubMutation';
 import * as Y from 'yjs';
 import type { Presentation, Slide, SlideElement, TextElement, ObjectMeta, SlideTemplate, Resource } from '../types/presentation';
 import { generateId } from '../utils/idGenerator';
 import { createPresentation, createSlide, copySlideAsKeyframe, generateObjectName } from '../utils/slideFactory';
-import { migratePresentation } from '../utils/migrations';
+import { assertPresentation } from '../utils/currentPresentation';
 import { syncDependentsAfterMutation, expandWithBoundTexts } from '../utils/syncDependents';
 import { beforeMutation } from '../utils/autoDraw';
 import { lerpAngle } from '../utils/interpolation';
 import { mirrorTargets, withMirroring } from '../utils/multiSlide';
 import { areSlidesContiguous, groupsToDissolve } from '../utils/presenterAdvance';
+import { planSlideGroupEdit } from '../utils/slideGroupEditing';
+import { getActiveUndoManager } from '../collab/activeUndo';
 import { canMergeObjects, mergeObjectInSlides } from '../utils/mergeObjects';
 import { applyStickyDefaults } from '../utils/stickyEasings';
 import {
@@ -68,13 +71,13 @@ function moveInYArray(doc: Y.Doc, slideId: string, elementId: string, mode: 1 | 
 /** Walk slideOrder forward from `fromSlideId` and apply `changes` to the same
  *  element on every subsequent slide where it exists. Mirrors the JSON-side
  *  propagateToSubsequentSlides helper. */
-function propagateInY(doc: Y.Doc, fromSlideId: string, elementId: string, changes: Record<string, unknown>) {
+function propagateInY(doc: Y.Doc, fromSlideId: string, elementId: string, changes: Record<string, unknown>, boundTo?: string) {
   const order = (getYRoot(doc).get('slideOrder') as Y.Array<string>).toArray();
   const fromIdx = order.indexOf(fromSlideId);
   if (fromIdx === -1) return;
   for (let i = fromIdx + 1; i < order.length; i++) {
     const elMap = getYElement(doc, order[i], elementId);
-    if (!elMap) continue;
+    if (!elMap || (boundTo && elMap.get('containerId') !== boundTo)) continue;
     applyChangesToYElement(elMap, changes);
   }
 }
@@ -86,6 +89,7 @@ function propagateToSubsequentSlides(
   fromSlideId: string,
   elementId: string,
   changes: Partial<SlideElement>,
+  boundTo?: string,
 ): Record<string, Slide> {
   const fromIdx = slideOrder.indexOf(fromSlideId);
   if (fromIdx === -1) return slides;
@@ -93,7 +97,7 @@ function propagateToSubsequentSlides(
   for (let i = fromIdx + 1; i < slideOrder.length; i++) {
     const sid = slideOrder[i];
     const slide = updated[sid];
-    if (slide && slide.elements[elementId]) {
+    if (slide && slide.elements[elementId] && (!boundTo || (slide.elements[elementId] as TextElement).containerId === boundTo)) {
       updated[sid] = {
         ...slide,
         elements: {
@@ -150,7 +154,6 @@ interface PresentationStore {
   reorderSlides: (slideOrder: string[]) => void;
   updateSlideBackground: (slideId: string, background: Slide['background']) => void;
   updateSlideTransition: (slideId: string, transition: Slide['transition']) => void;
-  updateSlideAutoAdvance: (slideId: string, autoAdvance: boolean, autoAdvanceDelay?: number) => void;
   updateSlideNotes: (slideId: string, notes: string) => void;
   addSlideWithMode: (afterIndex: number, mode: 'previous' | 'next' | 'interpolate') => string;
   addEmptySlide: (index?: number) => string;
@@ -161,6 +164,10 @@ interface PresentationStore {
   groupSlides: (slideIds: string[]) => string | null;
   /** Strip the groupId from every slide sharing a group with any given id. */
   ungroupSlides: (slideIds: string[]) => void;
+  /** Split BEFORE this slide; singletons become ungrouped. */
+  splitSlideGroup: (slideId: string) => void;
+  /** Remove membership only, preserving the slide and its position/content. */
+  removeSlideFromGroup: (slideId: string) => void;
   /** Per-slide hold (seconds) before the timed chain advances past it. */
   updateSlideAutoAdvanceDelay: (slideId: string, delay: number) => void;
 
@@ -168,7 +175,7 @@ interface PresentationStore {
   addElement: (slideId: string, element: SlideElement) => void;
   addElements: (slideId: string, elements: SlideElement[]) => void;
   updateElement: (slideId: string, elementId: string, changes: Partial<SlideElement>) => void;
-  updateElements: (slideId: string, updates: Array<{ elementId: string; changes: Partial<SlideElement> }>) => void;
+  updateElements: (slideId: string, updates: Array<{ elementId: string; changes: Partial<SlideElement> }>, measuredFit?: boolean) => void;
   deleteElements: (slideId: string, elementIds: string[]) => void;
   moveElementForward: (slideId: string, elementId: string) => void;
   moveElementBackward: (slideId: string, elementId: string) => void;
@@ -254,9 +261,48 @@ function moveElement(set: StoreSet, slideId: string, elementId: string, mode: 1 
   });
 }
 
+function editSlideGroup(
+  slideId: string,
+  mode: 'split' | 'remove',
+  set: (update: (state: PresentationStore) => Partial<PresentationStore>) => void,
+) {
+  const doc = getActiveDoc();
+  if (doc) {
+    const root = getYRoot(doc);
+    const order = (root.get('slideOrder') as Y.Array<string> | undefined)?.toArray() ?? [];
+    const groupIdOf = (id: string) => getYSlide(doc, id)?.get('groupId') as string | undefined;
+    const changes = planSlideGroupEdit(order, groupIdOf, slideId, mode, generateId);
+    if (!changes.size) return;
+    const undo = getActiveUndoManager();
+    undo?.stopCapturing();
+    runInTxn(() => {
+      for (const [id, groupId] of changes) {
+        const slide = getYSlide(doc, id);
+        if (groupId) slide?.set('groupId', groupId);
+        else slide?.delete('groupId');
+      }
+      root.set('updatedAt', Date.now());
+    });
+    undo?.stopCapturing();
+    return;
+  }
+  set(state => {
+    const p = state.presentation;
+    const changes = planSlideGroupEdit(p.slideOrder, id => p.slides[id]?.groupId, slideId, mode, generateId);
+    if (!changes.size) return state;
+    const slides = { ...p.slides };
+    for (const [id, groupId] of changes) {
+      slides[id] = { ...slides[id] };
+      if (groupId) slides[id].groupId = groupId;
+      else delete slides[id].groupId;
+    }
+    return { presentation: { ...p, slides, updatedAt: Date.now() } };
+  });
+}
+
 export const usePresentationStore = create<PresentationStore>()(
   temporal(
-    (set) => ({
+    (set) => guardLocalActions<PresentationStore>({
       presentation: createPresentation(),
 
       addSlide: (index?: number) => {
@@ -563,38 +609,6 @@ export const usePresentationStore = create<PresentationStore>()(
         });
       },
 
-      updateSlideAutoAdvance: (slideId, autoAdvance, autoAdvanceDelay) => {
-        const doc = getActiveDoc();
-        if (doc) {
-          runInTxn(() => {
-            const slideMap = getYSlide(doc, slideId);
-            if (!slideMap) return;
-            slideMap.set('autoAdvance', autoAdvance);
-            if (autoAdvanceDelay !== undefined) slideMap.set('autoAdvanceDelay', autoAdvanceDelay);
-            getYRoot(doc).set('updatedAt', Date.now());
-          });
-          return;
-        }
-        set((state) => {
-          const slide = state.presentation.slides[slideId];
-          if (!slide) return state;
-          return {
-            presentation: {
-              ...state.presentation,
-              slides: {
-                ...state.presentation.slides,
-                [slideId]: {
-                  ...slide,
-                  autoAdvance,
-                  autoAdvanceDelay: autoAdvanceDelay ?? slide.autoAdvanceDelay ?? 0,
-                },
-              },
-              updatedAt: Date.now(),
-            },
-          };
-        });
-      },
-
       updateSlideNotes: (slideId, notes) => {
         const doc = getActiveDoc();
         if (doc) {
@@ -779,6 +793,9 @@ export const usePresentationStore = create<PresentationStore>()(
         });
         return result;
       },
+
+      splitSlideGroup: (slideId) => editSlideGroup(slideId, 'split', set),
+      removeSlideFromGroup: (slideId) => editSlideGroup(slideId, 'remove', set),
 
       ungroupSlides: (slideIds: string[]) => {
         const doc = getActiveDoc();
@@ -1003,6 +1020,7 @@ export const usePresentationStore = create<PresentationStore>()(
           runInTxn(() => {
             const elMap = getYElement(doc, slideId, elementId);
             if (!elMap) return;
+            const beforeSlide = yDocToJsonSlideOnly(doc, slideId);
             applyChangesToYElement(elMap, changes as Record<string, unknown>);
             getYRoot(doc).set('updatedAt', Date.now());
 
@@ -1015,11 +1033,11 @@ export const usePresentationStore = create<PresentationStore>()(
               changes.x !== undefined || changes.y !== undefined ||
               changes.width !== undefined || changes.height !== undefined ||
               changes.rotation !== undefined ||
-              (changes as { points?: number[] }).points !== undefined;
+              ((changes as { points?: number[] }).points !== undefined || 'startBinding' in changes || 'endBinding' in changes);
             if (!moved) return;
             const slide = yDocToJsonSlideOnly(doc, slideId);
             if (!slide) return;
-            for (const dep of syncDependentsAfterMutation(slide.elements, slide.elementOrder, new Set([elementId]))) {
+            for (const dep of syncDependentsAfterMutation(slide.elements, slide.elementOrder, new Set([elementId]), undefined, false, beforeSlide?.elements)) {
               const depMap = getYElement(doc, slideId, dep.elementId);
               if (depMap) applyChangesToYElement(depMap, dep.changes as Record<string, unknown>);
             }
@@ -1038,8 +1056,8 @@ export const usePresentationStore = create<PresentationStore>()(
           // If an element's geometry changed (move / resize / rotate / vertex
           // edit), sync dependents: connectors bound to it, its own edge-mode
           // bindings on a vertex edit, and any bound-text labels.
-          if (changes.x !== undefined || changes.y !== undefined || changes.width !== undefined || changes.height !== undefined || changes.rotation !== undefined || (changes as { points?: number[] }).points !== undefined) {
-            for (const dep of syncDependentsAfterMutation(updatedElements, slide.elementOrder, new Set([elementId]))) {
+          if (changes.x !== undefined || changes.y !== undefined || changes.width !== undefined || changes.height !== undefined || changes.rotation !== undefined || ((changes as { points?: number[] }).points !== undefined || 'startBinding' in changes || 'endBinding' in changes)) {
+            for (const dep of syncDependentsAfterMutation(updatedElements, slide.elementOrder, new Set([elementId]), undefined, false, slide.elements)) {
               updatedElements[dep.elementId] = { ...updatedElements[dep.elementId], ...dep.changes } as SlideElement;
             }
           }
@@ -1060,17 +1078,18 @@ export const usePresentationStore = create<PresentationStore>()(
         });
       },
 
-      updateElements: (slideId, updates) => {
+      updateElements: (slideId, updates, measuredFit = false) => {
         slideId = beforeMutation(slideId);
         const __mirrors = mirrorTargets(slideId);
         withMirroring(() => {
           for (const mid of __mirrors) {
-            usePresentationStore.getState().updateElements(mid, updates);
+            usePresentationStore.getState().updateElements(mid, updates, measuredFit);
           }
         });
         const doc = getActiveDoc();
         if (doc) {
           runInTxn(() => {
+            const beforeSlide = yDocToJsonSlideOnly(doc, slideId);
             for (const { elementId, changes } of updates) {
               const elMap = getYElement(doc, slideId, elementId);
               if (!elMap) continue;
@@ -1088,13 +1107,13 @@ export const usePresentationStore = create<PresentationStore>()(
                 .filter(u => u.changes.x !== undefined || u.changes.y !== undefined ||
                             u.changes.width !== undefined || u.changes.height !== undefined ||
                             u.changes.rotation !== undefined ||
-                            (u.changes as { points?: number[] }).points !== undefined)
+                            ((u.changes as { points?: number[] }).points !== undefined || 'startBinding' in u.changes || 'endBinding' in u.changes))
                 .map(u => u.elementId)
             );
             if (movedElementIds.size === 0) return;
             const slide = yDocToJsonSlideOnly(doc, slideId);
             if (!slide) return;
-            for (const dep of syncDependentsAfterMutation(slide.elements, slide.elementOrder, movedElementIds)) {
+            for (const dep of syncDependentsAfterMutation(slide.elements, slide.elementOrder, movedElementIds, beforeSlide?.elements, measuredFit)) {
               const depMap = getYElement(doc, slideId, dep.elementId);
               if (depMap) applyChangesToYElement(depMap, dep.changes as Record<string, unknown>);
             }
@@ -1120,11 +1139,11 @@ export const usePresentationStore = create<PresentationStore>()(
               .filter(u => u.changes.x !== undefined || u.changes.y !== undefined ||
                           u.changes.width !== undefined || u.changes.height !== undefined ||
                           u.changes.rotation !== undefined ||
-                            (u.changes as { points?: number[] }).points !== undefined)
+                            ((u.changes as { points?: number[] }).points !== undefined || 'startBinding' in u.changes || 'endBinding' in u.changes))
               .map(u => u.elementId)
           );
 
-          for (const dep of syncDependentsAfterMutation(updatedElements, slide.elementOrder, movedElementIds)) {
+          for (const dep of syncDependentsAfterMutation(updatedElements, slide.elementOrder, movedElementIds, slide.elements, measuredFit)) {
             updatedElements[dep.elementId] = { ...updatedElements[dep.elementId], ...dep.changes } as SlideElement;
           }
 
@@ -1374,9 +1393,12 @@ export const usePresentationStore = create<PresentationStore>()(
             // Unhide one element on this slide (present → set visible, absent
             // → copy from the nearest slide) and propagate visible:true
             // forward. Shared by the container and its bound-label cascade.
-            const unhideOne = (id: string, pos?: { x: number; y: number }): boolean => {
+            const unhideOne = (id: string, pos?: { x: number; y: number }, boundTo?: string): boolean => {
               const elMap = getYElement(doc, slideId, id);
               if (elMap) {
+                // A label detached on this keyframe must not be resurrected
+                // because it still belongs to this container on another.
+                if (boundTo && elMap.get('containerId') !== boundTo) return false;
                 elMap.set('visible', true);
                 if (pos) {
                   elMap.set('x', pos.x);
@@ -1388,11 +1410,11 @@ export const usePresentationStore = create<PresentationStore>()(
                 let sourceJson: SlideElement | null = null;
                 for (let i = here - 1; i >= 0 && !sourceJson; i--) {
                   const src = getYElement(doc, order[i], id);
-                  if (src) sourceJson = src.toJSON() as SlideElement;
+                  if (src && (!boundTo || src.get('containerId') === boundTo)) sourceJson = src.toJSON() as SlideElement;
                 }
                 for (let i = here + 1; i < order.length && !sourceJson; i++) {
                   const src = getYElement(doc, order[i], id);
-                  if (src) sourceJson = src.toJSON() as SlideElement;
+                  if (src && (!boundTo || src.get('containerId') === boundTo)) sourceJson = src.toJSON() as SlideElement;
                 }
                 if (!sourceJson) return false;
                 const fresh = {
@@ -1407,7 +1429,7 @@ export const usePresentationStore = create<PresentationStore>()(
                 elementOrder.push([id]);
               }
               // Propagate visible:true to subsequent slides where the element exists.
-              propagateInY(doc, slideId, id, { visible: true });
+              propagateInY(doc, slideId, id, { visible: true }, boundTo);
               return true;
             };
 
@@ -1415,7 +1437,7 @@ export const usePresentationStore = create<PresentationStore>()(
             // Cascade visibility to the container's bound labels (found
             // anywhere in the deck — the label keyframe may be missing here).
             for (const labelId of collectBoundTextIdsInY(doc, elementId)) {
-              unhideOne(labelId);
+              unhideOne(labelId, undefined, elementId);
             }
 
             // Dropped at a new position → run the shared dependent sync so
@@ -1441,9 +1463,10 @@ export const usePresentationStore = create<PresentationStore>()(
           const { slideOrder } = state.presentation;
           let updatedSlides = { ...state.presentation.slides };
 
-          const unhideOne = (id: string, pos?: { x: number; y: number }): boolean => {
+          const unhideOne = (id: string, pos?: { x: number; y: number }, boundTo?: string): boolean => {
             const cur = updatedSlides[slideId];
             if (cur.elements[id]) {
+              if (boundTo && (cur.elements[id] as TextElement).containerId !== boundTo) return false;
               // Element exists on this slide — just unhide it
               const changes: Partial<SlideElement> = { visible: true };
               if (pos) {
@@ -1464,7 +1487,7 @@ export const usePresentationStore = create<PresentationStore>()(
               const slideIdx = slideOrder.indexOf(slideId);
               for (let i = slideIdx - 1; i >= 0; i--) {
                 const s = updatedSlides[slideOrder[i]];
-                if (s?.elements[id]) {
+                if (s?.elements[id] && (!boundTo || (s.elements[id] as TextElement).containerId === boundTo)) {
                   sourceEl = s.elements[id];
                   break;
                 }
@@ -1472,7 +1495,7 @@ export const usePresentationStore = create<PresentationStore>()(
               if (!sourceEl) {
                 for (let i = slideIdx + 1; i < slideOrder.length; i++) {
                   const s = updatedSlides[slideOrder[i]];
-                  if (s?.elements[id]) {
+                  if (s?.elements[id] && (!boundTo || (s.elements[id] as TextElement).containerId === boundTo)) {
                     sourceEl = s.elements[id];
                     break;
                   }
@@ -1500,6 +1523,7 @@ export const usePresentationStore = create<PresentationStore>()(
               slideId,
               id,
               { visible: true },
+              boundTo,
             );
             return true;
           };
@@ -1525,7 +1549,7 @@ export const usePresentationStore = create<PresentationStore>()(
               }
             }
           }
-          for (const labelId of labelIds) unhideOne(labelId);
+          for (const labelId of labelIds) unhideOne(labelId, undefined, elementId);
 
           // Dropped at a new position → dependent sync (labels/connectors).
           if (position) {
@@ -1726,60 +1750,44 @@ export const usePresentationStore = create<PresentationStore>()(
             }
             if (!canMergeObjects(slidesJson, targetId, sourceId)) return;
 
-            // Pass 1 — per slide containing the source: conflict → delete
-            // the source element + its order entry (target wins); otherwise
-            // move it under the target id (embedded id rewritten, order
-            // entry replaced in place). Y.Text subtree recreation for the
-            // moved element is accepted precedent.
-            for (const sid of order) {
-              const snap = slidesJson[sid];
-              const src = snap?.elements[sourceId];
-              if (!src) continue;
-              const slideMap = getYSlide(doc, sid);
-              const elements = slideMap?.get('elements') as Y.Map<unknown> | undefined;
-              const elementOrder = slideMap?.get('elementOrder') as Y.Array<string> | undefined;
-              if (!elements || !elementOrder) continue;
-              elements.delete(sourceId);
-              if (snap.elements[targetId]) {
-                const idx = elementOrder.toArray().indexOf(sourceId);
-                if (idx !== -1) elementOrder.delete(idx, 1);
-                result.droppedOnSlides.push(sid);
-              } else {
-                const mergedJson = {
-                  ...(JSON.parse(JSON.stringify(src)) as SlideElement),
-                  id: targetId,
-                } as SlideElement;
-                elements.set(targetId, elementToYMap(mergedJson));
-                yArrayReplaceAll(
-                  elementOrder,
-                  snap.elementOrder.map((id) => (id === sourceId ? targetId : id)),
-                );
-              }
-            }
-
-            // Pass 2 — deck-wide reference remap: connector bindings and
-            // bound-text containerIds that pointed at the source follow the
-            // target (also on conflict slides, where the source was dropped).
-            for (const sid of order) {
-              const elements = getYSlide(doc, sid)?.get('elements') as
-                | Y.Map<Y.Map<unknown>>
-                | undefined;
-              if (!elements) continue;
-              for (const elMap of elements.values()) {
-                const type = elMap.get('type');
-                if (type === 'text') {
-                  if (elMap.get('containerId') === sourceId) elMap.set('containerId', targetId);
-                } else if (type === 'shape') {
-                  for (const key of ['startBinding', 'endBinding'] as const) {
-                    const binding = elMap.get(key);
-                    if (binding instanceof Y.Map && binding.get('elementId') === sourceId) {
-                      const json = binding.toJSON() as Record<string, unknown>;
-                      elMap.set(key, mkScalarMap({ ...json, elementId: targetId }));
-                    }
+            const merged = mergeObjectInSlides(slidesJson, targetId, sourceId, order);
+            // Y transactions do not roll back on exceptions. Build EVERY
+            // replacement before touching any slide, registry or reference.
+            const plans = order.flatMap(sid => {
+              const before = slidesJson[sid], after = merged.slides[sid];
+              if (!before || before === after) return [];
+              const slideMap = getYSlide(doc, sid)!;
+              const elements = slideMap.get('elements') as Y.Map<Y.Map<unknown>>;
+              const elementOrder = slideMap.get('elementOrder') as Y.Array<string>;
+              const replacements = Object.entries(after.elements)
+                .filter(([id, el]) => id === targetId && el !== before.elements[id])
+                .map(([id, el]) => [id, elementToYMap(el)] as const);
+              const updates = Object.entries(after.elements)
+                .filter(([id, el]) => id !== targetId && el !== before.elements[id])
+                .map(([id, el]) => {
+                  const old = before.elements[id];
+                  const changes: Record<string, unknown> = {};
+                  for (const key of ['visible', 'containerId', 'startBinding', 'endBinding'] as const) {
+                    const next = (el as unknown as Record<string, unknown>)[key];
+                    if (next !== (old as unknown as Record<string, unknown>)?.[key]) changes[key] = next;
                   }
+                  return { id, changes };
+                });
+              return [{ elements, elementOrder, after, replacements, updates }];
+            });
+            for (const plan of plans) {
+              if (!plan.after.elements[sourceId]) plan.elements.delete(sourceId);
+              for (const [id, map] of plan.replacements) plan.elements.set(id, map);
+              for (const { id, changes } of plan.updates) {
+                const map = plan.elements.get(id);
+                if (map) {
+                  if (Object.prototype.hasOwnProperty.call(changes, 'containerId') && changes.containerId === undefined) map.delete('containerId');
+                  applyChangesToYElement(map, changes);
                 }
               }
+              yArrayReplaceAll(plan.elementOrder, plan.after.elementOrder);
             }
+            result.droppedOnSlides = merged.droppedOnSlides;
 
             // Registry: the source's entry goes; the target keeps its
             // id/name/ObjectMeta.type untouched.
@@ -1817,7 +1825,7 @@ export const usePresentationStore = create<PresentationStore>()(
             if (!srcEl) return;
             const changes: Record<string, unknown> = {};
             for (const p of properties) {
-              const v = srcEl.get(p as string);
+              const v = srcEl.get(p as string) ?? (String(p) === 'fillStyle' && srcEl.get('type') === 'shape' ? 'solid' : undefined);
               if (v !== undefined) changes[p as string] = v instanceof Y.Text ? v.toString() : v;
             }
             for (const targetId of targetSlideIds) {
@@ -1840,7 +1848,8 @@ export const usePresentationStore = create<PresentationStore>()(
           // Build the changes object from the source element
           const changes: Partial<SlideElement> = {};
           for (const prop of properties) {
-            (changes as Record<string, unknown>)[prop] = sourceElement[prop];
+            (changes as Record<string, unknown>)[prop] = sourceElement[prop]
+              ?? (String(prop) === 'fillStyle' && sourceElement.type === 'shape' ? 'solid' : undefined);
           }
 
           // Apply to all target slides
@@ -2061,9 +2070,7 @@ export const usePresentationStore = create<PresentationStore>()(
       },
 
       loadPresentation: (presentation) => {
-        // Repair after migration heals decks corrupted before deleteSlide
-        // learned to GC ghost registry entries / orphaned resources.
-        set({ presentation: repairPresentation(migratePresentation(presentation)) });
+        set({ presentation: repairPresentation(assertPresentation(presentation)) });
       },
 
       resetPresentation: () => {
@@ -2077,3 +2084,12 @@ export const usePresentationStore = create<PresentationStore>()(
     }
   )
 );
+
+// Also cover programmatic history calls, not only keyboard/useHistory callers.
+for (const key of ['undo', 'redo'] as const) {
+  const original = usePresentationStore.temporal.getState()[key];
+  usePresentationStore.temporal.setState({ [key]: (...args: Parameters<typeof original>) => {
+    beforeLocalMutation();
+    return original(...args);
+  } });
+}

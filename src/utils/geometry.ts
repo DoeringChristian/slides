@@ -1,4 +1,4 @@
-import type { SlideElement, ShapeElement } from '../types/presentation';
+import type { SlideElement, ShapeElement, BaseElement } from '../types/presentation';
 import { isLinePath } from './pathShapes';
 
 export interface BoundingBox {
@@ -108,4 +108,10 @@ export function getElementCenter(element: SlideElement): Point {
     x: element.x + element.width / 2,
     y: element.y + element.height / 2,
   };
+}
+
+/** Rotation origin used by the shared element renderer, including paths whose
+ * relative vertices need not start at (0, 0) or fill the stored box. */
+export function getRotationCenter(element: Pick<BaseElement, 'x' | 'y' | 'width' | 'height'>): Point {
+  return { x: element.x + element.width / 2, y: element.y + element.height / 2 };
 }

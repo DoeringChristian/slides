@@ -178,7 +178,7 @@ export const SVGImageNode: React.FC<Props> = React.memo(({
   // Image (or no resource / loading state) - use RenderImage for visual, add hit area on top
   return (
     <g data-element-id={element.id}>
-      <RenderImage element={element} resource={resource} clipIdPrefix="editor" />
+      <RenderImage element={element} resource={resource} />
       {/* Transparent hit area for interaction */}
       <g transform={transform}>
         <rect

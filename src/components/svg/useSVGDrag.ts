@@ -1,5 +1,5 @@
+import { readGestureSlide, useCanvasGestureGuard } from './useCanvasGestureGuard';
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { isCtrlHeld } from '../../utils/keyboard';
 import { DRAG_SLOP_MOUSE, DRAG_SLOP_TOUCH } from '../../utils/constants';
 
 interface DragState {
@@ -29,17 +29,20 @@ interface UseSVGDragOptions {
   onDragEnd?: (id: string, x: number, y: number) => void;
   /** Pointer released before the slop threshold was crossed: a plain click.
    *  Fired instead of onDragStart/Move/End (not in addition to them). */
+  onDragCancel?: () => void;
   onClick?: (id: string) => void;
 }
 
 // Element drag hook — pointer-event based so it works for mouse, touch, and stylus.
-// Preserves Ctrl-axis-constrain behavior. Uses setPointerCapture so the drag keeps
+// Preserves Shift-axis-constrain behavior. Uses setPointerCapture so the drag keeps
 // flowing even if the pointer leaves the element bounds.
 export function useSVGDrag(options: UseSVGDragOptions) {
-  const { zoom, onDragStart, onDragMove, onDragEnd, onClick } = options;
+  const { zoom, onDragStart, onDragMove, onDragEnd, onClick, onDragCancel } = options;
 
   const [dragState, setDragState] = useState<DragState>(IDLE);
 
+  const { start: startGuard, finish: finishGuard } = useCanvasGestureGuard();
+  const lastPointer = useRef<PointerEvent | null>(null);
   const pointerIdRef = useRef<number | null>(null);
 
   const handlePointerDown = useCallback((
@@ -53,6 +56,9 @@ export function useSVGDrag(options: UseSVGDragOptions) {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     e.preventDefault();
     e.stopPropagation();
+    const current = readGestureSlide()?.elements[id];
+    if (!current || current.x !== elementX || current.y !== elementY) return;
+    if (!startGuard(() => { pointerIdRef.current = null; setDragState(IDLE); onDragCancel?.(); })) return;
     pointerIdRef.current = e.pointerId;
     // Capture on the originating element so subsequent moves/up reach us
     // regardless of where the pointer goes (e.g. outside the SVG).
@@ -71,14 +77,15 @@ export function useSVGDrag(options: UseSVGDragOptions) {
       startElementY: elementY,
       slop: e.pointerType === 'touch' ? DRAG_SLOP_TOUCH : DRAG_SLOP_MOUSE,
     });
-  }, []);
+  }, [startGuard, onDragCancel]);
 
   useEffect(() => {
     if (dragState.phase === 'idle') return;
 
     const handlePointerMove = (e: PointerEvent) => {
-      if (pointerIdRef.current !== null && e.pointerId !== pointerIdRef.current) return;
+      if (e.pointerId !== pointerIdRef.current) return;
       e.preventDefault();
+      lastPointer.current = e;
       const screenDx = e.clientX - dragState.startX;
       const screenDy = e.clientY - dragState.startY;
 
@@ -97,8 +104,8 @@ export function useSVGDrag(options: UseSVGDragOptions) {
       let newX = dragState.startElementX + dx;
       let newY = dragState.startElementY + dy;
 
-      // Ctrl-constrain: lock to horizontal or vertical axis
-      if (isCtrlHeld()) {
+      // Shift-constrain: lock to horizontal or vertical axis
+      if (e.shiftKey) {
         if (Math.abs(dx) >= Math.abs(dy)) {
           newY = dragState.startElementY;
         } else {
@@ -112,8 +119,9 @@ export function useSVGDrag(options: UseSVGDragOptions) {
     };
 
     const handlePointerUp = (e: PointerEvent) => {
-      if (pointerIdRef.current !== null && e.pointerId !== pointerIdRef.current) return;
+      if (e.pointerId !== pointerIdRef.current) return;
 
+      finishGuard();
       if (dragState.phase === 'armed') {
         // Never crossed the slop: a click, not a drag. A pointercancel
         // (scroll takeover, alt-tab) is neither.
@@ -127,7 +135,7 @@ export function useSVGDrag(options: UseSVGDragOptions) {
         let finalX = dragState.startElementX + dx;
         let finalY = dragState.startElementY + dy;
 
-        if (isCtrlHeld()) {
+        if (e.shiftKey) {
           if (Math.abs(dx) >= Math.abs(dy)) {
             finalY = dragState.startElementY;
           } else {
@@ -142,18 +150,33 @@ export function useSVGDrag(options: UseSVGDragOptions) {
       setDragState(IDLE);
     };
 
+    const cancel = () => { finishGuard(); pointerIdRef.current = null; setDragState(IDLE); onDragCancel?.(); };
+    const lostCapture = (e: PointerEvent) => { if (e.pointerId === pointerIdRef.current) cancel(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); cancel(); }
+      else if (['Shift','Control','Meta'].includes(e.key) && lastPointer.current && dragState.phase === 'dragging') {
+        const p = lastPointer.current;
+        handlePointerMove(new PointerEvent('pointermove', { clientX: p.clientX, clientY: p.clientY, pointerId: p.pointerId, shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey }));
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('keyup', onKey);
+    window.addEventListener('blur', cancel);
     window.addEventListener('pointermove', handlePointerMove);
     window.addEventListener('pointerup', handlePointerUp);
     // pointercancel fires on iOS gestures, alt-tab, etc. — treat like up so we
     // don't leak drag state.
-    window.addEventListener('pointercancel', handlePointerUp);
+    window.addEventListener('pointercancel', cancel);
+    window.addEventListener('lostpointercapture', lostCapture);
 
     return () => {
       window.removeEventListener('pointermove', handlePointerMove);
       window.removeEventListener('pointerup', handlePointerUp);
-      window.removeEventListener('pointercancel', handlePointerUp);
+      window.removeEventListener('pointercancel', cancel);
+      window.removeEventListener('lostpointercapture', lostCapture);
+      window.removeEventListener('keydown', onKey); window.removeEventListener('keyup', onKey); window.removeEventListener('blur', cancel);
     };
-  }, [dragState, zoom, onDragStart, onDragMove, onDragEnd, onClick]);
+  }, [dragState, zoom, onDragStart, onDragMove, onDragEnd, onClick, onDragCancel, finishGuard]);
 
   return { handlePointerDown };
 }

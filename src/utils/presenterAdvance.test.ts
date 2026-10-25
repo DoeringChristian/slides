@@ -72,38 +72,6 @@ describe('groupRuns', () => {
     ]);
   });
 
-  test('legacy shim: autoAdvance runs + immediate successor when no groupIds exist', () => {
-    const { order, slides } = deck([
-      { id: 'a', autoAdvance: true, autoAdvanceDelay: 2 },
-      { id: 'b', autoAdvance: true },
-      { id: 'c' },
-      { id: 'd' },
-      { id: 'e', autoAdvance: true },
-      { id: 'f' },
-    ]);
-    expect(groupRuns(order, slides)).toEqual([
-      { groupId: 'legacy-autoadvance-a', slideIds: ['a', 'b', 'c'], start: 0 },
-      { groupId: 'legacy-autoadvance-e', slideIds: ['e', 'f'], start: 4 },
-    ]);
-  });
-
-  test('legacy shim: a trailing flag with no successor synthesizes no run', () => {
-    const { order, slides } = deck([{ id: 'a' }, { id: 'b', autoAdvance: true }]);
-    expect(groupRuns(order, slides)).toEqual([]);
-  });
-
-  test('the shim is disabled as soon as any slide carries a groupId', () => {
-    const { order, slides } = deck([
-      { id: 'a', autoAdvance: true }, // legacy leftover — ignored
-      { id: 'b' },
-      { id: 'c', groupId: 'g' },
-      { id: 'd', groupId: 'g' },
-    ]);
-    expect(groupRuns(order, slides)).toEqual([
-      { groupId: 'g', slideIds: ['c', 'd'], start: 2 },
-    ]);
-  });
-
   test('findRunAt maps an index to its containing run', () => {
     const { order, slides } = deck([
       { id: 'a' },
@@ -176,20 +144,6 @@ describe('chainTargetAfterLanding', () => {
     expect(chainTargetAfterLanding(order, slides, visible, 1)).toBeNull();
     // Current index not in visibleIndices (hidden slide reached via direct jump).
     expect(chainTargetAfterLanding(order, slides, [1], 0)).toBeNull();
-  });
-
-  test('legacy shim decks chain exactly like their old auto-advance behavior', () => {
-    const { order, slides } = deck([
-      { id: 'a', autoAdvance: true, autoAdvanceDelay: 3 },
-      { id: 'b', autoAdvance: true }, // delay defaults to 0
-      { id: 'c' },
-      { id: 'd' },
-    ]);
-    const visible = visibleOf(order, slides);
-    expect(chainTargetAfterLanding(order, slides, visible, 0)).toEqual({ target: 1, holdMs: 3000 });
-    expect(chainTargetAfterLanding(order, slides, visible, 1)).toEqual({ target: 2, holdMs: 0 });
-    // c is the run's landing slide: no flag, no further chaining.
-    expect(chainTargetAfterLanding(order, slides, visible, 2)).toBeNull();
   });
 });
 

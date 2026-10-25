@@ -7,7 +7,7 @@ import { ResourcePicker } from './ResourcePicker';
 import { PropertyList } from './PropertyList';
 import { PanelHeader } from './PanelHeader';
 import { IconButtonRow } from '../controls/IconButtonRow';
-import { Property, RangeProperty, ReadoutProperty } from './Property';
+import { Property, NumberProperty, ReadoutProperty } from './Property';
 import { computeResourceUpdate } from '../../utils/imageUtils';
 import type { ImageElement } from '../../types/presentation';
 
@@ -34,9 +34,10 @@ class ResourceProperty extends Property<ImageElement> {
 }
 
 const IMAGE_PROPERTIES: Property<ImageElement>[] = [
-  new RangeProperty<ImageElement>({
+  new NumberProperty<ImageElement>({
     key: 'opacity', label: 'Opacity',
     transitionGroup: 'opacity', min: 0, max: 100, scale: 100,
+    step: 1, scrubStep: 0.5, precision: 1,
   }),
   // Header-only crop row: the rect is edited on the canvas (crop mode), but
   // the header supplies the previously missing crop transition / sync /

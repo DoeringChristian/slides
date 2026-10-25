@@ -47,9 +47,6 @@ export interface Slide {
   transition: SlideTransition;
   notes: string;
   hidden?: boolean;
-  /** LEGACY: replaced by slide groups (`groupId`). Still read by the collab
-   *  shim (live Y docs are never migrated) and deleted by migration. */
-  autoAdvance?: boolean;
   /** Hold in seconds before the timed chain advances past this slide. */
   autoAdvanceDelay?: number;
   /** Slide-group membership: maximal CONTIGUOUS runs (length ≥ 2) of equal
@@ -79,6 +76,7 @@ export type EasingType =
   | 'const' | 'linear' | 'ease' | 'dissolve' | 'fadeinout' | 'typewriter' | 'write'
   // Visibility / content reveal easings added in the "all animations" pass:
   | 'create'        // shape outline trace + fill (Write for shapes)
+  | 'extend'        // path grows along its own route, arrowhead riding the tip
   | 'wipe'          // directional clip-path reveal
   | 'slidein'       // translate from off-screen edge
   | 'grow'          // scale from anchor point
@@ -97,10 +95,6 @@ export type EasingType =
 export interface GlyphRevealOptions {
   undoFirst?: boolean;
 }
-
-/** Compatibility alias — `WriteOptions` was the original name, kept so older
- *  call sites don't break. */
-export type WriteOptions = GlyphRevealOptions;
 
 export type WipeDirection = 'left' | 'right' | 'top' | 'bottom';
 export type GrowAnchor =
@@ -237,30 +231,26 @@ export interface TextStyle {
 export interface TextElement extends BaseElement {
   type: 'text';
   text: string;
+  /** Free text uses zero inset and explicit content sizing. */
+  textSizing: 'auto-content' | 'user-width';
   style: TextStyle;
   /** Bound text (Excalidraw-style label): id of the container element this
    *  text is attached to (a shape or an arrow/path on the same slide). The
    *  container drives the label's geometry via the mutation-time sync pass
    *  (`utils/syncDependents.ts`); there is NO persisted reverse index — use
    *  `findBoundText` to scan a slide. Absent / null = free-standing text.
-   *  Dangling ids (container missing from the slide) are dropped on load
-   *  (see `utils/migrations.ts`). */
+   *  References must resolve on the same slide. */
   containerId?: string | null;
+  /** Rect/ellipse labels use measured layout; other bound labels use padding. */
+  boundTextLayout: 'measured' | 'padded';
+  /** Overflow shrink gate, reset by explicit box resize; persisted for undo/reopen. */
+  boundTextBaselineHeight?: number;
 }
 
-/** Shape kinds. `path` covers every vertex-driven shape — line, arrow,
- *  polyline, polygon, B-spline curve — and is configured by `points`,
- *  `closed`, `curve`, `startHead`, `endHead`. Older decks with the
- *  individual `line`/`arrow`/`polygon`/`bspline` values are migrated to
- *  `path` on load (see `utils/migrations.ts`). */
-export type ShapeType = 'rect' | 'ellipse' | 'triangle' | 'star' | 'path';
+/** `path` covers lines, arrows, polylines, polygons and curves. */
+export type ShapeType = 'rect' | 'ellipse' | 'triangle' | 'star' | 'path' | 'vector';
 
-/** Typed arrowhead at a path endpoint (Excalidraw's option set). Geometry
- *  for every variant comes from ONE helper — `arrowheadGeometry` in
- *  `utils/pathShapes.ts` — consumed by all renderers and by the property
- *  panel previews. `'none'` and an absent field are equivalent; legacy
- *  `startArrow`/`endArrow` booleans migrate to `'triangle'`
- *  (see `utils/migrations.ts`). */
+/** Typed endpoint heads share geometry across all renderers. Absent means none. */
 export type ArrowheadType =
   | 'none'
   | 'arrow'
@@ -288,42 +278,53 @@ export type PathCurve = 'linear' | 'smooth' | 'bspline2' | 'bspline3' | 'bezier'
  *  `strokeWidth` in the renderer so it scales with the line. */
 export type StrokeStyle = 'solid' | 'dashed' | 'dotted';
 
-/** How a connector endpoint tracks its bound element:
- *    edge   — Excalidraw-style: the endpoint aims at a focus point inside the
- *             target (focus 0 = center, ±1 = grazing the silhouette) and sits
- *             `gap` slide units short of the silhouette along the ray from
- *             the adjacent vertex. Re-solved whenever either side moves.
- *    pinned — the endpoint sticks to a fixed point of the target's bounding
- *             box (`fixedPoint` [u,v] ∈ [0,1]², rotated with the target). */
-export type BindingMode = 'edge' | 'pinned';
+/** Absent means solid for existing decks. No-colour fills stay transparent. */
+export type FillStyle = 'solid' | 'hachure' | 'crosshatch';
 
-/** Legacy 5-anchor payload — decks written before binding v2 carry `anchor`;
- *  `utils/migrations.ts` rewrites it to `mode: 'pinned'` + `fixedPoint`. */
-export type BindingAnchor = 'center' | 'top' | 'bottom' | 'left' | 'right';
+/** Aim tracks the silhouette toward a local focus; pinned tracks the local point. */
+export type BindingMode = 'pinned' | 'aim';
 
 export interface ConnectorBinding {
   elementId: string;
-  /** Defaults to 'edge' when absent (unless a legacy `anchor` is present,
-   *  which implies 'pinned'). */
-  mode?: BindingMode;
-  /** Edge mode: signed focus in [-1, 1]. 0 aims at the center; ±1 grazes
-   *  the silhouette on either side of the center axis. */
-  focus?: number;
-  /** Edge mode: distance (≥ 0, slide units) the endpoint keeps from the
-   *  target's silhouette. */
+  mode: BindingMode;
+  /** Aim-mode distance from the silhouette, in slide units. */
   gap?: number;
-  /** Pinned mode: [u, v] ∈ [0,1]² in the target's local (unrotated)
-   *  bounding-box coordinates. */
-  fixedPoint?: [number, number];
-  /** Legacy (pre-v2) anchor. Kept optional so unmigrated in-memory decks
-   *  still resolve; new bindings never set it. */
-  anchor?: BindingAnchor;
+  /** Object-local normalized point, rotated with the target. */
+  fixedPoint: [number, number];
+}
+
+/** Normalized design-box geometry, independent of element position/size.
+ * Arcs are axis-aligned SVG endpoint arcs; zero radii become lines, coincident
+ * endpoints are empty. Paint regions may close open stroke contours explicitly.
+ * Icons bind and label against their design BOX, not their interior details. */
+export type VectorPoint = [number, number];
+export type VectorSegment =
+  | { kind: 'line'; to: VectorPoint }
+  | { kind: 'cubic'; c1: VectorPoint; c2: VectorPoint; to: VectorPoint }
+  | { kind: 'arc'; radii: VectorPoint; largeArc: boolean; sweep: boolean; to: VectorPoint };
+export interface VectorContour {
+  id: string;
+  start: VectorPoint;
+  segments: VectorSegment[];
+  closed: boolean;
+}
+export interface VectorGeometry {
+  kind: 'vector';
+  version: 1;
+  contours: VectorContour[];
+  fills: { contourIds: string[]; rule: 'evenodd' | 'nonzero' }[];
+  strokes: string[];
+  provenance?: { library: string; version: string; icon: string; license: string; licenseNotice?: string };
 }
 
 export interface ShapeElement extends BaseElement {
+  geometry?: VectorGeometry;
+  /** User drawing family; preserves line/arrow/curve defaults after style edits. */
+  creationPreset: 'rect' | 'ellipse' | 'triangle' | 'star' | 'line' | 'arrow' | 'curve' | 'polygon' | 'icon';
   type: 'shape';
   shapeType: ShapeType;
   fill: string;
+  fillStyle?: FillStyle;
   stroke: string;
   strokeWidth: number;
   cornerRadius: number;
@@ -391,7 +392,7 @@ export interface Theme {
   };
 }
 
-export type Tool = 'select' | 'text' | 'rect' | 'ellipse' | 'triangle' | 'star' | 'line' | 'arrow' | 'polygon' | 'bspline' | 'image';
+export type Tool = 'select' | 'text' | 'rect' | 'ellipse' | 'triangle' | 'star' | 'line' | 'arrow' | 'polygon' | 'bspline' | 'icon' | 'image';
 
 export interface EditorState {
   activeSlideId: string;

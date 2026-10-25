@@ -14,6 +14,9 @@
  */
 
 export interface ScrubSpec {
+  /** Cyclic interval [min, min + wrap), default origin 0. Opt-in; ordinary
+   * bounded fields still clamp. Applied after rounding/snapping as well. */
+  wrap?: number;
   min?: number;
   max?: number;
   /** Value change per horizontal pixel of coarse drag (and per arrow-key
@@ -37,6 +40,11 @@ export interface ScrubSpec {
 }
 
 export function clampValue(v: number, spec: ScrubSpec): number {
+  if (spec.wrap !== undefined && spec.wrap > 0) {
+    const origin = spec.min ?? 0;
+    const remainder = (v - origin) % spec.wrap;
+    return origin + (remainder < 0 ? remainder + spec.wrap : remainder) || 0;
+  }
   if (spec.min !== undefined && v < spec.min) return spec.min;
   if (spec.max !== undefined && v > spec.max) return spec.max;
   return v;

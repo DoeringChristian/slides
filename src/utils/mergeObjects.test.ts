@@ -25,7 +25,7 @@ const style: TextStyle = {
 
 function shape(id: string, overrides?: Partial<ShapeElement>): ShapeElement {
   return {
-    id, type: 'shape', shapeType: 'rect',
+    id, type: 'shape', creationPreset: 'rect', shapeType: 'rect',
     x: 10, y: 20, width: 100, height: 50,
     rotation: 0, opacity: 1, locked: false, visible: true,
     fill: '#3b82f6', stroke: '#1e40af', strokeWidth: 2, cornerRadius: 0,
@@ -35,7 +35,7 @@ function shape(id: string, overrides?: Partial<ShapeElement>): ShapeElement {
 
 function text(id: string, overrides?: Partial<TextElement>): TextElement {
   return {
-    id, type: 'text', text: `Text ${id}`,
+    id, type: 'text', textSizing: 'user-width', boundTextLayout: 'padded', text: `Text ${id}`,
     x: 0, y: 0, width: 200, height: 40,
     rotation: 0, opacity: 1, locked: false, visible: true,
     style: { ...style },
@@ -121,7 +121,7 @@ describe('mergeObjectInSlides', () => {
   test('connector bindings pointing at the source are remapped deck-wide, other fields preserved', () => {
     const conn = shape('conn', {
       shapeType: 'path', points: [0, 0, 100, 0], curve: 'linear',
-      startBinding: { elementId: 'src', mode: 'edge', focus: 0.5, gap: 2 },
+      startBinding: { elementId: 'src', mode: 'aim', fixedPoint: [.5, .5], gap: 2 },
       endBinding: { elementId: 'other', mode: 'pinned', fixedPoint: [0.5, 1] },
     });
     const slides = {
@@ -132,7 +132,7 @@ describe('mergeObjectInSlides', () => {
 
     const outConn = out.s1.elements['conn'] as ShapeElement;
     // Source binding re-points at the target; mode/focus/gap survive.
-    expect(outConn.startBinding).toEqual({ elementId: 'tgt', mode: 'edge', focus: 0.5, gap: 2 });
+    expect(outConn.startBinding).toEqual({ elementId: 'tgt', mode: 'aim', fixedPoint: [.5, .5], gap: 2 });
     // Unrelated binding untouched (same reference).
     expect(outConn.endBinding).toBe(conn.endBinding);
   });

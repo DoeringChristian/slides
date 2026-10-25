@@ -34,3 +34,7 @@ inkwell/
 
 # Claude agent worktrees/session data
 .claude/
+
+# Generated agent delegation/task artifacts
+.pi/delegate/
+.pi/tasks/

@@ -1,3 +1,4 @@
+import { IconsMenu } from './IconsMenu';
 import React from 'react';
 import {
   MousePointer2, Type, Square, Circle, Triangle, Star, Minus, MoveRight, Hexagon, Spline, Image, Trash2,
@@ -95,6 +96,7 @@ export const MobileToolPalette: React.FC = () => {
           {icon}
         </button>
       ))}
+      <IconsMenu />
       <button
         onClick={handleImageTool}
         className="shrink-0 w-11 h-11 flex items-center justify-center rounded-md text-gray-600 hover:bg-gray-100"

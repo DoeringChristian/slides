@@ -1,12 +1,12 @@
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { Play, Pause } from 'lucide-react';
-import { RenderShape, RenderImage, RenderArrowhead } from '../svg/ElementRenderer';
+import { RenderShape, RenderImage } from '../svg/ElementRenderer';
 import { RenderMorph } from '../svg/RenderMorph';
 import { SVGTextPaths } from '../svg/SVGTextPaths';
+import { ShapeFillPaint } from '../svg/ShapeFillPaint';
 import { RenderPaths } from '../svg/RenderPaths';
 import { shapeToSvgPaths } from '../../utils/shapeToPath';
-import { pathD, insetEndpoints, arrowheadGeometry, arrowheadInset, pathArcLength, pointAtArcLength } from '../../utils/pathShapes';
-import { pathLengthFor } from '../../utils/glyphPaths';
+import { sampledPath, pathArcLength, pointAtArcLength } from '../../utils/pathShapes';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 import { interpolateWithVisibility, lerpColor } from '../../utils/interpolation';
 import { attachLabelMasks } from '../../utils/syncDependents';
@@ -300,6 +300,8 @@ function renderElementInner(
   resources: Record<string, Resource>,
   fx: WriteEffect | undefined,
 ): React.ReactNode {
+  const crossfade = (element as SlideElement & { _vectorCrossfade?: { from: SlideElement; to: SlideElement } })._vectorCrossfade;
+  if (crossfade) return <g key={element.id}>{renderElementInner(crossfade.from, resources, undefined)}{renderElementInner(crossfade.to, resources, undefined)}</g>;
   if ((element as SlideElement & { _morphFx?: unknown })._morphFx) return <RenderMorph key={element.id} element={element} />;
   if (element.type === 'text') {
     const textEl = element as (TextElement & {
@@ -403,7 +405,7 @@ function renderElementInner(
   // animation is in flight, route through the outline-path renderer so the
   // perimeter strokes in and the fill ramps via the shared RenderPaths.
   const shapeEl = element as ShapeElement;
-  if (fx?.mode === 'create') {
+  if (fx?.mode === 'create' && fx.t < 1) {
     const strokeWidth = Math.max(1, shapeEl.strokeWidth || 2);
     const cx = shapeEl.x + shapeEl.width / 2;
     const cy = shapeEl.y + shapeEl.height / 2;
@@ -415,125 +417,48 @@ function renderElementInner(
     if (fx.tipDraw && shapeEl.shapeType === 'path' && shapeEl.endHead && shapeEl.endHead !== 'none') {
       return (
         <g key={shapeEl.id} transform={transform} opacity={shapeEl.opacity}>
-          <TipDrawArrow element={shapeEl} fx={fx} strokeWidth={strokeWidth} />
+          <TipDrawArrow element={shapeEl} fx={fx} />
         </g>
       );
     }
-    const paths = shapeToSvgPaths(shapeEl);
     return (
       <g key={shapeEl.id} transform={transform} opacity={shapeEl.opacity}>
-        <RenderPaths paths={paths} writeFx={fx} strokeWidth={strokeWidth} />
+        <ShapeFillPaint element={shapeEl} local={shapeEl.shapeType === 'path' && !!(
+          shapeEl.startHead && shapeEl.startHead !== 'none' || shapeEl.endHead && shapeEl.endHead !== 'none'
+        )}>{paint =>
+          <RenderPaths paths={shapeToSvgPaths(shapeEl, paint)} writeFx={fx} strokeWidth={strokeWidth} />
+        }</ShapeFillPaint>
       </g>
     );
   }
   return <RenderShape key={element.id} element={shapeEl} />;
 }
 
-/** d-string → measured length. TipDrawArrow renders every animation frame;
- *  without this, each frame calls pathLengthFor which forces an SVG layout
- *  via getTotalLength() (same trade-off as geomCache in shapeToPath). */
-const tipDrawLengthCache = new Map<string, number>();
-
-/** Specialised renderer for `create` + `tipDraw`. Builds a shaft-only
- *  path (no arrowhead L-segments folded in), reveals it through the
- *  shared writeGlyphFrame timing via RenderPaths, then positions the
- *  arrowhead at the point along the shaft that matches the current
- *  reveal progress. Direction comes from the tangent at that point so
- *  the head's orientation tracks the curve as it rides the tip. */
-const TipDrawArrow: React.FC<{
-  element: ShapeElement;
-  fx: WriteEffect;
-  strokeWidth: number;
-}> = ({ element, fx, strokeWidth }) => {
-  const pts = element.points ?? [];
-  if (pts.length < 4) return null;
-  const closed = element.closed ?? false;
-  const curve = element.curve ?? 'linear';
-  // Head geometry parameters mirror the steady-state ElementRenderer
-  // exactly (same helper, same size/strokeWidth inputs), so the riding
-  // head IS the final head.
-  const endType = element.endHead ?? 'none';
-  const headSW = element.strokeWidth || (closed ? 0 : 3);
-  const startInset = arrowheadInset(element.startHead, 10, headSW);
-  const endInset = arrowheadInset(endType, 10, headSW);
-  // Inset the end vertex so the shaft stops where a solid head's base
-  // will sit. The head's tip then extends back out to the original
-  // endpoint at the end of the animation — same final geometry as the
-  // steady-state render in ElementRenderer.
-  const shaftPts = insetEndpoints(pts, startInset, endInset);
-  const cornerR = curve === 'linear' ? (element.cornerRadius ?? 0) : 0;
-  const d = pathD(shaftPts, curve, closed, cornerR, element.tangents);
-  const arc = pathArcLength(shaftPts, curve, closed, element.tangents);
-  const strokeColor = element.stroke || element.fill || '#000';
-
-  // Map the WriteEffect's t to the reveal phase exactly like writeGlyphFrame
-  // does so the arrowhead and the dashoffset stay in lockstep.
-  // RenderPaths scales fx.t through `glyphSpan` (0.5) before applying
-  // REVEAL_END (0.7): localT = fx.t / glyphSpan. So the stroke actually
-  // finishes revealing at fx.t = REVEAL_END * glyphSpan = 0.35. Using
-  // fx.t / REVEAL_END here would put the head on a slower clock and it
-  // would visibly trail the growing tip of the shaft.
-  const REVEAL_END = 0.7;
-  const GLYPH_SPAN = 0.5;
-  const localT = Math.max(0, Math.min(1, fx.t / GLYPH_SPAN));
-  const revealPh = Math.max(0, Math.min(1, localT / REVEAL_END));
-  // Where to place the arrowhead. While the reveal is in flight, ride the
-  // tip; once we hit FILL phase, lock the head at the final endpoint so
-  // it doesn't jitter while the stroke fades to fill.
-  const targetLen = revealPh >= 1 ? arc : arc * revealPh;
-  const tip = pointAtArcLength(shaftPts, curve, closed, targetLen, element.tangents);
-  // Final endpoint of the original (un-inset) path — that's where the
-  // arrowhead tip lands at completion.
-  const last = pts.length - 2;
-  let tipX: number, tipY: number, dirX: number, dirY: number;
-  if (revealPh >= 1) {
-    tipX = pts[last]; tipY = pts[last + 1];
-    dirX = pts[last] - pts[last - 2]; dirY = pts[last + 1] - pts[last - 1];
-  } else if (tip) {
-    // Push the tip forward by the head's shaft inset so a solid glyph's
-    // tip lands at the position the user expects ("the arrow is HERE"),
-    // not its base. Open glyphs (inset 0) ride exactly on the reveal tip.
-    const tLen = Math.hypot(tip.dx, tip.dy) || 1;
-    tipX = tip.x + (tip.dx / tLen) * endInset;
-    tipY = tip.y + (tip.dy / tLen) * endInset;
-    dirX = tip.dx; dirY = tip.dy;
-  } else {
-    // Degenerate path — bail out, no arrow to draw.
-    return null;
+/** Reveal an ORIGINAL path prefix through the same shaft/head renderer as
+ * static playback. Never push a riding head off the path along its tangent. */
+const TipDrawArrow: React.FC<{ element: ShapeElement; fx: WriteEffect }> = ({ element, fx }) => {
+  const progress = Math.max(0, Math.min(1, fx.t / (0.7 * 0.5)));
+  // Rotation and element opacity are already applied by the outer presenter group.
+  const base = { ...element, rotation: 0, opacity: 1 };
+  if (progress >= 1) return <RenderShape element={base} />;
+  if (progress <= 0) return null;
+  const samples = sampledPath(element.points ?? [], element.curve ?? 'linear', !!element.closed, element.tangents);
+  const distance = pathArcLength(samples, 'linear', false) * progress;
+  const tip = pointAtArcLength(samples, 'linear', false, distance);
+  if (!tip) return null;
+  const prefix = samples.slice(0, 2);
+  let length = 0;
+  for (let i = 2; i < samples.length; i += 2) {
+    length += Math.hypot(samples[i] - samples[i - 2], samples[i + 1] - samples[i - 1]);
+    if (length >= distance) break;
+    prefix.push(samples[i], samples[i + 1]);
   }
-  const headGeo = arrowheadGeometry(endType, tipX, tipY, dirX, dirY, 10, headSW);
-
-  // Cached path length for stroke-dasharray. pathLengthFor measures via a
-  // hidden <path>; ours is just the shaft so it matches `arc` closely
-  // (modulo browser float precision).
-  let length = tipDrawLengthCache.get(d);
-  if (length === undefined) {
-    length = pathLengthFor(d);
-    tipDrawLengthCache.set(d, length);
-  }
-  const svgPath = {
-    d,
-    transform: `translate(${element.x}, ${element.y})`,
-    length,
-    fillColor: element.closed ? (element.fill || 'transparent') : 'none',
-    strokeColor,
-    nonScalingStroke: false,
+  prefix.push(tip.x, tip.y);
+  const revealed: ShapeElement & { _endArrowAlpha: number } = {
+    ...base, points: prefix, curve: 'linear', tangents: undefined, cornerRadius: 0,
+    _endArrowAlpha: Math.min(1, progress * 20),
   };
-  return (
-    <>
-      <RenderPaths paths={[svgPath]} writeFx={fx} strokeWidth={strokeWidth} />
-      {/* Arrowhead via the shared RenderArrowhead leaf. Fades in over the
-          first ~5% of the reveal so it doesn't pop into existence at t=0;
-          full opacity once it's tracking. */}
-      <RenderArrowhead
-        geo={headGeo}
-        color={strokeColor}
-        strokeWidth={headSW}
-        transform={`translate(${element.x}, ${element.y})`}
-        opacity={Math.min(1, revealPh * 20)}
-      />
-    </>
-  );
+  return <RenderShape element={revealed} />;
 };
 
 // ============================================================================

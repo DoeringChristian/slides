@@ -1,7 +1,13 @@
-import React, { memo } from 'react';
+import { SVGStrokeCoverage } from './SVGStrokeCoverage';
+import { resolveShapePaint, rectangleRadii } from '../../utils/shapePaint';
+import { resolveShapeGeometry } from '../../utils/vectorGeometry';
+import { getRotationCenter } from '../../utils/geometry';
+import React, { memo, useId } from 'react';
+import { ShapeFillPaint } from './ShapeFillPaint';
+import { SVGStrokeClip } from './SVGStrokeClip';
 import { SVGTextPaths } from './SVGTextPaths';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
-import { pathD, arrowheadGeometry, insetEndpoints, strokeDashFor, type ArrowheadGeometry } from '../../utils/pathShapes';
+import { pathArrowGeometry, strokeDashFor, type ArrowheadGeometry } from '../../utils/pathShapes';
 import type { SlideElement, TextElement, ShapeElement, ImageElement, Resource } from '../../types/presentation';
 
 // ============================================================================
@@ -55,15 +61,19 @@ interface ShapeProps {
 }
 
 export const RenderShape: React.FC<ShapeProps> = memo(({ element }) => {
+  return <ShapeFillPaint element={element}>{paint => <ShapeBody element={element} fillPaint={paint} />}</ShapeFillPaint>;
+});
+
+const ShapeBody: React.FC<ShapeProps & { fillPaint?: string }> = memo(({ element, fillPaint }) => {
+  const coverageId = useId();
   if (!element.visible) return null;
 
-  const { x, y, width, height, rotation, opacity, fill, stroke, strokeWidth, shapeType, cornerRadius, points } = element;
+  const { x, y, width, height, rotation, opacity, fill, stroke, strokeWidth, shapeType, points } = element;
 
-  const cx = x + width / 2;
-  const cy = y + height / 2;
+  const { x: cx, y: cy } = getRotationCenter(element);
   const transform = rotation ? `rotate(${rotation}, ${cx}, ${cy})` : undefined;
 
-  const fillAttr = fill || 'transparent';
+  const fillAttr = fillPaint ?? (fill || 'transparent');
   const strokeAttr = stroke || 'none';
   const strokeWidthAttr = strokeWidth || 0;
 
@@ -76,6 +86,14 @@ export const RenderShape: React.FC<ShapeProps> = memo(({ element }) => {
   };
 
   switch (shapeType) {
+    case 'vector': {
+      const geometry = resolveShapeGeometry(element);
+      return <g transform={transform} opacity={opacity} style={{ pointerEvents: 'none' }}>
+        {geometry.fills.map((region, i) => <path key={`f${i}`} d={region.d} fill={fillAttr} fillRule={region.rule} stroke="none" />)}
+        <path d={geometry.strokes.join(' ')} fill="none" stroke={strokeAttr} strokeWidth={strokeWidthAttr}
+          strokeLinecap="round" strokeLinejoin="round" strokeDasharray={strokeDashFor(element.strokeStyle, strokeWidthAttr)} />
+      </g>;
+    }
     case 'rect':
       return (
         <g transform={transform}>
@@ -84,8 +102,8 @@ export const RenderShape: React.FC<ShapeProps> = memo(({ element }) => {
             y={y}
             width={width}
             height={height}
-            rx={cornerRadius || 0}
-            ry={cornerRadius || 0}
+            rx={rectangleRadii(element).rx}
+            ry={rectangleRadii(element).ry}
             {...commonProps}
           />
         </g>
@@ -142,8 +160,6 @@ export const RenderShape: React.FC<ShapeProps> = memo(({ element }) => {
     case 'path': {
       const pts = points ?? [];
       if (pts.length < 4) return null;
-      const closed = element.closed ?? false;
-      const curve = element.curve ?? 'linear';
       // Per-arrowhead alpha: defaults to head presence, but interpolation
       // can override with a `_startArrowAlpha` / `_endArrowAlpha` synthetic
       // field to fade the head during a slide transition (the head TYPE
@@ -166,46 +182,37 @@ export const RenderShape: React.FC<ShapeProps> = memo(({ element }) => {
       const endAlpha = animFx._endArrowAlpha ?? (endType !== 'none' ? 1 : 0);
       // Stroke colour falls back to fill or black so a freshly-drawn open
       // path always renders something visible (it has no fill by default).
-      const strokeCol = strokeAttr === 'none'
-        ? (fillAttr === 'transparent' ? '#000' : fillAttr)
-        : strokeAttr;
-      const strokeW = strokeWidthAttr || (closed ? 0 : 3);
-      const fillCol = closed ? fillAttr : 'none';
-      const last = pts.length - 2;
-      // Head geometry from the ONE shared helper; direction is the
-      // endpoint chord (works for bezier/bspline too — same convention
-      // everywhere).
-      const startGeo = startType !== 'none' && startAlpha > 0
-        ? arrowheadGeometry(startType, pts[0], pts[1], pts[0] - pts[2], pts[1] - pts[3], 10, strokeW)
-        : null;
-      const endGeo = endType !== 'none' && endAlpha > 0
-        ? arrowheadGeometry(endType, pts[last], pts[last + 1], pts[last] - pts[last - 2], pts[last + 1] - pts[last - 1], 10, strokeW)
-        : null;
-      // Pull the shaft back from any solid head so it stops at the glyph's
-      // base instead of poking through to the tip vertex.
-      const shaftPts = insetEndpoints(pts, startGeo?.shaftInset ?? 0, endGeo?.shaftInset ?? 0);
-      const cornerR = curve === 'linear' ? (element.cornerRadius ?? 0) : 0;
-      const d = pathD(shaftPts, curve, closed, cornerR, element.tangents);
+      const { stroke: strokeCol, strokeWidth: strokeW, fill: fillCol, fillOpacity } = resolveShapePaint(element, fillAttr);
+      const { startGeo, endGeo, d, fillD, shaftClipPaths, strokePlan } = pathArrowGeometry({ ...element,
+        startHead: startAlpha > 0 ? startType : 'none', endHead: endAlpha > 0 ? endType : 'none',
+      });
+      const separateFill = !!strokePlan || shaftClipPaths.length > 0 || fillOpacity !== undefined;
       return (
         <>
           <g transform={transform}>
-            <g transform={`translate(${x}, ${y})`}>
-              <path
+            <g transform={`translate(${x}, ${y})`} opacity={opacity}>
+              {/* Head cuts affect only the shaft stroke, never the closed fill. */}
+              {separateFill && fillCol !== 'none' && (
+                <path d={fillD} fill={fillCol} fillOpacity={fillOpacity} stroke="none" style={{ pointerEvents: 'none' }} />
+              )}
+              <SVGStrokeClip paths={shaftClipPaths} idPrefix={element.id}>
+              {strokePlan ? <SVGStrokeCoverage plan={strokePlan} color={strokeCol} width={strokeW}
+                dash={strokeDashFor(element.strokeStyle, strokeW)} idPrefix={element.id} instanceId={coverageId} /> : <path
                 d={d}
-                fill={fillCol}
+                fill={separateFill ? 'none' : fillCol}
                 stroke={strokeCol}
                 strokeWidth={strokeW}
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 strokeDasharray={strokeDashFor(element.strokeStyle, strokeW)}
-                opacity={opacity}
                 style={{ pointerEvents: 'none' }}
-              />
+              />}
+              </SVGStrokeClip>
               {startGeo && (
-                <RenderArrowhead geo={startGeo} color={strokeCol} strokeWidth={strokeW} opacity={opacity * startAlpha} />
+                <RenderArrowhead geo={startGeo} color={strokeCol} strokeWidth={strokeW} opacity={startAlpha} />
               )}
               {endGeo && (
-                <RenderArrowhead geo={endGeo} color={strokeCol} strokeWidth={strokeW} opacity={opacity * endAlpha} />
+                <RenderArrowhead geo={endGeo} color={strokeCol} strokeWidth={strokeW} opacity={endAlpha} />
               )}
             </g>
           </g>
@@ -237,8 +244,6 @@ export const RenderShape: React.FC<ShapeProps> = memo(({ element }) => {
 interface ImageProps {
   element: ImageElement;
   resource?: Resource;
-  /** Reserved for legacy callers; the new HTML rendering doesn't need it. */
-  clipIdPrefix?: string;
   /**
    * Override video autoplay. Defaults to `element.playing ?? true`.
    * Editor passes `false` (paused preview); cross-fade source passes `false`
@@ -393,7 +398,7 @@ export const RenderElement: React.FC<ElementProps> = memo(({ element, resource, 
     case 'shape':
       return <RenderShape element={element as ShapeElement} />;
     case 'image':
-      return <RenderImage element={element as ImageElement} resource={resource} clipIdPrefix={clipIdPrefix} />;
+      return <RenderImage element={element as ImageElement} resource={resource} />;
     default:
       return null;
   }

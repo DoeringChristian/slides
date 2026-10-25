@@ -27,6 +27,7 @@ export function IconSelect<V extends string>({
 }: IconSelectProps<V>): React.ReactElement {
   return <PreviewSelect
     label={label}
+    iconOnly
     options={options.map(({ title, ...option }) => ({ ...option, label: title }))}
     value={value}
     onChange={onChange}

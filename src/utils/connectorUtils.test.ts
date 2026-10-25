@@ -3,7 +3,7 @@
  *  - silhouetteIntersect: per-shape ray/outline intersection (rect incl.
  *    cornerRadius arcs, ellipse, triangle, star, text-as-rect, rotation)
  *  - resolveBinding / bindingFor: edge (focus + gap) and pinned (fixedPoint)
- *    modes, legacy-anchor fallback, and the ROUND-TRIP INVARIANT
+ *    modes, pinned fallback, and the ROUND-TRIP INVARIANT
  *  - getBindingTarget2: inside-or-threshold matching, topmost-z, filters
  *  - rebindAfterElementsMoved, THE shared rebind pass used by all four store
  *    call sites (updateElement / updateElements × Y / JSON)
@@ -11,24 +11,22 @@
  */
 import { describe, expect, test } from 'vitest';
 import {
-  ANCHOR_TO_UV,
-  getAnchorPoint,
   silhouetteIntersect,
   resolveBinding,
-  bindingFor,
   effectiveBindingMode,
-  isPinnedBinding,
+  bindingFor,
   getBindingTarget2,
   rebindAfterElementsMoved,
   bindDraftEndpoints,
   bindingForDrop,
+  bindingDrop,
+  pointOnBindingRay,
 } from './connectorUtils';
 import type {
   SlideElement,
   ShapeElement,
   TextElement,
   ConnectorBinding,
-  BindingAnchor,
 } from '../types/presentation';
 
 // =============================================================================
@@ -38,7 +36,7 @@ import type {
 function rect(id: string, overrides?: Partial<ShapeElement>): ShapeElement {
   return {
     id,
-    type: 'shape',
+    type: 'shape', creationPreset: 'rect',
     shapeType: 'rect',
     x: 0, y: 0, width: 100, height: 100,
     rotation: 0, opacity: 1, locked: false, visible: true,
@@ -59,7 +57,7 @@ function pathShape(id: string, overrides?: Partial<ShapeElement>): ShapeElement 
 function textEl(id: string, overrides?: Partial<TextElement>): TextElement {
   return {
     id,
-    type: 'text',
+    type: 'text', textSizing: 'user-width', boundTextLayout: 'padded',
     x: 0, y: 0, width: 100, height: 40,
     rotation: 0, opacity: 1, locked: false, visible: true,
     text: 'hi',
@@ -160,7 +158,7 @@ describe('silhouetteIntersect', () => {
 // resolveBinding / bindingFor
 // =============================================================================
 
-describe('resolveBinding (pinned + legacy anchor)', () => {
+describe('resolveBinding (pinned)', () => {
   test('pinned fixedPoint maps [u,v] onto the bbox', () => {
     const box = rect('box');
     expectPt(resolveBinding({ elementId: 'box', mode: 'pinned', fixedPoint: [1, 0.5] }, box, { x: 0, y: 0 }), 100, 50);
@@ -172,137 +170,17 @@ describe('resolveBinding (pinned + legacy anchor)', () => {
     // [1, 0.5] = right anchor; rotated 90° about (50,50) → bottom (50, 100).
     expectPt(resolveBinding({ elementId: 'box', mode: 'pinned', fixedPoint: [1, 0.5] }, box, { x: 0, y: 0 }), 50, 100);
   });
-
-  test('legacy anchor bindings resolve exactly like the old 5-anchor model', () => {
-    const box = rect('box', { x: 30, y: 40, width: 200, height: 120, rotation: 33 });
-    for (const anchor of Object.keys(ANCHOR_TO_UV) as BindingAnchor[]) {
-      const legacy: ConnectorBinding = { elementId: 'box', anchor };
-      expect(effectiveBindingMode(legacy)).toBe('pinned');
-      const resolved = resolveBinding(legacy, box, { x: 0, y: 0 });
-      const expected = getAnchorPoint(box, anchor)!;
-      expect(resolved.x).toBeCloseTo(expected.x, 9);
-      expect(resolved.y).toBeCloseTo(expected.y, 9);
-    }
-  });
-
-  test('mode helpers: explicit mode wins, anchor implies pinned, default is edge', () => {
-    expect(effectiveBindingMode({ elementId: 'a' })).toBe('edge');
-    expect(effectiveBindingMode({ elementId: 'a', anchor: 'top' })).toBe('pinned');
-    expect(effectiveBindingMode({ elementId: 'a', mode: 'edge', anchor: 'top' })).toBe('edge');
-    expect(isPinnedBinding({ elementId: 'a', mode: 'pinned' })).toBe(true);
-    expect(isPinnedBinding({ elementId: 'a', focus: 0.3 })).toBe(false);
-  });
-});
-
-describe('resolveBinding (edge mode)', () => {
-  const box = rect('box'); // (0,0)-(100,100), center (50,50)
-
-  test('focus 0, gap 0: silhouette point on the axis toward the other end', () => {
-    expectPt(resolveBinding({ elementId: 'box', mode: 'edge', focus: 0, gap: 0 }, box, { x: 200, y: 50 }), 100, 50);
-  });
-
-  test('gap pushes the endpoint back along the ray', () => {
-    expectPt(resolveBinding({ elementId: 'box', mode: 'edge', focus: 0, gap: 10 }, box, { x: 200, y: 50 }), 110, 50);
-  });
-
-  test('focus sign picks a side of the center axis; ±1 grazes the silhouette', () => {
-    const other = { x: 200, y: 50 };
-    const plus = resolveBinding({ elementId: 'box', mode: 'edge', focus: 0.5, gap: 0 }, box, other);
-    const minus = resolveBinding({ elementId: 'box', mode: 'edge', focus: -0.5, gap: 0 }, box, other);
-    expect(plus.y).not.toBeCloseTo(minus.y, 3);
-    expect(plus.y + minus.y).toBeCloseTo(100, 6); // symmetric about the axis
-    // The resolved point always sits ON the silhouette when gap = 0.
-    expect(plus.x).toBeCloseTo(100, 6); // right edge of the rect
-  });
-
-  test('degenerate: other end on the center resolves to the center', () => {
-    expectPt(resolveBinding({ elementId: 'box', mode: 'edge' }, box, { x: 50, y: 50 }), 50, 50);
-  });
 });
 
 describe('bindingFor ⇄ resolveBinding round-trip', () => {
-  test('worked example: rect, off-axis point outside the silhouette', () => {
-    const box = rect('box');
-    const other = { x: 200, y: 50 };
-    const p = { x: 120, y: 30 };
-    const b = bindingFor(p, box, other, 'edge');
-    expect(b.mode).toBe('edge');
-    expect(b.focus).toBeCloseTo(0.75, 6);
-    expect(b.gap!).toBeGreaterThan(0);
-    expectPt(resolveBinding(b, box, other), p.x, p.y);
-  });
-
-  test('point INSIDE the silhouette gets gap 0 and resolves onto the outline', () => {
-    const box = rect('box');
-    const other = { x: 300, y: 300 };
-    const b = bindingFor({ x: 50, y: 50 }, box, other, 'edge');
-    expect(b.gap).toBe(0);
-    // Center is on the other→center axis → focus 0 → resolved point is the
-    // silhouette crossing (the rect corner here, since the ray is diagonal).
-    expectPt(resolveBinding(b, box, other), 100, 100);
-  });
 
   test('pinned round-trip: fixedPoint from a boundary point resolves back to it', () => {
     const box = rect('box', { rotation: 40 });
-    const p = getAnchorPoint(box, 'bottom')!;
-    const b = bindingFor(p, box, { x: 500, y: 0 }, 'pinned');
+    const p = resolveBinding({ elementId: box.id, mode: 'pinned', fixedPoint: [.5, 1] }, box, { x: 0, y: 0 });
+    const b = bindingFor(p, box, 'pinned');
     expect(b.fixedPoint![0]).toBeCloseTo(0.5, 6);
     expect(b.fixedPoint![1]).toBeCloseTo(1, 6);
     expectPt(resolveBinding(b, box, { x: 500, y: 0 }), p.x, p.y);
-  });
-
-  test('property: resolve ∘ bindingFor ≈ identity over random shapes / rotations / foci / gaps', () => {
-    // Deterministic LCG so failures are reproducible.
-    let seed = 0x2f6e2b1;
-    const rand = () => {
-      seed = (seed * 1664525 + 1013904223) >>> 0;
-      return seed / 0x100000000;
-    };
-    const shapes: Array<Partial<ShapeElement>> = [
-      { shapeType: 'rect' },
-      { shapeType: 'rect', cornerRadius: 25 },
-      { shapeType: 'ellipse' },
-      { shapeType: 'triangle' },
-      { shapeType: 'star' },
-    ];
-    for (let i = 0; i < 250; i++) {
-      const spec = shapes[i % shapes.length];
-      const target = rect('t', {
-        ...spec,
-        x: -200 + rand() * 400,
-        y: -200 + rand() * 400,
-        width: 100 + rand() * 150,
-        height: 100 + rand() * 150,
-        rotation: rand() * 360,
-      });
-      const c = { x: target.x + target.width / 2, y: target.y + target.height / 2 };
-      const theta = rand() * 2 * Math.PI;
-      const dir = { x: Math.cos(theta), y: Math.sin(theta) };
-      // Place the other end well clear of the WHOLE silhouette (R bounds any
-      // boundary radius), so the resolved point never collapses onto it.
-      const R = Math.hypot(target.width, target.height) / 2;
-      const other = {
-        x: c.x + dir.x * R * (1.5 + rand() * 2),
-        y: c.y + dir.y * R * (1.5 + rand() * 2),
-      };
-      const binding: ConnectorBinding = {
-        elementId: 't',
-        mode: 'edge',
-        focus: -0.9 + rand() * 1.8,
-        gap: rand() * 20,
-      };
-      const p = resolveBinding(binding, target, other);
-      const b2 = bindingFor(p, target, other, 'edge');
-      const p2 = resolveBinding(b2, target, other);
-      const err = Math.hypot(p2.x - p.x, p2.y - p.y);
-      if (err > 1e-6) {
-        // Surface the failing configuration in the assertion message.
-        expect.fail(`round-trip error ${err} at iteration ${i}: shape=${spec.shapeType} r=${spec.cornerRadius ?? 0} binding=${JSON.stringify(binding)}`);
-      }
-      // The recovered payload matches too (focus/gap are the same encoding).
-      expect(b2.focus!).toBeCloseTo(binding.focus!, 4);
-      expect(b2.gap!).toBeCloseTo(binding.gap!, 4);
-    }
   });
 });
 
@@ -328,10 +206,11 @@ describe('getBindingTarget2', () => {
     expect(getBindingTarget2({ x: 38, y: 10 }, small, '')).toBeNull();
   });
 
-  test('threshold grows when zoomed out (zoom < 1), unchanged at zoom ≥ 1', () => {
+  test('threshold converts its screen-pixel budget both below and above zoom 1', () => {
     const els = [rect('box')];
     expect(getBindingTarget2({ x: 150, y: 50 }, els, '', 1)).toBeNull();
-    expect(getBindingTarget2({ x: 150, y: 50 }, els, '', 2)).toBeNull();
+    expect(getBindingTarget2({ x: 120, y: 50 }, els, '', 1)?.id).toBe('box');
+    expect(getBindingTarget2({ x: 120, y: 50 }, els, '', 2)).toBeNull();
     expect(getBindingTarget2({ x: 150, y: 50 }, els, '', 0.5)?.id).toBe('box'); // 32/0.5 = 64
   });
 
@@ -376,7 +255,7 @@ describe('rebindAfterElementsMoved', () => {
     const conn = pathShape('conn', {
       x: 100, y: 50, width: 100, height: 25,
       points: [0, 0, 50, 25, 100, 0],
-      startBinding: startBinding ?? { elementId: 'box', anchor: 'right' },
+      startBinding: startBinding ?? { elementId: 'box', mode: 'pinned', fixedPoint: [1, .5] },
       endBinding: null,
     });
     return {
@@ -385,8 +264,8 @@ describe('rebindAfterElementsMoved', () => {
     };
   }
 
-  test('legacy-anchor binding: endpoint tracks the anchor point, interior vertices keep their absolute positions', () => {
-    // Box already moved down by 100 → legacy right anchor now (100, 150).
+  test('pinned binding: endpoint tracks the anchor point, interior vertices keep their absolute positions', () => {
+    // Box already moved down by 100 → right pin now (100, 150).
     const { elements, order } = fixture({ y: 100 });
     const results = rebindAfterElementsMoved(elements, order, new Set(['box']));
     expect(results).toHaveLength(1);
@@ -407,7 +286,7 @@ describe('rebindAfterElementsMoved', () => {
 
   test('edge binding: endpoint re-solves against the silhouette toward the adjacent vertex', () => {
     // Box moved to y=100 → occupies (0,100)-(100,200), center (50,150).
-    const { elements, order } = fixture({ y: 100 }, { elementId: 'box', mode: 'edge', focus: 0, gap: 0 });
+    const { elements, order } = fixture({ y: 100 }, { elementId: 'box', mode: 'aim', fixedPoint: [.5, .5], gap: 0 });
     const results = rebindAfterElementsMoved(elements, order, new Set(['box']));
     const rebound = { ...elements['conn'], ...results[0].changes } as ShapeElement;
     const abs = absVertices(rebound);
@@ -418,9 +297,9 @@ describe('rebindAfterElementsMoved', () => {
     expect(abs.slice(2)).toEqual([150, 75, 200, 50]);
   });
 
-  test("a path's OWN geometry change re-solves its edge-mode ends", () => {
+  test("a path's OWN geometry change re-solves its aim-mode ends", () => {
     // Box static; conn's points changed this mutation (conn ∈ movedIds).
-    const { elements, order } = fixture(undefined, { elementId: 'box', mode: 'edge', focus: 0, gap: 0 });
+    const { elements, order } = fixture(undefined, { elementId: 'box', mode: 'aim', fixedPoint: [.5, .5], gap: 0 });
     const results = rebindAfterElementsMoved(elements, order, new Set(['conn']));
     expect(results).toHaveLength(1);
     const rebound = { ...elements['conn'], ...results[0].changes } as ShapeElement;
@@ -430,9 +309,10 @@ describe('rebindAfterElementsMoved', () => {
     expect(abs[1]).toBeCloseTo(62.5, 6);
   });
 
-  test("a moved path's PINNED / legacy ends are left alone (its own drag wins)", () => {
+  test("a co-moved target still resolves PINNED ends without verified similarity", () => {
     const legacy = fixture({ y: 100 });
-    expect(rebindAfterElementsMoved(legacy.elements, legacy.order, new Set(['box', 'conn']))).toEqual([]);
+    const results = rebindAfterElementsMoved(legacy.elements, legacy.order, new Set(['box', 'conn']));
+    expect(absVertices({ ...legacy.elements.conn, ...results[0].changes } as ShapeElement)).toEqual([100, 150, 150, 75, 200, 50]);
     const pinned = fixture(undefined, { elementId: 'box', mode: 'pinned', fixedPoint: [1, 0.5] });
     expect(rebindAfterElementsMoved(pinned.elements, pinned.order, new Set(['conn']))).toEqual([]);
   });
@@ -454,7 +334,7 @@ describe('rebindAfterElementsMoved', () => {
   });
 
   test('a binding whose target no longer exists is skipped, not crashed on', () => {
-    const { elements, order } = fixture(undefined, { elementId: 'gone', mode: 'edge' });
+    const { elements, order } = fixture(undefined, { elementId: 'gone', mode: 'aim', fixedPoint: [.5, .5] });
     const other = rect('other');
     expect(
       rebindAfterElementsMoved({ ...elements, other }, [...order, 'other'], new Set(['other', 'conn'])),
@@ -486,40 +366,32 @@ describe('bindDraftEndpoints', () => {
   const boxA = rect('a');                       // (0,0)-(100,100)
   const boxB = rect('b', { x: 300, y: 300 });   // (300,300)-(400,400)
 
-  test('endpoints near targets get edge bindings and keep their exact position', () => {
+  test('near targets outside the explicit dock budget aim at their centers and end at the border', () => {
     const { absPoints, startBinding, endBinding } =
-      bindDraftEndpoints([120, 50, 290, 350], [boxA, boxB]);
-    // Outside the silhouette → focus/gap encode the exact point (identity).
-    expect(absPoints[0]).toBeCloseTo(120, 6);
-    expect(absPoints[1]).toBeCloseTo(50, 6);
-    expect(absPoints[2]).toBeCloseTo(290, 6);
-    expect(absPoints[3]).toBeCloseTo(350, 6);
-    expect(startBinding).toMatchObject({ elementId: 'a', mode: 'edge' });
-    // Gap is measured along the ray from the adjacent vertex, so it's > 0
-    // for any endpoint outside the silhouette.
-    expect(startBinding!.gap!).toBeGreaterThan(0);
-    expect(endBinding).toMatchObject({ elementId: 'b', mode: 'edge' });
+      bindDraftEndpoints([120, 50, 280, 350], [boxA, boxB]);
+    expect(absPoints[0]).toBeCloseTo(100, 6);
+    expect(absPoints[1]).toBeCloseTo(100, 6);
+    expect(absPoints[2]).toBeCloseTo(300, 6);
+    expect(absPoints[3]).toBeCloseTo(300, 6);
+    expect(startBinding).toMatchObject({ elementId: 'a', mode: 'aim', fixedPoint: [.5, .5] });
+    expect(startBinding!.gap!).toBe(0);
+    expect(endBinding).toMatchObject({ elementId: 'b', mode: 'aim', fixedPoint: [.5, .5] });
   });
 
-  test('a DEEP drop inside a shape pins the exact point', () => {
-    // (50,50) is the centre of the (0,0)-(100,100) box — 50 units of depth,
-    // far past the 12-unit edge band, so the drop expresses "stick here".
+  test('a deep drop stores an interior aim but ends on the border', () => {
     const { absPoints, startBinding } =
       bindDraftEndpoints([50, 50, 300, 300], [boxA]);
     expect(startBinding).toMatchObject({
-      elementId: 'a', mode: 'pinned', fixedPoint: [0.5, 0.5],
+      elementId: 'a', mode: 'aim', fixedPoint: [0.5, 0.5],
     });
-    // A pinned endpoint stays exactly where it was dropped.
-    expect(absPoints[0]).toBeCloseTo(50, 6);
-    expect(absPoints[1]).toBeCloseTo(50, 6);
+    expect(absPoints[0]).toBeCloseTo(100, 6);
+    expect(absPoints[1]).toBeCloseTo(100, 6);
   });
 
-  test('a SHALLOW drop inside the edge band keeps sliding edge semantics', () => {
-    // (95,50) sits 5 units inside the right edge — within the 12-unit band,
-    // so it stays an edge binding and hugs the outline (gap 0).
+  test('a shallow drop also uses aim semantics', () => {
     const { absPoints, startBinding } =
       bindDraftEndpoints([95, 50, 300, 300], [boxA]);
-    expect(startBinding).toMatchObject({ elementId: 'a', mode: 'edge', gap: 0 });
+    expect(startBinding).toMatchObject({ elementId: 'a', mode: 'aim', gap: 0 });
     const [x, y] = absPoints;
     const onOutline =
       Math.min(Math.abs(x - 0), Math.abs(x - 100)) < 1e-6 ||
@@ -534,7 +406,7 @@ describe('bindDraftEndpoints', () => {
   test('far endpoints stay unbound and unmoved', () => {
     const { absPoints, startBinding, endBinding } =
       bindDraftEndpoints([120, 50, 200, 200], [boxA, boxB]);
-    expect(startBinding).toMatchObject({ elementId: 'a', mode: 'edge' });
+    expect(startBinding).toMatchObject({ elementId: 'a', mode: 'aim', fixedPoint: [.5, .5] });
     expect(endBinding).toBeNull();
     expect(absPoints.slice(2)).toEqual([200, 200]);
   });
@@ -562,54 +434,70 @@ describe('bindDraftEndpoints', () => {
   });
 });
 
-// =============================================================================
-// bindingForDrop — the edge-band / deep-drop intent split
-// =============================================================================
 
 describe('bindingForDrop (drop intent)', () => {
   const box = rect('box'); // (0,0)-(100,100)
   const far = { x: 400, y: 400 }; // adjacent vertex, well outside
 
-  test('a drop OUTSIDE the silhouette is an edge binding', () => {
-    expect(bindingForDrop({ x: 140, y: 50 }, box, far)).toMatchObject({
-      elementId: 'box', mode: 'edge',
+  test('an outside drop acquires aim mode', () => {
+    expect(bindingForDrop({ x: 140, y: 50 }, box)).toMatchObject({
+      elementId: 'box', mode: 'aim',
     });
   });
 
-  test('a drop just inside the edge band stays an edge binding', () => {
-    // 5 units deep — inside the 12-unit band, so the endpoint keeps sliding
-    // around the outline as the target moves.
-    expect(bindingForDrop({ x: 95, y: 50 }, box, far)).toMatchObject({
-      elementId: 'box', mode: 'edge',
+  test('a shallow drop acquires aim mode', () => {
+    expect(bindingForDrop({ x: 95, y: 50 }, box)).toMatchObject({
+      elementId: 'box', mode: 'aim',
     });
   });
 
-  test('a drop deeper than the band pins the exact point', () => {
-    const b = bindingForDrop({ x: 70, y: 40 }, box, far);
-    expect(b).toMatchObject({ elementId: 'box', mode: 'pinned' });
+  test('a deep drop stores the exact interior aim', () => {
+    const b = bindingForDrop({ x: 70, y: 40 }, box);
+    expect(b).toMatchObject({ elementId: 'box', mode: 'aim', fixedPoint: [.7, .4] });
     expect(b.fixedPoint![0]).toBeCloseTo(0.7, 6);
     expect(b.fixedPoint![1]).toBeCloseTo(0.4, 6);
   });
 
-  test('the band is measured in SCREEN pixels — zooming out widens it', () => {
-    // 20 units deep: past the band at zoom 1, still inside it at zoom 0.5
-    // (12/0.5 = 24 units), so the same drop reads as an edge drop when
-    // zoomed out — the band is a constant on-screen distance.
+  test('aim intent does not change with zoom', () => {
     const p = { x: 80, y: 50 };
-    expect(effectiveBindingMode(bindingForDrop(p, box, far, 1))).toBe('pinned');
-    expect(effectiveBindingMode(bindingForDrop(p, box, far, 0.5))).toBe('edge');
+    expect(effectiveBindingMode(bindingForDrop(p, box))).toBe('aim');
+    expect(effectiveBindingMode(bindingForDrop(p, box))).toBe('aim');
   });
 
-  test('a pinned drop on a ROTATED target records unrotated local coords', () => {
-    // Rotating 90° about the centre (50,50) maps local (0.25,0.5) → (50,25).
+  test('an aim drop on a rotated target records unrotated local coords', () => {
     const spun = rect('spun', { rotation: 90 });
-    const b = bindingForDrop({ x: 50, y: 25 }, spun, far);
-    expect(b.mode).toBe('pinned');
+    const b = bindingForDrop({ x: 50, y: 25 }, spun);
+    expect(b.mode).toBe('aim');
     expect(b.fixedPoint![0]).toBeCloseTo(0.25, 6);
     expect(b.fixedPoint![1]).toBeCloseTo(0.5, 6);
-    // …and it round-trips back to the dropped point.
     const back = resolveBinding(b, spun, far);
-    expect(back.x).toBeCloseTo(50, 6);
-    expect(back.y).toBeCloseTo(25, 6);
+    expect(back.x).toBeCloseTo(100, 6);
+    expect(back.y).toBeCloseTo(25 + 50 * 375 / 350, 6);
+  });
+});
+
+
+describe('explicit Shift ray binding compatibility', () => {
+  test('nearby nonintersecting target cannot bend the horizontal ray via clamped focus', () => {
+    const target = rect('target', { x:100, y:20, width:100, height:100, cornerRadius:0 });
+    const point = { x:150,y:0 }, adjacent = { x:0,y:0 };
+    expect(bindingDrop(point, adjacent, [target], '', 1)?.point.y).toBeCloseTo(140 / 3);
+    expect(bindingDrop(point, adjacent, [target], '', 1, true)).toBeNull();
+    expect(bindDraftEndpoints([0,0,150,0], [target], 1, true)).toEqual({ absPoints:[0,0,150,0],startBinding:null,endBinding:null });
+  });
+  test('compatible edge and pinned attachments remain enabled with Shift', () => {
+    const target=rect('target',{x:100,y:-50,width:100,height:100,cornerRadius:0});
+    for(const x of [105,150]) {
+      const drop=bindingDrop({x,y:0},{x:0,y:0},[target],'',1,true);
+      expect(drop).not.toBeNull();expect(drop!.point.y).toBeCloseTo(0);
+    }
+  });
+  test.each([0,15,45,90,180,225,270])('%s degree ray rejects sideways/backwards solutions', angle=>{
+    const r=angle*Math.PI/180,origin={x:43,y:-70};
+    const point={x:origin.x+150*Math.cos(r),y:origin.y+150*Math.sin(r)};
+    const along=(distance:number)=>({x:origin.x+distance*Math.cos(r),y:origin.y+distance*Math.sin(r)});
+    expect(pointOnBindingRay(point,origin,along(80))).toBe(true);
+    expect(pointOnBindingRay(point,origin,along(-10))).toBe(false);
+    expect(pointOnBindingRay(point,origin,{x:point.x-Math.sin(r),y:point.y+Math.cos(r)})).toBe(false);
   });
 });

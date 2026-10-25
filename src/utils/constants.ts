@@ -20,10 +20,12 @@ export const DEFAULT_TEXT_STYLE = {
   lineHeight: 1.2,
 };
 
+export const DEFAULT_RECT_RADIUS = 8;
+
 export const DEFAULT_SHAPE_PROPS = {
-  fill: '#4285f4',
-  stroke: '#2962ff',
-  strokeWidth: 0,
+  fill: '',
+  stroke: '#000000',
+  strokeWidth: 2,
   cornerRadius: 0,
 };
 

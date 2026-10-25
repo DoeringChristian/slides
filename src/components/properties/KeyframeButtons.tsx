@@ -1,3 +1,5 @@
+import { useEditorStore } from '../../store/editorStore';
+import { readKeyframeForMutation, type CurrentChange } from '../../store/currentMutation';
 import { ArrowLeft, ArrowRight } from 'lucide-react';
 import type { SlideElement } from '../../types/presentation';
 import type { Property } from './Property';
@@ -7,7 +9,7 @@ interface Props<E extends SlideElement> {
   element: E;
   prev: E | undefined;
   next: E | undefined;
-  update: (changes: Partial<E>) => void;
+  update: (changes: CurrentChange<E>) => void;
 }
 
 /**
@@ -22,6 +24,11 @@ interface Props<E extends SlideElement> {
 export function KeyframeButtons<E extends SlideElement>({
   property, element, prev, next, update,
 }: Props<E>) {
+  const activeSlideId = useEditorStore(s => s.activeSlideId);
+  const reset = (direction: 'previous' | 'next') => {
+    const source = readKeyframeForMutation(activeSlideId, element.id, direction);
+    if (source?.type === element.type) update(current => property.copyFromKeyframe(source as E, current));
+  };
   const prevDiffers = prev && property.differsFromKeyframe(prev, element);
   const nextDiffers = next && property.differsFromKeyframe(next, element);
   if (!prevDiffers && !nextDiffers) return null;
@@ -30,7 +37,7 @@ export function KeyframeButtons<E extends SlideElement>({
     <div className="flex items-center gap-0.5">
       {prevDiffers && prev && (
         <button
-          onClick={() => update(property.copyFromKeyframe(prev, element))}
+          onClick={() => reset('previous')}
           className="p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
           title="Reset to previous keyframe"
         >
@@ -39,7 +46,7 @@ export function KeyframeButtons<E extends SlideElement>({
       )}
       {nextDiffers && next && (
         <button
-          onClick={() => update(property.copyFromKeyframe(next, element))}
+          onClick={() => reset('next')}
           className="p-0.5 rounded hover:bg-gray-100 text-gray-400 hover:text-gray-600"
           title="Reset to next keyframe"
         >

@@ -78,5 +78,6 @@ export const SVGElementRenderer: React.FC<Props> = React.memo(({
 }, (prev, next) => {
   return prev.element === next.element
     && prev.disableInteraction === next.disableInteraction
-    && prev.editingTextId === next.editingTextId;
+    && prev.editingTextId === next.editingTextId
+    && prev.onTextLayout === next.onTextLayout;
 });

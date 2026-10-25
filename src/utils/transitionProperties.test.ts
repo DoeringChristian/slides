@@ -16,7 +16,7 @@ const base = {
 const text: TextElement = {
   ...base,
   id: 'text',
-  type: 'text',
+  type: 'text', textSizing: 'user-width', boundTextLayout: 'padded',
   text: 'hello',
   style: {
     fontFamily: 'Inter',
@@ -34,7 +34,7 @@ const text: TextElement = {
 const path: ShapeElement = {
   ...base,
   id: 'path',
-  type: 'shape',
+  type: 'shape', creationPreset: 'line',
   shapeType: 'path',
   fill: '',
   stroke: '#000000',

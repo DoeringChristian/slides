@@ -59,7 +59,7 @@ const baseStyle: TextStyle = {
 function textEl(id: string, overrides?: Partial<TextElement>): TextElement {
   return {
     id,
-    type: 'text',
+    type: 'text', textSizing: 'user-width', boundTextLayout: 'padded',
     x: 100, y: 100, width: 300, height: 60,
     rotation: 0, opacity: 1, locked: false, visible: true,
     text: `Text ${id}`,
@@ -71,7 +71,7 @@ function textEl(id: string, overrides?: Partial<TextElement>): TextElement {
 function shapeEl(id: string, overrides?: Partial<ShapeElement>): ShapeElement {
   return {
     id,
-    type: 'shape',
+    type: 'shape', creationPreset: 'rect',
     shapeType: 'rect',
     x: 200, y: 200, width: 160, height: 120,
     rotation: 0, opacity: 1, locked: false, visible: true,
@@ -132,7 +132,7 @@ function makeFixture(): Presentation {
         points: [0, 0, 150, 0, 300, 0],
         curve: 'linear',
         endHead: 'triangle',
-        startBinding: { elementId: 'el-box', anchor: 'left' },
+        startBinding: { elementId: 'el-box', mode: 'pinned', fixedPoint: [0, .5] },
         endBinding: null,
       }),
       'el-img': imageEl('el-img', { visible: false }),
@@ -152,7 +152,7 @@ function makeFixture(): Presentation {
     background: { type: 'solid', color: '#fafafa' },
     transition: { duration: 200 },
     notes: 'Third',
-    autoAdvance: true,
+
     autoAdvanceDelay: 3,
   };
 
@@ -282,7 +282,7 @@ const cases: Array<{ name: string; action: Action }> = [
         shapeType: 'path', fill: '', strokeWidth: 3,
         points: [0, 0, 50, 80, 120, 10],
         curve: 'bspline2', closed: false, endHead: 'triangle',
-        startBinding: { elementId: 'el-box', anchor: 'top' }, endBinding: null,
+        startBinding: { elementId: 'el-box', mode: 'pinned', fixedPoint: [.5, 0] }, endBinding: null,
       })),
   },
   {
@@ -343,7 +343,7 @@ const cases: Array<{ name: string; action: Action }> = [
     name: 'binding v2: edge-mode binding re-solves identically when the target moves',
     action: (s) => {
       s.updateElement('s2', 'el-conn', {
-        startBinding: { elementId: 'el-box', mode: 'edge', focus: 0.25, gap: 6 },
+        startBinding: { elementId: 'el-box', mode: 'aim', fixedPoint: [.5, .5], gap: 6 },
       } as Partial<SlideElement>);
       s.updateElements('s2', [{ elementId: 'el-box', changes: { x: 640, y: 420 } }]);
     },
@@ -361,7 +361,7 @@ const cases: Array<{ name: string; action: Action }> = [
     name: "binding v2: a path's own points edit re-solves its edge-mode ends on both paths",
     action: (s) => {
       s.updateElement('s2', 'el-conn', {
-        startBinding: { elementId: 'el-box', mode: 'edge', focus: 0, gap: 0 },
+        startBinding: { elementId: 'el-box', mode: 'aim', fixedPoint: [.5, .5], gap: 0 },
       } as Partial<SlideElement>);
       s.updateElement('s2', 'el-conn', { points: [0, 0, 150, 40, 300, 0] } as Partial<SlideElement>);
     },
@@ -373,7 +373,7 @@ const cases: Array<{ name: string; action: Action }> = [
         startBinding: { elementId: 'el-box', mode: 'pinned', fixedPoint: [0.5, 0] },
       } as Partial<SlideElement>);
       s.updateElement('s2', 'el-conn', {
-        startBinding: { elementId: 'el-box', mode: 'edge', focus: -0.5, gap: 3 },
+        startBinding: { elementId: 'el-box', mode: 'aim', fixedPoint: [.5, .5], gap: 3 },
       } as Partial<SlideElement>);
     },
   },
@@ -488,8 +488,8 @@ const cases: Array<{ name: string; action: Action }> = [
     action: (s) => s.updateSlideTransition('s1', { duration: 750 }),
   },
   {
-    name: 'updateSlideAutoAdvance (with explicit delay)',
-    action: (s) => s.updateSlideAutoAdvance('s1', true, 5),
+    name: 'updateSlideAutoAdvanceDelay',
+    action: (s) => s.updateSlideAutoAdvanceDelay('s1', 5),
   },
   {
     name: 'updateSlideNotes',
@@ -659,7 +659,7 @@ describe('updateElements connector rebind', () => {
     // multi-vertex path is preserved, not truncated to a 2-point line).
     expect(abs.slice(2)).toEqual([450, 450, 600, 450]);
     // Bindings themselves are untouched by the rebind pass.
-    expect(conn.startBinding).toEqual({ elementId: 'el-box', anchor: 'left' });
+    expect(conn.startBinding).toEqual({ elementId: 'el-box', mode: 'pinned', fixedPoint: [0, .5] });
     expect(conn.endBinding).toBeNull();
   });
 });
@@ -698,7 +698,7 @@ describe('binding v2 rebind outcomes (edge + pinned)', () => {
   ] as const)('%s: edge-mode end re-solves against the silhouette toward the adjacent vertex', (_name, run) => {
     const result = run((s) => {
       s.updateElement('s2', 'el-conn', {
-        startBinding: { elementId: 'el-box', mode: 'edge', focus: 0, gap: 0 },
+        startBinding: { elementId: 'el-box', mode: 'aim', fixedPoint: [.5, .5], gap: 0 },
       } as Partial<SlideElement>);
       s.updateElements('s2', [{ elementId: 'el-box', changes: { x: 660, y: 460 } }]);
     });
@@ -749,41 +749,19 @@ describe('known dual-path divergences (documented, intentional or pending fix)',
     expect(collabStyle).toEqual({ ...baseStyle, color: '#123456' });
   });
 
-  // (updateElements' Y-branch rebind hole was closed — both branches now run
-  // the shared rebindAfterElementsMoved pass — and the case was promoted into
-  // the equivalence table above. The "updateElements connector rebind" block
-  // below pins the actual rebind outcome on each path.)
-
-  test('updateSlideAutoAdvance without a delay: JSON path defaults autoAdvanceDelay to 0, Y path leaves it absent', () => {
-    // s1 has no autoAdvanceDelay. The JSON branch writes
-    // `autoAdvanceDelay ?? slide.autoAdvanceDelay ?? 0`; the Y branch skips
-    // the key entirely when the argument is undefined.
-    const action: Action = (s) => s.updateSlideAutoAdvance('s1', true);
-    const local = runLocal(action);
-    const collab = runCollab(action);
-
-    expect(local.slides.s1.autoAdvance).toBe(true);
-    expect(collab.slides.s1.autoAdvance).toBe(true);
-    expect(local.slides.s1.autoAdvanceDelay).toBe(0);
-    expect('autoAdvanceDelay' in collab.slides.s1).toBe(false);
-  });
-
-  test('addElement with strokeStyle: Y path silently drops the field (elementToYMap omission)', () => {
-    // ShapeElement.strokeStyle ('solid' | 'dashed' | 'dotted') exists in the
-    // TypeScript type but elementToYMap never serializes it, so any element
-    // inserted through the Y path (and any deck round-tripped through
-    // jsonToYDoc) loses its dash style.
+  test.each(['dashed', 'dotted'] as const)('fixed omission: addElement retains %s strokeStyle on both paths', strokeStyle => {
+    // Regression: elementToYMap previously omitted this optional scalar.
     const dashed = shapeEl('el-dashed', {
       shapeType: 'path', fill: '', strokeWidth: 3,
       points: [0, 0, 100, 0], curve: 'linear',
-      strokeStyle: 'dashed',
+      strokeStyle,
     });
     const action: Action = (s) => s.addElement('s1', dashed);
     const local = runLocal(action);
     const collab = runCollab(action);
 
-    expect((local.slides.s1.elements['el-dashed'] as ShapeElement).strokeStyle).toBe('dashed');
-    expect('strokeStyle' in (collab.slides.s1.elements['el-dashed'] as ShapeElement)).toBe(false);
+    expect((local.slides.s1.elements['el-dashed'] as ShapeElement).strokeStyle).toBe(strokeStyle);
+    expect((collab.slides.s1.elements['el-dashed'] as ShapeElement).strokeStyle).toBe(strokeStyle);
   });
 
   // syncElementToSlides with a nested-object property (e.g. 'style'): the Y
@@ -1219,7 +1197,7 @@ describe('WS-3 Phase 3 mergeObjects (dual-path)', () => {
 
     // Connector binding re-points at the surviving identity.
     const conn = out.slides.s2.elements['el-conn'] as ShapeElement;
-    expect(conn.startBinding).toEqual({ elementId: 'el-solo', anchor: 'left' });
+    expect(conn.startBinding).toEqual({ elementId: 'el-solo', mode: 'pinned', fixedPoint: [0, .5] });
     expect(conn.endBinding).toBeNull();
 
     // Bound label follows the re-identified container.

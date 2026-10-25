@@ -1,8 +1,13 @@
+import { drawCanvasStrokeCoverage } from './canvasStrokeCoverage';
+import { textInsets } from './boundTextLayout';
+import { resolveShapePaint } from './shapePaint';
+import { resolveShapeGeometry } from './vectorGeometry';
 import jsPDF from 'jspdf';
+import { drawShapeFill } from './shapeFill';
 import type { Presentation, Slide, TextElement, ShapeElement, ImageElement, Resource } from '../types/presentation';
-import { SLIDE_WIDTH, SLIDE_HEIGHT, TEXT_BOX_PADDING } from './constants';
+import { SLIDE_WIDTH, SLIDE_HEIGHT } from './constants';
 import { parseBlocks, parseInlineSegments, getBlockFontMultiplier } from '../components/canvas/CustomMarkdownRenderer';
-import { pathD, arrowheadGeometry, insetEndpoints, strokeDashFor } from './pathShapes';
+import { pathArrowGeometry, strokeDashFor } from './pathShapes';
 import { shapeToPathD } from './shapeToPath';
 
 // ── Canvas2D-based PDF export ──
@@ -129,7 +134,7 @@ function drawTextElement(ctx: CanvasRenderingContext2D, element: TextElement) {
   const { text, style, x, y, width, height, rotation, opacity } = element;
   if (!text || text.trim() === '') return;
 
-  const padding = TEXT_BOX_PADDING;
+  const padding = textInsets(element);
   const contentWidth = width - padding * 2;
   const contentHeight = height - padding * 2;
   const lineHeightMul = style.lineHeight || 1.2;
@@ -286,11 +291,8 @@ function drawTextElement(ctx: CanvasRenderingContext2D, element: TextElement) {
 // draws into a plain HTMLCanvasElement (jsPDF only receives the finished
 // canvas raster via addImage), so Path2D support is the browser's, not
 // jsPDF's. Never re-derive shape math here.
-function fillAndStroke(ctx: CanvasRenderingContext2D, path: Path2D, fillColor: string, strokeColor: string, sw: number) {
-  if (fillColor !== 'transparent' && fillColor !== 'none') {
-    ctx.fillStyle = fillColor;
-    ctx.fill(path);
-  }
+function fillAndStroke(ctx: CanvasRenderingContext2D, path: Path2D, element: ShapeElement, strokeColor: string, sw: number) {
+  drawShapeFill(ctx, path, element);
   if (strokeColor !== 'none' && sw > 0) {
     ctx.strokeStyle = strokeColor;
     ctx.lineWidth = sw;
@@ -298,9 +300,24 @@ function fillAndStroke(ctx: CanvasRenderingContext2D, path: Path2D, fillColor: s
   }
 }
 
-function drawShapeElement(ctx: CanvasRenderingContext2D, element: ShapeElement) {
-  const { x, y, width, height, rotation, opacity, fill, stroke, strokeWidth, shapeType, points } = element;
+export function drawShapeElement(ctx: CanvasRenderingContext2D, element: ShapeElement) {
+  const { x, y, width, height, rotation, opacity, stroke, strokeWidth, shapeType, points } = element;
 
+  // Composite the element once: SVG applies opacity after fill + stroke,
+  // not separately to their overlap. Keep the caller's export transform.
+  if (opacity < 1) {
+    const layer = document.createElement('canvas');
+    layer.width = ctx.canvas.width; layer.height = ctx.canvas.height;
+    const layerCtx = layer.getContext('2d')!;
+    layerCtx.setTransform(ctx.getTransform());
+    drawShapeElement(layerCtx, { ...element, opacity: 1 });
+    ctx.save();
+    ctx.resetTransform();
+    ctx.globalAlpha *= opacity;
+    ctx.drawImage(layer, 0, 0);
+    ctx.restore();
+    return;
+  }
   ctx.save();
   ctx.globalAlpha *= opacity;
 
@@ -313,7 +330,18 @@ function drawShapeElement(ctx: CanvasRenderingContext2D, element: ShapeElement) 
     ctx.translate(-cx, -cy);
   }
 
-  if (shapeType === 'path') {
+  if (shapeType === 'vector') {
+    const geometry = resolveShapeGeometry(element);
+    for (const region of geometry.fills) drawShapeFill(ctx, new Path2D(region.d), element, false, region.rule);
+    if (stroke && strokeWidth > 0) {
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = strokeWidth;
+      ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+      const dash = strokeDashFor(element.strokeStyle, strokeWidth);
+      ctx.setLineDash(dash ? dash.split(' ').map(Number) : []);
+      ctx.stroke(new Path2D(geometry.strokes.join(' ')));
+    }
+  } else if (shapeType === 'path') {
     // Path shapes are handled apart from shapeToPathD because its 'path'
     // branch appends arrowhead PEN strokes (for the Create animation's
     // outline trace); the export needs the shaft stroked/dash-patterned and
@@ -321,29 +349,15 @@ function drawShapeElement(ctx: CanvasRenderingContext2D, element: ShapeElement) 
     // shared RenderShape does in SVG.
     const pts = points ?? [];
     if (pts.length >= 4) {
-      const closed = element.closed ?? false;
-      const curve = element.curve ?? 'linear';
-      const strokeCol = stroke || fill || '#000';
-      const sw = strokeWidth || (closed ? 0 : 3);
-      // Typed arrowheads from the ONE shared helper (same tip/direction
-      // convention as RenderShape: the endpoint chord).
-      const last = pts.length - 2;
-      const startGeo = element.startHead && element.startHead !== 'none'
-        ? arrowheadGeometry(element.startHead, pts[0], pts[1], pts[0] - pts[2], pts[1] - pts[3], 10, sw)
-        : null;
-      const endGeo = element.endHead && element.endHead !== 'none'
-        ? arrowheadGeometry(element.endHead, pts[last], pts[last + 1], pts[last] - pts[last - 2], pts[last + 1] - pts[last - 1], 10, sw)
-        : null;
-      const shaftPts = insetEndpoints(pts, startGeo?.shaftInset ?? 0, endGeo?.shaftInset ?? 0);
-      const cornerR = curve === 'linear' ? (element.cornerRadius ?? 0) : 0;
-      // Same d-string RenderShape puts into the editor SVG. Points are
-      // relative to (x, y), so translate the canvas like the SVG's
-      // translate(x, y) group.
-      const shaft = new Path2D(pathD(shaftPts, curve, closed, cornerR, element.tangents));
+      const { stroke: strokeCol, strokeWidth: sw, fill: fillCol, fillOpacity } = resolveShapePaint(element);
+      const { startGeo, endGeo, d, fillD, shaftClipPaths, strokePlan } = pathArrowGeometry(element);
+      const shaft = new Path2D(d);
       ctx.translate(x, y);
-      if (closed && fill) {
-        ctx.fillStyle = fill;
-        ctx.fill(shaft);
+      if (fillCol !== 'none') {
+        ctx.save();
+        ctx.globalAlpha *= fillOpacity ?? 1;
+        drawShapeFill(ctx, new Path2D(fillD), element, true);
+        ctx.restore();
       }
       if (sw > 0) {
         ctx.strokeStyle = strokeCol;
@@ -352,7 +366,11 @@ function drawShapeElement(ctx: CanvasRenderingContext2D, element: ShapeElement) 
         ctx.lineJoin = 'round';
         const dashStr = strokeDashFor(element.strokeStyle, sw);
         ctx.setLineDash(dashStr ? dashStr.split(' ').map(Number) : []);
-        ctx.stroke(shaft);
+        ctx.save();
+        for (const clip of shaftClipPaths) ctx.clip(new Path2D(clip), 'evenodd');
+        if (strokePlan) drawCanvasStrokeCoverage(ctx, strokePlan, strokeCol, sw, ctx.getLineDash());
+        else ctx.stroke(shaft);
+        ctx.restore();
         ctx.setLineDash([]);
       }
       // Arrowheads at the ORIGINAL (un-inset) endpoints — fills painted in
@@ -387,7 +405,7 @@ function drawShapeElement(ctx: CanvasRenderingContext2D, element: ShapeElement) 
     // d-string builder (absolute slide coordinates, no extra transform).
     const d = shapeToPathD(element);
     if (d) {
-      fillAndStroke(ctx, new Path2D(d), fill || 'transparent', stroke || 'none', strokeWidth || 0);
+      fillAndStroke(ctx, new Path2D(d), element, stroke || 'none', strokeWidth || 0);
     }
   }
 
