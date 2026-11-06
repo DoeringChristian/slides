@@ -45,3 +45,17 @@ export function getUserTextLayoutSync(element: TextElement): SvgTextDoc | null {
   return auto && element.style.align !== 'left' && doc
     ? getLayoutSync(element.text, element.style, doc.width + 0.001) : doc;
 }
+
+/**
+ * The layout the SVG renderer uses for an element.
+ *
+ * The auto-content / fixed-width branch lives here so the renderer and the
+ * export baker ask for exactly the same layouts. If they diverged, a baked
+ * deck would miss entries and silently fall back to live layout — which is
+ * precisely what the bake exists to avoid.
+ */
+export function layoutForElement(element: TextElement, rawLines?: Set<number>): Promise<SvgTextDoc> {
+  return element.textSizing === 'auto-content' && !element.containerId
+    ? layoutUserText(element, rawLines)
+    : layoutSvgText(element.text || '', element.style, textSizingWidth(element), rawLines);
+}

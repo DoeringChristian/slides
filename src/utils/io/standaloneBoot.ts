@@ -1,6 +1,7 @@
 import type { Presentation } from '../../types/presentation';
 import { useEditorStore, type StandaloneMode } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
+import { installBakedLayouts } from '../text/bakedLayouts';
 
 export interface StandaloneBoot {
   presentation: Presentation;
@@ -14,6 +15,9 @@ export interface StandaloneBoot {
 // "Press Enter to start" gate never fires).
 export function applyStandaloneBoot(boot: StandaloneBoot, modeOverride?: StandaloneMode) {
   const mode = modeOverride ?? boot.mode;
+  // Before anything renders: a primed layout cache means the first frame draws
+  // baked glyph outlines synchronously, with no font fetch and no MathJax.
+  installBakedLayouts(boot.presentation.bakedText);
   usePresentationStore.getState().loadPresentation(boot.presentation);
   useEditorStore.getState().setStandaloneMode(mode, boot.editorOrigin);
   if (boot.presentation.slideOrder.length > 0) {

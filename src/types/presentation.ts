@@ -37,6 +37,14 @@ export interface Presentation {
   height: number;
   createdAt: number;
   updatedAt: number;
+  /**
+   * Pre-computed text layouts, attached by the HTML exporter only.
+   *
+   * Lets an exported deck render text and math without parsing fonts or
+   * loading MathJax. Purely derived data: the source text is still the truth,
+   * and the editor drops this on import rather than trusting it.
+   */
+  bakedText?: Record<string, unknown>;
 }
 
 export interface Slide {

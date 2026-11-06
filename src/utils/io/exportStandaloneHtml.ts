@@ -1,5 +1,6 @@
 import type { Presentation } from '../../types/presentation';
 import { embedResources } from './embedResources';
+import { bakeLayouts } from '../text/bakedLayouts';
 import { SLIDES_PAYLOAD_ID } from './standaloneBoot';
 
 const PAYLOAD_SENTINEL = '<!--SLIDES_PAYLOAD-->';
@@ -88,11 +89,17 @@ function safeFilename(title: string): string {
 
 export async function exportStandaloneHtml(presentation: Presentation, opts: ExportOpts): Promise<void> {
   const editorOrigin = opts.editorOrigin ?? __SLIDES_EDITOR_ORIGIN__;
-  const [template, embedded] = await Promise.all([
+  const [template, embedded, bakedText] = await Promise.all([
     loadTemplate(opts.mode),
     embedResources(presentation),
+    // Lay the text out once, here, so the player never has to: it ships glyph
+    // outlines for prose and math alike instead of fonts plus MathJax.
+    bakeLayouts(presentation),
   ]);
-  const payload = buildPayloadBlock(embedded, opts.mode, editorOrigin);
+  // A deck with no text bakes to nothing; omit the key rather than shipping
+  // an empty object into every payload.
+  const withBake = Object.keys(bakedText).length ? { ...embedded, bakedText } : embedded;
+  const payload = buildPayloadBlock(withBake, opts.mode, editorOrigin);
   const html = template.includes(PAYLOAD_SENTINEL)
     ? template.replace(PAYLOAD_SENTINEL, () => payload)
     : template.replace('</body>', () => `  ${payload}\n  </body>`);

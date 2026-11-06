@@ -79,7 +79,11 @@ for (const style of [undefined, 'solid', 'hachure', 'crosshatch'] as const) {
       const json = html.match(/id="slides-payload" type="application\/json">([\s\S]*?)<\/script>/)![1];
       expect(json).not.toContain('<');
       const parsed = assertPresentation(JSON.parse(json));
-      expect(parsed).toEqual(source); payloads.push(parsed);
+      // The exporter attaches baked text layouts (derived data the importer
+      // strips). Everything else must match the source exactly.
+      const { bakedText, ...authored } = parsed as typeof parsed & { bakedText?: unknown };
+      expect(bakedText === undefined || typeof bakedText === 'object').toBe(true);
+      expect(authored).toEqual(source); payloads.push(authored as typeof parsed);
       usePresentationStore.getState().loadPresentation(parsed);
       const loaded = usePresentationStore.getState().presentation;
       expect(loaded).toEqual(source);

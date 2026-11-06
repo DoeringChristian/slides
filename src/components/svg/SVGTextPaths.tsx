@@ -4,9 +4,9 @@ import React, { useEffect, useMemo, useState, memo } from 'react';
 import type { TextElement } from '../../types/presentation';
 import type { WriteEffect } from '../../utils/animation/interpolation';
 import { textInsets, textInkOverflow } from '../../utils/text/boundTextLayout';
-import { layoutSvgText, textVerticalOffset, type SvgTextDoc } from '../../utils/text/textLayout';
+import { textVerticalOffset, type SvgTextDoc } from '../../utils/text/textLayout';
 import { prewarmFonts } from '../../utils/text/glyphPaths';
-import { layoutUserText } from '../../utils/text/userTextSizing';
+import { layoutForElement } from '../../utils/text/userTextSizing';
 import { RenderPaths } from './RenderPaths';
 import { SVGTextContent } from './SVGTextContent';
 
@@ -73,9 +73,9 @@ export const SVGTextPaths: React.FC<Props> = memo(({
     : '';
 
   const layoutPromise = useMemo(
-    () => element.textSizing === 'auto-content' && !element.containerId
-      ? layoutUserText(element, rawLineIndices)
-      : layoutSvgText(element.text || '', style, Math.max(1, width - padding * 2), rawLineIndices),
+    // One shared branch with the export baker, so a baked deck cannot miss
+    // the very layouts this renderer asks for.
+    () => layoutForElement(element, rawLineIndices),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [element.text, style.fontSize, style.fontWeight, style.fontStyle,
      style.color, style.fontFamily, style.textDecoration, style.lineHeight, style.align, width, padding, rawKey, element.textSizing, element.containerId],

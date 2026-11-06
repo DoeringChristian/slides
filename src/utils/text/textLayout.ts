@@ -48,6 +48,16 @@ export interface SvgTextDoc {
 }
 
 const layoutCache = new Map<string, Promise<SvgTextDoc>>();
+
+/**
+ * Keys touched while recording, used to bake a deck's layouts for export.
+ *
+ * Recorded at the point of lookup rather than derived separately: auto-content
+ * text lays out twice (unwrapped, then re-wrapped at its measured width), so
+ * any attempt to recompute the key set outside this module would drift from
+ * what the renderer actually asks for.
+ */
+let recordedKeys: Set<string> | null = null;
 // Settled-result mirror of layoutCache so hit-testing and hit-rect sizing
 // can read the same layout the SVG renderer used, without each one DOM-
 // measuring its own approximation. Populated as soon as each promise
@@ -78,6 +88,41 @@ function layoutCacheKey(
     boxWidth,
     rawKey,
   ]);
+}
+
+/** Start collecting the layout keys the renderer asks for. */
+export function startLayoutRecording(): void {
+  recordedKeys = new Set();
+}
+
+/**
+ * Stop recording and return the settled layouts for every key touched.
+ *
+ * A key with no settled entry is skipped: it was still in flight, and a
+ * missing bake falls back to live layout rather than rendering nothing.
+ */
+export function finishLayoutRecording(): Record<string, SvgTextDoc> {
+  const out: Record<string, SvgTextDoc> = {};
+  for (const key of recordedKeys ?? []) {
+    const doc = syncLayoutCache.get(key);
+    if (doc) out[key] = doc;
+  }
+  recordedKeys = null;
+  return out;
+}
+
+/**
+ * Install pre-computed layouts, as produced by `finishLayoutRecording`.
+ *
+ * Priming both caches is the whole mechanism: every lookup already goes
+ * through them, so a player with a full bake never parses a font, never loads
+ * MathJax, and resolves synchronously on the first frame.
+ */
+export function primeLayoutCache(entries: Record<string, SvgTextDoc>): void {
+  for (const [key, doc] of Object.entries(entries)) {
+    layoutCache.set(key, Promise.resolve(doc));
+    syncLayoutCache.set(key, doc);
+  }
 }
 
 /**
@@ -288,6 +333,7 @@ export async function layoutSvgText(
   rawLineIndices?: Set<number>,
 ): Promise<SvgTextDoc> {
   const key = layoutCacheKey(text, style, boxWidth, rawLineIndices);
+  recordedKeys?.add(key);
   const cached = layoutCache.get(key);
   if (cached) return cached;
 

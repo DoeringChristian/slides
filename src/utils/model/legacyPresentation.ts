@@ -48,6 +48,10 @@ export function upgradeNativePresentation(value: unknown): Presentation {
   const original = value as Presentation;
   if (!original.slides || !original.templates || !Array.isArray(original.slideOrder)) return assertPresentation(value);
   const p = restoreStoredProject(structuredClone(original));
+  // Baked text layouts are an export-time artifact of the player, not deck
+  // content. The text is the source of truth, so importing re-lays it out;
+  // keeping the bake would just carry dead weight into every later save.
+  delete (p as { bakedText?: unknown }).bakedText;
   for (const slide of [...Object.values(p.slides), ...Object.values(p.templates)]) {
     if (!slide.elements || !Array.isArray(slide.elementOrder)) return assertPresentation(value);
     slide.elementOrder.push(...Object.keys(slide.elements).filter(id => !slide.elementOrder.includes(id)));
