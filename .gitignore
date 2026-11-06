@@ -38,3 +38,7 @@ inkwell/
 # Generated agent delegation/task artifacts
 .pi/delegate/
 .pi/tasks/
+
+# Regression fixture: real unpublished talk content; this repo is public.
+# tests/gpis-deck.test.ts skips when it is absent.
+tests/fixtures/gpis-53-slides.json

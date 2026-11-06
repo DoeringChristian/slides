@@ -1,0 +1,1080 @@
+{
+  "id": "example-structure",
+  "title": "Groups, Morphs & Slide Groups",
+  "width": 960,
+  "height": 540,
+  "createdAt": 0,
+  "updatedAt": 0,
+  "slides": {
+    "example-structure-s1": {
+      "id": "example-structure-s1",
+      "elements": {
+        "grp-title": {
+          "id": "grp-title",
+          "type": "text",
+          "x": 48,
+          "y": 36,
+          "width": 864,
+          "height": 44,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "Object groups",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 30,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#202124",
+            "align": "left",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        },
+        "grp-a": {
+          "id": "grp-a",
+          "type": "shape",
+          "shapeType": "rect",
+          "creationPreset": "rect",
+          "x": 120,
+          "y": 180,
+          "width": 140,
+          "height": 140,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "fill": "#fef7e0",
+          "stroke": "#f9ab00",
+          "strokeWidth": 2,
+          "cornerRadius": 8,
+          "name": "grp-a",
+          "objectGroupIds": [
+            "grp-trio"
+          ]
+        },
+        "grp-b": {
+          "id": "grp-b",
+          "type": "shape",
+          "shapeType": "ellipse",
+          "creationPreset": "ellipse",
+          "x": 300,
+          "y": 180,
+          "width": 140,
+          "height": 140,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "fill": "#fef7e0",
+          "stroke": "#f9ab00",
+          "strokeWidth": 2,
+          "cornerRadius": 0,
+          "name": "grp-b",
+          "objectGroupIds": [
+            "grp-trio"
+          ]
+        },
+        "grp-c": {
+          "id": "grp-c",
+          "type": "shape",
+          "shapeType": "triangle",
+          "creationPreset": "triangle",
+          "x": 480,
+          "y": 180,
+          "width": 140,
+          "height": 140,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "fill": "#fef7e0",
+          "stroke": "#f9ab00",
+          "strokeWidth": 2,
+          "cornerRadius": 0,
+          "name": "grp-c",
+          "objectGroupIds": [
+            "grp-trio"
+          ]
+        },
+        "grp-cap": {
+          "id": "grp-cap",
+          "type": "text",
+          "x": 120,
+          "y": 350,
+          "width": 500,
+          "height": 22,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "one group, three members — objectGroupIds: [\"grp-trio\"]",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 14,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#5f6368",
+            "align": "center",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        }
+      },
+      "elementOrder": [
+        "grp-title",
+        "grp-a",
+        "grp-b",
+        "grp-c",
+        "grp-cap"
+      ],
+      "background": {
+        "type": "solid",
+        "color": "#fafafa"
+      },
+      "transition": {
+        "duration": 300
+      },
+      "notes": "Three shapes share an objectGroupIds entry, so selecting one selects the group. Nested groups are supported by appending further ids."
+    },
+    "example-structure-s2": {
+      "id": "example-structure-s2",
+      "elements": {
+        "grp-title": {
+          "id": "grp-title",
+          "type": "text",
+          "x": 48,
+          "y": 36,
+          "width": 864,
+          "height": 44,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "Object groups",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 30,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#202124",
+            "align": "left",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        },
+        "grp-a": {
+          "id": "grp-a",
+          "type": "shape",
+          "shapeType": "rect",
+          "creationPreset": "rect",
+          "x": 300,
+          "y": 250,
+          "width": 140,
+          "height": 140,
+          "rotation": 20,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "fill": "#fef7e0",
+          "stroke": "#f9ab00",
+          "strokeWidth": 2,
+          "cornerRadius": 8,
+          "name": "grp-a",
+          "objectGroupIds": [
+            "grp-trio"
+          ],
+          "transitions": {
+            "position": "ease",
+            "rotation": "ease"
+          }
+        },
+        "grp-b": {
+          "id": "grp-b",
+          "type": "shape",
+          "shapeType": "ellipse",
+          "creationPreset": "ellipse",
+          "x": 460,
+          "y": 250,
+          "width": 140,
+          "height": 140,
+          "rotation": 20,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "fill": "#fef7e0",
+          "stroke": "#f9ab00",
+          "strokeWidth": 2,
+          "cornerRadius": 0,
+          "name": "grp-b",
+          "objectGroupIds": [
+            "grp-trio"
+          ],
+          "transitions": {
+            "position": "ease",
+            "rotation": "ease"
+          }
+        },
+        "grp-c": {
+          "id": "grp-c",
+          "type": "shape",
+          "shapeType": "triangle",
+          "creationPreset": "triangle",
+          "x": 620,
+          "y": 250,
+          "width": 140,
+          "height": 140,
+          "rotation": 20,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "fill": "#fef7e0",
+          "stroke": "#f9ab00",
+          "strokeWidth": 2,
+          "cornerRadius": 0,
+          "name": "grp-c",
+          "objectGroupIds": [
+            "grp-trio"
+          ],
+          "transitions": {
+            "position": "ease",
+            "rotation": "ease"
+          }
+        },
+        "grp-cap": {
+          "id": "grp-cap",
+          "type": "text",
+          "x": 120,
+          "y": 350,
+          "width": 500,
+          "height": 22,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "one group, three members — objectGroupIds: [\"grp-trio\"]",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 14,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#5f6368",
+            "align": "center",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        }
+      },
+      "elementOrder": [
+        "grp-title",
+        "grp-a",
+        "grp-b",
+        "grp-c",
+        "grp-cap"
+      ],
+      "background": {
+        "type": "solid",
+        "color": "#fafafa"
+      },
+      "transition": {
+        "duration": 300
+      },
+      "notes": "The group moves and scales as a unit; the transition is per-member, so each one can still carry its own easing."
+    },
+    "example-structure-s3": {
+      "id": "example-structure-s3",
+      "elements": {
+        "gc-title": {
+          "id": "gc-title",
+          "type": "text",
+          "x": 48,
+          "y": 36,
+          "width": 864,
+          "height": 44,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "Group crop",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 30,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#202124",
+            "align": "left",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        },
+        "gc-image": {
+          "id": "gc-image",
+          "type": "image",
+          "x": 300,
+          "y": 140,
+          "width": 360,
+          "height": 270,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "resourceId": "res-grid",
+          "cropX": 0,
+          "cropY": 0,
+          "cropWidth": 320,
+          "cropHeight": 240,
+          "playing": true,
+          "loop": false,
+          "muted": false,
+          "startTime": 0,
+          "name": "cropped image",
+          "objectGroupIds": [
+            "grp-crop"
+          ],
+          "cropGroupId": "grp-crop"
+        },
+        "gc-mask": {
+          "id": "gc-mask",
+          "type": "shape",
+          "shapeType": "ellipse",
+          "creationPreset": "ellipse",
+          "x": 340,
+          "y": 160,
+          "width": 280,
+          "height": 230,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "fill": "",
+          "stroke": "#1a73e8",
+          "strokeWidth": 2,
+          "cornerRadius": 0,
+          "name": "crop boundary",
+          "objectGroupIds": [
+            "grp-crop"
+          ],
+          "cropGroupId": "grp-crop"
+        },
+        "gc-cap": {
+          "id": "gc-cap",
+          "type": "text",
+          "x": 300,
+          "y": 430,
+          "width": 360,
+          "height": 22,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "cropGroupId — the ellipse clips the image",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 14,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#5f6368",
+            "align": "center",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        }
+      },
+      "elementOrder": [
+        "gc-title",
+        "gc-image",
+        "gc-mask",
+        "gc-cap"
+      ],
+      "background": {
+        "type": "solid",
+        "color": "#ffffff"
+      },
+      "transition": {
+        "duration": 300
+      },
+      "notes": "A shape and an image sharing a cropGroupId: the shape becomes the crop boundary for the image."
+    },
+    "example-structure-s4": {
+      "id": "example-structure-s4",
+      "elements": {
+        "morph-title": {
+          "id": "morph-title",
+          "type": "text",
+          "x": 48,
+          "y": 36,
+          "width": 864,
+          "height": 44,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "Morph — from",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 30,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#202124",
+            "align": "left",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        },
+        "morph-geo": {
+          "id": "morph-geo",
+          "type": "shape",
+          "shapeType": "star",
+          "creationPreset": "star",
+          "x": 180,
+          "y": 170,
+          "width": 220,
+          "height": 220,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "fill": "#e8f0fe",
+          "stroke": "#1a73e8",
+          "strokeWidth": 2,
+          "cornerRadius": 0,
+          "name": "morphing shape"
+        },
+        "morph-text": {
+          "id": "morph-text",
+          "type": "text",
+          "x": 560,
+          "y": 230,
+          "width": 240,
+          "height": 90,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "shape",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 64,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#9334e6",
+            "align": "center",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          },
+          "name": "morphing text"
+        }
+      },
+      "elementOrder": [
+        "morph-title",
+        "morph-geo",
+        "morph-text"
+      ],
+      "background": {
+        "type": "solid",
+        "color": "#ffffff"
+      },
+      "transition": {
+        "duration": 300
+      },
+      "notes": "Morph animates between two different element types. The `morph` group controls the geometry correspondence; position and size keep their own easings."
+    },
+    "example-structure-s5": {
+      "id": "example-structure-s5",
+      "elements": {
+        "morph-title": {
+          "id": "morph-title",
+          "type": "text",
+          "x": 48,
+          "y": 36,
+          "width": 864,
+          "height": 44,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "Morph — to",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 30,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#202124",
+            "align": "left",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        },
+        "morph-geo": {
+          "id": "morph-geo",
+          "type": "shape",
+          "shapeType": "ellipse",
+          "creationPreset": "ellipse",
+          "x": 180,
+          "y": 170,
+          "width": 220,
+          "height": 220,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "fill": "#fce8e6",
+          "stroke": "#c5221f",
+          "strokeWidth": 2,
+          "cornerRadius": 0,
+          "name": "morphing shape",
+          "transitions": {
+            "morph": "ease",
+            "controlPoints": "ease",
+            "fill": "linear",
+            "stroke": "linear"
+          }
+        },
+        "morph-text": {
+          "id": "morph-text",
+          "type": "shape",
+          "shapeType": "triangle",
+          "creationPreset": "triangle",
+          "x": 560,
+          "y": 190,
+          "width": 240,
+          "height": 200,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "fill": "#f3e8fd",
+          "stroke": "#9334e6",
+          "strokeWidth": 2,
+          "cornerRadius": 0,
+          "name": "morphing text",
+          "transitions": {
+            "morph": "linear"
+          }
+        }
+      },
+      "elementOrder": [
+        "morph-title",
+        "morph-geo",
+        "morph-text"
+      ],
+      "background": {
+        "type": "solid",
+        "color": "#ffffff"
+      },
+      "transition": {
+        "duration": 300
+      },
+      "notes": "star → ellipse is a shapeType morph; text → shape is a cross-type morph via the `morph` easing."
+    },
+    "example-structure-s6": {
+      "id": "example-structure-s6",
+      "elements": {
+        "chain-title": {
+          "id": "chain-title",
+          "type": "text",
+          "x": 48,
+          "y": 36,
+          "width": 864,
+          "height": 44,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "Slide groups — timed chain 1 / 3",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 30,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#202124",
+            "align": "left",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        },
+        "chain-dot-1": {
+          "id": "chain-dot-1",
+          "type": "shape",
+          "shapeType": "dot",
+          "creationPreset": "dot",
+          "x": 300,
+          "y": 260,
+          "width": 24,
+          "height": 24,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "fill": "#1a73e8",
+          "stroke": "#1a73e8",
+          "strokeWidth": 2,
+          "cornerRadius": 0,
+          "name": "step 1"
+        },
+        "chain-cap": {
+          "id": "chain-cap",
+          "type": "text",
+          "x": 240,
+          "y": 380,
+          "width": 480,
+          "height": 22,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "groupId: \"chain-demo\", autoAdvanceDelay: 1.5s",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 14,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#5f6368",
+            "align": "center",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        }
+      },
+      "elementOrder": [
+        "chain-title",
+        "chain-dot-1",
+        "chain-cap"
+      ],
+      "background": {
+        "type": "gradient",
+        "from": "#e8f0fe",
+        "to": "#ffffff",
+        "angle": 160
+      },
+      "transition": {
+        "duration": 300
+      },
+      "notes": "These last three slides share a groupId, so presenting them runs the group as a timed chain: each slide holds for its autoAdvanceDelay, then advances itself.",
+      "groupId": "chain-demo",
+      "autoAdvanceDelay": 1.5
+    },
+    "example-structure-s7": {
+      "id": "example-structure-s7",
+      "elements": {
+        "chain-title": {
+          "id": "chain-title",
+          "type": "text",
+          "x": 48,
+          "y": 36,
+          "width": 864,
+          "height": 44,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "Slide groups — timed chain 2 / 3",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 30,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#202124",
+            "align": "left",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        },
+        "chain-dot-1": {
+          "id": "chain-dot-1",
+          "type": "shape",
+          "shapeType": "dot",
+          "creationPreset": "dot",
+          "x": 460,
+          "y": 260,
+          "width": 24,
+          "height": 24,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "fill": "#188038",
+          "stroke": "#188038",
+          "strokeWidth": 2,
+          "cornerRadius": 0,
+          "name": "step 1",
+          "transitions": {
+            "position": "ease",
+            "fill": "linear"
+          }
+        },
+        "chain-cap": {
+          "id": "chain-cap",
+          "type": "text",
+          "x": 240,
+          "y": 380,
+          "width": 480,
+          "height": 22,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "groupId: \"chain-demo\", autoAdvanceDelay: 1.5s",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 14,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#5f6368",
+            "align": "center",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        }
+      },
+      "elementOrder": [
+        "chain-title",
+        "chain-dot-1",
+        "chain-cap"
+      ],
+      "background": {
+        "type": "gradient",
+        "from": "#e6f4ea",
+        "to": "#ffffff",
+        "angle": 160
+      },
+      "transition": {
+        "duration": 300
+      },
+      "notes": "Second link in the chain.",
+      "groupId": "chain-demo",
+      "autoAdvanceDelay": 1.5
+    },
+    "example-structure-s8": {
+      "id": "example-structure-s8",
+      "elements": {
+        "chain-title": {
+          "id": "chain-title",
+          "type": "text",
+          "x": 48,
+          "y": 36,
+          "width": 864,
+          "height": 44,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "Slide groups — timed chain 3 / 3",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 30,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#202124",
+            "align": "left",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        },
+        "chain-dot-1": {
+          "id": "chain-dot-1",
+          "type": "shape",
+          "shapeType": "dot",
+          "creationPreset": "dot",
+          "x": 620,
+          "y": 260,
+          "width": 24,
+          "height": 24,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "fill": "#f9ab00",
+          "stroke": "#f9ab00",
+          "strokeWidth": 2,
+          "cornerRadius": 0,
+          "name": "step 1",
+          "transitions": {
+            "position": "ease",
+            "fill": "linear"
+          }
+        },
+        "chain-cap": {
+          "id": "chain-cap",
+          "type": "text",
+          "x": 240,
+          "y": 380,
+          "width": 480,
+          "height": 22,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "groupId: \"chain-demo\", autoAdvanceDelay: 1.5s",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 14,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#5f6368",
+            "align": "center",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        }
+      },
+      "elementOrder": [
+        "chain-title",
+        "chain-dot-1",
+        "chain-cap"
+      ],
+      "background": {
+        "type": "gradient",
+        "from": "#fef7e0",
+        "to": "#ffffff",
+        "angle": 160
+      },
+      "transition": {
+        "duration": 300
+      },
+      "notes": "Last link. A hidden slide follows, to show that hidden slides are skipped in both the chain and manual navigation.",
+      "groupId": "chain-demo",
+      "autoAdvanceDelay": 1.5
+    },
+    "example-structure-s9": {
+      "id": "example-structure-s9",
+      "elements": {
+        "hidden-title": {
+          "id": "hidden-title",
+          "type": "text",
+          "x": 48,
+          "y": 36,
+          "width": 864,
+          "height": 44,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "A hidden slide",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 30,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#202124",
+            "align": "left",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        },
+        "hidden-cap": {
+          "id": "hidden-cap",
+          "type": "text",
+          "x": 240,
+          "y": 260,
+          "width": 480,
+          "height": 22,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "hidden: true — skipped in playback, still editable",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 14,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#5f6368",
+            "align": "center",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        }
+      },
+      "elementOrder": [
+        "hidden-title",
+        "hidden-cap"
+      ],
+      "background": {
+        "type": "solid",
+        "color": "#ffffff"
+      },
+      "transition": {
+        "duration": 300
+      },
+      "notes": "This slide is hidden: it stays in the deck and in the object timeline but is skipped during playback.",
+      "hidden": true
+    }
+  },
+  "slideOrder": [
+    "example-structure-s1",
+    "example-structure-s2",
+    "example-structure-s3",
+    "example-structure-s4",
+    "example-structure-s5",
+    "example-structure-s6",
+    "example-structure-s7",
+    "example-structure-s8",
+    "example-structure-s9"
+  ],
+  "objects": {
+    "grp-title": {
+      "id": "grp-title",
+      "name": "grp-title",
+      "type": "text"
+    },
+    "grp-a": {
+      "id": "grp-a",
+      "name": "grp-a",
+      "type": "shape"
+    },
+    "grp-b": {
+      "id": "grp-b",
+      "name": "grp-b",
+      "type": "shape"
+    },
+    "grp-c": {
+      "id": "grp-c",
+      "name": "grp-c",
+      "type": "shape"
+    },
+    "grp-cap": {
+      "id": "grp-cap",
+      "name": "grp-cap",
+      "type": "text"
+    },
+    "gc-title": {
+      "id": "gc-title",
+      "name": "gc-title",
+      "type": "text"
+    },
+    "gc-image": {
+      "id": "gc-image",
+      "name": "cropped image",
+      "type": "image"
+    },
+    "gc-mask": {
+      "id": "gc-mask",
+      "name": "crop boundary",
+      "type": "shape"
+    },
+    "gc-cap": {
+      "id": "gc-cap",
+      "name": "gc-cap",
+      "type": "text"
+    },
+    "morph-title": {
+      "id": "morph-title",
+      "name": "morph-title",
+      "type": "text"
+    },
+    "morph-geo": {
+      "id": "morph-geo",
+      "name": "morphing shape",
+      "type": "shape"
+    },
+    "morph-text": {
+      "id": "morph-text",
+      "name": "morphing text",
+      "type": "text"
+    },
+    "chain-title": {
+      "id": "chain-title",
+      "name": "chain-title",
+      "type": "text"
+    },
+    "chain-dot-1": {
+      "id": "chain-dot-1",
+      "name": "step 1",
+      "type": "shape"
+    },
+    "chain-cap": {
+      "id": "chain-cap",
+      "name": "chain-cap",
+      "type": "text"
+    },
+    "hidden-title": {
+      "id": "hidden-title",
+      "name": "hidden-title",
+      "type": "text"
+    },
+    "hidden-cap": {
+      "id": "hidden-cap",
+      "name": "hidden-cap",
+      "type": "text"
+    }
+  },
+  "resources": {
+    "res-grid": {
+      "id": "res-grid",
+      "name": "grid.png",
+      "type": "image",
+      "src": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAUAAAADwCAIAAAD+Tyo8AAAFS0lEQVR42u3W0QnFMAhA0bdLlupKgUzVsfL1QHdQKgf8L3hzqL+zVss8p2fWOS3zrJ7Rd3bfn8AA6/t5wHfv4sl1v3cXT65731s8ue533+LRd3ZfgAHWF2CBAdYXYIEB1hdggQEGWGCA9QVYYID1BVhggPUFGGB9ARYYYH0BFhhgfQEWGGCABQZYX4AFBlhfgAUGWF+ABQYYYIEB1hdggQHWF2CBAdYXYID1BVhggPUFWGCA9QVYYIABFhhgfQEWGGB9ARYYYH0BBlhfgAUGWF+ABQZYX4AFBlhfgAHWF2CBAdYXYIEB1hdggQEGWGCA9QVYYID1BVhggPUFGGB9JwKO73bMOi0T76pjzmoZfWf3BRhgfb8PuPzP/+a6yy+7m+suv+zeXHf5Zbf1nd0XYID1BVhggPUFWGCA9QVYYIABFhhgfQEWGGB9ARYYYH0BBlhfgAUGWF+ABQZYX4AFBhhggQHWF2CBAdYXYIEB1hdggQEGWGCA9QVYYID1BVhggPUFGGB9ARYYYH0BFhhgfQEWGGCABQZYX4AFBlhfgAUGWF+AAdYXYIEB1hdggQHWF2CBAdYXYID1BVhggPUFWGCA9QVYYIABFhhgfQEWGGB9ARYYYH0BBljfiYDjux3zrJaJd9Uxz2kZfWf3BRhgfb8PuPzPf3Pd5ZfdznWXX3Y7111+2V19Z/cFGGB9ARYYYH0BFhhgfQEWGGCABQZYX4AFBlhfgAUGWF+AAdYXYIEB1hdggQHWF2CBAQZYYID1BVhggPUFWGCA9QVYYIABFhhgfQEWGGB9ARYYYH0BBlhfgAUGWF+ABQZYX4AFBhhggQHWF2CBAdYXYIEB1hdggPUFWGCA9QVYYID1BVhggPUFGGB9ARYYYH0BFhhgfQEWGGCABQZYX4AFBlhfgAUGWF+AAdZ3IuD4bsPEu2qYeFcNE++qYfSd3RdggPX9PuDyP//OdZdfdjfXXX7Z3Vx3+WW39Z3dF2CA9QVYYID1BVhggPUFWGCAARYYYH0BFhhgfQEWGGB9AQZYX4AFBlhfgAUGWF+ABQYYYIEB1hdggQHWF2CBAdYXYIEBBlhggPUFWGCA9QVYYID1BRhgfQEWGGB9ARYYYH0BFhhggAUGWF+ABQZYX4AFBlhfgAHWF2CBAdYXYIEB1hdggQHWF2CA9QVYYID1BVhggPUFWGCAARYYYH0BFhhgfQEWGGB9AQZY34mA47sNE++qY85qmXhXHaPv6L4AA6zv9wGX//lvrrv8sntz3eWX3c51l192r76z+wIMsL4ACwywvgALDLC+AAsMMMACA6wvwAIDrC/AAgOsL8AA6wuwwADrC7DAAOsLsMAAAywwwPoCLDDA+gIsMMD6AiwwwAALDLC+AAsMsL4ACwywvgADrC/AAgOsL8ACA6wvwAIDDLDAAOsLsMAA6wuwwADrCzDA+gIsMMD6AiwwwPoCLDDA+gIMsL4ACwywvgALDLC+AAsMMMACA6wvwAIDrC/AAgOsL8AA6zsRcHy3YeJddcxzWibeVcfoO7ovwADr+33A5X/+nesuv+x2rrv8sru57vLL7uo7uy/AAOsLsMAA6wuwwADrC7DAAAMsMMD6AiwwwPoCLDDA+gIMsL4ACwywvgALDLC+AAsMMMACA6wvwAIDrC/AAgOsL8ACAwywwADrC7DAAOsLsMAA6wswwPoCLDDA+gIsMMD6AiwwwAALDLC+AAsMsL4ACwywvgADrC/AAgOsL8ACA6wvwAIDrC/AAOsLsMAA6wuwwADrC7DAAAMsMMD6AiwwwPoCLDDA+gIMsL4D+/4BU+5hPaT7SDoAAAAASUVORK5CYII=",
+      "originalWidth": 320,
+      "originalHeight": 240
+    }
+  },
+  "templates": {},
+  "theme": {
+    "name": "Light",
+    "colors": {
+      "primary": "#4285f4",
+      "secondary": "#5f6368",
+      "accent": "#ea4335",
+      "background": "#ffffff",
+      "text": "#333333",
+      "heading": "#202124"
+    },
+    "fonts": {
+      "heading": "Arial",
+      "body": "Arial"
+    }
+  }
+}

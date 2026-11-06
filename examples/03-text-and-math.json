@@ -1,0 +1,1292 @@
+{
+  "id": "example-text",
+  "title": "Text & Math",
+  "width": 960,
+  "height": 540,
+  "createdAt": 0,
+  "updatedAt": 0,
+  "slides": {
+    "example-text-s1": {
+      "id": "example-text-s1",
+      "elements": {
+        "text-title": {
+          "id": "text-title",
+          "type": "text",
+          "x": 48,
+          "y": 36,
+          "width": 864,
+          "height": 44,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "Content easings — before",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 30,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#202124",
+            "align": "left",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        },
+        "content-const": {
+          "id": "content-const",
+          "type": "text",
+          "x": 260,
+          "y": 120,
+          "width": 620,
+          "height": 48,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "The quick brown fox",
+          "textSizing": "user-width",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 26,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#202124",
+            "align": "left",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          },
+          "name": "const"
+        },
+        "content-dissolve": {
+          "id": "content-dissolve",
+          "type": "text",
+          "x": 260,
+          "y": 188,
+          "width": 620,
+          "height": 48,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "The quick brown fox",
+          "textSizing": "user-width",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 26,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#202124",
+            "align": "left",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          },
+          "name": "dissolve"
+        },
+        "content-typewriter": {
+          "id": "content-typewriter",
+          "type": "text",
+          "x": 260,
+          "y": 256,
+          "width": 620,
+          "height": 48,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "The quick brown fox",
+          "textSizing": "user-width",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 26,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#202124",
+            "align": "left",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          },
+          "name": "typewriter"
+        },
+        "content-write": {
+          "id": "content-write",
+          "type": "text",
+          "x": 260,
+          "y": 324,
+          "width": 620,
+          "height": 48,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "The quick brown fox",
+          "textSizing": "user-width",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 26,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#202124",
+            "align": "left",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          },
+          "name": "write"
+        },
+        "content-fadebyglyph": {
+          "id": "content-fadebyglyph",
+          "type": "text",
+          "x": 260,
+          "y": 392,
+          "width": 620,
+          "height": 48,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "The quick brown fox",
+          "textSizing": "user-width",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 26,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#202124",
+            "align": "left",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          },
+          "name": "fadebyglyph"
+        },
+        "content-const-cap": {
+          "id": "content-const-cap",
+          "type": "text",
+          "x": 60,
+          "y": 128,
+          "width": 180,
+          "height": 22,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "const",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 14,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#5f6368",
+            "align": "center",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        },
+        "content-dissolve-cap": {
+          "id": "content-dissolve-cap",
+          "type": "text",
+          "x": 60,
+          "y": 196,
+          "width": 180,
+          "height": 22,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "dissolve",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 14,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#5f6368",
+            "align": "center",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        },
+        "content-typewriter-cap": {
+          "id": "content-typewriter-cap",
+          "type": "text",
+          "x": 60,
+          "y": 264,
+          "width": 180,
+          "height": 22,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "typewriter",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 14,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#5f6368",
+            "align": "center",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        },
+        "content-write-cap": {
+          "id": "content-write-cap",
+          "type": "text",
+          "x": 60,
+          "y": 332,
+          "width": 180,
+          "height": 22,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "write",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 14,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#5f6368",
+            "align": "center",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        },
+        "content-fadebyglyph-cap": {
+          "id": "content-fadebyglyph-cap",
+          "type": "text",
+          "x": 60,
+          "y": 400,
+          "width": 180,
+          "height": 22,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "fadebyglyph",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 14,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#5f6368",
+            "align": "center",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        }
+      },
+      "elementOrder": [
+        "text-title",
+        "content-const",
+        "content-dissolve",
+        "content-typewriter",
+        "content-write",
+        "content-fadebyglyph",
+        "content-const-cap",
+        "content-dissolve-cap",
+        "content-typewriter-cap",
+        "content-write-cap",
+        "content-fadebyglyph-cap"
+      ],
+      "background": {
+        "type": "solid",
+        "color": "#ffffff"
+      },
+      "transition": {
+        "duration": 300
+      },
+      "notes": "Content easings reveal a text change. `write` traces the glyph outlines; `typewriter` reveals whole characters; `fadebyglyph` staggers a per-glyph fade."
+    },
+    "example-text-s2": {
+      "id": "example-text-s2",
+      "elements": {
+        "text-title": {
+          "id": "text-title",
+          "type": "text",
+          "x": 48,
+          "y": 36,
+          "width": 864,
+          "height": 44,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "Content easings — after",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 30,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#202124",
+            "align": "left",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        },
+        "content-const": {
+          "id": "content-const",
+          "type": "text",
+          "x": 260,
+          "y": 120,
+          "width": 620,
+          "height": 48,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "jumps over the lazy dog",
+          "textSizing": "user-width",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 26,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#202124",
+            "align": "left",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          },
+          "name": "const",
+          "transitions": {
+            "content": "const"
+          }
+        },
+        "content-dissolve": {
+          "id": "content-dissolve",
+          "type": "text",
+          "x": 260,
+          "y": 188,
+          "width": 620,
+          "height": 48,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "jumps over the lazy dog",
+          "textSizing": "user-width",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 26,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#202124",
+            "align": "left",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          },
+          "name": "dissolve",
+          "transitions": {
+            "content": "dissolve"
+          }
+        },
+        "content-typewriter": {
+          "id": "content-typewriter",
+          "type": "text",
+          "x": 260,
+          "y": 256,
+          "width": 620,
+          "height": 48,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "jumps over the lazy dog",
+          "textSizing": "user-width",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 26,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#202124",
+            "align": "left",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          },
+          "name": "typewriter",
+          "transitions": {
+            "content": "typewriter",
+            "contentOptions": {
+              "typewriter": {
+                "undoFirst": false
+              }
+            }
+          }
+        },
+        "content-write": {
+          "id": "content-write",
+          "type": "text",
+          "x": 260,
+          "y": 324,
+          "width": 620,
+          "height": 48,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "jumps over the lazy dog",
+          "textSizing": "user-width",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 26,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#202124",
+            "align": "left",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          },
+          "name": "write",
+          "transitions": {
+            "content": "write",
+            "contentOptions": {
+              "write": {
+                "undoFirst": true
+              }
+            }
+          }
+        },
+        "content-fadebyglyph": {
+          "id": "content-fadebyglyph",
+          "type": "text",
+          "x": 260,
+          "y": 392,
+          "width": 620,
+          "height": 48,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "jumps over the lazy dog",
+          "textSizing": "user-width",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 26,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#202124",
+            "align": "left",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          },
+          "name": "fadebyglyph",
+          "transitions": {
+            "content": "fadebyglyph"
+          }
+        },
+        "content-const-cap": {
+          "id": "content-const-cap",
+          "type": "text",
+          "x": 60,
+          "y": 128,
+          "width": 180,
+          "height": 22,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "const",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 14,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#5f6368",
+            "align": "center",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        },
+        "content-dissolve-cap": {
+          "id": "content-dissolve-cap",
+          "type": "text",
+          "x": 60,
+          "y": 196,
+          "width": 180,
+          "height": 22,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "dissolve",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 14,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#5f6368",
+            "align": "center",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        },
+        "content-typewriter-cap": {
+          "id": "content-typewriter-cap",
+          "type": "text",
+          "x": 60,
+          "y": 264,
+          "width": 180,
+          "height": 22,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "typewriter",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 14,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#5f6368",
+            "align": "center",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        },
+        "content-write-cap": {
+          "id": "content-write-cap",
+          "type": "text",
+          "x": 60,
+          "y": 332,
+          "width": 180,
+          "height": 22,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "write",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 14,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#5f6368",
+            "align": "center",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        },
+        "content-fadebyglyph-cap": {
+          "id": "content-fadebyglyph-cap",
+          "type": "text",
+          "x": 60,
+          "y": 400,
+          "width": 180,
+          "height": 22,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "fadebyglyph",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 14,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#5f6368",
+            "align": "center",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        }
+      },
+      "elementOrder": [
+        "text-title",
+        "content-const",
+        "content-dissolve",
+        "content-typewriter",
+        "content-write",
+        "content-fadebyglyph",
+        "content-const-cap",
+        "content-dissolve-cap",
+        "content-typewriter-cap",
+        "content-write-cap",
+        "content-fadebyglyph-cap"
+      ],
+      "background": {
+        "type": "solid",
+        "color": "#ffffff"
+      },
+      "transition": {
+        "duration": 300
+      },
+      "notes": "The same five elements with new text and a content transition each. `write` and `typewriter` also take an `undoFirst` option."
+    },
+    "example-text-s3": {
+      "id": "example-text-s3",
+      "elements": {
+        "style-title": {
+          "id": "style-title",
+          "type": "text",
+          "x": 48,
+          "y": 36,
+          "width": 864,
+          "height": 44,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "Text style transitions — from",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 30,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#202124",
+            "align": "left",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        },
+        "style-demo": {
+          "id": "style-demo",
+          "type": "text",
+          "x": 100,
+          "y": 150,
+          "width": 760,
+          "height": 200,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "Slides are keyframes, and every property can carry its own easing.",
+          "textSizing": "user-width",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 20,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#5f6368",
+            "align": "left",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          },
+          "name": "styled paragraph"
+        }
+      },
+      "elementOrder": [
+        "style-title",
+        "style-demo"
+      ],
+      "background": {
+        "type": "solid",
+        "color": "#ffffff"
+      },
+      "transition": {
+        "duration": 300
+      },
+      "notes": "Text style groups animate like any other property: fontSize, color and lineHeight each have their own transition."
+    },
+    "example-text-s4": {
+      "id": "example-text-s4",
+      "elements": {
+        "style-title": {
+          "id": "style-title",
+          "type": "text",
+          "x": 48,
+          "y": 36,
+          "width": 864,
+          "height": 44,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "Text style transitions — to",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 30,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#202124",
+            "align": "left",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        },
+        "style-demo": {
+          "id": "style-demo",
+          "type": "text",
+          "x": 100,
+          "y": 150,
+          "width": 760,
+          "height": 200,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "Slides are keyframes, and every property can carry its own easing.",
+          "textSizing": "user-width",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 38,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#c5221f",
+            "align": "left",
+            "verticalAlign": "top",
+            "lineHeight": 1.9
+          },
+          "name": "styled paragraph",
+          "transitions": {
+            "fontSize": "ease",
+            "color": "linear",
+            "lineHeight": "ease"
+          }
+        }
+      },
+      "elementOrder": [
+        "style-title",
+        "style-demo"
+      ],
+      "background": {
+        "type": "solid",
+        "color": "#ffffff"
+      },
+      "transition": {
+        "duration": 300
+      },
+      "notes": "fontSize, color and lineHeight interpolate independently."
+    },
+    "example-text-s5": {
+      "id": "example-text-s5",
+      "elements": {
+        "math-title": {
+          "id": "math-title",
+          "type": "text",
+          "x": 48,
+          "y": 36,
+          "width": 864,
+          "height": 44,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "Mathematical text",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 30,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#202124",
+            "align": "left",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        },
+        "math-inline": {
+          "id": "math-inline",
+          "type": "text",
+          "x": 80,
+          "y": 130,
+          "width": 800,
+          "height": 60,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "A Gaussian process prior $$p(f) = \\mathcal{GP}(m, k)$$ over the implicit surface.",
+          "textSizing": "user-width",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 24,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#333333",
+            "align": "left",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          },
+          "name": "inline math"
+        },
+        "math-display": {
+          "id": "math-display",
+          "type": "text",
+          "x": 80,
+          "y": 220,
+          "width": 800,
+          "height": 90,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "$$\\int_{\\partial\\Omega} \\nabla f \\cdot \\mathbf{n}\\, dS = \\int_\\Omega \\Delta f\\, dV$$",
+          "textSizing": "user-width",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 30,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#333333",
+            "align": "center",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          },
+          "name": "display math"
+        },
+        "math-written": {
+          "id": "math-written",
+          "type": "text",
+          "x": 80,
+          "y": 350,
+          "width": 800,
+          "height": 80,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "$$e^{i\\pi} + 1 = 0$$",
+          "textSizing": "user-width",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 34,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#1a73e8",
+            "align": "center",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          },
+          "name": "written math",
+          "transitions": {
+            "visibility": "write"
+          }
+        },
+        "math-written-cap": {
+          "id": "math-written-cap",
+          "type": "text",
+          "x": 80,
+          "y": 440,
+          "width": 800,
+          "height": 22,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "revealed with the `write` easing",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 14,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#5f6368",
+            "align": "center",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        }
+      },
+      "elementOrder": [
+        "math-title",
+        "math-inline",
+        "math-display",
+        "math-written",
+        "math-written-cap"
+      ],
+      "background": {
+        "type": "solid",
+        "color": "#ffffff"
+      },
+      "transition": {
+        "duration": 300
+      },
+      "notes": "LaTeX between $$ delimiters is typeset through the MathJax pipeline and rendered as outlines, so it animates and exports like any other text."
+    },
+    "example-text-s6": {
+      "id": "example-text-s6",
+      "elements": {
+        "bound-title": {
+          "id": "bound-title",
+          "type": "text",
+          "x": 48,
+          "y": 36,
+          "width": 864,
+          "height": 44,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "Bound text",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 30,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#202124",
+            "align": "left",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        },
+        "bound-box": {
+          "id": "bound-box",
+          "type": "shape",
+          "shapeType": "rect",
+          "creationPreset": "rect",
+          "x": 90,
+          "y": 150,
+          "width": 320,
+          "height": 180,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "fill": "#e8f0fe",
+          "stroke": "#1a73e8",
+          "strokeWidth": 2,
+          "cornerRadius": 12,
+          "name": "labelled box"
+        },
+        "bound-box-label": {
+          "id": "bound-box-label",
+          "type": "text",
+          "x": 106,
+          "y": 220,
+          "width": 288,
+          "height": 40,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "Text bound to a shape",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 22,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#333333",
+            "align": "center",
+            "verticalAlign": "middle",
+            "lineHeight": 1.2
+          },
+          "name": "box label",
+          "containerId": "bound-box"
+        },
+        "bound-arrow": {
+          "id": "bound-arrow",
+          "type": "shape",
+          "shapeType": "path",
+          "creationPreset": "line",
+          "x": 520,
+          "y": 180,
+          "width": 340,
+          "height": 120,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "fill": "",
+          "stroke": "#188038",
+          "strokeWidth": 3,
+          "cornerRadius": 0,
+          "name": "labelled arrow",
+          "points": [
+            0,
+            120,
+            340,
+            0
+          ],
+          "curve": "linear",
+          "endHead": "triangle"
+        },
+        "bound-arrow-label": {
+          "id": "bound-arrow-label",
+          "type": "text",
+          "x": 620,
+          "y": 222,
+          "width": 140,
+          "height": 28,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "on an arrow",
+          "textSizing": "auto-content",
+          "boundTextLayout": "measured",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 18,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#333333",
+            "align": "center",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          },
+          "name": "arrow label",
+          "containerId": "bound-arrow"
+        },
+        "bound-cap": {
+          "id": "bound-cap",
+          "type": "text",
+          "x": 90,
+          "y": 400,
+          "width": 770,
+          "height": 22,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "containerId keeps the label attached through moves, resizes and keyframes",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Arial",
+            "fontSize": 14,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#5f6368",
+            "align": "center",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        }
+      },
+      "elementOrder": [
+        "bound-title",
+        "bound-box",
+        "bound-box-label",
+        "bound-arrow",
+        "bound-arrow-label",
+        "bound-cap"
+      ],
+      "background": {
+        "type": "solid",
+        "color": "#ffffff"
+      },
+      "transition": {
+        "duration": 300
+      },
+      "notes": "Bound text lives inside a container element via containerId, and moves and resizes with it. Both layout modes are shown."
+    }
+  },
+  "slideOrder": [
+    "example-text-s1",
+    "example-text-s2",
+    "example-text-s3",
+    "example-text-s4",
+    "example-text-s5",
+    "example-text-s6"
+  ],
+  "objects": {
+    "text-title": {
+      "id": "text-title",
+      "name": "text-title",
+      "type": "text"
+    },
+    "content-const": {
+      "id": "content-const",
+      "name": "const",
+      "type": "text"
+    },
+    "content-dissolve": {
+      "id": "content-dissolve",
+      "name": "dissolve",
+      "type": "text"
+    },
+    "content-typewriter": {
+      "id": "content-typewriter",
+      "name": "typewriter",
+      "type": "text"
+    },
+    "content-write": {
+      "id": "content-write",
+      "name": "write",
+      "type": "text"
+    },
+    "content-fadebyglyph": {
+      "id": "content-fadebyglyph",
+      "name": "fadebyglyph",
+      "type": "text"
+    },
+    "content-const-cap": {
+      "id": "content-const-cap",
+      "name": "content-const-cap",
+      "type": "text"
+    },
+    "content-dissolve-cap": {
+      "id": "content-dissolve-cap",
+      "name": "content-dissolve-cap",
+      "type": "text"
+    },
+    "content-typewriter-cap": {
+      "id": "content-typewriter-cap",
+      "name": "content-typewriter-cap",
+      "type": "text"
+    },
+    "content-write-cap": {
+      "id": "content-write-cap",
+      "name": "content-write-cap",
+      "type": "text"
+    },
+    "content-fadebyglyph-cap": {
+      "id": "content-fadebyglyph-cap",
+      "name": "content-fadebyglyph-cap",
+      "type": "text"
+    },
+    "style-title": {
+      "id": "style-title",
+      "name": "style-title",
+      "type": "text"
+    },
+    "style-demo": {
+      "id": "style-demo",
+      "name": "styled paragraph",
+      "type": "text"
+    },
+    "math-title": {
+      "id": "math-title",
+      "name": "math-title",
+      "type": "text"
+    },
+    "math-inline": {
+      "id": "math-inline",
+      "name": "inline math",
+      "type": "text"
+    },
+    "math-display": {
+      "id": "math-display",
+      "name": "display math",
+      "type": "text"
+    },
+    "math-written": {
+      "id": "math-written",
+      "name": "written math",
+      "type": "text"
+    },
+    "math-written-cap": {
+      "id": "math-written-cap",
+      "name": "math-written-cap",
+      "type": "text"
+    },
+    "bound-title": {
+      "id": "bound-title",
+      "name": "bound-title",
+      "type": "text"
+    },
+    "bound-box": {
+      "id": "bound-box",
+      "name": "labelled box",
+      "type": "shape"
+    },
+    "bound-box-label": {
+      "id": "bound-box-label",
+      "name": "box label",
+      "type": "text"
+    },
+    "bound-arrow": {
+      "id": "bound-arrow",
+      "name": "labelled arrow",
+      "type": "shape"
+    },
+    "bound-arrow-label": {
+      "id": "bound-arrow-label",
+      "name": "arrow label",
+      "type": "text"
+    },
+    "bound-cap": {
+      "id": "bound-cap",
+      "name": "bound-cap",
+      "type": "text"
+    }
+  },
+  "resources": {},
+  "templates": {},
+  "theme": {
+    "name": "Light",
+    "colors": {
+      "primary": "#4285f4",
+      "secondary": "#5f6368",
+      "accent": "#ea4335",
+      "background": "#ffffff",
+      "text": "#333333",
+      "heading": "#202124"
+    },
+    "fonts": {
+      "heading": "Arial",
+      "body": "Arial"
+    }
+  }
+}
