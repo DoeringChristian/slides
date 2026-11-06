@@ -6,10 +6,16 @@ import {
   ColorProperty,
   NumberProperty,
   PreviewSelectProperty,
+  SelectProperty,
   TextPreviewProperty,
 } from './Property';
-import { FONT_FAMILIES } from '../../utils/text/fontRegistry';
+import { FONT_FAMILIES, MATH_FONTS, fontStack } from '../../utils/text/fontRegistry';
+import { injectFontFaces } from '../../utils/text/glyphPaths';
 import type { TextElement } from '../../types/presentation';
+
+// The font specimens below must render in the bundled bytes, not a system copy
+// of the same family name. Idempotent, and cheap enough to do at module load.
+injectFontFaces();
 
 /**
  * Property list for text elements. Nested style.* fields use dot-notation
@@ -37,9 +43,20 @@ const TEXT_PROPERTIES: Property<TextElement>[] = [
     options: FONT_FAMILIES.map((f) => ({
       value: f, label: f,
       preview: () => (
-        <div className="text-base leading-none" style={{ fontFamily: f }}>Ag</div>
+        <div className="text-base leading-none" style={{ fontFamily: fontStack(f) }}>Ag</div>
       ),
     })),
+  }),
+  new SelectProperty<TextElement>({
+    // Math renders through MathJax, which bakes glyph outlines from its own
+    // font data — so this cannot be a CSS specimen like the row above, and the
+    // choice is by name. Left unset, it follows the text font's pairing.
+    key: 'style.mathFont', label: 'Math font',
+    visibleFor: (el) => (el.text ?? '').includes('$'),
+    options: [
+      { value: '', label: 'Match text font' },
+      ...MATH_FONTS.map((f) => ({ value: f.id, label: f.label })),
+    ],
   }),
   new NumberProperty<TextElement>({
     // Was a fixed-list SelectProperty; a scrub field covers the in-between

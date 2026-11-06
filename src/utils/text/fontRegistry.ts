@@ -74,7 +74,7 @@ export const TEXT_FONTS = [
     },
     // Inter is a UI sans; New Computer Modern is MathJax 4's default and the
     // least surprising partner until a sans math font is registered.
-    defaultMathFont: 'mathjax-modern',
+    defaultMathFont: 'mathjax-newcm',
     notice: 'Inter — Copyright (c) 2016 The Inter Project Authors. SIL Open Font License 1.1.',
   },
   {
@@ -88,8 +88,9 @@ export const TEXT_FONTS = [
       boldItalic: libertinusBoldItalicUrl,
     },
     // The SIGGRAPH pairing: acmart sets Libertine text against newtxmath in
-    // its libertine mode. Libertinus Math is the closest faithful match.
-    defaultMathFont: 'mathjax-libertinus',
+    // its libertine mode. Termes is the closest published match; swap this to
+    // Libertinus Math once its font data is generated.
+    defaultMathFont: 'mathjax-termes',
     notice:
       'Libertinus Serif 7.051 — Copyright (c) 2012-2024 The Libertinus Project Authors. '
       + 'SIL Open Font License 1.1. Designed by Philipp H. Poll and Khaled Hosny.',
@@ -106,45 +107,107 @@ export const DEFAULT_TEXT_FONT: TextFontId = 'Inter';
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface MathFontDef {
-  /** Stored in `TextStyle.mathFont`; also the MathJax `output.font` value. */
+  /** Stored in `TextStyle.mathFont`; also MathJax's own font name. */
   id: string;
   label: string;
-  /** False for fonts we build and vendor ourselves rather than install. */
-  official: boolean;
   /** Short note for the picker: what this face is for. */
   blurb: string;
+  /**
+   * Loads the font's SVG data module. Dynamic so each face becomes its own
+   * chunk — a deck pays only for the fonts it uses, which matters because the
+   * standalone export inlines everything it references into one HTML file.
+   *
+   * The specifiers must stay literal for the bundler to see them.
+   */
+  load: () => Promise<Record<string, unknown>>;
 }
 
 /**
- * MathJax 4's ten published packages plus the one we build ourselves.
+ * MathJax 4's published font packages, each `@mathjax/mathjax-<id>-font`.
  *
- * `@mathjax/mathjax-<name>-font` is the npm package for every `official`
- * entry. `mathjax-libertinus` is vendored: MathJax publishes no Libertinus
- * package, so its data is generated from LibertinusMath-Regular.otf.
+ * `mathjax-euler` is deliberately absent: it is a font *extension* (it layers
+ * onto whichever font is selected via `fontExtensions`), not a complete font,
+ * so it does not belong in a list of choices.
+ *
+ * Libertinus is also absent for now — MathJax publishes no Libertinus package,
+ * so its data has to be generated from LibertinusMath-Regular.otf before it
+ * can be listed. Until then Libertinus Serif pairs with Termes, the Times
+ * clone closest to the newtxmath that acmart actually sets.
  */
 export const MATH_FONTS = [
-  { id: 'mathjax-modern', label: 'New Computer Modern', official: true, blurb: "MathJax 4's default; the classic TeX look." },
-  { id: 'mathjax-tex', label: 'TeX (MathJax 3)', official: true, blurb: 'The face MathJax 3 shipped — matches older exports.' },
-  { id: 'mathjax-stix2', label: 'STIX Two', official: true, blurb: 'Scientific-publishing standard; pairs with Times-like serifs.' },
-  { id: 'mathjax-termes', label: 'TeX Gyre Termes', official: true, blurb: 'Times clone; close to newtxmath in acmart.' },
-  { id: 'mathjax-pagella', label: 'TeX Gyre Pagella', official: true, blurb: 'Palatino clone; wider, calligraphic.' },
-  { id: 'mathjax-bonum', label: 'TeX Gyre Bonum', official: true, blurb: 'Bookman clone; heavy, high contrast.' },
-  { id: 'mathjax-schola', label: 'TeX Gyre Schola', official: true, blurb: 'Century Schoolbook clone; large x-height.' },
-  { id: 'mathjax-dejavu', label: 'DejaVu', official: true, blurb: 'Sans math; pairs with a sans body face.' },
-  { id: 'mathjax-fira', label: 'Fira', official: true, blurb: 'Sans math with a humanist feel.' },
-  { id: 'mathjax-asana', label: 'Asana Math', official: true, blurb: 'Palatino-compatible with very wide symbol coverage.' },
   {
-    id: 'mathjax-libertinus',
-    label: 'Libertinus Math',
-    official: false,
-    blurb: 'Matches Libertinus Serif — the SIGGRAPH pairing.',
+    id: 'mathjax-newcm',
+    label: 'New Computer Modern',
+    blurb: "MathJax 4's default; the classic TeX look.",
+    load: () => import('@mathjax/mathjax-newcm-font/js/svg.js'),
+  },
+  {
+    id: 'mathjax-tex',
+    label: 'TeX',
+    blurb: 'The face MathJax 3 shipped — matches older exports.',
+    load: () => import('@mathjax/mathjax-tex-font/js/svg.js'),
+  },
+  {
+    id: 'mathjax-modern',
+    label: 'MathJax Modern',
+    blurb: 'Latin Modern lineage; lighter than New Computer Modern.',
+    load: () => import('@mathjax/mathjax-modern-font/js/svg.js'),
+  },
+  {
+    id: 'mathjax-stix2',
+    label: 'STIX Two',
+    blurb: 'Scientific-publishing standard; pairs with Times-like serifs.',
+    load: () => import('@mathjax/mathjax-stix2-font/js/svg.js'),
+  },
+  {
+    id: 'mathjax-termes',
+    label: 'TeX Gyre Termes',
+    blurb: 'Times clone; closest to the newtxmath acmart sets.',
+    load: () => import('@mathjax/mathjax-termes-font/js/svg.js'),
+  },
+  {
+    id: 'mathjax-pagella',
+    label: 'TeX Gyre Pagella',
+    blurb: 'Palatino clone; wider, calligraphic.',
+    load: () => import('@mathjax/mathjax-pagella-font/js/svg.js'),
+  },
+  {
+    id: 'mathjax-bonum',
+    label: 'TeX Gyre Bonum',
+    blurb: 'Bookman clone; heavy, high contrast.',
+    load: () => import('@mathjax/mathjax-bonum-font/js/svg.js'),
+  },
+  {
+    id: 'mathjax-schola',
+    label: 'TeX Gyre Schola',
+    blurb: 'Century Schoolbook clone; large x-height.',
+    load: () => import('@mathjax/mathjax-schola-font/js/svg.js'),
+  },
+  {
+    id: 'mathjax-dejavu',
+    label: 'DejaVu',
+    blurb: 'Sans math; pairs with a sans body face.',
+    load: () => import('@mathjax/mathjax-dejavu-font/js/svg.js'),
+  },
+  {
+    id: 'mathjax-fira',
+    label: 'Fira',
+    blurb: 'Sans math with a humanist feel.',
+    load: () => import('@mathjax/mathjax-fira-font/js/svg.js'),
+  },
+  {
+    id: 'mathjax-asana',
+    label: 'Asana Math',
+    blurb: 'Palatino-compatible with very wide symbol coverage.',
+    load: () => import('@mathjax/mathjax-asana-font/js/svg.js'),
   },
 ] as const satisfies readonly MathFontDef[];
 
 export type MathFontId = (typeof MATH_FONTS)[number]['id'];
 
-/** Used when an element names no math font and its text font names none. */
-export const DEFAULT_MATH_FONT: MathFontId = 'mathjax-modern';
+/** Used when an element names no math font and its text font names none.
+ *  Matches MathJax 4's own default. */
+export const DEFAULT_MATH_FONT: MathFontId = 'mathjax-newcm';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Lookup
@@ -191,9 +254,31 @@ export function fontNotices(): string[] {
   return TEXT_FONTS.map((f) => f.notice);
 }
 
+/** Load a math font's SVG data class, by convention its single export. */
+export async function loadMathFontData(id: string | undefined): Promise<unknown> {
+  const mod = await mathFont(id).load();
+  // Each package exports exactly one class, named MathJax<Name>Font.
+  const cls = Object.entries(mod).find(([k, v]) => k.startsWith('MathJax') && typeof v === 'function');
+  if (!cls) throw new Error(`Math font ${mathFont(id).id} exported no font class`);
+  return cls[1];
+}
+
 /**
  * Families offered in the pickers. Never hand-listed: only a bundled face can
  * be rendered as outlines, so advertising a system family would promise
  * something the renderer cannot deliver.
  */
 export const FONT_FAMILIES: readonly string[] = TEXT_FONTS.map((f) => f.id);
+
+/**
+ * CSS stack that actually renders in the bundled bytes.
+ *
+ * `injectFontFaces` registers each face under an "<id> Edit" alias, so asking
+ * for the bare family name can be answered by a system copy at a different
+ * version — or by nothing at all. Anything that must look like the renderer
+ * (the edit overlay, picker specimens) asks for this.
+ */
+export function fontStack(id: string | undefined): string {
+  const font = textFont(id);
+  return `'${font.id} Edit', ${font.cssStack}`;
+}

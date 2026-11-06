@@ -66,8 +66,8 @@ describe('font registry', () => {
   it('falls back to the text font pairing when no math font is set', () => {
     // The point of the pairing: picking Libertinus text must not leave
     // equations in a different face.
-    expect(resolveMathFont('Libertinus Serif', undefined).id).toBe('mathjax-libertinus');
-    expect(resolveMathFont('Inter', undefined).id).toBe('mathjax-modern');
+    expect(resolveMathFont('Libertinus Serif', undefined).id).toBe('mathjax-termes');
+    expect(resolveMathFont('Inter', undefined).id).toBe('mathjax-newcm');
     // A legacy family resolves through the default face's pairing.
     expect(resolveMathFont('Arial', undefined).id).toBe(textFont('Arial').defaultMathFont);
   });
@@ -76,14 +76,30 @@ describe('font registry', () => {
     expect(resolveMathFont('Libertinus Serif', 'mathjax-stix2').id).toBe('mathjax-stix2');
     // An unknown id must not win — it falls back rather than breaking layout.
     expect(resolveMathFont('Libertinus Serif', 'mathjax-nonexistent').id)
-      .toBe('mathjax-libertinus');
+      .toBe('mathjax-termes');
     expect(mathFont('mathjax-nonexistent').id).toBe(DEFAULT_MATH_FONT);
   });
 
-  it('marks exactly the fonts we vendor as unofficial', () => {
-    // Official entries install from @mathjax/mathjax-<name>-font; unofficial
-    // ones are built here, so the distinction drives how they are loaded.
-    const unofficial = MATH_FONTS.filter((f) => !f.official).map((f) => f.id);
-    expect(unofficial).toEqual(['mathjax-libertinus']);
+  it('gives every math font a loader and a package-shaped id', () => {
+    for (const font of MATH_FONTS) {
+      expect(typeof font.load, `${font.id} has no loader`).toBe('function');
+      expect(font.blurb.length, `${font.id} needs a blurb`).toBeGreaterThan(10);
+      // Ids double as MathJax's own font names, which map onto the npm
+      // packages @mathjax/mathjax-<name>-font.
+      expect(font.id, `${font.id} is not package-shaped`).toMatch(/^mathjax-[a-z0-9]+$/);
+    }
+  });
+
+  it('does not offer font extensions as font choices', () => {
+    // mathjax-euler layers onto a chosen font via fontExtensions; listing it
+    // as a choice would promise a complete face it is not.
+    expect(MATH_FONTS.map((f) => f.id)).not.toContain('mathjax-euler');
+  });
+
+  it('pairs Libertinus with the closest published math face', () => {
+    // MathJax publishes no Libertinus package yet, so the SIGGRAPH pairing
+    // falls to Termes (Times clone, closest to acmart's newtxmath). This
+    // assertion is the reminder to flip it once Libertinus data is generated.
+    expect(textFont('Libertinus Serif').defaultMathFont).toBe('mathjax-termes');
   });
 });

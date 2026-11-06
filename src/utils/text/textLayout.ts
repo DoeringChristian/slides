@@ -16,6 +16,7 @@ import { parseBlocks, parseInlineSegments, getBlockFontMultiplier } from '../../
 import type { TextStyle } from '../../types/presentation';
 import { texFragmentToSvg } from '../../services/latexToSvg';
 import { loadFont, textToGlyphPaths, pathLengthFor } from './glyphPaths';
+import { resolveMathFont } from './fontRegistry';
 import type { SvgPath } from '../../components/svg/RenderPaths';
 export type { SvgPath } from '../../components/svg/RenderPaths';
 
@@ -377,7 +378,13 @@ export async function layoutSvgText(
         if (seg.type === 'latex') {
           let mathSvg: string;
           try {
-            mathSvg = await texFragmentToSvg(seg.displayContent, seg.isBlock);
+            // Math follows the element's own choice, else whatever its text
+            // font pairs with — so prose and equations match by default.
+            mathSvg = await texFragmentToSvg(
+              seg.displayContent,
+              seg.isBlock,
+              resolveMathFont(style.fontFamily, style.mathFont).id,
+            );
           } catch {
             mathSvg = `<text fill="#d1242f" font-size="${blockFontSize * 0.8}" font-family="monospace">${escapeXml(seg.content)}</text>`;
           }
