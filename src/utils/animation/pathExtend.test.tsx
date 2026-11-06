@@ -247,20 +247,25 @@ describe('extend arrowheads', () => {
 describe("visibility easing 'extend'", () => {
   const subject = path({ points: [0, 0, 60, 0, 60, 80], endHead: 'triangle', transitions: { visibility: 'extend' } });
 
-  test('an appearing path carries _extendFx spanning the FULL window', () => {
-    for (const t of [0, 0.25, 0.5, 0.75, 1]) {
+  test('an appearing path extends across the entrance half', () => {
+    // Entrances own [0.5, 1]: the path must not start drawing while whatever
+    // it replaces is still leaving.
+    expect(interpolateWithVisibility(undefined, subject, 0.25)).toBeNull();
+    for (const [t, progress] of [[0.5, 0], [0.75, 0.5], [1, 1]] as const) {
       const out = interpolateWithVisibility(undefined, subject, t) as Extendable;
-      expect(out._extendFx).toEqual({ progress: t });
+      expect(out._extendFx!.progress, `t=${t}`).toBeCloseTo(progress);
       expect(out.visible).toBe(true);
     }
   });
 
   test('backward playback retracts toward the first vertex', () => {
-    for (const t of [0, 0.25, 0.5, 0.75, 1]) {
+    // Exits own [0, 0.5] and are gone after it.
+    for (const [t, progress] of [[0, 1], [0.25, 0.5], [0.4, 0.2]] as const) {
       const out = interpolateWithVisibility(subject, undefined, t) as Extendable;
-      expect(out._extendFx).toEqual({ progress: 1 - t });
+      expect(out._extendFx!.progress, `t=${t}`).toBeCloseTo(progress);
     }
-    const retracting = [0.25, 0.5, 0.75].map(t =>
+    expect(interpolateWithVisibility(subject, undefined, 0.75)).toBeNull();
+    const retracting = [0.1, 0.25, 0.4].map(t =>
       prefixLength(subject, (interpolateWithVisibility(subject, undefined, t) as Extendable)._extendFx!.progress));
     expect(retracting[0]).toBeGreaterThan(retracting[1]);
     expect(retracting[1]).toBeGreaterThan(retracting[2]);
@@ -297,7 +302,7 @@ describe("visibility easing 'extend'", () => {
 describe('extend renders through the shared path', () => {
   test.each(FAMILIES)('$label: the presenter frame equals the static leaf render', (f) => {
     const el = familyPath(f, { endHead: 'triangle', startHead: 'bar', transitions: { visibility: 'extend' } });
-    for (const t of [0.25, 0.6, 0.95]) {
+    for (const t of [0.6, 0.8, 0.95]) {
       const frame = interpolateWithVisibility(undefined, el, t)! as ShapeElement;
       // renderPresenterElement drives the presenter, audience view, the
       // standalone/viewer builds and the picker's preview tiles; RenderShape
@@ -351,12 +356,16 @@ describe("'create' is unaffected by extend", () => {
   });
 
   test('create still defaults for path shapes and keeps its tipDraw option', () => {
-    expect(interpolateWithVisibility(undefined, path({}), 0.3)).toMatchObject({
-      _writeFx: { t: 0.3, direction: 'in', mode: 'create' },
+    // 0.65 is 0.3 of the way through the entrance half.
+    expect(interpolateWithVisibility(undefined, path({}), 0.65)).toMatchObject({
+      _writeFx: { direction: 'in', mode: 'create' },
     });
     const tipped = path({ transitions: { visibility: 'create', visibilityOptions: { create: { tipDraw: true } } } });
-    const out = interpolateWithVisibility(undefined, tipped, 0.3) as Extendable & { _writeFx?: unknown };
-    expect(out._writeFx).toEqual({ t: 0.3, direction: 'in', mode: 'create', tipDraw: true });
+    const out = interpolateWithVisibility(undefined, tipped, 0.65) as Extendable & {
+      _writeFx?: { t: number; direction: string; mode: string; tipDraw?: boolean };
+    };
+    expect(out._writeFx).toMatchObject({ direction: 'in', mode: 'create', tipDraw: true });
+    expect(out._writeFx!.t).toBeCloseTo(0.3);
     expect(out._extendFx).toBeUndefined();
   });
 });

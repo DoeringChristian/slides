@@ -826,8 +826,9 @@ export function defaultVisibilityEasing(element: SlideElement | undefined): Easi
 
 /** Try to build a WriteEffect for a visibility transition. Returns null when
  *  the easing isn't one of the new path/wrapper-style animations (fall
- *  through to the existing fade ramp). All these animations span the FULL
- *  transition window — pre-mapped baseT is 0 → 1 of visible time. */
+ *  through to the existing fade ramp). `baseT` is 0 → 1 of this effect's OWN
+ *  window, which the caller has already mapped out of the half of the
+ *  transition the effect belongs to. */
 function buildVisibilityFx(
   easing: import('../../types/presentation').EasingType | undefined,
   options: import('../../types/presentation').TransitionOptions | undefined,
@@ -877,9 +878,30 @@ function buildExtendFx(
   return { progress: Math.max(0, Math.min(1, progress)) };
 }
 
-// Build an interpolated element for visibility transitions
-// Fade-out happens in the first half (t: 0 -> 0.5)
-// Fade-in happens in the second half (t: 0.5 -> 1)
+/**
+ * Where a transition hands over from exits to entrances.
+ *
+ * Visibility is staged: everything leaving goes in [0, SPLIT], everything
+ * arriving in [SPLIT, 1], so an element never appears while the element it
+ * replaces is still on screen. Elements present on BOTH keyframes are not
+ * visibility changes at all — they move, morph and recolour across the whole
+ * window, which is what makes a transition read as one motion rather than two.
+ *
+ * This applies to every visibility easing. The plain opacity ramp always
+ * honoured it; the effect animations (write, create, wipe, grow, iris,
+ * slidein, typewriter, fadebyglyph, extend) used to span the full window and
+ * so could finish appearing before the outgoing elements had gone.
+ */
+const VISIBILITY_SPLIT = 0.5;
+
+/** 0 → 1 across the exit half. */
+const exitProgress = (t: number) => Math.min(1, t / VISIBILITY_SPLIT);
+
+/** 0 → 1 across the entrance half. */
+const entryProgress = (t: number) =>
+  Math.min(1, Math.max(0, (t - VISIBILITY_SPLIT) / (1 - VISIBILITY_SPLIT)));
+
+// Build an interpolated element for visibility transitions.
 export function interpolateWithVisibility(
   elA: SlideElement | undefined,
   elB: SlideElement | undefined,
@@ -899,38 +921,38 @@ export function interpolateWithVisibility(
   // Forward: appearing element (B) has the transition settings
   // Backward: disappearing element (A, which was B in forward) has the settings
   if (aVisible && !bVisible) {
+    // The exit owns the first half and is finished — not merely faded — after
+    // it. Returning null is what guarantees the entrance below never overlaps.
+    if (t >= VISIBILITY_SPLIT) return null;
     const easing = elA.transitions?.visibility ?? defaultVisibilityEasing(elA);
-    const extend = buildExtendFx(elA, easing, 1 - t);
+    const progress = exitProgress(t);
+    const extend = buildExtendFx(elA, easing, 1 - progress);
     if (extend) {
       return { ...elA, visible: true, _extendFx: extend } as SlideElement & { _extendFx: ExtendEffect };
     }
-    const fx = buildVisibilityFx(easing, elA.transitions?.visibilityOptions, 1 - t, 'out');
+    const fx = buildVisibilityFx(easing, elA.transitions?.visibilityOptions, 1 - progress, 'out');
     if (fx) {
       return { ...elA, visible: true, _writeFx: fx } as SlideElement & { _writeFx: WriteEffect };
     }
-    // Fade out: completes at t=0.5, stays invisible after
-    if (t >= 0.5) return null;
-    // Map t from [0, 0.5] to [0, 1] for the fade-out
-    const fadeOutT = t * 2;
-    const easedT = applyEasing(fadeOutT, easing);
+    const easedT = applyEasing(progress, easing);
     return { ...elA, opacity: lerp(elA.opacity, 0, easedT), visible: true } as SlideElement;
   }
 
   // !aVisible && bVisible
+  // The entrance owns the second half, so nothing appears while the outgoing
+  // elements are still on screen.
+  if (t < VISIBILITY_SPLIT) return null;
   const target = elB!;
   const easing = target.transitions?.visibility ?? defaultVisibilityEasing(target);
-  const extend = buildExtendFx(target, easing, t);
+  const progress = entryProgress(t);
+  const extend = buildExtendFx(target, easing, progress);
   if (extend) {
     return { ...target, visible: true, _extendFx: extend } as SlideElement & { _extendFx: ExtendEffect };
   }
-  const fx = buildVisibilityFx(easing, target.transitions?.visibilityOptions, t, 'in');
+  const fx = buildVisibilityFx(easing, target.transitions?.visibilityOptions, progress, 'in');
   if (fx) {
     return { ...target, visible: true, _writeFx: fx } as SlideElement & { _writeFx: WriteEffect };
   }
-  // Fade in starts at t=0.5
-  if (t < 0.5) return null;
-  // Map t from [0.5, 1] to [0, 1] for the fade-in
-  const fadeInT = (t - 0.5) * 2;
-  const easedT = applyEasing(fadeInT, easing);
+  const easedT = applyEasing(progress, easing);
   return { ...target, opacity: lerp(0, target.opacity, easedT), visible: true } as SlideElement;
 }

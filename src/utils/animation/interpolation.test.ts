@@ -783,35 +783,40 @@ describe('interpolateWithVisibility', () => {
     expect(interpolateWithVisibility(a, bHidden, 0.75)).toBeNull();
   });
 
-  test("appearing with visibility='wipe' spans the FULL window via _writeFx", () => {
+  test("appearing with visibility='wipe' runs in the entrance half via _writeFx", () => {
     const b = makeText({
       transitions: { visibility: 'wipe', visibilityOptions: { wipe: { from: 'left' } } },
     });
-    // Wrapper animations start at t=0 — no hidden first half.
-    const early = interpolateWithVisibility(undefined, b, 0.1) as WithFx;
-    expect(early).not.toBeNull();
-    expect(early._writeFx).toEqual({ t: 0.1, direction: 'in', mode: 'wipe', from: 'left' });
-    const late = interpolateWithVisibility(undefined, b, 0.9) as WithFx;
-    expect(late._writeFx!.t).toBeCloseTo(0.9);
+    // Nothing arrives while the outgoing elements are still on screen.
+    expect(interpolateWithVisibility(undefined, b, 0.1)).toBeNull();
+    const start = interpolateWithVisibility(undefined, b, 0.5) as WithFx;
+    expect(start._writeFx).toEqual({ t: 0, direction: 'in', mode: 'wipe', from: 'left' });
+    const mid = interpolateWithVisibility(undefined, b, 0.75) as WithFx;
+    expect(mid._writeFx!.t).toBeCloseTo(0.5);
+    const late = interpolateWithVisibility(undefined, b, 1) as WithFx;
+    expect(late._writeFx!.t).toBeCloseTo(1);
     expect(late.opacity).toBe(b.opacity); // opacity untouched; the wrapper clips instead
   });
 
   test("appearing with visibility='write' attaches a write _writeFx", () => {
     const b = makeText({ transitions: { visibility: 'write' } });
-    const out = interpolateWithVisibility(undefined, b, 0.4) as WithFx;
-    expect(out._writeFx).toEqual({ t: 0.4, direction: 'in', mode: 'write' });
+    expect(interpolateWithVisibility(undefined, b, 0.4)).toBeNull();
+    const out = interpolateWithVisibility(undefined, b, 0.7) as WithFx;
+    expect(out._writeFx).toMatchObject({ direction: 'in', mode: 'write' });
+    expect(out._writeFx!.t).toBeCloseTo(0.4); // remapped out of the entrance half
   });
 
   test("appearing path shape defaults to 'create' with tipDraw from options", () => {
     const plain = makeShape({ shapeType: 'path', points: [0, 0, 100, 0] });
-    const out = interpolateWithVisibility(undefined, plain, 0.3) as WithFx;
-    expect(out._writeFx).toEqual({ t: 0.3, direction: 'in', mode: 'create', tipDraw: undefined });
+    const out = interpolateWithVisibility(undefined, plain, 0.65) as WithFx;
+    expect(out._writeFx).toMatchObject({ direction: 'in', mode: 'create', tipDraw: undefined });
+    expect(out._writeFx!.t).toBeCloseTo(0.3);
 
     const tipped = makeShape({
       shapeType: 'path', points: [0, 0, 100, 0], endHead: 'triangle',
       transitions: { visibility: 'create', visibilityOptions: { create: { tipDraw: true } } },
     });
-    const tippedOut = interpolateWithVisibility(undefined, tipped, 0.3) as WithFx;
+    const tippedOut = interpolateWithVisibility(undefined, tipped, 0.65) as WithFx;
     expect(tippedOut._writeFx!.tipDraw).toBe(true);
   });
 
@@ -820,17 +825,45 @@ describe('interpolateWithVisibility', () => {
     const out = interpolateWithVisibility(a, undefined, 0.25) as WithFx;
     expect(out._writeFx!.mode).toBe('create');
     expect(out._writeFx!.direction).toBe('out');
-    expect(out._writeFx!.t).toBeCloseTo(0.75); // 1 - t
-    // Unlike the fade ramp, wrapper/draw animations persist past t=0.5.
-    expect(interpolateWithVisibility(a, undefined, 0.9)).not.toBeNull();
+    // 0.25 is halfway through the exit half, so the draw is half retracted.
+    expect(out._writeFx!.t).toBeCloseTo(0.5);
+    // Exits finish WITH the first half — this is what stops an entrance
+    // overlapping something that has not left yet.
+    expect(interpolateWithVisibility(a, undefined, 0.9)).toBeNull();
   });
 
   test("appearing with visibility='grow'/'iris' forwards their options", () => {
     const grow = makeText({ transitions: { visibility: 'grow', visibilityOptions: { grow: { anchor: 'top-left' } } } });
-    expect((interpolateWithVisibility(undefined, grow, 0.5) as WithFx)._writeFx)
+    expect((interpolateWithVisibility(undefined, grow, 0.75) as WithFx)._writeFx)
       .toEqual({ t: 0.5, direction: 'in', mode: 'grow', anchor: 'top-left' });
     const iris = makeText({ transitions: { visibility: 'iris', visibilityOptions: { iris: { cx: 0.2, cy: 0.8 } } } });
-    expect((interpolateWithVisibility(undefined, iris, 0.5) as WithFx)._writeFx)
+    expect((interpolateWithVisibility(undefined, iris, 0.75) as WithFx)._writeFx)
       .toEqual({ t: 0.5, direction: 'in', mode: 'iris', cx: 0.2, cy: 0.8 });
+  });
+
+  test('an exit never overlaps an entrance, whatever easing each uses', () => {
+    // The bug this split fixes: effect animations used to span the whole
+    // window, so a path drawing itself in was visible while the element it
+    // replaced was still fading out.
+    const leaving = makeShape({ shapeType: 'path', points: [0, 0, 100, 0] }); // defaults to 'create'
+    const arriving = makeText({ transitions: { visibility: 'write' } });
+    for (const t of [0, 0.1, 0.25, 0.4, 0.49]) {
+      expect(interpolateWithVisibility(leaving, undefined, t), `exit at ${t}`).not.toBeNull();
+      expect(interpolateWithVisibility(undefined, arriving, t), `entrance at ${t}`).toBeNull();
+    }
+    for (const t of [0.5, 0.6, 0.75, 0.9, 1]) {
+      expect(interpolateWithVisibility(leaving, undefined, t), `exit at ${t}`).toBeNull();
+      expect(interpolateWithVisibility(undefined, arriving, t), `entrance at ${t}`).not.toBeNull();
+    }
+  });
+
+  test('elements present on both keyframes keep the whole window', () => {
+    // Only visibility is staged. A move/morph must still read as one motion
+    // across the full transition, not be squeezed into half of it.
+    const a = makeText({ x: 0 });
+    const b = makeText({ x: 100 });
+    expect(interpolateWithVisibility(a, b, 0.25)!.x).toBeCloseTo(25);
+    expect(interpolateWithVisibility(a, b, 0.5)!.x).toBeCloseTo(50);
+    expect(interpolateWithVisibility(a, b, 0.75)!.x).toBeCloseTo(75);
   });
 });
