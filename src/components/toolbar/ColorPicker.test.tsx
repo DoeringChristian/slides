@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-vi.mock('../../utils/keyboard', () => ({ isShiftHeld: () => false, isCtrlHeld: () => false }));
+vi.mock('../../utils/editor/keyboard', () => ({ isShiftHeld: () => false, isCtrlHeld: () => false }));
 import { ColorPicker } from './ColorPicker';
-import { QUICK_PAINT_COLORS } from '../../utils/quickPaintColors';
-import { createShapeElement } from '../../utils/slideFactory';
+import { QUICK_PAINT_COLORS } from '../../utils/paint/quickPaintColors';
+import { createShapeElement } from '../../utils/model/slideFactory';
 
 describe('ColorPicker quick presentation', () => {
   for (const palette of ['fill', 'stroke'] as const) it(`${palette}: five choices and one current/custom trigger`, () => {

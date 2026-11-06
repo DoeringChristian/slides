@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import * as Y from 'yjs';
 import { ROOT_KEY } from './ySchema';
-import { beforeLocalMutation, inForeignTransaction, isOwnedScrubMutation } from '../utils/scrubMutation';
+import { beforeLocalMutation, inForeignTransaction, isOwnedScrubMutation } from '../utils/editor/scrubMutation';
 import { LOCAL_ORIGIN } from './yDocAdapter';
 
 // Singleton Y.UndoManager attached to the active collab doc. Scoped to

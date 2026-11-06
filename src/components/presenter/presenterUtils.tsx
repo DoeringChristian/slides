@@ -1,3 +1,5 @@
+import { GroupCrop } from '../svg/GroupCrop';
+import { groupCropPaint, type GroupCropElement } from '../../utils/model/groupCrop';
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { Play, Pause } from 'lucide-react';
 import { RenderShape, RenderImage } from '../svg/ElementRenderer';
@@ -5,13 +7,13 @@ import { RenderMorph } from '../svg/RenderMorph';
 import { SVGTextPaths } from '../svg/SVGTextPaths';
 import { ShapeFillPaint } from '../svg/ShapeFillPaint';
 import { RenderPaths } from '../svg/RenderPaths';
-import { shapeToSvgPaths } from '../../utils/shapeToPath';
-import { sampledPath, pathArcLength, pointAtArcLength } from '../../utils/pathShapes';
+import { shapeToSvgPaths } from '../../utils/paths/shapeToPath';
+import { sampledPath, pathArcLength, pointAtArcLength } from '../../utils/paths/pathShapes';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
-import { interpolateWithVisibility, lerpColor } from '../../utils/interpolation';
-import { attachLabelMasks } from '../../utils/syncDependents';
+import { interpolateWithVisibility, lerpColor } from '../../utils/animation/interpolation';
+import { attachLabelMasks } from '../../utils/model/syncDependents';
 import type { SlideElement, TextElement, ShapeElement, ImageElement, Slide, Resource } from '../../types/presentation';
-import type { CrossfadeSource, TextDissolveSource, WriteEffect } from '../../utils/interpolation';
+import type { CrossfadeSource, TextDissolveSource, WriteEffect } from '../../utils/animation/interpolation';
 
 // ---------------------------------------------------------------------------
 // Visual-transform wrapper for animation modes that aren't element-internal.
@@ -291,8 +293,10 @@ export function renderPresenterElement(
   const useWrapper = isWrapperMode(fx);
   const innerFx = useWrapper ? undefined : fx;
 
-  const inner = renderElementInner(element, resources, innerFx);
-  return useWrapper && fx ? wrapVisualFx(inner, element, fx) : inner;
+  const plain: GroupCropElement = { ...groupCropPaint(element), _groupClips: undefined };
+  const inner = renderElementInner(plain, resources, innerFx);
+  const visual = useWrapper && fx ? wrapVisualFx(inner, element, fx) : inner;
+  return (element as GroupCropElement)._groupClips?.length ? <GroupCrop element={element}>{visual}</GroupCrop> : visual;
 }
 
 function renderElementInner(

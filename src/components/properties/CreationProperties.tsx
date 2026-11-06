@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { CreationDraftContext } from './CreationDraftContext';
 import { ShapeProperties } from './ShapeProperties';
-import { composeUserShape } from '../../utils/userShapeCreation';
+import { composeUserShape } from '../../utils/editor/userShapeCreation';
 import { useCreationPreferences, type CreationKey } from '../../store/creationPreferences';
 import type { ShapeElement, Tool } from '../../types/presentation';
 import type { CurrentChange } from '../../store/currentMutation';

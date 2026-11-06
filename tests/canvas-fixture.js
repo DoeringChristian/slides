@@ -1,3 +1,5 @@
+import { RenderPaths } from '/src/components/svg/RenderPaths.tsx';
+import { SVGStaticSlide } from '/src/components/svg/SVGStaticSlide.tsx';
 import { Toolbar } from '/src/components/toolbar/Toolbar.tsx';
 import { MobileToolPalette } from '/src/components/toolbar/MobileToolPalette.tsx';
 import { PropertiesPanel } from '/src/components/properties/PropertiesPanel.tsx';
@@ -44,11 +46,19 @@ let root;
 let config;
 let sid;
 let doc;
+function SelectionOverview() {
+  const presentation = store(s => s.presentation);
+  const activeSlide = editor(s => s.activeSlideId);
+  return h('div', { id: 'selection-overview', style: { position: 'fixed', left: 1150, top: 0 } },
+    h(SVGStaticSlide, { slide: presentation.slides[activeSlide], width: 192, height: 108, showHighlights: true }));
+}
 function ProductionFixture() {
   useKeyboardShortcuts();
   useYToStoreSync(doc);
   return h(React.Fragment, null,
     h('div', { className: 'canvas-scroll-parent', style: { width: 1100, height: 850, overflow: 'auto' } }, h(SVGSlideCanvas)),
+    config.objectList && h(SelectionOverview),
+    config.objectList && h('div', { style: { position: 'fixed', left: 0, bottom: 0, width: 1000, zIndex: 20 } }, h(ObjectListDrawer)),
     config.creationProperties && h('div', { id: 'creation-properties', style: { position: 'absolute', left: 1120, top: 0, width: 260, height: 950, overflow: 'auto' } }, h(PropertiesPanel)));
 
 }
@@ -64,7 +74,7 @@ function Fixture() {
   const svgRef = React.useRef(null);
   const [guides, setGuides] = React.useState([]);
   const [preview, setPreview] = React.useState(null);
-  const drawing = useSVGDrawing();
+  const drawing = useSVGDrawing(undefined, svgRef);
   React.useEffect(() => { window.canvasTest.drawing = drawing; });
   const update = changes => store.getState().updateElement(editor.getState().activeSlideId, 'subject', changes);
   const drag = useSVGDrag({ zoom, onDragEnd: (id, x, y) => store.getState().updateElement(sid, id, { x, y }) });
@@ -106,6 +116,10 @@ function Fixture() {
 }
 
 window.canvasTest = {
+  writePathsMarkup(paths, strokeWidth, t, width = 600) {
+    return renderToStaticMarkup(h('svg', {xmlns:'http://www.w3.org/2000/svg',width,height:width*2/3,viewBox:'0 0 600 400'},
+      h(RenderPaths,{paths,strokeWidth,writeFx:{mode:'write',t}})));
+  },
   preferences: () => useCreationPreferences.getState().styles,
   resetPreferences: () => { useCreationPreferences.setState({ styles: {}, iconId: 'house' }); localStorage.removeItem('slides.creation-preferences.v1'); },
   arrowMarkup(element, mode = 'static', t = 1) {

@@ -1,8 +1,8 @@
 import { Shapes } from 'lucide-react';
 import { PreviewSelect } from '../controls/PreviewSelect';
 import { RenderShape } from '../svg/ElementRenderer';
-import { CURATED_ICONS } from '../../utils/curatedIcons';
-import { createShapeElement } from '../../utils/slideFactory';
+import { CURATED_ICONS } from '../../utils/editor/curatedIcons';
+import { createShapeElement } from '../../utils/model/slideFactory';
 import { useCreationPreferences } from '../../store/creationPreferences';
 import { useEditorStore } from '../../store/editorStore';
 

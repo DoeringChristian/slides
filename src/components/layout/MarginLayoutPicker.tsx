@@ -1,7 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useEditorStore } from '../../store/editorStore';
-import { MARGIN_LAYOUTS } from '../../utils/marginLayouts';
+import { MARGIN_LAYOUTS } from '../../utils/geometry/marginLayouts';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 
 const PREVIEW_WIDTH = 64;

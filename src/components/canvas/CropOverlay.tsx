@@ -1,9 +1,10 @@
+import { applyImageCrop } from '../../utils/animation/cropAnimation';
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Check, X } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { computeGuides, computeResizeSnap } from '../../hooks/useAlignmentGuides';
-import { getMarginLayout, getMarginBounds } from '../../utils/marginLayouts';
+import { getMarginLayout, getMarginBounds } from '../../utils/geometry/marginLayouts';
 import { CANVAS_PADDING } from '../../utils/constants';
 import type { ImageElement } from '../../types/presentation';
 
@@ -49,26 +50,7 @@ export const CropOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
 
   const handleApply = useCallback(() => {
     if (element && activeSlideId) {
-      // Keep the same scale (pixels stay same size on screen)
-      const scale = element.width / element.cropWidth;
-
-      const newWidth = cropState.width * scale;
-      const newHeight = cropState.height * scale;
-
-      // Adjust position so content stays in place when crop origin changes
-      const deltaX = (cropState.x - element.cropX) * scale;
-      const deltaY = (cropState.y - element.cropY) * scale;
-
-      updateElement(activeSlideId, croppingElementId!, {
-        x: element.x + deltaX,
-        y: element.y + deltaY,
-        cropX: cropState.x,
-        cropY: cropState.y,
-        cropWidth: cropState.width,
-        cropHeight: cropState.height,
-        width: newWidth,
-        height: newHeight,
-      });
+      updateElement(activeSlideId, croppingElementId!, applyImageCrop(element, cropState));
     }
     setCroppingElementId(null);
   }, [element, activeSlideId, croppingElementId, cropState, updateElement, setCroppingElementId]);
@@ -107,11 +89,13 @@ export const CropOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     }
 
     // Scale: screen pixels per original image pixel (in canvas coords, not screen)
-    const canvasScale = element.width / element.cropWidth;
-    const screenScale = canvasScale * zoom;
+    const canvasScaleX = element.width / element.cropWidth;
+    const canvasScaleY = element.height / element.cropHeight;
+    const screenScaleX = canvasScaleX * zoom;
+    const screenScaleY = canvasScaleY * zoom;
     // Convert local delta to original image pixels
-    const scaledDx = localDx / screenScale;
-    const scaledDy = localDy / screenScale;
+    const scaledDx = localDx / screenScaleX;
+    const scaledDy = localDy / screenScaleY;
 
     // Use cropStartState (captured at drag start) for absolute positioning
     let { x, y, width, height } = cropStartState;
@@ -123,41 +107,41 @@ export const CropOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     } else if (dragType === 'nw') {
       const newX = cropStartState.x + scaledDx;
       const newY = cropStartState.y + scaledDy;
-      width = Math.max(10 / canvasScale, cropStartState.width + (cropStartState.x - newX));
-      height = Math.max(10 / canvasScale, cropStartState.height + (cropStartState.y - newY));
+      width = Math.max(10 / canvasScaleX, cropStartState.width + (cropStartState.x - newX));
+      height = Math.max(10 / canvasScaleY, cropStartState.height + (cropStartState.y - newY));
       x = cropStartState.x + cropStartState.width - width;
       y = cropStartState.y + cropStartState.height - height;
     } else if (dragType === 'ne') {
       const newY = cropStartState.y + scaledDy;
-      width = Math.max(10 / canvasScale, cropStartState.width + scaledDx);
-      height = Math.max(10 / canvasScale, cropStartState.height + (cropStartState.y - newY));
+      width = Math.max(10 / canvasScaleX, cropStartState.width + scaledDx);
+      height = Math.max(10 / canvasScaleY, cropStartState.height + (cropStartState.y - newY));
       y = cropStartState.y + cropStartState.height - height;
     } else if (dragType === 'sw') {
       const newX = cropStartState.x + scaledDx;
-      width = Math.max(10 / canvasScale, cropStartState.width + (cropStartState.x - newX));
-      height = Math.max(10 / canvasScale, cropStartState.height + scaledDy);
+      width = Math.max(10 / canvasScaleX, cropStartState.width + (cropStartState.x - newX));
+      height = Math.max(10 / canvasScaleY, cropStartState.height + scaledDy);
       x = cropStartState.x + cropStartState.width - width;
     } else if (dragType === 'se') {
-      width = Math.max(10 / canvasScale, cropStartState.width + scaledDx);
-      height = Math.max(10 / canvasScale, cropStartState.height + scaledDy);
+      width = Math.max(10 / canvasScaleX, cropStartState.width + scaledDx);
+      height = Math.max(10 / canvasScaleY, cropStartState.height + scaledDy);
     }
 
     // Compute where this crop will end up on the canvas
-    const canvasX = element.x + (x - element.cropX) * canvasScale;
-    const canvasY = element.y + (y - element.cropY) * canvasScale;
-    const canvasWidth = width * canvasScale;
-    const canvasHeight = height * canvasScale;
+    const canvasX = element.x + (x - element.cropX) * canvasScaleX;
+    const canvasY = element.y + (y - element.cropY) * canvasScaleY;
+    const canvasWidth = width * canvasScaleX;
+    const canvasHeight = height * canvasScaleY;
 
     // Get snap targets: other elements, margin guides, and original image bounds
     const slide = usePresentationStore.getState().presentation.slides[activeSlideId];
-    const elements = slide ? Object.values(slide.elements).filter(el => el.id !== element.id && el.visible) : [];
+    const elements = slide && !element.rotation ? Object.values(slide.elements).filter(el => el.id !== element.id && el.visible) : [];
     const otherBounds = elements.map(el => ({ x: el.x, y: el.y, width: el.width, height: el.height }));
 
     // Add original image bounds as a snap target (where the full uncropped image would be)
-    const fullImageCanvasX = element.x - element.cropX * canvasScale;
-    const fullImageCanvasY = element.y - element.cropY * canvasScale;
-    const fullImageCanvasWidth = resource.originalWidth * canvasScale;
-    const fullImageCanvasHeight = resource.originalHeight * canvasScale;
+    const fullImageCanvasX = element.x - element.cropX * canvasScaleX;
+    const fullImageCanvasY = element.y - element.cropY * canvasScaleY;
+    const fullImageCanvasWidth = resource.originalWidth * canvasScaleX;
+    const fullImageCanvasHeight = resource.originalHeight * canvasScaleY;
     otherBounds.push({
       x: fullImageCanvasX,
       y: fullImageCanvasY,
@@ -168,7 +152,7 @@ export const CropOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
     // Get margin guides
     const marginLayoutId = useEditorStore.getState().marginLayoutId;
     const marginLayout = getMarginLayout(marginLayoutId);
-    const marginBounds = marginLayout ? getMarginBounds(marginLayout) : null;
+    const marginBounds = marginLayout && !element.rotation ? getMarginBounds(marginLayout) : null;
 
     // Compute snapping
     const cropBounds = { x: canvasX, y: canvasY, width: canvasWidth, height: canvasHeight };
@@ -183,10 +167,10 @@ export const CropOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
       // For move, use computeGuides which handles center alignment too
       const moveGuides = computeGuides(cropBounds, otherBounds, 5, marginBounds);
       if (moveGuides.snapX !== null) {
-        snappedX = element.cropX + (moveGuides.snapX - element.x) / canvasScale;
+        snappedX = element.cropX + (moveGuides.snapX - element.x) / canvasScaleX;
       }
       if (moveGuides.snapY !== null) {
-        snappedY = element.cropY + (moveGuides.snapY - element.y) / canvasScale;
+        snappedY = element.cropY + (moveGuides.snapY - element.y) / canvasScaleY;
       }
     } else {
       // For resize, use computeResizeSnap for edge snapping
@@ -195,27 +179,27 @@ export const CropOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
       if (dragType === 'nw' || dragType === 'sw') {
         if (snaps.leftSnap !== null) {
           const newCanvasX = snaps.leftSnap;
-          snappedX = element.cropX + (newCanvasX - element.x) / canvasScale;
+          snappedX = element.cropX + (newCanvasX - element.x) / canvasScaleX;
           snappedWidth = width + (x - snappedX);
         }
       }
       if (dragType === 'ne' || dragType === 'se') {
         if (snaps.rightSnap !== null) {
           const newCanvasRight = snaps.rightSnap;
-          snappedWidth = (newCanvasRight - canvasX) / canvasScale;
+          snappedWidth = (newCanvasRight - canvasX) / canvasScaleX;
         }
       }
       if (dragType === 'nw' || dragType === 'ne') {
         if (snaps.topSnap !== null) {
           const newCanvasY = snaps.topSnap;
-          snappedY = element.cropY + (newCanvasY - element.y) / canvasScale;
+          snappedY = element.cropY + (newCanvasY - element.y) / canvasScaleY;
           snappedHeight = height + (y - snappedY);
         }
       }
       if (dragType === 'sw' || dragType === 'se') {
         if (snaps.bottomSnap !== null) {
           const newCanvasBottom = snaps.bottomSnap;
-          snappedHeight = (newCanvasBottom - canvasY) / canvasScale;
+          snappedHeight = (newCanvasBottom - canvasY) / canvasScaleY;
         }
       }
     }
@@ -260,11 +244,12 @@ export const CropOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
   if (!element || !resource || !stageRef.current) return null;
 
   // Scale: screen pixels per original image pixel
-  const scale = (element.width / element.cropWidth) * zoom;
+  const scaleX = (element.width / element.cropWidth) * zoom;
+  const scaleY = (element.height / element.cropHeight) * zoom;
 
   // Full image display size
-  const fullWidth = resource.originalWidth * scale;
-  const fullHeight = resource.originalHeight * scale;
+  const fullWidth = resource.originalWidth * scaleX;
+  const fullHeight = resource.originalHeight * scaleY;
 
   // Where the element's top-left is on screen
   const elementLeft = (element.x + CANVAS_PADDING) * zoom;
@@ -272,16 +257,16 @@ export const CropOverlay: React.FC<Props> = ({ stageRef, zoom }) => {
 
   // The full image needs to be positioned so that the current crop region
   // aligns with where the element is displayed
-  const currentCropDisplayX = element.cropX * scale;
-  const currentCropDisplayY = element.cropY * scale;
+  const currentCropDisplayX = element.cropX * scaleX;
+  const currentCropDisplayY = element.cropY * scaleY;
   const left = elementLeft - currentCropDisplayX;
   const top = elementTop - currentCropDisplayY;
 
   // Crop region position within the full image
-  const cropDisplayX = cropState.x * scale;
-  const cropDisplayY = cropState.y * scale;
-  const cropDisplayWidth = cropState.width * scale;
-  const cropDisplayHeight = cropState.height * scale;
+  const cropDisplayX = cropState.x * scaleX;
+  const cropDisplayY = cropState.y * scaleY;
+  const cropDisplayWidth = cropState.width * scaleX;
+  const cropDisplayHeight = cropState.height * scaleY;
 
   return (
     <>

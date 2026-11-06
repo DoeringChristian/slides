@@ -1,17 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-vi.mock('../utils/keyboard', () => ({ isShiftHeld: () => false, isCtrlHeld: () => false }));
+vi.mock('../utils/editor/keyboard', () => ({ isShiftHeld: () => false, isCtrlHeld: () => false }));
 import { usePresentationStore as store } from './presentationStore';
 import { useEditorStore as editor } from './editorStore';
 import { createUndoManagerFor } from '../collab/activeUndo';
 import { setActiveDoc } from '../collab/yDocAdapter';
 import { jsonToYDoc, yDocToJson } from '../collab/ySchema';
-import { createPresentation, createShapeElement } from '../utils/slideFactory';
-import { bindingAimPoint, bindingFor, bindDraftEndpoints, resolveBinding, silhouetteDistance } from '../utils/connectorUtils';
-import { pathPointsInSlide } from '../utils/pathEditing';
-import { pathBoundsFor } from '../utils/pathShapes';
-import { projectGestureScene } from '../utils/gestureProjection';
-import { planElementTranslation } from '../utils/elementTranslation';
-import { resizeSelection } from '../utils/resizeGeometry';
+import { createPresentation, createShapeElement } from '../utils/model/slideFactory';
+import { bindingAimPoint, bindingFor, bindDraftEndpoints, resolveBinding, silhouetteDistance } from '../utils/paths/connectorUtils';
+import { pathPointsInSlide } from '../utils/paths/pathEditing';
+import { pathBoundsFor } from '../utils/paths/pathShapes';
+import { projectGestureScene } from '../utils/editor/gestureProjection';
+import { planElementTranslation } from '../utils/geometry/elementTranslation';
+import { resizeSelection } from '../utils/geometry/resizeGeometry';
 import type { ShapeElement } from '../types/presentation';
 afterEach(()=>setActiveDoc(null));
 describe.each([false,true])('aim binding store collab=%s', collab=>{

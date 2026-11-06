@@ -1,6 +1,6 @@
 import type { TextElement } from '../../types/presentation';
 import { useIsMobile } from '../../hooks/useIsMobile';
-import { canAutoFitText, textAutoFitHandle } from '../../utils/textAutoFit';
+import { canAutoFitText, textAutoFitHandle } from '../../utils/text/textAutoFit';
 import { CONTROL_THEME } from './controlTheme';
 
 export function SVGTextAutoFitHandle({ element, zoom, onAutoFit }: { element: TextElement; zoom: number; onAutoFit: () => void }) {

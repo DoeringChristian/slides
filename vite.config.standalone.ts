@@ -2,7 +2,7 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { viteSingleFile } from 'vite-plugin-singlefile'
 
-const editorOrigin = process.env.VITE_EDITOR_ORIGIN || 'https://doeringc.ch/slides'
+const editorOrigin = process.env.VITE_EDITOR_ORIGIN || 'https://doeringc.de/slides'
 
 // Sentinel that exportStandaloneHtml.ts replaces with the payload/config scripts.
 const PAYLOAD_SENTINEL = '<!--SLIDES_PAYLOAD-->'

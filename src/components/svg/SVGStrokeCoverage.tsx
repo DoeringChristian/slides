@@ -1,6 +1,6 @@
 import { useId } from 'react';
-import type { NativeStrokePlan } from '../../utils/nativeStrokePlan';
-import { coverageLayerSvg, type WeightedStrokeCoveragePlan } from '../../utils/weightedStrokeCoverage';
+import type { NativeStrokePlan } from '../../utils/paths/nativeStrokePlan';
+import { coverageLayerSvg, type WeightedStrokeCoveragePlan } from '../../utils/paint/weightedStrokeCoverage';
 
 /** Union opaque shaft coverage first, then apply paint alpha exactly once.
  * Original distances preserve dash/reveal phase across consumed intervals. */

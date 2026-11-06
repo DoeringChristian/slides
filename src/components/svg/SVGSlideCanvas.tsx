@@ -1,13 +1,17 @@
+import { snapDotCenter } from '../../utils/snapping/dotSnapping';
+import { textFlowSnapBounds } from '../../utils/snapping/textFlowSnap';
+import { snapViewport } from '../../utils/snapping/snapViewport';
+import { objectGroupRoot, toggleObjectGroup, objectGroupLocked, expandObjectGroups } from '../../utils/model/objectGroups';
 import { SVGTextAutoFitHandle } from './SVGTextAutoFitHandle';
-import { canAutoFitText } from '../../utils/textAutoFit';
-import { textHoverOwner } from '../../utils/textHoverOwner';
+import { canAutoFitText } from '../../utils/text/textAutoFit';
+import { textHoverOwner } from '../../utils/text/textHoverOwner';
 import { autoFitText, hasPendingTextFinish, subscribeTextFinishes, textFinishRevision } from '../../store/textEditSession';
 import { getActiveDoc } from '../../collab/yDocAdapter';
-import { boundTextMeasurementKey } from '../../utils/boundTextLayout';
+import { boundTextMeasurementKey } from '../../utils/text/boundTextLayout';
 import { readSlideForMutation } from '../../store/currentMutation';
 import { updateShapeStyleFromCurrent } from '../../store/shapeStyleMutation';
-import { planElementTranslation } from '../../utils/elementTranslation';
-import { screenPixelsToSlide } from '../../utils/screenSpace';
+import { planElementTranslation } from '../../utils/geometry/elementTranslation';
+import { SNAP_DISTANCE_PX, screenPixelsToSlide } from '../../utils/geometry/screenSpace';
 import React, { useSyncExternalStore, useRef, useCallback, useMemo, useState, useEffect, useLayoutEffect, type DragEvent } from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
@@ -20,10 +24,10 @@ import { SVGGridOverlay } from './SVGGridOverlay';
 import { SVGAlignmentGuides } from './SVGAlignmentGuides';
 import { SVGMarginGuides } from './SVGMarginGuides';
 import { SVGHoverOverlay } from './SVGHoverOverlay';
-import { type ConnectorDockCue, supportsConnectorDocks } from '../../utils/connectorUtils';
+import { type ConnectorDockCue, supportsConnectorDocks } from '../../utils/paths/connectorUtils';
 import { SVGConnectorHighlight } from './SVGConnectorHighlight';
 import { SVGDrawingPreview, SVGPolyDraftPreview } from './SVGDrawingPreview';
-import { projectGestureScene, type GesturePatch } from '../../utils/gestureProjection';
+import { projectGestureScene, type GesturePatch } from '../../utils/editor/gestureProjection';
 import { readGestureSlide } from './useCanvasGestureGuard';
 import { SVGSelectionDrag } from './SVGSelectionDrag';
 import { SVGSelectionTransformer } from './SVGSelectionTransformer';
@@ -36,12 +40,12 @@ import { TextEditOverlay } from '../canvas/TextEditOverlay';
 import { CropOverlay } from '../canvas/CropOverlay';
 import { SelectionActionBar } from '../canvas/SelectionActionBar';
 import { computeGuides } from '../../hooks/useAlignmentGuides';
-import { getMarginLayout, getMarginBounds } from '../../utils/marginLayouts';
-import { snapToGrid as snapToGridFn } from '../../utils/geometry';
-import { isShiftHeld, isMetaHeld } from '../../utils/keyboard';
+import { getMarginLayout, getMarginBounds } from '../../utils/geometry/marginLayouts';
+import { snapToGrid as snapToGridFn } from '../../utils/geometry/geometry';
+import { isShiftHeld, isMetaHeld } from '../../utils/editor/keyboard';
 import { SLIDE_WIDTH, SLIDE_HEIGHT, CANVAS_PADDING } from '../../utils/constants';
-import { loadImageFile, loadPdfFile, loadVideoFile, duplicateElements } from '../../utils/slideFactory';
-import { isPointOnTextContent } from '../../utils/textHitTest';
+import { loadImageFile, loadPdfFile, loadVideoFile, duplicateElements } from '../../utils/model/slideFactory';
+import { isPointOnTextContent } from '../../utils/text/textHitTest';
 import {
   attachLabelMasks,
   createBoundLabel,
@@ -49,9 +53,9 @@ import {
   findBoundText,
   fitLabelToDoc,
   labelWrapWidthFor,
-} from '../../utils/syncDependents';
+} from '../../utils/model/syncDependents';
 import type { ShapeElement, SlideElement, TextElement } from '../../types/presentation';
-import { layoutSvgText, type SvgTextDoc } from '../../utils/textLayout';
+import { layoutSvgText, type SvgTextDoc } from '../../utils/text/textLayout';
 import type { Guide } from '../../hooks/useAlignmentGuides';
 
 // Transform a slide-space point into an element's local coordinates (handle rotation)
@@ -119,6 +123,7 @@ function refitBoundLabel(textId: string, canRefit: () => boolean): void {
 }
 
 export const SVGSlideCanvas: React.FC = () => {
+  const activeObjectGroupId = useEditorStore(s => s.activeObjectGroupId);
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
@@ -135,6 +140,7 @@ export const SVGSlideCanvas: React.FC = () => {
   const showGrid = useEditorStore((s) => s.showGrid);
   const gridSize = useEditorStore((s) => s.gridSize);
   const hoveredObjectId = useEditorStore((s) => s.hoveredObjectId);
+  const hoverPreviewHidden = useEditorStore(s => s.hoverPreviewHidden);
   const setHoveredObjectId = useEditorStore((s) => s.setHoveredObjectId);
   // snapToGrid setting is read inside the drag handlers via useEditorStore.getState()
   const updateElement = usePresentationStore((s) => s.updateElement);
@@ -247,7 +253,7 @@ export const SVGSlideCanvas: React.FC = () => {
   // Drawing hook (pointer-based — mouse, touch, stylus all flow through here).
   // Gets the connector-highlight setter so bind-while-drawing can outline the
   // shape a line/arrow endpoint is about to bind to.
-  const { drawState, guides: drawingGuides, polyDraft, commitPolyDraft, cancelPolyDraft, handlePointerDown: handleDrawPointerDown, handlePointerMove: handleDrawPointerMove, handlePointerLeave: handleDrawPointerLeave, handlePointerUp: handleDrawPointerUp, refreshIconPlacement, justFinishedDrawing } = useSVGDrawing(setConnectorHighlightId);
+  const { drawState, guides: drawingGuides, polyDraft, commitPolyDraft, cancelPolyDraft, handlePointerDown: handleDrawPointerDown, handlePointerMove: handleDrawPointerMove, handlePointerLeave: handleDrawPointerLeave, handlePointerUp: handleDrawPointerUp, refreshIconPlacement, justFinishedDrawing } = useSVGDrawing(setConnectorHighlightId, svgRef);
 
   // Combine drag and drawing guides
   const guides = drawState.isDrawing || polyDraft ? drawingGuides : dragGuides;
@@ -296,7 +302,7 @@ export const SVGSlideCanvas: React.FC = () => {
     if (currentSlide) {
       for (const elementId of idsToTrack) {
         const el = currentSlide.elements[elementId];
-        if (el && !el.locked) {
+        if (el && !objectGroupLocked(currentSlide.elements, elementId)) {
           dragStartPositions.current.set(elementId, { x: el.x, y: el.y });
         }
       }
@@ -325,18 +331,25 @@ export const SVGSlideCanvas: React.FC = () => {
     const draggedIds = new Set(dragStartPositions.current.keys());
     const others = (source ? source.elementOrder.map(id => source.elements[id]).filter(Boolean) : [])
       .filter((e) => !draggedIds.has(e.id) && e.visible)
-      .map((e) => ({ x: e.x, y: e.y, width: e.width, height: e.height }));
+      .map(textFlowSnapBounds);
+
+    if (el.type === 'shape' && el.shapeType === 'dot' && draggedIds.size === 1 && !isShiftHeld()) {
+      const center = snapDotCenter({x: x + el.width / 2, y: y + el.height / 2},
+        Object.values(source!.elements).filter(e => !draggedIds.has(e.id)), screenPixelsToSlide(SNAP_DISTANCE_PX, zoom), snapViewport(svgRef.current));
+      if (center) return {snappedX: center.x - el.width / 2, snappedY: center.y - el.height / 2, guides: []};
+    }
 
     // Compute guides based on the dragged element
-    const dragged = { x, y, width: el.width, height: el.height };
-    const result = computeGuides(dragged, others, screenPixelsToSlide(5, zoom), marginBounds);
+    const dragged = { ...(draggedIds.size === 1 ? textFlowSnapBounds(el) : { width: el.width, height: el.height, centerOnly: false }), x, y };
+    const result = computeGuides(dragged, others, screenPixelsToSlide(SNAP_DISTANCE_PX, zoom), marginBounds, snapViewport(svgRef.current));
 
     let snappedX = x;
     let snappedY = y;
 
     if (isGridVisible) {
-      snappedX = snapToGridFn(x, grid);
-      snappedY = snapToGridFn(y, grid);
+      const offsetX = dragged.centerOnly ? el.width / 2 : 0, offsetY = dragged.centerOnly ? el.height / 2 : 0;
+      snappedX = snapToGridFn(x + offsetX, grid) - offsetX;
+      snappedY = snapToGridFn(y + offsetY, grid) - offsetY;
     }
     if (result.snapX !== null) snappedX = result.snapX;
     if (result.snapY !== null) snappedY = result.snapY;
@@ -483,7 +496,7 @@ export const SVGSlideCanvas: React.FC = () => {
         action: () => {
           // Containers bring their bound labels along; ids are remapped so
           // the copied label points at the copied container.
-          const ids = expandWithBoundTexts(slide.elements, slide.elementOrder, [elementId]);
+          const ids = expandWithBoundTexts(slide.elements, slide.elementOrder, expandObjectGroups(slide.elements, [elementId], useEditorStore.getState().activeObjectGroupId));
           const dups = duplicateElements(ids.map((id) => slide.elements[id]).filter(Boolean));
           if (dups.length === 0) return;
           addElements(slideId, dups);
@@ -497,7 +510,7 @@ export const SVGSlideCanvas: React.FC = () => {
       {
         label: 'Delete',
         action: () => {
-          deleteElements(slideId, [elementId]);
+          deleteElements(slideId, expandObjectGroups(slide.elements, [elementId], useEditorStore.getState().activeObjectGroupId));
           setSelectedElements([]);
         },
       },
@@ -515,6 +528,12 @@ export const SVGSlideCanvas: React.FC = () => {
     const remove = () => { menu.remove(); document.removeEventListener('click', remove); };
     setTimeout(() => document.addEventListener('click', remove), 0);
   }, [addElements, deleteElements, setSelectedElements, updateElement]);
+
+  useEffect(() => {
+    if (activeObjectGroupId && !Object.values(slide?.elements ?? {}).some(el => el.objectGroupIds?.includes(activeObjectGroupId))) {
+      useEditorStore.setState({ activeObjectGroupId: null });
+    }
+  }, [activeObjectGroupId, slide]);
 
   const handleSelect = useCallback((id: string, e: React.PointerEvent) => {
     pendingSelectionToggle.current = null;
@@ -572,7 +591,7 @@ export const SVGSlideCanvas: React.FC = () => {
     if (currentEditingTextId === id) {
       // We're editing this text element - check if click is on border (not text content)
       // If on border, exit edit mode and allow drag to start
-      if (isTextElement && clickedElement) {
+      if (isTextElement && clickedElement && !objectGroupRoot(clickedElement, useEditorStore.getState().activeObjectGroupId)) {
         const pos = screenToSVG(e.clientX, e.clientY);
         const { x: localX, y: localY } = toLocalPoint(clickedElement, pos);
 
@@ -592,10 +611,8 @@ export const SVGSlideCanvas: React.FC = () => {
     }
 
     if (metaPressed) {
-      const ids = currentSelectedIds.includes(id)
-        ? currentSelectedIds.filter((sid) => sid !== id)
-        : [...currentSelectedIds, id];
-      if (clickedElement?.locked) {
+      const ids = toggleObjectGroup(currentSlide?.elements ?? {}, currentSelectedIds, id, useEditorStore.getState().activeObjectGroupId);
+      if (objectGroupLocked(currentSlide?.elements ?? {}, id, useEditorStore.getState().activeObjectGroupId)) {
         setSelectedElements(ids);
       } else {
         pendingSelectionToggle.current = ids;
@@ -611,7 +628,7 @@ export const SVGSlideCanvas: React.FC = () => {
       }
 
       // Store click info for potential edit-mode entry on mouseup (no drag)
-      if (isTextElement && clickedElement) {
+      if (isTextElement && clickedElement && !objectGroupRoot(clickedElement, useEditorStore.getState().activeObjectGroupId)) {
         const pos = screenToSVG(e.clientX, e.clientY);
         const { x: localX, y: localY } = toLocalPoint(clickedElement, pos);
 
@@ -639,13 +656,18 @@ export const SVGSlideCanvas: React.FC = () => {
       }
 
       // Always start drag
-      if (!clickedElement?.locked) {
+      if (!objectGroupLocked(currentSlide?.elements ?? {}, id, useEditorStore.getState().activeObjectGroupId)) {
         handleElementPointerDown(id, clickedElement?.x || 0, clickedElement?.y || 0, e);
       }
     }
   }, [activeSlideId, setSelectedElements, setEditingTextId, screenToSVG, handleElementPointerDown, showElementContextMenu]);
 
   const handleDoubleClick = useCallback((id: string) => {
+    pendingTextEdit.current = null;
+    const current = readSlideForMutation(useEditorStore.getState().activeSlideId);
+    const clicked = current?.elements[id];
+    const groupTarget = clicked?.type === 'text' && clicked.containerId ? clicked.containerId : id;
+    if (useEditorStore.getState().enterObjectGroup(groupTarget)) return;
     if (!slide || !activeSlideId) return;
     const el = slide.elements[id];
     if (!el) return;
@@ -932,8 +954,22 @@ export const SVGSlideCanvas: React.FC = () => {
     if (objectId && activeSlideId && containerRef.current) {
       e.preventDefault();
       const pos = screenToSVG(e.clientX, e.clientY);
-      unhideElement(activeSlideId, objectId, { x: pos.x, y: pos.y });
-      setSelectedElements([objectId]);
+      const current = readGestureSlide();
+      const anchor = current?.elements[objectId];
+      let ids = [objectId];
+      try {
+        const payload: unknown = JSON.parse(e.dataTransfer.getData('application/x-object-ids'));
+        if (Array.isArray(payload) && payload.every(id => typeof id === 'string') && payload.includes(objectId)) ids = payload;
+      } catch { /* Single-object payload. */ }
+      ids = expandObjectGroups(current?.elements ?? {}, ids, useEditorStore.getState().activeObjectGroupId);
+      if (anchor?.visible) {
+        const dx = pos.x - anchor.x, dy = pos.y - anchor.y;
+        updateElements(activeSlideId, ids.filter(id => current?.elements[id]?.visible && !objectGroupLocked(current.elements, id))
+          .map(id => ({ elementId: id, changes: { x: current!.elements[id].x + dx, y: current!.elements[id].y + dy } })));
+      } else {
+        unhideElement(activeSlideId, objectId, { x: pos.x, y: pos.y });
+      }
+      setSelectedElements(ids);
       return;
     }
 
@@ -983,7 +1019,7 @@ export const SVGSlideCanvas: React.FC = () => {
         setSelectedElements([element.id]);
       }
     });
-  }, [activeSlideId, screenToSVG, unhideElement, setSelectedElements, addElement, addEmptySlide, setActiveSlide, addResource]);
+  }, [activeSlideId, screenToSVG, unhideElement, updateElements, setSelectedElements, addElement, addEmptySlide, setActiveSlide, addResource]);
 
   // Apply pending scroll adjustment synchronously after React renders new zoom
   useLayoutEffect(() => {
@@ -1141,10 +1177,10 @@ export const SVGSlideCanvas: React.FC = () => {
 
   // Hovered element
   const hoveredElement = useMemo(() => {
-    if (!hoveredObjectId) return null;
+    if (!hoveredObjectId || (!hoverPreviewHidden && !slide?.elements[hoveredObjectId]?.visible)) return null;
     const raw = slide?.elements[hoveredObjectId] ?? objectElements[hoveredObjectId] ?? null;
     return textHoverOwner(raw, slide?.elements ?? {}, selectedElementIds, editingTextId);
-  }, [hoveredObjectId, slide, objectElements, selectedElementIds, editingTextId]);
+  }, [hoveredObjectId, hoverPreviewHidden, slide, objectElements, selectedElementIds, editingTextId]);
 
   const isHoveredVisibleOnSlide = hoveredElement ? !!slide?.elements[hoveredElement.id]?.visible : false;
   const autoFitElement = !editingTextId && selectedElementIds.length === 1 ? slide?.elements[selectedElementIds[0]] : null;
@@ -1157,13 +1193,13 @@ export const SVGSlideCanvas: React.FC = () => {
   // Unlocked selected elements for transformer
   const unlockedSelectedIds = useMemo(() => {
     if (!slide) return selectedElementIds;
-    return selectedElementIds.filter((id) => !slide.elements[id]?.locked);
-  }, [selectedElementIds, slide]);
+    return selectedElementIds.filter((id) => !objectGroupLocked(slide.elements, id, activeObjectGroupId));
+  }, [selectedElementIds, slide, activeObjectGroupId]);
 
   const lockedSelectedIds = useMemo(() => {
     if (!slide) return [];
-    return selectedElementIds.filter((id) => slide.elements[id]?.locked);
-  }, [selectedElementIds, slide]);
+    return selectedElementIds.filter((id) => objectGroupLocked(slide.elements, id, activeObjectGroupId));
+  }, [selectedElementIds, slide, activeObjectGroupId]);
 
   // Calculate container and viewBox dimensions
   const containerWidth = (SLIDE_WIDTH + 2 * CANVAS_PADDING) * zoom;
@@ -1193,6 +1229,16 @@ export const SVGSlideCanvas: React.FC = () => {
     >
       <svg
         ref={svgRef}
+        tabIndex={-1}
+        onPointerDownCapture={(e) => {
+          // Pointer gestures prevent native focus changes. Explicitly hand
+          // keyboard control back from property inputs to the canvas.
+          if (!useEditorStore.getState().editingTextId &&
+              document.activeElement?.matches('input,textarea') &&
+              !(e.target as Element).closest('input,textarea,[contenteditable="true"]')) {
+            e.currentTarget.focus({ preventScroll: true });
+          }
+        }}
         width={containerWidth}
         height={containerHeight}
         viewBox={`${-CANVAS_PADDING} ${-CANVAS_PADDING} ${viewBoxWidth} ${viewBoxHeight}`}
@@ -1227,6 +1273,9 @@ export const SVGSlideCanvas: React.FC = () => {
           else setSelectionDrag(null);
         }}
         onDoubleClick={(e) => {
+          if (tool === 'select' && (e.target as Element).classList.contains('svg-background')) {
+            useEditorStore.getState().exitObjectGroup();
+          }
           if (tool !== 'select' && polyDraft) {
             e.preventDefault();
             commitPolyDraft();
@@ -1353,27 +1402,30 @@ export const SVGSlideCanvas: React.FC = () => {
 
           {/* Hover overlay */}
           {hoveredElement && !selectedElementIds.includes(hoveredElement.id) && (
-            <SVGHoverOverlay element={hoveredElement} isVisibleOnSlide={isHoveredVisibleOnSlide} zoom={zoom} />
+            <SVGHoverOverlay element={hoveredElement} isVisibleOnSlide={isHoveredVisibleOnSlide} zoom={zoom}
+              members={isHoveredVisibleOnSlide && slide ? expandObjectGroups(slide.elements, [hoveredElement.id], activeObjectGroupId).map(id => slide.elements[id]).filter(Boolean) : undefined} />
           )}
         </g>
       </svg>
 
+      {activeObjectGroupId && (
+        <button className="absolute top-2 left-2 z-20 rounded bg-white px-3 py-1 text-sm text-gray-700 shadow"
+          onClick={() => useEditorStore.getState().exitObjectGroup()}>
+          Exit group (Esc)
+        </button>
+      )}
       {/* HTML overlays */}
       <TextEditOverlay key={`${activeSlideId}:${editingTextId}`} stageRef={containerRef} zoom={zoom} onPreview={setTextPreview} />
       <CropOverlay stageRef={containerRef} zoom={zoom} />
       {/* Unmount actions during manipulation: no stale native hit targets.
           Body previews start only after drag slop; extension uses its own draft. */}
-      {!editingTextId && !gesturePreview && !polyDraft?.extension && visibleElements.filter(el => selectedElementIds.includes(el.id) && !visibleElements.some(label =>
-        label.type === 'text' && (label.id === el.id || label.containerId === el.id)
-        && (editingTextId === label.id || hasPendingTextFinish(activeSlideId, label.id))
-      )).map((el) => (
-        <SelectionActionBar
-          key={el.id}
-          element={el}
-          zoom={zoom}
-          isSelected={selectedElementIds.includes(el.id)}
-        />
-      ))}
+      {!editingTextId && !gesturePreview && !polyDraft?.extension && [unlockedSelectedIds, lockedSelectedIds].map((ids, index) => {
+        const selection = visibleElements.filter(el => ids.includes(el.id));
+        if (!selection.length || selection.some(el => visibleElements.some(label =>
+          label.type === 'text' && (label.id === el.id || label.containerId === el.id)
+          && hasPendingTextFinish(activeSlideId, label.id)))) return null;
+        return <SelectionActionBar key={index} elements={selection} locked={index === 1} zoom={zoom} />;
+      })}
     </div>
   );
 };

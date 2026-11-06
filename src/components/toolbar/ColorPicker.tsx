@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { PRESET_COLORS } from '../../utils/constants';
-import { QUICK_PAINT_COLORS } from '../../utils/quickPaintColors';
+import { QUICK_PAINT_COLORS } from '../../utils/paint/quickPaintColors';
 import { ScrubInput, type ScrubInputProps } from '../controls/ScrubInput';
 import { PalettePanel } from '../controls/PalettePanel';
-import { noPaint, parsePaintColor, paintHex } from '../../utils/paintColor';
+import { noPaint, parsePaintColor, paintHex } from '../../utils/paint/paintColor';
 
 const checkerboard = { backgroundImage: 'conic-gradient(#ddd 25%, white 0 50%, #ddd 0 75%, white 0)', backgroundSize: '8px 8px' };
 

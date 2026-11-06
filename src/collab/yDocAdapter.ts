@@ -1,5 +1,5 @@
 import type { Doc as YDoc } from 'yjs';
-import { beforeLocalMutation } from '../utils/scrubMutation';
+import { beforeLocalMutation } from '../utils/editor/scrubMutation';
 
 // Tiny module-level singleton tracking the currently-connected collab Y.Doc.
 // Mutating actions in presentationStore consult getActiveDoc() to decide

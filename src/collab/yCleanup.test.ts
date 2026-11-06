@@ -12,7 +12,7 @@ import {
   isResourceReferencedInSlides,
   objectExistsAnywhere,
   purgeObjectFromSlides,
-} from '../utils/presentationCleanup';
+} from '../utils/model/presentationCleanup';
 import type {
   ImageElement,
   Presentation,

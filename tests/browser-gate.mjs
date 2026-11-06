@@ -46,7 +46,7 @@ try {
     const start = Date.now(); let row = { file, status: 'running', passMarkers: 0, timeout: false };
     results.push(row); await writeFile(join(evidence, 'progress.json'), JSON.stringify(results, null, 2));
     try {
-      active = await isolatedBrowser(dir, { externalSession: true, persistence: ['import-export.browser.mjs', 'html-style-roundtrip.browser.mjs'].includes(file) });
+      active = await isolatedBrowser(dir, { externalSession: true, persistence: ['import-export.browser.mjs', 'html-style-roundtrip.browser.mjs', 'native-import-repro.browser.mjs'].includes(file) });
       await active.navigate('/tests/canvas-fixture.html');
       const env = { ...process.env, BROWSER_GATE_OWNED: '1', BROWSER_GATE_EVIDENCE: dir, VITE_TEST_URL: active.origin, CDP_URL: active.cdp, IMPORT_TEST_SERVER: active.backend, EXPECT_FIXED: '1' };
       for (const key of ['ONLY', 'REPRO_ONLY', 'BASELINE', 'FREE_TEXT_BASELINE_ONLY', 'SKIP_RADIUS', 'COARSE_ONLY']) delete env[key];

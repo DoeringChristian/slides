@@ -1,9 +1,9 @@
 import { SVGStrokeCoverage } from './SVGStrokeCoverage';
-import type { NativeStrokePlan } from '../../utils/nativeStrokePlan';
+import type { NativeStrokePlan } from '../../utils/paths/nativeStrokePlan';
 import React, { useId } from 'react';
 import { SVGStrokeClip } from './SVGStrokeClip';
-import type { WriteEffect } from '../../utils/interpolation';
-import { parsePaintColor } from '../../utils/paintColor';
+import type { WriteEffect } from '../../utils/animation/interpolation';
+import { parsePaintColor } from '../../utils/paint/paintColor';
 
 /** One renderable SVG path used by every glyph/path-based animation. */
 export interface SvgPath {
@@ -11,6 +11,9 @@ export interface SvgPath {
   /** Original fill region; terminal consumption affects only stroke coverage. */
   fillD?: string;
   strokePlan?: NativeStrokePlan | null;
+  /** Authored shaft pattern; reveal timing must never replace this paint. */
+  strokePattern?: string;
+  strokeBounds?: { x: number; y: number; width: number; height: number };
   fillRule?: 'evenodd' | 'nonzero';
   /** Vector paint roles share one non-staggered Create clock. */
   createRole?: 'fill' | 'stroke';
@@ -33,8 +36,10 @@ export interface SvgPath {
   /** Create may trace a fill-only shape before filling it. This pen paint
    *  must not manufacture a stroke in steady rendering or input geometry. */
   traceStrokeColor?: string;
-  /** Math glyphs render inside a heavy scale-down transform; without
-   *  non-scaling-stroke their stroke width shrinks to invisibility. */
+  /** Convert the slide-space tracing pen/dashes to glyph-local units. Outer
+   *  SVG viewport scaling still applies, including mobile slide fitting. */
+  strokeScale?: number;
+  /** Retained for callers that explicitly need a screen-space stroke. */
   nonScalingStroke: boolean;
   /** Source-line index this path belongs to. Used by the edit overlay to
    *  hide paths on the cursor / selection lines so the raw text underneath
@@ -111,7 +116,7 @@ interface RenderPathsProps {
   paths: SvgPath[];
   writeFx?: WriteEffect;
   /** Stroke width for the REVEAL pen. Callers usually pass
-   *  `Math.max(1.2, fontSize / 20)` for text or the shape's own strokeWidth. */
+   *  a fixed 1.2 slide units for text or the shape's own strokeWidth. */
   strokeWidth: number;
 }
 
@@ -160,30 +165,41 @@ export const RenderPaths: React.FC<RenderPathsProps> = ({ paths, writeFx, stroke
             break;
           }
         }
-        const separateFill = !!p.strokePlan || !!p.shaftClipPaths?.length || p.fillD !== undefined;
+        const separateFill = !!p.strokePattern || !!p.strokePlan || !!p.shaftClipPaths?.length || p.fillD !== undefined;
         const strokeCol = p.traceStrokeColor ?? p.strokeColor ?? p.fillColor;
+        const revealId = `${coverageId}-${i}-reveal`;
+        const patternedReveal = !!p.strokePattern && frame.dashOffset > 0;
         return (
           <g key={i} transform={p.transform || undefined}>
           {separateFill && (
             <path d={p.fillD ?? p.d} fill={p.fillColor} fillOpacity={frame.fillOpacity * (p.fillOpacity ?? 1)} stroke="none" />
           )}
+          {patternedReveal && <defs><mask id={revealId} maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse"
+            {...(p.strokePlan?.bounds ?? p.strokeBounds)} style={{ maskType: 'alpha' }}>
+            {p.strokePlan ? <SVGStrokeCoverage plan={p.strokePlan} color="white" width={strokeWidth + 2}
+              dash={p.length} offset={frame.dashOffset} instanceId={`${coverageId}-${i}-reveal-coverage`} /> :
+              <path d={p.d} fill="none" stroke="white" strokeWidth={strokeWidth + 2}
+                strokeLinecap="round" strokeLinejoin="round" strokeDasharray={p.length} strokeDashoffset={frame.dashOffset} />}
+          </mask></defs>}
+          <g mask={patternedReveal ? `url(#${revealId})` : undefined}>
           <SVGStrokeClip paths={p.shaftClipPaths ?? []}>
           {p.strokePlan ? <SVGStrokeCoverage plan={p.strokePlan} color={strokeCol} width={strokeWidth}
-            dash={p.length} offset={frame.dashOffset} opacity={frame.strokeOpacity} instanceId={`${coverageId}-${i}`} /> : <path
+            dash={p.strokePattern ?? p.length} offset={p.strokePattern ? 0 : frame.dashOffset} opacity={frame.strokeOpacity} instanceId={`${coverageId}-${i}`} /> : <path
             d={p.d}
             fillRule={p.fillRule}
             fill={separateFill ? 'none' : p.fillColor}
             fillOpacity={frame.fillOpacity * (p.fillOpacity ?? 1)}
             stroke={strokeCol}
             strokeOpacity={frame.strokeOpacity}
-            strokeWidth={strokeWidth}
+            strokeWidth={strokeWidth * (p.strokeScale ?? 1)}
             strokeLinecap="round"
             strokeLinejoin="round"
-            strokeDasharray={p.length}
-            strokeDashoffset={frame.dashOffset}
+            strokeDasharray={p.strokePattern ?? p.length * (p.strokeScale ?? 1)}
+            strokeDashoffset={p.strokePattern ? 0 : frame.dashOffset * (p.strokeScale ?? 1)}
             vectorEffect={p.nonScalingStroke ? 'non-scaling-stroke' : undefined}
           />}
           </SVGStrokeClip>
+          </g>
           </g>
         );
       })}

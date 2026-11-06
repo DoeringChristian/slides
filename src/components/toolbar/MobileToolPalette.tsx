@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
-import { loadImageFile, loadPdfFile } from '../../utils/slideFactory';
+import { loadImageFile, loadPdfFile } from '../../utils/model/slideFactory';
 import type { Tool } from '../../types/presentation';
 
 // Mobile-only horizontal tool palette. Wraps the same `editorStore.tool` state

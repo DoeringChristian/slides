@@ -1,6 +1,6 @@
 import React from 'react';
 import { ScrubInput } from './ScrubInput';
-import type { ScrubSpec } from '../../utils/scrub';
+import type { ScrubSpec } from '../../utils/editor/scrub';
 
 /**
  * Two side-by-side ScrubInputs (Position X/Y, Size W/H) with inline

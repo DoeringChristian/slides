@@ -1,4 +1,5 @@
 import React, { useContext } from 'react';
+import type { CurrentChange } from '../../store/currentMutation';
 import { CreationDraftContext } from './CreationDraftContext';
 import { PropertyList } from './PropertyList';
 import {
@@ -11,14 +12,14 @@ import {
   type PropertyContext,
 } from './Property';
 import type { ShapeElement, ConnectorBinding, PathCurve, StrokeStyle, FillStyle, ArrowheadType, TransitionGroup } from '../../types/presentation';
-import { bindingFor, resolveBinding, isPinnedBinding } from '../../utils/connectorUtils';
-import { pathGeometryUpdate, pathPointsInSlide, slidePointToPath } from '../../utils/pathEditing';
-import { catmullTangents, arrowheadGeometry, strokeDashFor, pathD } from '../../utils/pathShapes';
+import { bindingFor, resolveBinding, isPinnedBinding } from '../../utils/paths/connectorUtils';
+import { pathGeometryUpdate, pathPointsInSlide, slidePointToPath } from '../../utils/paths/pathEditing';
+import { catmullTangents, arrowheadGeometry, strokeDashFor, pathD } from '../../utils/paths/pathShapes';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useEditorStore } from '../../store/editorStore';
 import { IconSelect, type IconSelectOption } from '../controls/IconSelect';
 import { PreviewSelect } from '../controls/PreviewSelect';
-import { createShapeElement } from '../../utils/slideFactory';
+import { createShapeElement } from '../../utils/model/slideFactory';
 import { RenderShape, RenderArrowhead } from '../svg/ElementRenderer';
 
 const isRect = (el: ShapeElement) => el.shapeType === 'rect';
@@ -46,7 +47,7 @@ const supportsCornerRadius = (el: ShapeElement) =>
 const BindingPinToggle: React.FC<{
   element: ShapeElement;
   end: 'start' | 'end';
-  update: (changes: Partial<ShapeElement>) => void;
+  update: (changes: CurrentChange<ShapeElement>) => void;
 }> = ({ element, end, update }) => {
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const slide = usePresentationStore((s) => s.presentation.slides[activeSlideId]);
@@ -58,7 +59,11 @@ const BindingPinToggle: React.FC<{
   const pinned = isPinnedBinding(binding);
 
   const toggle = (checked: boolean) => {
-    if (!target || pts.length < 4) return;
+    update(element => {
+    const binding = end === 'start' ? element.startBinding : element.endBinding;
+    const target = binding && usePresentationStore.getState().presentation.slides[activeSlideId]?.elements[binding.elementId];
+    const pts = element.points ?? [];
+    if (!target || pts.length < 4) return {};
     const last = pts.length - 2;
     const idx = end === 'start' ? 0 : last;
     const adjIdx = end === 'start' ? 2 : last - 2;
@@ -77,10 +82,11 @@ const BindingPinToggle: React.FC<{
       return [p.x, p.y];
     });
     const b = pathGeometryUpdate(element, local, element.tangents);
-    update({
+    return {
       [end === 'start' ? 'startBinding' : 'endBinding']: next,
       ...b,
-    } as Partial<ShapeElement>);
+    } as Partial<ShapeElement>;
+    });
   };
 
   return (
@@ -152,10 +158,12 @@ class CurveProperty extends Property<ShapeElement> {
       value={mode}
       options={options.map((o) => ({ ...o, preview: curvePreview(o.value) }))}
       onChange={(curve) => {
+        update(element => {
         const points = element.points ?? [];
         const tangents = curve === 'bezier' && element.tangents?.length !== points.length * 2
           ? catmullTangents(points, !!element.closed) : element.tangents;
-        update({ curve, ...pathGeometryUpdate({ ...element, curve }, points, tangents) });
+        return { curve, ...pathGeometryUpdate({ ...element, curve }, points, tangents) };
+        });
       }}
     />;
   }
@@ -294,7 +302,17 @@ class FillStyleProperty extends PreviewSelectProperty<ShapeElement, FillStyle> {
   }
 }
 
+class DotDiameterProperty extends NumberProperty<ShapeElement> {
+  constructor() { super({key: 'width', label: 'Diameter', min: 1, max: 500, step: 1, transitionGroup: 'size'}); }
+  visibleFor(el: ShapeElement) { return el.shapeType === 'dot'; }
+  get syncFields() { return ['x', 'y', 'width', 'height']; }
+  set(el: ShapeElement, diameter: number): Partial<ShapeElement> {
+    return {x: el.x + (el.width - diameter) / 2, y: el.y + (el.height - diameter) / 2, width: diameter, height: diameter};
+  }
+}
 const SHAPE_PROPERTIES: Property<ShapeElement>[] = [
+  new DotDiameterProperty(),
+  new NumberProperty<ShapeElement>({ key: 'opacity', label: 'Opacity', transitionGroup: 'opacity', min: 0, max: 100, scale: 100, step: 1, precision: 1 }),
   new ColorProperty<ShapeElement>({ key: 'fill', label: 'Fill', transitionGroup: 'fill', alpha: true }),
   new ColorProperty<ShapeElement>({
     key: 'stroke', label: 'Stroke', transitionGroup: 'stroke', alpha: true,

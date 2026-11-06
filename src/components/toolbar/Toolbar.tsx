@@ -1,3 +1,4 @@
+import { transferIds } from '../../utils/model/groupTransfer';
 import { IconsMenu } from './IconsMenu';
 import React from 'react';
 import { useEditorStore } from '../../store/editorStore';
@@ -6,7 +7,7 @@ import { useSelectedElements } from '../../store/selectors';
 import { TextFormatBar } from './TextFormatBar';
 import { AlignmentTools } from './AlignmentTools';
 import { ShapeMenu as _ShapeMenu } from './ShapeMenu';
-import { duplicateElement, loadImageFile, loadPdfFile } from '../../utils/slideFactory';
+import { duplicateElements, loadImageFile, loadPdfFile } from '../../utils/model/slideFactory';
 import {
   MousePointer2, Type, Square, Circle, Triangle, Star, Minus, MoveRight,
   Hexagon, Spline, Image, Trash2, Copy, Clipboard, Scissors,
@@ -39,6 +40,7 @@ export const Toolbar: React.FC = () => {
   const setClipboard = useEditorStore((s) => s.setClipboard);
   const setSelectedElements = useEditorStore((s) => s.setSelectedElements);
   const addElement = usePresentationStore((s) => s.addElement);
+  const addElements = usePresentationStore((s) => s.addElements);
 
   const addEmptySlide = usePresentationStore((s) => s.addEmptySlide);
   const setActiveSlide = useEditorStore((s) => s.setActiveSlide);
@@ -88,7 +90,9 @@ export const Toolbar: React.FC = () => {
 
   const handleCopy = () => {
     if (selectedElements.length > 0) {
-      setClipboard(selectedElements.map((e) => JSON.parse(JSON.stringify(e))));
+      const slide = usePresentationStore.getState().presentation.slides[activeSlideId];
+      const ids = transferIds(slide, selectedIds);
+      setClipboard(ids.map(id => JSON.parse(JSON.stringify(slide.elements[id]))));
     }
   };
 
@@ -102,13 +106,9 @@ export const Toolbar: React.FC = () => {
 
   const handlePaste = () => {
     if (clipboard.length > 0 && activeSlideId) {
-      const newIds: string[] = [];
-      clipboard.forEach((el) => {
-        const dup = duplicateElement(el);
-        addElement(activeSlideId, dup);
-        newIds.push(dup.id);
-      });
-      setSelectedElements(newIds);
+      const copies = duplicateElements(clipboard);
+      addElements(activeSlideId, copies);
+      setSelectedElements(copies.filter(el => !(el.type === 'text' && el.containerId)).map(el => el.id));
     }
   };
 

@@ -1,11 +1,11 @@
 import React from 'react';
-import type { BindingAimGuide } from '../../utils/connectorUtils';
+import type { BindingAimGuide } from '../../utils/paths/connectorUtils';
 import { CONTROL_THEME } from './controlTheme';
 import type { Tool, PathCurve } from '../../types/presentation';
-import { composeUserShape, creationBox } from '../../utils/userShapeCreation';
+import { composeUserShape, creationBox } from '../../utils/editor/userShapeCreation';
 import { useCreationPreferences } from '../../store/creationPreferences';
 import { useEditorStore } from '../../store/editorStore';
-import { pathBoundsFor } from '../../utils/pathShapes';
+import { pathBoundsFor } from '../../utils/paths/pathShapes';
 import { RenderShape } from './ElementRenderer';
 import type { PolyDraftState } from './useSVGDrawing';
 

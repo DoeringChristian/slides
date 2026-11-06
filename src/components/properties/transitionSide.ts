@@ -14,5 +14,5 @@ export function isVisibilityFadeOut(
   targetElement: SlideElement | undefined,
   group: TransitionGroup,
 ): boolean {
-  return group === 'visibility' && Boolean(sourceElement?.visible) && !targetElement;
+  return group === 'visibility' && Boolean(sourceElement?.visible) && !targetElement?.visible;
 }

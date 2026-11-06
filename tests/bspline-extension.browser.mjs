@@ -138,7 +138,7 @@ try {
  // Deterministic live PresenterView and freshly rebuilt standalone player.
  const example=records.find(r=>!r.collab&&r.variant==='curved3'&&r.binding==='none'&&r.end==='start');
  await setup({mode:'properties',subject:example.a.elements.subject});
- const deck=await evaluate(`(()=>{const deck=structuredClone(canvasTest.store.getState().presentation);deck.slides={...deck.slides,a:${JSON.stringify(example.a)},b:${JSON.stringify(example.b)}};deck.slides.a.id='a';deck.slides.b.id='b';deck.slides.a.transition.duration=2000;deck.slides.b.transition.duration=2000;deck.slideOrder=['a','b'];return deck})()`);
+ const deck=await evaluate(`(()=>{const deck=structuredClone(canvasTest.store.getState().presentation);deck.slides={...deck.slides,a:${JSON.stringify(example.a)},b:${JSON.stringify(example.b)}};deck.slides.a.id='a';deck.slides.b.id='b';deck.slides.a.transition.duration=2000;deck.slides.b.transition.duration=2000;deck.slideOrder=['a','b',...deck.slideOrder];return deck})()`);
  const signature=`svg=>[...svg.querySelectorAll('path,polygon')].map(p=>Object.fromEntries(['d','points','fill','stroke','stroke-width','fill-opacity'].map(k=>[k,p.getAttribute(k)])))`;
  const expected=await evaluate(`(async()=>{const {composeSlideFrame}=await import('/src/components/presenter/presenterUtils.tsx');const deck=${JSON.stringify(deck)};return [0,.001,.25,.5,.999,1].map(t=>{const el=t===0?deck.slides.a.elements.subject:t===1?deck.slides.b.elements.subject:composeSlideFrame({slideA:deck.slides.a,slideB:deck.slides.b,isForward:true,animProgress:t,isAnimating:true}).renderedElements[0];return (${signature})(new DOMParser().parseFromString(canvasTest.arrowMarkup(el,'presenter'),'image/svg+xml'));});})()`);
  await evaluate(`(async()=>{canvasTest.store.setState({presentation:${JSON.stringify(deck)}});canvasTest.editor.getState().setPresentingSlideIndex(0);const {default:React}=await import('/node_modules/.vite/deps/react.js');const {default:{createRoot}}=await import('/node_modules/.vite/deps/react-dom_client.js');const {PresenterView}=await import('/src/components/presenter/PresenterView.tsx');const node=document.createElement('div');node.id='bspline-presenter';document.body.append(node);createRoot(node).render(React.createElement(PresenterView));canvasTest.editor.getState().setPresenting(true);})()`);await wait(250);
@@ -157,6 +157,7 @@ try {
  await send('Page.navigate',{url:base+'/__import-export-fixture/bspline-extension.html'});await wait(1000);
  for(let i=0;i<80&&!await evaluate(`!!document.querySelector('svg')`);i++)await wait(100);
  await key('ArrowRight','ArrowRight');await wait(100);
+ assert(await evaluate(`!!document.querySelector('svg')`),JSON.stringify({errors:runtimeErrors,page:await evaluate(`({url:location.href,text:document.body.innerText.slice(0,1500)})`)}));
  const standalone=await liveFrames('svg');assert.deepEqual(standalone,expected,'fresh standalone boot frames equal live PresenterView/shared leaf');
  await writeFile(`${evidence}/live-standalone-equivalence.json`,JSON.stringify({expected,live,standalone},null,2));
  assert.deepEqual(runtimeErrors,[]);console.log('BSPLINE EXTENSION BOUNDED REGRESSION PASSED');

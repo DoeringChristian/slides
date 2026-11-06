@@ -1,23 +1,25 @@
+import { snapDotCenter } from '../../utils/snapping/dotSnapping';
+import { snapViewport } from '../../utils/snapping/snapViewport';
 import { getActiveDoc } from '../../collab/yDocAdapter';
 import { getActiveUndoManager } from '../../collab/activeUndo';
 import { useCanvasGestureGuard } from './useCanvasGestureGuard';
-import { isClientPointInCanvas } from '../../utils/canvasViewport';
-import { composeUserShape, creationBox } from '../../utils/userShapeCreation';
-import { screenPixelsToSlide } from '../../utils/screenSpace';
+import { isClientPointInCanvas } from '../../utils/geometry/canvasViewport';
+import { composeUserShape, composeLineDot, creationBox } from '../../utils/editor/userShapeCreation';
+import { screenPixelsToSlide, SNAP_DISTANCE_PX } from '../../utils/geometry/screenSpace';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { markTextCreation } from '../../store/textEditSession';
 import { DEFAULT_TEXT_STYLE } from '../../utils/constants';
-import { createTextElement } from '../../utils/slideFactory';
+import { createTextElement } from '../../utils/model/slideFactory';
 import { computePointSnap, guideKey, type Guide } from '../../hooks/useAlignmentGuides';
-import { getMarginLayout, getMarginBounds } from '../../utils/marginLayouts';
-import { isMetaHeld, isShiftHeld } from '../../utils/keyboard';
+import { getMarginLayout, getMarginBounds } from '../../utils/geometry/marginLayouts';
+import { isMetaHeld, isShiftHeld } from '../../utils/editor/keyboard';
 import { DRAG_SLOP_MOUSE, DRAG_SLOP_TOUCH } from '../../utils/constants';
-import { snapPathPoint, resolvedPointGuides, withVertexMagnets } from '../../utils/pathSnapping';
-import { pathPointsInSlide, pathExtensionUpdate } from '../../utils/pathEditing';
-import { pathBoundsFor } from '../../utils/pathShapes';
-import { getBindingTarget2, bindDraftEndpoints, bindingDrop, bindingAimGuides, connectorDockCue, bindingAimPoint, supportsConnectorDocks, type ConnectorHighlightCallback, type BindingAimGuide } from '../../utils/connectorUtils';
+import { snapConnectorPoint, snapPathPoint, resolvedPointGuides, withVertexMagnets } from '../../utils/snapping/pathSnapping';
+import { pathPointsInSlide, pathExtensionUpdate } from '../../utils/paths/pathEditing';
+import { pathBoundsFor } from '../../utils/paths/pathShapes';
+import { getBindingTarget2, bindDraftEndpoints, resolveBinding, bindingAimGuides, connectorDockCue, bindingAimPoint, supportsConnectorDocks, type ConnectorHighlightCallback, type BindingAimGuide } from '../../utils/paths/connectorUtils';
 import type { PathCurve, ConnectorBinding, SlideElement, ShapeElement } from '../../types/presentation';
 
 /** Click within this many screen pixels of the first vertex while drafting a
@@ -51,6 +53,10 @@ export interface PolyDraftState {
   extension?: { source: ShapeElement; end: 'start' | 'end' };
   previewElement?: ShapeElement;
   retainedStart?: ConnectorBinding | null;
+  acceptedStart?: ConnectorBinding | null;
+  previewStart?: ConnectorBinding | null;
+  acceptedEnd?: ConnectorBinding | null;
+  previewEnd?: ConnectorBinding | null;
   physicalStart?: { x: number; y: number };
   canClose?: boolean;
   vertices: number[];
@@ -95,28 +101,27 @@ function addDraftVertex(draft: PolyDraftState, x: number, y: number): number[] {
 
 /** Resolve only the NEW terminal. The opposite binding and every original
  * vertex remain unchanged; the old terminal is now an unbound interior point. */
-function resolveExtensionDraft(draft: PolyDraftState, raw: number[], elements: SlideElement[], zoom: number, suppress: boolean, preserveRay: boolean): Partial<ShapeElement> {
+function resolveExtensionDraft(draft: PolyDraftState, raw: number[], elements: SlideElement[], suppress: boolean, decision: ConnectorBinding | null = null): Partial<ShapeElement> {
   const { source, end } = draft.extension!;
   const points = raw.slice();
   const idx = end === 'start' ? 0 : points.length - 2;
   const adjIdx = end === 'start' ? 2 : idx - 2;
-  const point = { x: points[idx], y: points[idx + 1] }, adj = { x: points[adjIdx], y: points[adjIdx + 1] };
-  const drop = suppress ? null : bindingDrop(point, adj, elements, source.id, zoom, preserveRay);
+  const adj = { x: points[adjIdx], y: points[adjIdx + 1] };
+  // The terminal's snap decision was already made by the shared solver.
+  // Do not acquire a different target after alignment or at commit.
+  const target = !suppress && decision && elements.find(el => el.id === decision.elementId && el.visible !== false && !el.locked);
+  const drop = target && decision ? { binding: decision, point: resolveBinding(decision, target, adj) } : null;
   if (drop) {
     points[idx] = drop.point.x; points[idx + 1] = drop.point.y;
   }
   return { ...pathExtensionUpdate(source, points, end), [end === 'start' ? 'startBinding' : 'endBinding']: drop?.binding ?? null };
 }
 
-/** Shared movement/click/release policy: binding priority, then compatible guides. */
+/** Shared movement/click/release policy: alignment followed by compatible attachment. */
 function snapDraftPoint(point: { x: number; y: number }, origin: { x: number; y: number } | undefined,
   elements: SlideElement[], zoom: number, shift: boolean, suppress: boolean,
   alignment?: Parameters<typeof snapPathPoint>[4], excludeId = '') {
-  const direction = snapPathPoint(point, origin ? [origin] : [], zoom, shift);
-  const drop = !suppress && origin ? bindingDrop(direction.point, origin, elements, excludeId, zoom, shift) : null;
-  const snapped = drop ? direction : snapPathPoint(point, origin ? [origin] : [], zoom, shift, alignment);
-  const finalDrop = drop ?? (!suppress && origin ? bindingDrop(snapped.point, origin, elements, excludeId, zoom, shift) : null);
-  return { ...snapped, drop: finalDrop };
+  return snapConnectorPoint(point, origin, elements, zoom, shift, suppress, alignment, excludeId);
 }
 
 /** Returning to an accepted terminal is not a new zero-length segment. Resolve
@@ -131,9 +136,7 @@ function snapPolyDraftPoint(point: { x: number; y: number }, draft: PolyDraftSta
   if (snapped && !isDraftTerminal(draft, snapped.point)) return snapped;
   const adjacentIndex = i === 0 ? 2 : i - 2;
   const adjacent = draft.vertices.length >= 4 ? { x: draft.vertices[adjacentIndex], y: draft.vertices[adjacentIndex + 1] } : undefined;
-  return { point: raw,
-    guides: adjacent && shift ? [{ type: 'direction' as const, x1: adjacent.x, y1: adjacent.y, x2: raw.x, y2: raw.y, destination: raw }] : [],
-    drop: !suppress && adjacent ? bindingDrop(raw, adjacent, elements, draft.extension?.source.id ?? '', zoom, shift) : null };
+  return snapDraftPoint(raw, adjacent, elements, zoom, shift, suppress, alignment, draft.extension?.source.id);
 }
 
 /** Same-path vertex magnets for a draft: every ALREADY ACCEPTED vertex — the
@@ -164,8 +167,8 @@ function resolvePolyDraftPoint(point: { x: number; y: number }, draft: PolyDraft
   const closed = !draft.extension && !!composeUserShape(tool, { points: vertices }).closed;
   if (prospectiveClosed && !closed && !suppress && vertices.length >= 4) {
     const i = vertices.length - 2;
-    return { ...snapped, closed, drop: bindingDrop(
-      { x: vertices[i], y: vertices[i + 1] }, { x: vertices[i - 2], y: vertices[i - 1] }, elements, '', zoom, shift) };
+    return { ...snapDraftPoint({ x: vertices[i], y: vertices[i + 1] },
+      { x: vertices[i - 2], y: vertices[i - 1] }, elements, zoom, shift, suppress, alignment), closed };
   }
   return { ...snapped, closed };
 }
@@ -173,7 +176,7 @@ function resolvePolyDraftPoint(point: { x: number; y: number }, draft: PolyDraft
 // Drawing hook — pointer-event based so it works for mouse, touch, and stylus.
 // `onConnectorHighlight` outlines the element a drawn line/arrow endpoint
 // would bind to (SVGSlideCanvas renders SVGConnectorHighlight from it).
-export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback) {
+export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback, svgRef?: React.RefObject<SVGSVGElement | null>) {
   const [drawState, setReactDrawState] = useState<DrawState>({
     startX: 0, startY: 0, currentX: 0, currentY: 0, isDrawing: false,
     snappedStartX: 0, snappedStartY: 0, snappedCurrentX: 0, snappedCurrentY: 0,
@@ -191,10 +194,12 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback)
   polyDraftRef.current = polyDraft;
   const justFinishedDrawing = useRef(false);
   const lastPointerRef = useRef<{ event: DrawingPointer; screenToSVG: ScreenToSVG } | null>(null);
+  const endDecisionRef = useRef<ConnectorBinding | null | undefined>(undefined);
+  const startDecisionRef = useRef<ConnectorBinding | null>(null);
   const rawLineRef = useRef<number[] | null>(null);
   const startDockRef = useRef<ConnectorBinding | null | undefined>(undefined);
   const lineContextRef = useRef<{ slideId: string; tool: string; presentationId: string; doc: ReturnType<typeof getActiveDoc> } | null>(null);
-  const initialPressRef = useRef<{ x: number; y: number; dragged: boolean; slop: number } | null>(null);
+  const initialPressRef = useRef<{ x: number; y: number; dragged: boolean; slop: number; dot: boolean } | null>(null);
 
   const iconPressRef = useRef<{ pointerId: number; svg: SVGSVGElement } | null>(null);
   const { start: guardIcon, finish: finishIcon } = useCanvasGestureGuard();
@@ -205,6 +210,8 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback)
     initialPressRef.current = null;
     rawLineRef.current = null;
     startDockRef.current = undefined;
+    endDecisionRef.current = undefined;
+    startDecisionRef.current = null;
     lineContextRef.current = null;
     polyDraftRef.current = null;
     setPolyDraft(null);
@@ -257,13 +264,13 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback)
 
     const others = Object.values(slide.elements)
       .filter((el) => el.visible)
-      .map((el) => ({ x: el.x, y: el.y, width: el.width, height: el.height }));
+      .map((el) => ({ x: el.x, y: el.y, width: el.width, height: el.height, centerOnly: el.type === 'shape' && el.shapeType === 'dot' }));
 
     const marginLayout = getMarginLayout(marginLayoutId);
     const marginBounds = marginLayout ? getMarginBounds(marginLayout) : null;
 
-    return { others, marginBounds, snappingEnabled: true };
-  }, [activeSlideId]);
+    return { others, marginBounds, snappingEnabled: true, viewport: snapViewport(svgRef?.current) };
+  }, [activeSlideId, svgRef]);
 
   /** Slide elements in z-order — binding-target candidates for connector
    *  endpoints (getBindingTarget2 filters invisible/locked/path itself
@@ -297,11 +304,12 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback)
       return;
     }
     finishLine();
+    const terminalDecision = appendPreview ? draft.previewEnd ?? null : draft.acceptedEnd ?? null;
     if (draft.extension) {
       const { source } = draft.extension;
       const current = usePresentationStore.getState().presentation.slides[activeSlideId]?.elements[source.id];
       if (current?.type === 'shape' && !current.locked && !current.closed && draftVertices.length > (source.points?.length ?? 0)) {
-        const preview = resolveExtensionDraft(draft, draftVertices, getSlideElements(), useEditorStore.getState().zoom, isMetaHeld(), isShiftHeld());
+        const preview = resolveExtensionDraft(draft, draftVertices, getSlideElements(), isMetaHeld(), terminalDecision);
         updateElement(activeSlideId, source.id, preview);
         setSelectedElements([source.id]);
       }
@@ -320,7 +328,7 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback)
     let startBinding: ConnectorBinding | null = null;
     let endBinding: ConnectorBinding | null = null;
     if (!closed && !isMetaHeld()) {
-      const bound = bindDraftEndpoints(vertices, getSlideElements(), useEditorStore.getState().zoom, isShiftHeld(), draft.retainedStart);
+      const bound = bindDraftEndpoints(vertices, getSlideElements(), useEditorStore.getState().zoom, isShiftHeld(), draft.retainedStart ?? (appendPreview ? draft.previewStart : draft.acceptedStart) ?? null, useEditorStore.getState().snapToGrid ? terminalDecision : null);
       vertices = bound.absPoints;
       startBinding = bound.startBinding;
       endBinding = bound.endBinding;
@@ -364,6 +372,8 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback)
     initialPressRef.current = null;
     rawLineRef.current = null;
     startDockRef.current = undefined;
+    endDecisionRef.current = undefined;
+    startDecisionRef.current = null;
     lineContextRef.current = null;
     setDrawState((s) => ({ ...s, isDrawing: false }));
     if (polyDraftRef.current?.extension) setSelectedElements([polyDraftRef.current.extension.source.id]);
@@ -377,6 +387,8 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback)
   // Tool/slide changes invalidate pending dock intent, including idle hover.
   useEffect(() => {
     startDockRef.current = undefined;
+    endDecisionRef.current = undefined;
+    startDecisionRef.current = null;
     lineContextRef.current = null;
     lastPointerRef.current = null;
     setDrawState(s => ({ ...s, isDrawing: false }));
@@ -385,7 +397,10 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback)
 
   useEffect(() => {
     if (tool !== 'icon' && tool !== 'line' && tool !== 'arrow') return;
-    const cancel = () => cancelPolyDraft();
+    const cancel = (event: Event) => {
+      if (event.type === 'contextmenu' && tool === 'line' && (event as MouseEvent).ctrlKey) { event.preventDefault(); return; }
+      cancelPolyDraft();
+    };
     window.addEventListener('blur', cancel);
     window.addEventListener('contextmenu', cancel);
     return () => {
@@ -418,6 +433,7 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback)
   ) => {
     if (tool === 'select') return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (tool === 'line' && e.ctrlKey) e.preventDefault();
     if (tool === 'icon') {
       if (iconPressRef.current) { cancelPolyDraft(); return; }
       const svg = e.currentTarget as SVGSVGElement;
@@ -429,8 +445,8 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback)
     lastPointerRef.current = { event: { clientX: e.clientX, clientY: e.clientY, shiftKey: e.shiftKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey }, screenToSVG };
     const pos = screenToSVG(e.clientX, e.clientY);
 
-    const { others, marginBounds, snappingEnabled } = getSnapContext(e.metaKey);
-    const startSnap = snappingEnabled ? computePointSnap(pos, others, screenPixelsToSlide(5, useEditorStore.getState().zoom), marginBounds) : { snapX: null, snapY: null, guides: [] };
+    const { others, marginBounds, snappingEnabled, viewport } = getSnapContext(e.metaKey);
+    const startSnap = snappingEnabled ? computePointSnap(pos, others, screenPixelsToSlide(SNAP_DISTANCE_PX, useEditorStore.getState().zoom), marginBounds, undefined, viewport) : { snapX: null, snapY: null, guides: [] };
     const snappedStartX = startSnap.snapX ?? pos.x;
     const snappedStartY = startSnap.snapY ?? pos.y;
 
@@ -456,10 +472,10 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback)
         }
       }
       const curve: PathCurve = draft?.curve ?? composeUserShape(tool).curve ?? 'linear';
-      const alignment = snappingEnabled && !(!draft && !e.shiftKey && !e.metaKey && getBindingTarget2(pos, getSlideElements(), '', useEditorStore.getState().zoom)) ? { others, marginBounds } : undefined;
+      const alignment = snappingEnabled ? { others, marginBounds, viewport } : undefined;
       const magnet = draft
-        ? resolvePolyDraftPoint(pos, draft, tool, getSlideElements(), useEditorStore.getState().zoom, e.shiftKey, e.metaKey, alignment)
-        : { ...snapDraftPoint(pos, undefined, getSlideElements(), useEditorStore.getState().zoom, e.shiftKey, e.metaKey, alignment),
+        ? resolvePolyDraftPoint(pos, draft, tool, getSlideElements(), useEditorStore.getState().zoom, e.shiftKey, e.metaKey || !snappingEnabled, alignment)
+        : { ...snapDraftPoint(pos, undefined, getSlideElements(), useEditorStore.getState().zoom, e.shiftKey, e.metaKey || !snappingEnabled, alignment),
           closed: !!composeUserShape(tool, { points: [pos.x, pos.y] }).closed };
       const closed = magnet.closed;
       onConnectorHighlight?.(magnet.drop?.target.id ?? null, magnet.drop?.dock);
@@ -468,10 +484,17 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback)
       // Ignore a repeated terminal vertex (including a stationary finish).
       const repeated = draft && isDraftTerminal(draft, magnet.point);
       const vertices = repeated ? draft.vertices : draft ? addDraftVertex(draft, vx, vy) : [vx, vy];
-      const previewPoints = (e.metaKey || closed) ? vertices : bindDraftEndpoints(vertices, getSlideElements(), useEditorStore.getState().zoom, e.shiftKey, draft?.retainedStart).absPoints;
+      const endDecision = magnet.drop?.binding ?? null;
+      const elements = getSlideElements(), zoom = useEditorStore.getState().zoom;
+      const acceptedStart = draft?.retainedStart ?? draft?.acceptedStart;
+      const startDecision = acceptedStart !== undefined ? acceptedStart : vertices.length >= 4
+        ? snapDraftPoint({ x: vertices[0], y: vertices[1] }, { x: vertices[2], y: vertices[3] }, elements, zoom,
+          e.shiftKey, e.metaKey || !snappingEnabled, alignment).drop?.binding ?? null : undefined;
+      const draftBindings = !e.metaKey && !closed ? bindDraftEndpoints(vertices, elements, zoom, e.shiftKey, startDecision ?? null, endDecision) : null;
+      const previewPoints = draftBindings?.absPoints ?? vertices;
       const next: PolyDraftState = { ...draft, curve, vertices, previewX: vx, previewY: vy, previewPoints, previewClosed: false,
-        previewElement: draft?.extension ? { ...draft.extension.source, ...resolveExtensionDraft(draft, vertices, getSlideElements(), useEditorStore.getState().zoom, e.metaKey, e.shiftKey) } : undefined };
-      const draftBindings = !e.metaKey && !closed ? bindDraftEndpoints(vertices, getSlideElements(), useEditorStore.getState().zoom, e.shiftKey, draft?.retainedStart) : null;
+        acceptedStart: startDecision, previewStart: startDecision, acceptedEnd: endDecision, previewEnd: endDecision,
+        previewElement: draft?.extension ? { ...draft.extension.source, ...resolveExtensionDraft(draft, vertices, elements, e.metaKey, endDecision) } : undefined };
       next.aimGuides = next.previewElement
         ? bindingAimGuides(pathPointsInSlide(next.previewElement), next.previewElement.startBinding, next.previewElement.endBinding, getSlideElements())
         : draftBindings ? bindingAimGuides(previewPoints, draftBindings.startBinding, draftBindings.endBinding, getSlideElements()) : [];
@@ -485,29 +508,35 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback)
     }
 
     if ((tool === 'line' || tool === 'arrow') && !guardLine(invalidateLine)) return;
+    const dot = tool === 'line' && e.ctrlKey && !useEditorStore.getState().pathExtension;
+    if (dot) e.preventDefault();
     startDockRef.current = undefined;
+    endDecisionRef.current = undefined;
+    startDecisionRef.current = null;
     if (tool === 'line' || tool === 'arrow') lineContextRef.current = {
       slideId: activeSlideId, tool, presentationId: usePresentationStore.getState().presentation.id, doc: getActiveDoc(),
     };
     let startX = snappedStartX;
     let startY = snappedStartY;
     let startGuides = startSnap.guides;
-
-    // Binding intent must use the raw start point, before alignment snap.
-    // Meta/Cmd suppresses the target search entirely.
-    if ((tool === 'line' || tool === 'arrow') && !composeUserShape(tool).closed && !e.metaKey) {
-      const target = getBindingTarget2(pos, getSlideElements(), '', useEditorStore.getState().zoom);
-      if (target) {
-        const dock = connectorDockCue(pos, target, useEditorStore.getState().zoom);
-        startDockRef.current = dock?.active ? dock.binding : undefined;
-        startX = dock?.active ? dock.point.x : pos.x;
-        startY = dock?.active ? dock.point.y : pos.y;
-        startGuides = [];
-        onConnectorHighlight?.(target.id, dock);
-      }
+    if (dot && snappingEnabled) {
+      const center = snapDotCenter(pos, getSlideElements(), screenPixelsToSlide(SNAP_DISTANCE_PX, useEditorStore.getState().zoom), viewport);
+      if (center) { startX = center.x; startY = center.y; startGuides = []; }
     }
 
-    initialPressRef.current = { x: e.clientX, y: e.clientY, dragged: false, slop: e.pointerType === 'touch' ? DRAG_SLOP_TOUCH : DRAG_SLOP_MOUSE };
+    // Resolve the same point-anchor/alignment decision used by endpoint edits.
+    // Keep the physical press separately for temporary Meta/Cmd bypass.
+    if ((tool === 'line' || tool === 'arrow') && !dot && !composeUserShape(tool).closed && snappingEnabled) {
+      const snapped = snapDraftPoint(pos, undefined, getSlideElements(), useEditorStore.getState().zoom,
+        false, false, { others, marginBounds, viewport });
+      startDockRef.current = snapped.drop?.dock?.active ? snapped.drop.binding : undefined;
+      startX = snapped.drop?.point.x ?? snapped.point.x;
+      startY = snapped.drop?.point.y ?? snapped.point.y;
+      startGuides = snapped.guides;
+      onConnectorHighlight?.(snapped.drop?.target.id ?? null, snapped.drop?.dock);
+    }
+
+    initialPressRef.current = { x: e.clientX, y: e.clientY, dragged: false, dot, slop: e.pointerType === 'touch' ? DRAG_SLOP_TOUCH : DRAG_SLOP_MOUSE };
     try { (e.currentTarget as Element).setPointerCapture(e.pointerId); } catch { /* window/canvas still handles release */ }
     rawLineRef.current = [startX, startY, startX, startY];
     setGuides(startGuides);
@@ -541,9 +570,9 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback)
     if (polyDraftRef.current) {
       const draft = effectiveDraftStart(polyDraftRef.current, getSlideElements(), e.metaKey);
       const pos = screenToSVG(e.clientX, e.clientY);
-      const { others, marginBounds, snappingEnabled } = getSnapContext(e.metaKey);
-      const magnet = resolvePolyDraftPoint(pos, draft, tool, getSlideElements(), useEditorStore.getState().zoom, e.shiftKey, e.metaKey,
-        snappingEnabled ? { others, marginBounds } : undefined);
+      const { others, marginBounds, snappingEnabled, viewport } = getSnapContext(e.metaKey);
+      const magnet = resolvePolyDraftPoint(pos, draft, tool, getSlideElements(), useEditorStore.getState().zoom, e.shiftKey, e.metaKey || !snappingEnabled,
+        snappingEnabled ? { others, marginBounds, viewport } : undefined);
       const closed = magnet.closed;
       let previewX = magnet.point.x, previewY = magnet.point.y;
       const previewClosed = !e.metaKey && draft.canClose !== false && draft.vertices.length >= 6
@@ -551,13 +580,19 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback)
       if (previewClosed) { previewX = draft.vertices[0]; previewY = draft.vertices[1]; }
       const atLast = isDraftTerminal(draft, { x: previewX, y: previewY });
       const raw = previewClosed || atLast ? draft.vertices : addDraftVertex(draft, previewX, previewY);
-      const bound = previewClosed || closed || e.metaKey ? null : bindDraftEndpoints(raw, getSlideElements(), useEditorStore.getState().zoom, e.shiftKey, draft.retainedStart);
+      const elements = getSlideElements(), zoom = useEditorStore.getState().zoom;
+      const endDecision = magnet.drop?.binding ?? null;
+      const acceptedStart = draft.retainedStart ?? draft.acceptedStart;
+      const startDecision = acceptedStart !== undefined ? acceptedStart : raw.length >= 4
+        ? snapDraftPoint({ x: raw[0], y: raw[1] }, { x: raw[2], y: raw[3] }, elements, zoom, e.shiftKey,
+          e.metaKey || !snappingEnabled, snappingEnabled ? { others, marginBounds, viewport } : undefined).drop?.binding ?? null : null;
+      const bound = previewClosed || closed || e.metaKey ? null : bindDraftEndpoints(raw, elements, zoom, e.shiftKey, startDecision, endDecision);
       const previewPoints = bound?.absPoints ?? raw;
       onConnectorHighlight?.(!previewClosed ? magnet.drop?.target.id ?? null : null, !previewClosed ? magnet.drop?.dock : null);
 
-      const next = { ...draft, previewX, previewY, previewPoints, previewClosed,
+      const next = { ...draft, previewX, previewY, previewPoints, previewClosed, previewStart: startDecision, previewEnd: endDecision,
         aimGuides: bound ? bindingAimGuides(previewPoints, bound.startBinding, bound.endBinding, getSlideElements()) : [],
-        previewElement: draft.extension ? { ...draft.extension.source, ...resolveExtensionDraft(draft, raw, getSlideElements(), useEditorStore.getState().zoom, e.metaKey, e.shiftKey) } : undefined };
+        previewElement: draft.extension ? { ...draft.extension.source, ...resolveExtensionDraft(draft, raw, elements, e.metaKey, endDecision) } : undefined };
       if (next.previewElement) next.aimGuides = bindingAimGuides(pathPointsInSlide(next.previewElement), next.previewElement.startBinding, next.previewElement.endBinding, getSlideElements());
       const visible = next.previewElement ? pathPointsInSlide(next.previewElement) : previewPoints;
       const terminal = draft.extension?.end === 'start' ? 0 : visible.length - 2;
@@ -571,7 +606,7 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback)
     if (!drawStateRef.current.isDrawing) {
       if (tool === 'line' || tool === 'arrow') {
         const pos = screenToSVG(e.clientX, e.clientY);
-        const target = !e.metaKey && !composeUserShape(tool).closed && getBindingTarget2(pos, getSlideElements(), '', useEditorStore.getState().zoom);
+        const target = !e.metaKey && useEditorStore.getState().snapToGrid && !composeUserShape(tool).closed && getBindingTarget2(pos, getSlideElements(), '', useEditorStore.getState().zoom);
         onConnectorHighlight?.(target ? target.id : null, target ? connectorDockCue(pos, target, useEditorStore.getState().zoom) : null);
       }
       return;
@@ -579,12 +614,13 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback)
     const press = initialPressRef.current;
     if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) >= press.slop) press.dragged = true;
 
+    if (press?.dot && !press.dragged) return;
     const pos = screenToSVG(e.clientX, e.clientY);
 
-    const { others, marginBounds, snappingEnabled } = getSnapContext(e.metaKey);
+    const { others, marginBounds, snappingEnabled, viewport } = getSnapContext(e.metaKey);
 
     if (tool === 'icon') {
-      const snap = snappingEnabled ? computePointSnap(pos, others, screenPixelsToSlide(5, useEditorStore.getState().zoom), marginBounds) : null;
+      const snap = snappingEnabled ? computePointSnap(pos, others, screenPixelsToSlide(SNAP_DISTANCE_PX, useEditorStore.getState().zoom), marginBounds, undefined, viewport) : null;
       setGuides(snap?.guides ?? []);
       setDrawState(s => ({ ...s, currentX: pos.x, currentY: pos.y,
         snappedCurrentX: snap?.snapX ?? pos.x, snappedCurrentY: snap?.snapY ?? pos.y }));
@@ -602,14 +638,17 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback)
       const start = !e.metaKey && latched && dockTarget ? bindingAimPoint(latched, dockTarget)
         : { x: drawStateRef.current.startX, y: drawStateRef.current.startY };
       const closed = !!composeUserShape(tool).closed;
-      const startTarget = !closed && !e.metaKey && getBindingTarget2(start, elements, '', zoom);
-      const startSnap = snappingEnabled && !startTarget ? computePointSnap(start, others, screenPixelsToSlide(5, useEditorStore.getState().zoom), marginBounds) : null;
+      const startSnap = snappingEnabled && !latched ? computePointSnap(start, others, screenPixelsToSlide(SNAP_DISTANCE_PX, useEditorStore.getState().zoom), marginBounds, undefined, viewport) : null;
       const sx = startSnap?.snapX ?? start.x, sy = startSnap?.snapY ?? start.y;
-      const magnet = snapDraftPoint(pos, { x: sx, y: sy }, elements, zoom, e.shiftKey, e.metaKey || closed,
-        snappingEnabled ? { others, marginBounds } : undefined);
+      const magnet = snapDraftPoint(pos, { x: sx, y: sy }, elements, zoom, e.shiftKey, e.metaKey || !snappingEnabled || closed,
+        snappingEnabled ? { others, marginBounds, viewport } : undefined);
       const raw = [sx, sy, magnet.point.x, magnet.point.y];
       rawLineRef.current = raw;
-      const bound = closed || e.metaKey ? null : bindDraftEndpoints(raw, elements, zoom, e.shiftKey, startDockRef.current);
+      endDecisionRef.current = magnet.drop?.binding ?? null;
+      const startMagnet = snapDraftPoint({ x: sx, y: sy }, { x: magnet.point.x, y: magnet.point.y }, elements, zoom,
+        e.shiftKey, e.metaKey || !snappingEnabled || closed, snappingEnabled ? { others, marginBounds, viewport } : undefined);
+      startDecisionRef.current = startDockRef.current ?? startMagnet.drop?.binding ?? null;
+      const bound = closed || e.metaKey ? null : bindDraftEndpoints(raw, elements, zoom, e.shiftKey, startDecisionRef.current, endDecisionRef.current);
       const resolved = bound?.absPoints ?? raw;
       onConnectorHighlight?.(magnet.drop?.target.id ?? null, magnet.drop?.dock);
       setGuides([...resolvedPointGuides(startSnap?.guides ?? [], { x: resolved[0], y: resolved[1] }), ...resolvedPointGuides(magnet.guides, { x: resolved[2], y: resolved[3] }, { x: resolved[0], y: resolved[1] })]);
@@ -622,11 +661,11 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback)
     }
 
     if (snappingEnabled) {
-      const currentSnap = computePointSnap(pos, others, screenPixelsToSlide(5, useEditorStore.getState().zoom), marginBounds);
+      const currentSnap = computePointSnap(pos, others, screenPixelsToSlide(SNAP_DISTANCE_PX, useEditorStore.getState().zoom), marginBounds, undefined, viewport);
       const snappedCurrentX = (currentSnap.snapX ?? pos.x);
       const snappedCurrentY = (currentSnap.snapY ?? pos.y);
 
-      const startSnap = computePointSnap({ x: drawStateRef.current.startX, y: drawStateRef.current.startY }, others, screenPixelsToSlide(5, useEditorStore.getState().zoom), marginBounds);
+      const startSnap = computePointSnap({ x: drawStateRef.current.startX, y: drawStateRef.current.startY }, others, screenPixelsToSlide(SNAP_DISTANCE_PX, useEditorStore.getState().zoom), marginBounds, undefined, viewport);
       const allGuides = [...(startSnap?.guides ?? []), ...(currentSnap?.guides ?? [])];
       const seen = new Set<string>();
       const uniqueGuides = allGuides.filter((g) => {
@@ -708,6 +747,23 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback)
     const current = drawStateRef.current;
     if (!current.isDrawing || polyDraftRef.current) return;
     const isLineTool = tool === 'line' || tool === 'arrow';
+    if (tool === 'line' && initialPressRef.current?.dot && !initialPressRef.current.dragged) {
+      const dot = composeLineDot(current.snappedStartX, current.snappedStartY);
+      const undo = getActiveUndoManager();
+      undo?.stopCapturing();
+      addElement(activeSlideId, dot);
+      undo?.stopCapturing();
+      finishLine();
+      initialPressRef.current = null;
+      rawLineRef.current = null;
+      setGuides([]);
+      onConnectorHighlight?.(null);
+      setDrawState(s => ({ ...s, isDrawing: false }));
+      setSelectedElements([dot.id]);
+      justFinishedDrawing.current = true;
+      setTool('select');
+      return;
+    }
     if (isLineTool && !initialPressRef.current?.dragged) {
       const raw = rawLineRef.current ?? [current.startX, current.startY];
       const draft: PolyDraftState = {
@@ -763,7 +819,7 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback)
       let startBinding: ConnectorBinding | null = null;
       let endBinding: ConnectorBinding | null = null;
       if (!composeUserShape(tool).closed && !isMetaHeld()) {
-        const bound = bindDraftEndpoints([sx, sy, ex, ey], getSlideElements(), useEditorStore.getState().zoom, lastPointerRef.current?.event.shiftKey ?? isShiftHeld(), startDockRef.current);
+        const bound = bindDraftEndpoints([sx, sy, ex, ey], getSlideElements(), useEditorStore.getState().zoom, lastPointerRef.current?.event.shiftKey ?? isShiftHeld(), startDecisionRef.current, useEditorStore.getState().snapToGrid ? endDecisionRef.current : null);
         [sx, sy, ex, ey] = bound.absPoints as [number, number, number, number];
         startBinding = bound.startBinding;
         endBinding = bound.endBinding;

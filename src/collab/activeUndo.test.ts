@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import * as Y from 'yjs';
 import { beginScrubCapture, createUndoManagerFor } from './activeUndo';
-import { beforeLocalMutation } from '../utils/scrubMutation';
+import { beforeLocalMutation } from '../utils/editor/scrubMutation';
 import { LOCAL_ORIGIN } from './yDocAdapter';
 import { ROOT_KEY } from './ySchema';
-vi.mock('../utils/keyboard', () => ({ isShiftHeld: () => false, isCtrlHeld: () => false }));
+vi.mock('../utils/editor/keyboard', () => ({ isShiftHeld: () => false, isCtrlHeld: () => false }));
 import { runScrubSession } from '../components/controls/useScrubCommit';
 
 afterEach(() => { beforeLocalMutation(); vi.useRealTimers(); });

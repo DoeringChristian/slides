@@ -1,9 +1,11 @@
+import { transferIds } from '../utils/model/groupTransfer';
+import { getActiveDoc } from '../collab/yDocAdapter';
 import { readElementForMutation } from '../store/currentMutation';
 import { useEffect } from 'react';
 import { useEditorStore } from '../store/editorStore';
 import { usePresentationStore } from '../store/presentationStore';
-import { duplicateElements, loadImageFile } from '../utils/slideFactory';
-import { createBoundLabel, expandWithBoundTexts, findBoundText } from '../utils/syncDependents';
+import { duplicateElements, loadImageFile } from '../utils/model/slideFactory';
+import { createBoundLabel, findBoundText } from '../utils/model/syncDependents';
 import { getActiveUndoManager } from '../collab/activeUndo';
 
 export function useKeyboardShortcuts() {
@@ -34,7 +36,7 @@ export function useKeyboardShortcuts() {
       // Save — download a standalone viewer HTML (same mechanism as the Save button).
       if (ctrl && e.key === 's') {
         e.preventDefault();
-        import('../utils/exportStandaloneHtml').then(({ exportStandaloneHtml }) =>
+        import('../utils/io/exportStandaloneHtml').then(({ exportStandaloneHtml }) =>
           exportStandaloneHtml(store.getState().presentation, { mode: 'viewer' }).catch((err) => {
             console.error(err);
             alert(err.message);
@@ -67,13 +69,22 @@ export function useKeyboardShortcuts() {
       const activeSlideId = editor.getState().activeSlideId;
       const selectedIds = editor.getState().selectedElementIds;
 
+      // Object groups are independent of slide-chain grouping.
+      if (ctrl && key === 'g' && !isInput && !editor.getState().editingTextId &&
+          !editor.getState().croppingElementId && editor.getState().tool === 'select') {
+        e.preventDefault();
+        if (e.shiftKey) store.getState().ungroupObjects(activeSlideId, selectedIds);
+        else store.getState().groupObjects(activeSlideId, selectedIds);
+        editor.getState().setSelectedElements(selectedIds);
+        return;
+      }
+
+
       // Delete — hide elements on current slide, or delete slide if nothing selected
       if ((e.key === 'Delete' || e.key === 'Backspace') && !isInput && editor.getState().tool === 'select') {
         if (selectedIds.length > 0) {
           e.preventDefault();
-          for (const id of selectedIds) {
-            store.getState().hideElement(activeSlideId, id);
-          }
+          store.getState().hideElements(activeSlideId, selectedIds);
           editor.getState().setSelectedElements([]);
           return;
         }
@@ -127,6 +138,8 @@ export function useKeyboardShortcuts() {
         e.preventDefault();
         if (editor.getState().editingTextId) {
           editor.getState().setEditingTextId(null);
+        } else if (editor.getState().activeObjectGroupId) {
+          editor.getState().exitObjectGroup();
         } else {
           editor.getState().clearSelection();
           editor.getState().setTool('select');
@@ -140,7 +153,7 @@ export function useKeyboardShortcuts() {
         e.preventDefault();
         const slide = store.getState().presentation.slides[activeSlideId];
         if (slide) {
-          const copyIds = expandWithBoundTexts(slide.elements, slide.elementOrder, selectedIds);
+          const copyIds = transferIds(slide, selectedIds);
           const elements = copyIds.map((id) => slide.elements[id]).filter(Boolean);
           editor.getState().setClipboard(elements.map((e) => JSON.parse(JSON.stringify(e))));
           // Write marker to system clipboard so paste knows it's internal
@@ -154,80 +167,12 @@ export function useKeyboardShortcuts() {
         e.preventDefault();
         const slide = store.getState().presentation.slides[activeSlideId];
         if (slide) {
-          const copyIds = expandWithBoundTexts(slide.elements, slide.elementOrder, selectedIds);
+          const copyIds = transferIds(slide, selectedIds);
           const elements = copyIds.map((id) => slide.elements[id]).filter(Boolean);
           editor.getState().setClipboard(elements.map((e) => JSON.parse(JSON.stringify(e))));
-          for (const id of selectedIds) {
-            store.getState().hideElement(activeSlideId, id);
-          }
+          store.getState().hideElements(activeSlideId, selectedIds);
           editor.getState().setSelectedElements([]);
           navigator.clipboard.writeText(INTERNAL_MARKER).catch(() => {});
-        }
-        return;
-      }
-
-      // Paste
-      if (ctrl && e.key === 'v') {
-        e.preventDefault();
-
-        // Read clipboard via the paste event by manually triggering
-        // document.execCommand('paste') on the proxy — but that's deprecated.
-        // Instead, handle paste logic directly here using navigator.clipboard.
-        const activeId = editor.getState().activeSlideId;
-
-        const pasteInternal = () => {
-          const internalClipboard = editor.getState().clipboard;
-          if (internalClipboard.length > 0) {
-            // duplicateElements remaps bound-text containerIds onto the
-            // pasted clones (labels copied without their container become
-            // free text).
-            const duplicates = duplicateElements(internalClipboard);
-            store.getState().addElements(activeId, duplicates);
-            editor.getState().setSelectedElements(
-              duplicates
-                .filter((el) => !(el.type === 'text' && el.containerId))
-                .map((el) => el.id),
-            );
-          }
-        };
-
-        // Try to read files from clipboard (images)
-        if (navigator.clipboard && navigator.clipboard.read) {
-          navigator.clipboard.read().then(async (clipboardItems) => {
-            const existingResources = store.getState().presentation.resources;
-            for (const item of clipboardItems) {
-              // Check for images
-              const imageType = item.types.find(t => t.startsWith('image/'));
-              if (imageType) {
-                const blob = await item.getType(imageType);
-                const file = new File([blob], 'pasted-image.png', { type: imageType });
-                const { resource, element, isExisting } = await loadImageFile(file, undefined, existingResources);
-                if (!isExisting) {
-                  store.getState().addResource(resource);
-                }
-                store.getState().addElement(activeId, element);
-                editor.getState().setSelectedElements([element.id]);
-                return;
-              }
-            }
-
-            // No image — check for our internal marker
-            for (const item of clipboardItems) {
-              if (item.types.includes('text/plain')) {
-                const blob = await item.getType('text/plain');
-                const text = await blob.text();
-                if (text === INTERNAL_MARKER) {
-                  pasteInternal();
-                }
-              }
-            }
-          }).catch(() => {
-            // Permission denied or not supported — fall back to internal clipboard
-            pasteInternal();
-          });
-        } else {
-          // Fallback for browsers without clipboard API
-          pasteInternal();
         }
         return;
       }
@@ -301,10 +246,46 @@ export function useKeyboardShortcuts() {
       }
     };
 
+    // Native paste events carry user-authorized clipboard data without a
+    // permission-gated navigator.clipboard.read() call on every keystroke.
+    const handlePaste = (event: ClipboardEvent) => {
+      const state = editor.getState();
+      const target = event.target instanceof Element ? event.target : null;
+      if (event.defaultPrevented) return;
+      if (target?.closest('input, textarea, [contenteditable="true"]') || state.editingTextId ||
+          state.isPresenting || state.isPresenterMode || !state.activeSlideId) return;
+      const data = event.clipboardData;
+      if (!data) return;
+      const image = Array.from(data.files).find(file => file.type.startsWith('image/'));
+      if (image) {
+        event.preventDefault();
+        const projectId = store.getState().presentation.id;
+        const slideId = state.activeSlideId;
+        const doc = getActiveDoc();
+        let cancelled = false;
+        const unsubscribe = editor.subscribe(next => {
+          if (next.activeSlideId !== slideId) cancelled = true;
+        });
+        void loadImageFile(image, undefined, store.getState().presentation.resources).then(({ resource, element, isExisting }) => {
+          if (cancelled || getActiveDoc() !== doc || store.getState().presentation.id !== projectId ||
+              editor.getState().activeSlideId !== slideId || !store.getState().presentation.slides[slideId]) return;
+          if (!isExisting) store.getState().addResource(resource);
+          store.getState().addElement(slideId, element);
+          if (editor.getState().activeSlideId === slideId) editor.getState().setSelectedElements([element.id]);
+        }).catch(console.error).finally(unsubscribe);
+      } else if (data.getData('text/plain') === INTERNAL_MARKER && state.clipboard.length) {
+        event.preventDefault();
+        const copies = duplicateElements(state.clipboard);
+        store.getState().addElements(state.activeSlideId, copies);
+        state.setSelectedElements(copies.filter(el => !(el.type === 'text' && el.containerId)).map(el => el.id));
+      }
+    };
+    window.addEventListener('paste', handlePaste);
     window.addEventListener('keydown', handleKeyDown);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('paste', handlePaste);
     };
   }, []);
 }

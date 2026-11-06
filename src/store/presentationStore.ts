@@ -1,20 +1,27 @@
+import { planSlideTransfer, transferIds } from '../utils/model/groupTransfer';
+import { mirrorOperation } from '../utils/model/mirrorOperation';
+import { planJoinPaths } from '../utils/paths/joinPaths';
+import { planGroupCrop } from '../utils/model/groupCrop';
+import { reorderSelection, type LayerMove } from '../utils/editor/selectionProperties';
+import { useEditorStore } from './editorStore';
 import { create } from 'zustand';
 import { temporal } from 'zundo';
-import { guardLocalActions, beforeLocalMutation } from '../utils/scrubMutation';
+import { guardLocalActions, beforeLocalMutation } from '../utils/editor/scrubMutation';
 import * as Y from 'yjs';
 import type { Presentation, Slide, SlideElement, TextElement, ObjectMeta, SlideTemplate, Resource } from '../types/presentation';
 import { generateId } from '../utils/idGenerator';
-import { createPresentation, createSlide, copySlideAsKeyframe, generateObjectName } from '../utils/slideFactory';
-import { assertPresentation } from '../utils/currentPresentation';
-import { syncDependentsAfterMutation, expandWithBoundTexts } from '../utils/syncDependents';
-import { beforeMutation } from '../utils/autoDraw';
-import { lerpAngle } from '../utils/interpolation';
-import { mirrorTargets, withMirroring } from '../utils/multiSlide';
-import { areSlidesContiguous, groupsToDissolve } from '../utils/presenterAdvance';
-import { planSlideGroupEdit } from '../utils/slideGroupEditing';
+import { createPresentation, createSlide, copySlideAsKeyframe, generateObjectName } from '../utils/model/slideFactory';
+import { assertPresentation } from '../utils/model/currentPresentation';
+import { syncDependentsAfterMutation, expandWithBoundTexts } from '../utils/model/syncDependents';
+import { beforeMutation } from '../utils/paths/autoDraw';
+import { lerpAngle } from '../utils/animation/interpolation';
+import { mirrorTargets, withMirroring } from '../utils/model/multiSlide';
+import { areSlidesContiguous, groupsToDissolve } from '../utils/animation/presenterAdvance';
+import { planSlideGroupEdit } from '../utils/model/slideGroupEditing';
+import { planGroupMembership, planObjectGrouping } from '../utils/model/objectGroups';
 import { getActiveUndoManager } from '../collab/activeUndo';
-import { canMergeObjects, mergeObjectInSlides } from '../utils/mergeObjects';
-import { applyStickyDefaults } from '../utils/stickyEasings';
+import { canMergeObjects, mergeObjectInSlides } from '../utils/model/mergeObjects';
+import { applyStickyDefaults } from '../utils/animation/stickyEasings';
 import {
   collectGhostObjectIds,
   isObjectVisibleAnywhere,
@@ -23,7 +30,7 @@ import {
   objectTypeForElement,
   purgeObjectFromSlides,
   repairPresentation,
-} from '../utils/presentationCleanup';
+} from '../utils/model/presentationCleanup';
 import { getActiveDoc, runInTxn } from '../collab/yDocAdapter';
 import {
   elementToYMap,
@@ -162,6 +169,11 @@ interface PresentationStore {
    *  group (members' existing groupIds are overwritten). Returns the new
    *  groupId, or null when the selection is invalid. */
   groupSlides: (slideIds: string[]) => string | null;
+  moveObjectsToGroup: (slideId: string, ids: string[], target: string | null, sourceGroup?: string) => void;
+  joinPaths: (slideId: string, ids: string[]) => string | null;
+  setGroupCrop: (slideId: string, ids: string[], shapeId: string | null) => void;
+  groupObjects: (slideId: string, ids: string[]) => void;
+  ungroupObjects: (slideId: string, ids: string[]) => void;
   /** Strip the groupId from every slide sharing a group with any given id. */
   ungroupSlides: (slideIds: string[]) => void;
   /** Split BEFORE this slide; singletons become ungrouped. */
@@ -175,6 +187,7 @@ interface PresentationStore {
   addElement: (slideId: string, element: SlideElement) => void;
   addElements: (slideId: string, elements: SlideElement[]) => void;
   updateElement: (slideId: string, elementId: string, changes: Partial<SlideElement>) => void;
+  updateAcrossSlides: (updates: Array<{ slideId: string; elementId: string; changes: Partial<SlideElement> }>, measuredFit?: boolean) => void;
   updateElements: (slideId: string, updates: Array<{ elementId: string; changes: Partial<SlideElement> }>, measuredFit?: boolean) => void;
   deleteElements: (slideId: string, elementIds: string[]) => void;
   moveElementForward: (slideId: string, elementId: string) => void;
@@ -187,7 +200,9 @@ interface PresentationStore {
 
   // Keyframe actions
   hideElement: (slideId: string, elementId: string) => void;
+  hideElements: (slideId: string, elementIds: string[]) => void;
   unhideElement: (slideId: string, elementId: string, position?: { x: number; y: number }) => void;
+  moveElements: (slideId: string, elementIds: string[], mode: LayerMove) => void;
   resetElementToKeyframe: (slideId: string, elementId: string) => void;
   resetElementToNextKeyframe: (slideId: string, elementId: string) => void;
   renameObject: (objectId: string, name: string) => void;
@@ -203,6 +218,7 @@ interface PresentationStore {
   mergeObjects: (targetId: string, sourceId: string) => { merged: boolean; droppedOnSlides: string[] };
 
   // Multi-slide sync actions
+  syncElementsToSlides: (sourceSlideId: string, elementIds: string[], targetSlideIds: string[], fields: string[]) => void;
   syncElementToSlides: (sourceSlideId: string, elementId: string, targetSlideIds: string[], properties: (keyof SlideElement)[]) => void;
 
   // Template actions
@@ -300,10 +316,101 @@ function editSlideGroup(
   });
 }
 
+function editObjectGroups(slideId: string, ids: string[], mode: 'group' | 'ungroup',
+  set: (update: (state: PresentationStore) => Partial<PresentationStore>) => void) {
+  const doc = getActiveDoc();
+  if (doc) {
+    const slide = yDocToJsonSlideOnly(doc, slideId);
+    if (!slide) return;
+    const changes = planObjectGrouping(slide.elements, ids, mode, generateId, useEditorStore.getState().activeSlideId === slideId ? useEditorStore.getState().activeObjectGroupId : null);
+    if (!changes.size) return;
+    const undo = getActiveUndoManager();
+    undo?.stopCapturing();
+    runInTxn(() => {
+      for (const [id, groups] of changes) {
+        const element = getYElement(doc, slideId, id);
+        if (groups.length) element?.set('objectGroupIds', groups);
+        else element?.delete('objectGroupIds');
+      }
+      getYRoot(doc).set('updatedAt', Date.now());
+    });
+    undo?.stopCapturing();
+    return;
+  }
+  set(state => {
+    const p = state.presentation, slide = p.slides[slideId];
+    if (!slide) return state;
+    const changes = planObjectGrouping(slide.elements, ids, mode, generateId, useEditorStore.getState().activeSlideId === slideId ? useEditorStore.getState().activeObjectGroupId : null);
+    if (!changes.size) return state;
+    const elements = { ...slide.elements };
+    for (const [id, groups] of changes) {
+      elements[id] = { ...elements[id] };
+      if (groups.length) elements[id].objectGroupIds = groups;
+      else delete elements[id].objectGroupIds;
+    }
+    return { presentation: { ...p, slides: { ...p.slides, [slideId]: { ...slide, elements } }, updatedAt: Date.now() } };
+  });
+}
+
 export const usePresentationStore = create<PresentationStore>()(
   temporal(
     (set) => guardLocalActions<PresentationStore>({
       presentation: createPresentation(),
+      moveObjectsToGroup: (slideId, ids, target, sourceGroup) => {
+        slideId = beforeMutation(slideId);
+        const doc = getActiveDoc();
+        const undo = getActiveUndoManager();
+        undo?.stopCapturing();
+        if (doc) {
+          runInTxn(() => {
+            const slide = yDocToJsonSlideOnly(doc, slideId);
+            if (!slide) return;
+            const changes = planGroupMembership(slide.elements, ids, target, sourceGroup);
+            for (const [id, path] of changes) {
+              const map = getYElement(doc, slideId, id);
+              if (path.length) map?.set('objectGroupIds', path); else map?.delete('objectGroupIds');
+            }
+            if (changes.size) getYRoot(doc).set('updatedAt', Date.now());
+          });
+          undo?.stopCapturing();return;
+        }
+        set(state => {
+          const slide = state.presentation.slides[slideId];
+          if (!slide) return state;
+          const changes = planGroupMembership(slide.elements, ids, target, sourceGroup);
+          if (!changes.size) return state;
+          const elements = { ...slide.elements };
+          for (const [id, path] of changes) {
+            elements[id] = { ...elements[id] };
+            if (path.length) elements[id].objectGroupIds = path; else delete elements[id].objectGroupIds;
+          }
+          return { presentation: { ...state.presentation, updatedAt: Date.now(), slides: { ...state.presentation.slides, [slideId]: { ...slide, elements } } } };
+        });
+      },
+
+      joinPaths: (slideId, ids) => {
+        const doc = getActiveDoc();
+        const slide = doc ? yDocToJsonSlideOnly(doc, slideId) : usePresentationStore.getState().presentation.slides[slideId];
+        if (!slide) return null;
+        const updates = planJoinPaths(Object.values(slide.elements), ids);
+        if (!updates.length) return null;
+        getActiveUndoManager()?.stopCapturing();
+        usePresentationStore.getState().updateAcrossSlides(updates.map(update => ({ ...update, slideId })));
+        getActiveUndoManager()?.stopCapturing();
+        return ids[0];
+      },
+      setGroupCrop: (slideId, ids, shapeId) => {
+        const doc = getActiveDoc();
+        const slide = doc ? yDocToJsonSlideOnly(doc, slideId) : usePresentationStore.getState().presentation.slides[slideId];
+        if (!slide) return;
+        const updates = planGroupCrop(slide.elements, ids, shapeId, generateId);
+        if (!updates.length) return;
+        getActiveUndoManager()?.stopCapturing();
+        usePresentationStore.getState().updateAcrossSlides(updates.map(update => ({ ...update, slideId })));
+        getActiveUndoManager()?.stopCapturing();
+      },
+      groupObjects: (slideId, ids) => editObjectGroups(slideId, ids, 'group', set),
+      ungroupObjects: (slideId, ids) => editObjectGroups(slideId, ids, 'ungroup', set),
 
       addSlide: (index?: number) => {
         const doc = getActiveDoc();
@@ -1010,11 +1117,18 @@ export const usePresentationStore = create<PresentationStore>()(
       updateElement: (slideId, elementId, changes) => {
         slideId = beforeMutation(slideId);
         const __mirrors = mirrorTargets(slideId);
-        withMirroring(() => {
-          for (const mid of __mirrors) {
-            usePresentationStore.getState().updateElement(mid, elementId, changes);
-          }
-        });
+        if (__mirrors.length) {
+          const doc = getActiveDoc();
+          const read = (id: string) => doc ? yDocToJsonSlideOnly(doc, id) : usePresentationStore.getState().presentation.slides[id];
+          const source = read(slideId);
+          if (!source) return;
+          const updates = [{ elementId, changes }];
+          usePresentationStore.getState().updateAcrossSlides([
+            ...updates.map(u => ({ ...u, slideId })),
+            ...__mirrors.flatMap(id => { const target = read(id); return target ? mirrorOperation(source, target, updates).map(u => ({ ...u, slideId: id })) : []; }),
+          ]);
+          return;
+        }
         const doc = getActiveDoc();
         if (doc) {
           runInTxn(() => {
@@ -1078,14 +1192,64 @@ export const usePresentationStore = create<PresentationStore>()(
         });
       },
 
+      updateAcrossSlides: (updates, measuredFit = false) => {
+        const doc = getActiveDoc();
+        const changedSlides: Record<string, Slide> = {};
+        const originalSlides: Record<string, Slide> = {};
+        for (const slideId of new Set(updates.map(u => u.slideId))) {
+          const original = doc ? yDocToJsonSlideOnly(doc, slideId) : usePresentationStore.getState().presentation.slides[slideId];
+          if (!original) continue;
+          originalSlides[slideId] = original;
+          const slide = { ...original, elements: { ...original.elements }, elementOrder: [...original.elementOrder] };
+          const moved = new Set<string>();
+          for (const u of updates.filter(u => u.slideId === slideId)) {
+            if (!slide.elements[u.elementId]) {
+              if (!u.changes.type || !u.changes.id) continue;
+              slide.elementOrder.push(u.elementId);
+            }
+            slide.elements[u.elementId] = { ...slide.elements[u.elementId], ...u.changes } as SlideElement;
+            if (['x','y','width','height','rotation','points','startBinding','endBinding'].some(key => key in u.changes)) moved.add(u.elementId);
+          }
+          for (const dep of syncDependentsAfterMutation(slide.elements, slide.elementOrder, moved, original.elements, measuredFit)) {
+            slide.elements[dep.elementId] = { ...slide.elements[dep.elementId], ...dep.changes } as SlideElement;
+          }
+          changedSlides[slideId] = slide;
+        }
+        if (doc) runInTxn(() => {
+          for (const [slideId, slide] of Object.entries(changedSlides)) {
+            const ySlide = getYSlide(doc, slideId);
+            if (!ySlide) continue;
+            const elements = ySlide.get('elements') as Y.Map<Y.Map<unknown>>;
+            for (const [id, element] of Object.entries(slide.elements)) {
+              const existing = elements.get(id);
+              if (existing) {
+                const original = originalSlides[slideId].elements[id];
+                const changes = Object.fromEntries(Object.entries(element).filter(([key, value]) => JSON.stringify(value) !== JSON.stringify((original as unknown as Record<string, unknown>)?.[key])));
+                if (Object.keys(changes).length) applyChangesToYElement(existing, changes);
+              }
+              else elements.set(id, elementToYMap(element));
+            }
+            if (slide.elementOrder.length !== originalSlides[slideId].elementOrder.length) yArrayReplaceAll(ySlide.get('elementOrder') as Y.Array<string>, slide.elementOrder);
+          }
+          getYRoot(doc).set('updatedAt', Date.now());
+        });
+        else set(state => ({ presentation: { ...state.presentation, slides: { ...state.presentation.slides, ...changedSlides }, updatedAt: Date.now() } }));
+      },
+
       updateElements: (slideId, updates, measuredFit = false) => {
         slideId = beforeMutation(slideId);
         const __mirrors = mirrorTargets(slideId);
-        withMirroring(() => {
-          for (const mid of __mirrors) {
-            usePresentationStore.getState().updateElements(mid, updates, measuredFit);
-          }
-        });
+        if (__mirrors.length) {
+          const doc = getActiveDoc();
+          const read = (id: string) => doc ? yDocToJsonSlideOnly(doc, id) : usePresentationStore.getState().presentation.slides[id];
+          const source = read(slideId);
+          if (!source) return;
+          usePresentationStore.getState().updateAcrossSlides([
+            ...updates.map(u => ({ ...u, slideId })),
+            ...__mirrors.flatMap(id => { const target = read(id); return target ? mirrorOperation(source, target, updates).map(u => ({ ...u, slideId: id })) : []; }),
+          ], measuredFit);
+          return;
+        }
         const doc = getActiveDoc();
         if (doc) {
           runInTxn(() => {
@@ -1264,6 +1428,37 @@ export const usePresentationStore = create<PresentationStore>()(
 
       moveElementBackward: (slideId, elementId) => moveElement(set, slideId, elementId, -1),
 
+      moveElements: (slideId, elementIds, mode) => {
+        slideId = beforeMutation(slideId);
+        const mirrors = mirrorTargets(slideId);
+        withMirroring(() => {
+          for (const mid of mirrors) usePresentationStore.getState().moveElements(mid, elementIds, mode);
+        });
+        const doc = getActiveDoc();
+        const undo = getActiveUndoManager();
+        undo?.stopCapturing();
+        if (doc) {
+          runInTxn(() => {
+            const slide = yDocToJsonSlideOnly(doc, slideId);
+            const order = getYSlide(doc, slideId)?.get('elementOrder') as Y.Array<string> | undefined;
+            if (!slide || !order) return;
+            const ids = expandWithBoundTexts(slide.elements, slide.elementOrder, elementIds);
+            yArrayReplaceAll(order, reorderSelection(slide.elementOrder, ids, mode));
+            getYRoot(doc).set('updatedAt', Date.now());
+          });
+          undo?.stopCapturing();
+          return;
+        }
+        set(state => {
+          const slide = state.presentation.slides[slideId];
+          if (!slide) return state;
+          const ids = expandWithBoundTexts(slide.elements, slide.elementOrder, elementIds);
+          const elementOrder = reorderSelection(slide.elementOrder, ids, mode);
+          return { presentation: { ...state.presentation, updatedAt: Date.now(),
+            slides: { ...state.presentation.slides, [slideId]: { ...slide, elementOrder } } } };
+        });
+      },
+
       moveElementToFront: (slideId, elementId) => moveElement(set, slideId, elementId, 'front'),
 
       moveElementToBack: (slideId, elementId) => moveElement(set, slideId, elementId, 'back'),
@@ -1288,12 +1483,13 @@ export const usePresentationStore = create<PresentationStore>()(
         }));
       },
 
-      hideElement: (slideId: string, elementId: string) => {
+      hideElement: (slideId, elementId) => usePresentationStore.getState().hideElements(slideId, [elementId]),
+      hideElements: (slideId: string, elementIds: string[]) => {
         slideId = beforeMutation(slideId);
         const __mirrors = mirrorTargets(slideId);
         withMirroring(() => {
           for (const mid of __mirrors) {
-            usePresentationStore.getState().hideElement(mid, elementId);
+            usePresentationStore.getState().hideElements(mid, elementIds);
           }
         });
         const doc = getActiveDoc();
@@ -1304,8 +1500,8 @@ export const usePresentationStore = create<PresentationStore>()(
             // Same guard as the JSON fallback: no-op when the element isn't
             // on this slide.
             const slideJson = yDocToJsonSlideOnly(doc, slideId);
-            if (!slideJson || !slideJson.elements[elementId]) return;
-            const targetIds = expandWithBoundTexts(slideJson.elements, slideJson.elementOrder, [elementId]);
+            if (!slideJson || !elementIds.some(id => slideJson.elements[id])) return;
+            const targetIds = expandWithBoundTexts(slideJson.elements, slideJson.elementOrder, elementIds);
             let touched = false;
             for (const id of targetIds) {
               const elMap = getYElement(doc, slideId, id);
@@ -1327,10 +1523,10 @@ export const usePresentationStore = create<PresentationStore>()(
         }
         set((state) => {
           const slide = state.presentation.slides[slideId];
-          if (!slide || !slide.elements[elementId]) return state;
+          if (!slide || !elementIds.some(id => slide.elements[id])) return state;
 
           // Cascade: hiding a container hides its bound labels too.
-          const targetIds = expandWithBoundTexts(slide.elements, slide.elementOrder, [elementId]);
+          const targetIds = expandWithBoundTexts(slide.elements, slide.elementOrder, elementIds);
 
           let slides = { ...state.presentation.slides };
           let objects = state.presentation.objects;
@@ -1383,6 +1579,34 @@ export const usePresentationStore = create<PresentationStore>()(
           }
         });
         const doc = getActiveDoc();
+        const readGroupSlide = (id: string) => doc ? yDocToJsonSlideOnly(doc, id) : usePresentationStore.getState().presentation.slides[id];
+        const orderForGroup = doc ? (getYRoot(doc).get('slideOrder') as Y.Array<string>).toArray() : usePresentationStore.getState().presentation.slideOrder;
+        const here = orderForGroup.indexOf(slideId);
+        const targetGroupSlide = readGroupSlide(slideId);
+        const sourceGroupSlide = [slideId, ...orderForGroup.slice(0,here).reverse(), ...orderForGroup.slice(here+1)]
+          .map(readGroupSlide).find(s => s?.elements[elementId]);
+        if (targetGroupSlide && sourceGroupSlide?.elements[elementId]?.objectGroupIds?.length) {
+          // Fill missing children from neighbouring keyframes, while keeping
+          // every member already authored on this keyframe authoritative.
+          const completeSource = {...sourceGroupSlide, elements: {...sourceGroupSlide.elements}, elementOrder: [...sourceGroupSlide.elementOrder]};
+          for (const id of [...orderForGroup.slice(0,here).reverse(), ...orderForGroup.slice(here+1)]) {
+            const neighbour = readGroupSlide(id);
+            for (const member of neighbour?.elementOrder ?? []) if (!completeSource.elements[member]) {
+              completeSource.elements[member] = neighbour!.elements[member]; completeSource.elementOrder.push(member);
+            }
+          }
+          const ids = transferIds(completeSource, [elementId]);
+          const anchor = targetGroupSlide.elements[elementId] ?? sourceGroupSlide.elements[elementId];
+          const dx = position ? position.x-anchor.x : 0, dy = position ? position.y-anchor.y : 0;
+          const updates = planSlideTransfer(completeSource, targetGroupSlide, ids, []).map(u => {
+            const el = targetGroupSlide.elements[u.elementId] ?? completeSource.elements[u.elementId];
+            return {...u, changes: {...u.changes, visible: true, ...(position ? {x:el.x+dx,y:el.y+dy} : {})}};
+          });
+          const undo = getActiveUndoManager(); undo?.stopCapturing();
+          usePresentationStore.getState().updateAcrossSlides(updates); undo?.stopCapturing();
+          return;
+        }
+
         if (doc) {
           runInTxn(() => {
             const slideMap = getYSlide(doc, slideId);
@@ -1817,65 +2041,21 @@ export const usePresentationStore = create<PresentationStore>()(
         return result;
       },
 
-      syncElementToSlides: (sourceSlideId: string, elementId: string, targetSlideIds: string[], properties: (keyof SlideElement)[]) => {
+      syncElementsToSlides: (sourceSlideId, elementIds, targetSlideIds, fields) => {
         const doc = getActiveDoc();
-        if (doc) {
-          runInTxn(() => {
-            const srcEl = getYElement(doc, sourceSlideId, elementId);
-            if (!srcEl) return;
-            const changes: Record<string, unknown> = {};
-            for (const p of properties) {
-              const v = srcEl.get(p as string) ?? (String(p) === 'fillStyle' && srcEl.get('type') === 'shape' ? 'solid' : undefined);
-              if (v !== undefined) changes[p as string] = v instanceof Y.Text ? v.toString() : v;
-            }
-            for (const targetId of targetSlideIds) {
-              if (targetId === sourceSlideId) continue;
-              const tgt = getYElement(doc, targetId, elementId);
-              if (!tgt) continue;
-              applyChangesToYElement(tgt, changes);
-            }
-            getYRoot(doc).set('updatedAt', Date.now());
-          });
-          return;
-        }
-        set((state) => {
-          const sourceSlide = state.presentation.slides[sourceSlideId];
-          if (!sourceSlide) return state;
-
-          const sourceElement = sourceSlide.elements[elementId];
-          if (!sourceElement) return state;
-
-          // Build the changes object from the source element
-          const changes: Partial<SlideElement> = {};
-          for (const prop of properties) {
-            (changes as Record<string, unknown>)[prop] = sourceElement[prop]
-              ?? (String(prop) === 'fillStyle' && sourceElement.type === 'shape' ? 'solid' : undefined);
-          }
-
-          // Apply to all target slides
-          const updatedSlides = { ...state.presentation.slides };
-          for (const targetSlideId of targetSlideIds) {
-            if (targetSlideId === sourceSlideId) continue;
-            const targetSlide = updatedSlides[targetSlideId];
-            if (!targetSlide || !targetSlide.elements[elementId]) continue;
-
-            updatedSlides[targetSlideId] = {
-              ...targetSlide,
-              elements: {
-                ...targetSlide.elements,
-                [elementId]: { ...targetSlide.elements[elementId], ...changes } as SlideElement,
-              },
-            };
-          }
-
-          return {
-            presentation: {
-              ...state.presentation,
-              slides: updatedSlides,
-              updatedAt: Date.now(),
-            },
-          };
+        const read = (id: string) => doc ? yDocToJsonSlideOnly(doc, id) : usePresentationStore.getState().presentation.slides[id];
+        const source = read(sourceSlideId);
+        if (!source) return;
+        const updates = [...new Set(targetSlideIds)].filter(id => id !== sourceSlideId).flatMap(id => {
+          const target = read(id);
+          return target ? planSlideTransfer(source, target, elementIds, fields) : [];
         });
+        const undo = getActiveUndoManager(); undo?.stopCapturing();
+        usePresentationStore.getState().updateAcrossSlides(updates);
+        undo?.stopCapturing();
+      },
+      syncElementToSlides: (sourceSlideId, elementId, targetSlideIds, properties) => {
+        usePresentationStore.getState().syncElementsToSlides(sourceSlideId, [elementId], targetSlideIds, properties);
       },
 
       saveAsTemplate: (slideId: string, name: string) => {

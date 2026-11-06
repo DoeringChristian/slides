@@ -81,6 +81,8 @@ export type EasingType =
   | 'slidein'       // translate from off-screen edge
   | 'grow'          // scale from anchor point
   | 'iris'          // circular clip-path reveal
+  | 'croplift' | 'cropliftease' // lift the crop over a stationary fading original
+  | 'cropfade' | 'cropfadeease' // fade the area outside the destination crop
   | 'fadebyglyph';  // staggered per-glyph fade (text)
 
 /** Per-easing settings. Each top-level key targets one easing's behaviour;
@@ -205,6 +207,8 @@ export type SlideElement = TextElement | ShapeElement | ImageElement | GroupElem
 
 export interface BaseElement {
   id: string;
+  /** Persistent selection groups on this keyframe, outermost first. */
+  objectGroupIds?: string[];
   x: number;
   y: number;
   width: number;
@@ -248,7 +252,7 @@ export interface TextElement extends BaseElement {
 }
 
 /** `path` covers lines, arrows, polylines, polygons and curves. */
-export type ShapeType = 'rect' | 'ellipse' | 'triangle' | 'star' | 'path' | 'vector';
+export type ShapeType = 'dot' | 'rect' | 'ellipse' | 'triangle' | 'star' | 'path' | 'vector';
 
 /** Typed endpoint heads share geometry across all renderers. Absent means none. */
 export type ArrowheadType =
@@ -318,9 +322,11 @@ export interface VectorGeometry {
 }
 
 export interface ShapeElement extends BaseElement {
+  /** This member supplies the crop boundary for this ordinary object group. */
+  cropGroupId?: string | null;
   geometry?: VectorGeometry;
   /** User drawing family; preserves line/arrow/curve defaults after style edits. */
-  creationPreset: 'rect' | 'ellipse' | 'triangle' | 'star' | 'line' | 'arrow' | 'curve' | 'polygon' | 'icon';
+  creationPreset: 'dot' | 'rect' | 'ellipse' | 'triangle' | 'star' | 'line' | 'arrow' | 'curve' | 'polygon' | 'icon';
   type: 'shape';
   shapeType: ShapeType;
   fill: string;

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 import type { Guide, SpacingGuide } from '../../hooks/useAlignmentGuides';
-import { isClientPointInCanvas } from '../../utils/canvasViewport';
+import { isClientPointInCanvas } from '../../utils/geometry/canvasViewport';
 
 interface Props {
   guides: Guide[];

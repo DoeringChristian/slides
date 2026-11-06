@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { computePointSnap, type Guide } from '../../hooks/useAlignmentGuides';
-import { snapPathPoint } from '../../utils/pathSnapping';
+import { snapPathPoint } from '../../utils/snapping/pathSnapping';
 import { SVGAlignmentGuides } from './SVGAlignmentGuides';
 
 const render = (guides: Guide[], zoom = 1) => renderToStaticMarkup(<svg><SVGAlignmentGuides guides={guides} zoom={zoom} /></svg>);

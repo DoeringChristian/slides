@@ -7,6 +7,7 @@ import type {
   TransitionGroup,
   TransitionOptions,
 } from '../../types/presentation';
+import { selectionResizeBounds } from '../../utils/geometry/resizeGeometry';
 import { usePresentationStore } from '../../store/presentationStore';
 import { isVisibilityFadeOut, optionsKeyFor } from './transitionSide';
 import { composeSlideFrame, renderPresenterElement } from '../presenter/presenterUtils';
@@ -61,8 +62,10 @@ function useSharedAnimationTick(active: boolean): number {
 }
 
 interface Props {
-  sourceElement: SlideElement | undefined;
-  targetElement: SlideElement | undefined;
+  sourceElement?: SlideElement;
+  targetElement?: SlideElement;
+  sourceElements?: SlideElement[];
+  targetElements?: SlideElement[];
   /** Property group whose easing this preview is showing (e.g. 'visibility',
    *  'content', 'position', …). */
   group: TransitionGroup;
@@ -84,63 +87,32 @@ interface Props {
  * in phase — picking "ease" vs "write" you see the same t across the grid.
  */
 export const TransitionPreview: React.FC<Props> = ({
-  sourceElement, targetElement, group, easing, options, width, height, active = true,
+  sourceElement, targetElement, sourceElements, targetElements, group, easing, options, width, height, active = true,
 }) => {
   const resources = usePresentationStore((s) => s.presentation.resources);
   const t = useSharedAnimationTick(active);
 
-  // Decide which side carries the transition. For a visibility fade-OUT the
-  // source element holds the easing (the target is gone); everywhere else it's
-  // the target.
-  const isFadeOut = isVisibilityFadeOut(sourceElement, targetElement, group);
-  const optionsKey = optionsKeyFor(group);
-
-  const withEasing = (el: SlideElement | undefined): SlideElement | undefined => {
-    if (!el) return el;
-    const transitions: PropertyTransitions = {
-      ...(el.transitions || {}),
-      [group]: easing,
+  const { slideA, slideB, bbox } = useMemo(() => {
+    const sources = sourceElements ?? (sourceElement ? [sourceElement] : []);
+    const targets = targetElements ?? (targetElement ? [targetElement] : []);
+    const sourceMap = new Map(sources.map(el => [el.id, el]));
+    const targetMap = new Map(targets.map(el => [el.id, el]));
+    const withEasing = (el: SlideElement): SlideElement => {
+      const transitions: PropertyTransitions = { ...el.transitions, [group]: easing };
+      const optionsKey = optionsKeyFor(group);
+      if (optionsKey && options) transitions[optionsKey] = options;
+      return { ...el, transitions };
     };
-    if (optionsKey && options) {
-      transitions[optionsKey] = options;
-    }
-    return { ...el, transitions };
-  };
-
-  const syntheticSource = useMemo(
-    () => (isFadeOut ? withEasing(sourceElement) : sourceElement),
-    [sourceElement, isFadeOut, easing, options, group],
-  );
-  const syntheticTarget = useMemo(
-    () => (isFadeOut ? targetElement : withEasing(targetElement)),
-    [targetElement, isFadeOut, easing, options, group],
-  );
-
-  // viewBox = union of source + target bboxes (+ 20% padding).
-  const bbox = useMemo(() => {
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    const include = (el: SlideElement | undefined) => {
-      if (!el) return;
-      minX = Math.min(minX, el.x);
-      minY = Math.min(minY, el.y);
-      maxX = Math.max(maxX, el.x + el.width);
-      maxY = Math.max(maxY, el.y + el.height);
-    };
-    include(syntheticSource);
-    include(syntheticTarget);
-    if (!isFinite(minX)) return { x: 0, y: 0, width: 100, height: 50 };
-    const padX = Math.max(20, (maxX - minX) * 0.2);
-    const padY = Math.max(20, (maxY - minY) * 0.2);
+    const a = sources.map(el => isVisibilityFadeOut(el, targetMap.get(el.id), group) ? withEasing(el) : el);
+    const b = targets.map(el => isVisibilityFadeOut(sourceMap.get(el.id), el, group) ? el : withEasing(el));
+    // Include every member on both sides and account for rotated bounds.
+    const bounds = sources.length || targets.length ? selectionResizeBounds([...sources, ...targets]) : {x:0,y:0,width:100,height:50};
+    const padX = Math.max(20, bounds.width * .2), padY = Math.max(20, bounds.height * .2);
     return {
-      x: minX - padX,
-      y: minY - padY,
-      width: maxX - minX + 2 * padX,
-      height: maxY - minY + 2 * padY,
+      slideA: makePreviewSlide('preview-A', a), slideB: makePreviewSlide('preview-B', b),
+      bbox: { x: bounds.x-padX, y: bounds.y-padY, width: bounds.width+2*padX, height: bounds.height+2*padY },
     };
-  }, [syntheticSource, syntheticTarget]);
-
-  const slideA = useMemo<Slide>(() => makePreviewSlide('preview-A', syntheticSource), [syntheticSource]);
-  const slideB = useMemo<Slide>(() => makePreviewSlide('preview-B', syntheticTarget), [syntheticTarget]);
+  }, [sourceElement, targetElement, sourceElements, targetElements, group, easing, options]);
 
   const { renderedElements } = composeSlideFrame({
     slideA,
@@ -152,6 +124,7 @@ export const TransitionPreview: React.FC<Props> = ({
 
   return (
     <svg
+      data-preview-elements={renderedElements.length}
       width={width}
       height={height}
       viewBox={`${bbox.x} ${bbox.y} ${bbox.width} ${bbox.height}`}
@@ -163,11 +136,11 @@ export const TransitionPreview: React.FC<Props> = ({
   );
 };
 
-function makePreviewSlide(id: string, el: SlideElement | undefined): Slide {
+function makePreviewSlide(id: string, elements: SlideElement[]): Slide {
   return {
     id,
-    elements: el ? { [el.id]: el } : {},
-    elementOrder: el ? [el.id] : [],
+    elements: Object.fromEntries(elements.map(el => [el.id, el])),
+    elementOrder: elements.map(el => el.id),
     background: { type: 'solid', color: '#ffffff' },
     transition: { duration: ANIM_MS },
     notes: '',

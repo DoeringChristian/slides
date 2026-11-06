@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 import { viteSingleFile } from 'vite-plugin-singlefile'
 import path from 'path'
 
-const editorOrigin = process.env.VITE_EDITOR_ORIGIN || 'https://doeringc.ch/slides'
+const editorOrigin = process.env.VITE_EDITOR_ORIGIN || 'https://doeringc.de/slides'
 
 const PAYLOAD_SENTINEL = '<!--SLIDES_PAYLOAD-->'
 

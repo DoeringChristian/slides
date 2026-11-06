@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ScrubInput } from './ScrubInput';
-import type { ScrubSpec } from '../../utils/scrub';
+import type { ScrubSpec } from '../../utils/editor/scrub';
 
 /**
  * Range slider + compact numeric readout, speaking the same live-preview

@@ -1,3 +1,4 @@
+import { MultiSelectionProperties } from './MultiSelectionProperties';
 import { CreationProperties } from './CreationProperties';
 import { creationKeyForTool, useCreationPreferences } from '../../store/creationPreferences';
 import React from 'react';
@@ -58,7 +59,7 @@ export const PropertiesPanel: React.FC = () => {
 
   return (
     <div className="w-64 bg-white border-l border-gray-200 flex flex-col shrink-0 overflow-y-auto">
-      {showHeader && (
+      {showHeader && selected.length < 2 && (
         <div className="p-3 border-b border-gray-200">
           {/* Shapes / groups have no "content" concept, so only the
               visibility (appear / disappear) transition is hoisted next
@@ -92,7 +93,7 @@ export const PropertiesPanel: React.FC = () => {
       )}
 
       <div className="p-3 space-y-4">
-        {element ? (
+        {selected.length > 1 ? <MultiSelectionProperties key={`${activeSlideId}:${selected.map(el => el.id).join()}`} elements={selected} /> : element ? (
           <>
             {element.type === 'text' && <TextProperties element={element} />}
             {element.type === 'shape' && <ShapeProperties element={element} />}

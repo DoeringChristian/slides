@@ -1,23 +1,27 @@
+import { selectionResizeBounds } from '../../utils/geometry/resizeGeometry';
+import { expandObjectGroups } from '../../utils/model/objectGroups';
 import React, { useState, useRef } from 'react';
 import { ImagePlus, Lock, Unlock, Crop, Trash2 } from 'lucide-react';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useEditorStore } from '../../store/editorStore';
 import { ResourcePicker } from '../properties/ResourcePicker';
-import { computeResourceUpdate } from '../../utils/imageUtils';
+import { computeResourceUpdate } from '../../utils/editor/imageUtils';
 import { CANVAS_PADDING } from '../../utils/constants';
-import { getRotationCenter } from '../../utils/geometry';
-import { useElementVisualBounds, selectionControlMetrics } from '../../utils/shapeVisualBounds';
+import { getRotationCenter } from '../../utils/geometry/geometry';
+import { useElementVisualBounds, selectionControlMetrics } from '../../utils/geometry/shapeVisualBounds';
 import type { SlideElement, ImageElement } from '../../types/presentation';
 
 interface Props {
-  element: SlideElement;
+  elements: SlideElement[];
+  locked: boolean;
   zoom: number;
-  isSelected: boolean;
+
 }
 
-export const SelectionActionBar: React.FC<Props> = ({ element, zoom, isSelected }) => {
+export const SelectionActionBar: React.FC<Props> = ({ elements: selection, zoom, locked }) => {
   const updateElement = usePresentationStore((s) => s.updateElement);
-  const hideElement = usePresentationStore((s) => s.hideElement);
+  const hideElements = usePresentationStore((s) => s.hideElements);
+  const updateElements = usePresentationStore((s) => s.updateElements);
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const setCroppingElementId = useEditorStore((s) => s.setCroppingElementId);
   const setSelectedElements = useEditorStore((s) => s.setSelectedElements);
@@ -28,18 +32,21 @@ export const SelectionActionBar: React.FC<Props> = ({ element, zoom, isSelected 
 
   // Calculate position based on element bounds and zoom
   // For lines/arrows, use actual line bounds; for other elements, use element dimensions
-  const bounds = useElementVisualBounds(element)!;
-  const center = getRotationCenter(element);
+  const element = selection[0];
+  const single = selection.length === 1 ? element : null;
+  const visualBounds = useElementVisualBounds(single);
+  const bounds = visualBounds ?? selectionResizeBounds(selection);
+  const center = single ? getRotationCenter(single) : { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
   const centerX = (bounds.x + bounds.width / 2 + CANVAS_PADDING) * zoom;
   const centerY = (bounds.y + bounds.height / 2 + CANVAS_PADDING) * zoom;
-  const metrics = selectionControlMetrics(element, zoom);
+  const metrics = selectionControlMetrics(single, zoom);
   const width = bounds.width * zoom;
   const height = bounds.height * zoom;
 
   // Only show when selected
-  if (!isSelected) return null;
+  if (!element) return null;
 
-  const isImage = element.type === 'image';
+  const isImage = single?.type === 'image';
 
   const handleResourceClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -51,7 +58,8 @@ export const SelectionActionBar: React.FC<Props> = ({ element, zoom, isSelected 
 
   const handleLockToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
-    updateElement(activeSlideId, element.id, { locked: !element.locked });
+    const elements = usePresentationStore.getState().presentation.slides[activeSlideId]?.elements ?? {};
+    updateElements(activeSlideId, expandObjectGroups(elements, selection.map(el => el.id), useEditorStore.getState().activeObjectGroupId).map(elementId => ({ elementId, changes: { locked: !locked } })));
   };
 
   const handleCropClick = (e: React.MouseEvent) => {
@@ -61,7 +69,8 @@ export const SelectionActionBar: React.FC<Props> = ({ element, zoom, isSelected 
 
   const handleHideClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    hideElement(activeSlideId, element.id);
+    const elements = usePresentationStore.getState().presentation.slides[activeSlideId]?.elements ?? {};
+    hideElements(activeSlideId, expandObjectGroups(elements, selection.map(el => el.id), useEditorStore.getState().activeObjectGroupId));
     setSelectedElements([]);
   };
 
@@ -77,12 +86,13 @@ export const SelectionActionBar: React.FC<Props> = ({ element, zoom, isSelected 
     <>
       <div
         className="absolute"
+        data-selection-action-bar=""
         style={{
           left: centerX,
           top: centerY,
           width,
           height,
-          transform: `translate(-50%, -50%) rotate(${element.rotation}deg)`,
+          transform: `translate(-50%, -50%) rotate(${single?.rotation ?? 0}deg)`,
           transformOrigin: `${(center.x - bounds.x) * zoom}px ${(center.y - bounds.y) * zoom}px`,
           pointerEvents: 'none',
         }}
@@ -105,13 +115,13 @@ export const SelectionActionBar: React.FC<Props> = ({ element, zoom, isSelected 
             <button
               onClick={handleLockToggle}
               className={`p-1.5 rounded-full transition-colors ${
-                element.locked
+                locked
                   ? 'bg-amber-100 text-amber-600 hover:bg-amber-200'
                   : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600'
               }`}
-              title={element.locked ? 'Unlock' : 'Lock'}
+              title={locked ? 'Unlock' : 'Lock'}
             >
-              {element.locked ? <Lock size={18} /> : <Unlock size={18} />}
+              {locked ? <Lock size={18} /> : <Unlock size={18} />}
             </button>
 
             {/* Crop button - only for images */}

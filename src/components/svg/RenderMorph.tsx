@@ -1,17 +1,17 @@
 import React, { useEffect, useReducer } from 'react';
 import type { SlideElement, TextElement, ShapeElement } from '../../types/presentation';
-import type { MorphFx } from '../../utils/interpolation';
-import { lerp, lerpColor } from '../../utils/interpolation';
-import { textInsets } from '../../utils/boundTextLayout';
-import { textVerticalOffset, type SvgTextDoc } from '../../utils/textLayout';
-import { getUserTextLayoutSync, layoutUserText } from '../../utils/userTextSizing';
-import { samplePathD } from '../../utils/glyphPaths';
+import type { MorphFx } from '../../utils/animation/interpolation';
+import { lerp, lerpColor } from '../../utils/animation/interpolation';
+import { textInsets } from '../../utils/text/boundTextLayout';
+import { textVerticalOffset, type SvgTextDoc } from '../../utils/text/textLayout';
+import { getUserTextLayoutSync, layoutUserText } from '../../utils/text/userTextSizing';
+import { samplePathD } from '../../utils/text/glyphPaths';
 import {
   shapeToUnitOutline,
   partitionOutline,
   parseTransformChain,
   applyMat,
-} from '../../utils/morphGeometry';
+} from '../../utils/animation/morphGeometry';
 import { RenderShape } from './ElementRenderer';
 import { SVGTextPaths } from './SVGTextPaths';
 

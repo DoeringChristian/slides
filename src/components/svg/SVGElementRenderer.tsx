@@ -3,7 +3,7 @@ import { SVGTextNode } from './SVGTextNode';
 import { SVGShapeNode } from './SVGShapeNode';
 import { SVGImageNode } from './SVGImageNode';
 import type { SlideElement } from '../../types/presentation';
-import type { SvgTextDoc } from '../../utils/textLayout';
+import type { SvgTextDoc } from '../../utils/text/textLayout';
 
 interface Props {
   element: SlideElement;

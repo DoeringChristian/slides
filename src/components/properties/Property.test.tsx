@@ -1,9 +1,9 @@
 import { describe, expect, test, vi } from 'vitest';
 import type { ComponentProps, ReactElement } from 'react';
-vi.mock('../../utils/keyboard', () => ({ isShiftHeld: () => false, isCtrlHeld: () => false }));
+vi.mock('../../utils/editor/keyboard', () => ({ isShiftHeld: () => false, isCtrlHeld: () => false }));
 import { NumberProperty } from './Property';
 import { NumberEditor } from './scrubEditors';
-import { applyScrubDelta, commitValue, parseInput } from '../../utils/scrub';
+import { applyScrubDelta, commitValue, parseInput } from '../../utils/editor/scrub';
 
 describe('NumberProperty display scale', () => {
   const property = new NumberProperty<{ opacity: number }>({ key: 'opacity', label: 'Opacity', transitionGroup: 'opacity',

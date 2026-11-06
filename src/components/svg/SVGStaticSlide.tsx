@@ -1,11 +1,13 @@
 import React from 'react';
+import { expandObjectGroups } from '../../utils/model/objectGroups';
+import { selectionResizeBounds } from '../../utils/geometry/resizeGeometry';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useEditorStore } from '../../store/editorStore';
 import { SVGBackground } from './SVGBackground';
 import { RenderElement } from './ElementRenderer';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
-import { attachLabelMasks } from '../../utils/syncDependents';
-import { getElementBounds, getElementCenter } from '../../utils/geometry';
+import { attachLabelMasks } from '../../utils/model/syncDependents';
+import { getElementBounds, getElementCenter } from '../../utils/geometry/geometry';
 import type { Slide, SlideElement } from '../../types/presentation';
 
 interface Props {
@@ -16,14 +18,16 @@ interface Props {
   showHighlights?: boolean;
 }
 
-const HighlightRect: React.FC<{ element: SlideElement; scale: number }> = ({ element, scale }) => {
+const HighlightRect: React.FC<{ members: SlideElement[]; scale: number }> = ({ members, scale }) => {
+  const element = members[0];
+  const grouped = members.length > 1;
   const pad = 4 / scale;
-  const bounds = getElementBounds(element);
+  const bounds = grouped ? selectionResizeBounds(members) : getElementBounds(element);
   const center = getElementCenter(element);
-  const transform = element.rotation ? `rotate(${element.rotation}, ${center.x}, ${center.y})` : undefined;
+  const transform = !grouped && element.rotation ? `rotate(${element.rotation}, ${center.x}, ${center.y})` : undefined;
 
   return (
-    <g transform={transform}>
+    <g data-selection-highlight="" transform={transform}>
       <rect
         x={bounds.x - pad}
         y={bounds.y - pad}
@@ -41,10 +45,8 @@ const HighlightRect: React.FC<{ element: SlideElement; scale: number }> = ({ ele
 
 const StaticElement: React.FC<{
   element: SlideElement;
-  isSelected?: boolean;
-  scale: number;
   slideId: string;
-}> = ({ element, isSelected, scale, slideId }) => {
+}> = ({ element, slideId }) => {
   const resource = usePresentationStore((s) => {
     if (element.type === 'image' && 'resourceId' in element && element.resourceId) {
       return s.presentation.resources[element.resourceId];
@@ -61,7 +63,6 @@ const StaticElement: React.FC<{
         resource={resource}
         clipIdPrefix={`static-${slideId}`}
       />
-      {isSelected && <HighlightRect element={element} scale={scale} />}
     </>
   );
 };
@@ -78,7 +79,15 @@ export const SVGStaticSlide: React.FC<Props> = React.memo(({
   const selectedElementIds = selectedElementIdsProp ?? storeSelectedElementIds;
 
   const scale = width / SLIDE_WIDTH;
-  const selectedSet = selectedElementIds && selectedElementIds.length > 0 ? new Set(selectedElementIds) : null;
+  const scope = useEditorStore(s => s.activeObjectGroupId);
+  const highlights: SlideElement[][] = [];
+  const seen = new Set<string>();
+  if (showHighlights) for (const id of selectedElementIds) {
+    if (seen.has(id) || !slide.elements[id]?.visible) continue;
+    const ids = expandObjectGroups(slide.elements, [id], scope);
+    ids.forEach(member => seen.add(member));
+    highlights.push(ids.map(member => slide.elements[member]).filter(el => el?.visible));
+  }
 
   const elements = attachLabelMasks(
     slide.elementOrder.map((id) => slide.elements[id]).filter(Boolean),
@@ -101,11 +110,10 @@ export const SVGStaticSlide: React.FC<Props> = React.memo(({
         <StaticElement
           key={el.id}
           element={el}
-          isSelected={showHighlights && selectedSet?.has(el.id)}
-          scale={scale}
           slideId={slide.id}
         />
       ))}
+      {highlights.map(members => <HighlightRect key={members[0].id} members={members} scale={scale} />)}
     </svg>
   );
 });

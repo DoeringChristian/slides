@@ -1,11 +1,11 @@
 import { create } from 'zustand';
 import type { ShapeElement, Tool } from '../types/presentation';
-import { parsePaintColor } from '../utils/paintColor';
+import { parsePaintColor } from '../utils/paint/paintColor';
 
 export const CREATION_PREFERENCES_KEY = 'slides.creation-preferences.v1';
-export type CreationKey = 'rect' | 'ellipse' | 'triangle' | 'star' | 'line' | 'arrow' | 'curve' | 'polygon' | 'icon';
+export type CreationKey = 'dot' | 'rect' | 'ellipse' | 'triangle' | 'star' | 'line' | 'arrow' | 'curve' | 'polygon' | 'icon';
 export type CreationStyle = Partial<Pick<ShapeElement, 'fill' | 'stroke' | 'strokeWidth' | 'strokeStyle' | 'fillStyle' | 'cornerRadius' | 'curve' | 'closed' | 'startHead' | 'endHead'>>;
-const keys: CreationKey[] = ['rect', 'ellipse', 'triangle', 'star', 'line', 'arrow', 'curve', 'polygon', 'icon'];
+const keys: CreationKey[] = ['dot', 'rect', 'ellipse', 'triangle', 'star', 'line', 'arrow', 'curve', 'polygon', 'icon'];
 const heads = ['none', 'arrow', 'triangle', 'triangle-outline', 'bar', 'dot', 'circle', 'circle-outline', 'diamond', 'diamond-outline', 'crowfoot-one', 'crowfoot-many', 'crowfoot-one-many'];
 export function creationKeyForTool(tool: Tool): CreationKey | undefined {
   return tool === 'bspline' ? 'curve' : keys.includes(tool as CreationKey) ? tool as CreationKey : undefined;

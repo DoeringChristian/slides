@@ -8,10 +8,10 @@ import { ProjectCard, NewProjectCard } from './ProjectCard';
 // shared RenderShape via renderToStaticMarkup), which must stay out of the
 // main editor chunk — same treatment as the export utilities.
 import { StorageSettingsDialog } from './StorageSettingsDialog';
-import { getStorageClient } from '../../utils/storageClient';
+import { getStorageClient } from '../../utils/io/storageClient';
 import type { Presentation } from '../../types/presentation';
 import { useJoinedProjects, removeJoinedProject } from '../../store/joinedStore';
-import { importPresentationFile } from '../../utils/importPresentation';
+import { importPresentationFile } from '../../utils/io/importPresentation';
 
 export const ProjectPickerDialog: React.FC = () => {
   const [showSettings, setShowSettings] = useState(false);
@@ -66,7 +66,7 @@ export const ProjectPickerDialog: React.FC = () => {
             if (data && data.slideOrder && data.slideOrder.length > 0 && data.slides) {
               const firstSlide = data.slides[data.slideOrder[0]];
               if (firstSlide) {
-                const { generateThumbnail } = await import('../../utils/thumbnailGenerator');
+                const { generateThumbnail } = await import('../../utils/io/thumbnailGenerator');
                 const thumbnail = await generateThumbnail(firstSlide, data.resources || {});
                 updateThumbnail(project.id, thumbnail);
               }

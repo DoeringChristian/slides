@@ -1,17 +1,17 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it, vi } from 'vitest';
 import { RenderMorph } from './RenderMorph';
-import { createShapeElement, createTextElement } from '../../utils/slideFactory';
-import { samplePathD } from '../../utils/glyphPaths';
-import type { MorphFx } from '../../utils/interpolation';
+import { createShapeElement, createTextElement } from '../../utils/model/slideFactory';
+import { samplePathD } from '../../utils/text/glyphPaths';
+import type { MorphFx } from '../../utils/animation/interpolation';
 
-vi.mock('../../utils/glyphPaths', async importOriginal => ({
-  ...await importOriginal<typeof import('../../utils/glyphPaths')>(),
+vi.mock('../../utils/text/glyphPaths', async importOriginal => ({
+  ...await importOriginal<typeof import('../../utils/text/glyphPaths')>(),
   prewarmFonts: vi.fn(),
   samplePathD: vi.fn(() => Array(64).fill(0)),
 }));
-vi.mock('../../utils/textLayout', async importOriginal => ({
-  ...await importOriginal<typeof import('../../utils/textLayout')>(),
+vi.mock('../../utils/text/textLayout', async importOriginal => ({
+  ...await importOriginal<typeof import('../../utils/text/textLayout')>(),
   getLayoutSync: () => ({ width: 100, height: 20, paths: [{ d: 'M0 0L1 1', transform: 'translate(3,4)', fillColor: '#000000' }], lines: [] }),
 }));
 

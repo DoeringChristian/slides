@@ -3,15 +3,15 @@ import type { Presentation } from '../types/presentation';
 import { createUndoManagerFor } from '../collab/activeUndo';
 import { getActiveDoc, setActiveDoc } from '../collab/yDocAdapter';
 import { jsonToYDoc, yDocToJson } from '../collab/ySchema';
-import { createPresentation, createShapeElement } from '../utils/slideFactory';
+import { createPresentation, createShapeElement } from '../utils/model/slideFactory';
 import { usePresentationStore as store } from './presentationStore';
 import { useEditorStore as editor } from './editorStore';
 
 const mocks = vi.hoisted(() => ({ getProject: vi.fn(), loadProject: vi.fn(), getJoinedProject: vi.fn(), updateJoinedProjectMeta: vi.fn() }));
-vi.mock('../utils/storageClient', () => ({ getStorageClient: () => ({ getProject: mocks.getProject }) }));
-vi.mock('../utils/projectFiles', () => ({ loadProject: mocks.loadProject }));
+vi.mock('../utils/io/storageClient', () => ({ getStorageClient: () => ({ getProject: mocks.getProject }) }));
+vi.mock('../utils/io/projectFiles', () => ({ loadProject: mocks.loadProject }));
 vi.mock('./joinedStore', () => ({ getJoinedProject: mocks.getJoinedProject, updateJoinedProjectMeta: mocks.updateJoinedProjectMeta }));
-vi.mock('../utils/keyboard', () => ({ isShiftHeld: () => false, isCtrlHeld: () => false }));
+vi.mock('../utils/editor/keyboard', () => ({ isShiftHeld: () => false, isCtrlHeld: () => false }));
 vi.stubGlobal('window', {});
 const { useVaultStore: vault } = await import('./vaultStore');
 
@@ -67,7 +67,7 @@ async function runRejectedOpen(storageMode: 'local' | 'server' | 'filesystem', f
       mocks.loadProject.mockResolvedValue(incoming);
     }
     await vault.getState().openProject(incoming.id);
-    expect(vault.getState().error).toBe('Failed to open project');
+    expect(vault.getState().error).toMatch(/^Failed to open project: /);
     expect(vault.getState().isLoading).toBe(false);
     expect(vault.getState().activeProjectId).toBe(initial.id);
     expect(vault.getState().currentFilename).toBe(`${initial.id}.json`);
@@ -110,4 +110,30 @@ it('valid current-format open still detaches the old document and activates the 
     expect(store.getState().presentation).toEqual(incoming);
     expect(editor.getState().activeSlideId).toBe(incoming.slideOrder[0]);
   } finally { setActiveDoc(null); doc.destroy(); }
+});
+
+it('opens a project whose bookkeeping timestamp was lost, without modifying its content', async () => {
+  const incoming = deck();
+  const original = structuredClone(incoming);
+  delete (incoming as Partial<Presentation>).updatedAt;
+  vault.setState({ storageMode: 'server', projects: [meta(original)] });
+  mocks.getProject.mockResolvedValue({ presentation: incoming });
+  await vault.getState().openProject(incoming.id);
+  expect(vault.getState().error).toBeNull();
+  expect(store.getState().presentation).toEqual({ ...original, updatedAt: original.createdAt });
+  expect(incoming.updatedAt).toBeUndefined();
+});
+
+it('recovers orphaned slides by appending them, preserving all slide data', async () => {
+  const incoming = deck();
+  const originalSlide = incoming.slides[incoming.slideOrder[0]];
+  incoming.slides.orphan = { ...structuredClone(originalSlide), id: 'orphan' };
+  const before = structuredClone(incoming);
+  vault.setState({ storageMode: 'server', projects: [meta(incoming)] });
+  mocks.getProject.mockResolvedValue({ presentation: incoming });
+  await vault.getState().openProject(incoming.id);
+  expect(vault.getState().error).toBeNull();
+  expect(store.getState().presentation.slideOrder).toEqual([...before.slideOrder, 'orphan']);
+  expect(store.getState().presentation.slides).toEqual(before.slides);
+  expect(incoming).toEqual(before);
 });

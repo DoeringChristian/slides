@@ -1,9 +1,10 @@
-import React, { useMemo } from 'react';
+import { transferIds } from '../../utils/model/groupTransfer';
+import { SelectionPropertiesContext } from './SelectionPropertiesContext';
+import React, { useMemo, useContext } from 'react';
 import { Copy } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
-import type { SlideElement } from '../../types/presentation';
-import { getNested, setNestedPartial, defaultEquals } from './Property';
+import { getNested, defaultEquals } from './Property';
 
 interface Props {
   elementId: string;
@@ -11,15 +12,17 @@ interface Props {
 }
 
 export const SlideSyncButton: React.FC<Props> = ({ elementId, fields }) => {
+  const batchIds = useContext(SelectionPropertiesContext);
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const selectedSlideIds = useEditorStore((s) => s.selectedSlideIds);
   const slides = usePresentationStore((s) => s.presentation.slides);
-  const syncElementToSlides = usePresentationStore((s) => s.syncElementToSlides);
-  const updateElement = usePresentationStore((s) => s.updateElement);
 
   const hasDifference = useMemo(() => {
     if (selectedSlideIds.length <= 1) return false;
 
+    const source = slides[activeSlideId];
+    if (!source) return false;
+    return transferIds(source, batchIds ?? [elementId]).some(elementId => {
     const activeElement = slides[activeSlideId]?.elements[elementId];
     if (!activeElement) return false;
 
@@ -37,31 +40,13 @@ export const SlideSyncButton: React.FC<Props> = ({ elementId, fields }) => {
       }
     }
     return false;
-  }, [selectedSlideIds, activeSlideId, slides, elementId, fields]);
+    });
+  }, [batchIds,selectedSlideIds, activeSlideId, slides, elementId, fields]);
 
   if (!hasDifference) return null;
 
   const handleSync = () => {
-    const hasNestedFields = fields.some((f) => f.includes('.'));
-
-    if (!hasNestedFields) {
-      // Use existing syncElementToSlides for top-level fields
-      syncElementToSlides(activeSlideId, elementId, selectedSlideIds, fields as (keyof SlideElement)[]);
-    } else {
-      // Handle nested fields manually
-      const sourceElement = slides[activeSlideId]?.elements[elementId];
-      if (!sourceElement) return;
-
-      let changes: Partial<SlideElement> = {};
-      for (const field of fields) {
-        changes = { ...changes, ...setNestedPartial(sourceElement, field, getNested(sourceElement, field)) };
-      }
-      for (const slideId of selectedSlideIds) {
-        if (slideId === activeSlideId) continue;
-        if (!slides[slideId]?.elements[elementId]) continue;
-        updateElement(slideId, elementId, changes);
-      }
-    }
+    usePresentationStore.getState().syncElementsToSlides(activeSlideId, batchIds ?? [elementId], selectedSlideIds, fields);
   };
 
   return (

@@ -3,15 +3,15 @@ import type { GroupElement, Presentation, ShapeElement, SlideElement } from '../
 import { createUndoManagerFor } from '../collab/activeUndo';
 import { setActiveDoc } from '../collab/yDocAdapter';
 import { jsonToYDoc, yDocToJson } from '../collab/ySchema';
-import { assertPresentation } from '../utils/currentPresentation';
-import { bindingFor, resolveBinding } from '../utils/connectorUtils';
-import { pathPointsInSlide } from '../utils/pathEditing';
-import { pathBoundsFor } from '../utils/pathShapes';
-import { createPresentation, createShapeElement, createSlide, createTextElement } from '../utils/slideFactory';
+import { assertPresentation } from '../utils/model/currentPresentation';
+import { bindingFor, resolveBinding } from '../utils/paths/connectorUtils';
+import { pathPointsInSlide } from '../utils/paths/pathEditing';
+import { pathBoundsFor } from '../utils/paths/pathShapes';
+import { createPresentation, createShapeElement, createSlide, createTextElement } from '../utils/model/slideFactory';
 import { useEditorStore as editor } from './editorStore';
 import { usePresentationStore as store } from './presentationStore';
 
-vi.mock('../utils/keyboard', () => ({ isShiftHeld: () => false, isCtrlHeld: () => false }));
+vi.mock('../utils/editor/keyboard', () => ({ isShiftHeld: () => false, isCtrlHeld: () => false }));
 afterEach(() => { setActiveDoc(null); vi.restoreAllMocks(); });
 
 function fixture(): Presentation {

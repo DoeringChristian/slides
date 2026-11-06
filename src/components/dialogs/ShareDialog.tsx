@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { X, Link as LinkIcon, Copy, Loader2, Trash2, Check } from 'lucide-react';
-import { mintShare, listShares, revokeShare, type ShareEntry } from '../../utils/storageClient';
+import { mintShare, listShares, revokeShare, type ShareEntry } from '../../utils/io/storageClient';
 
 interface Props {
   isOpen: boolean;

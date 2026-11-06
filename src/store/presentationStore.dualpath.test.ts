@@ -29,7 +29,7 @@ vi.mock('nanoid', () => ({
 import { usePresentationStore } from './presentationStore';
 import { setActiveDoc } from '../collab/yDocAdapter';
 import { jsonToYDoc, yDocToJson } from '../collab/ySchema';
-import { pathLabelCenter } from '../utils/syncDependents';
+import { pathLabelCenter } from '../utils/model/syncDependents';
 import type {
   Presentation,
   Slide,

@@ -1,13 +1,16 @@
+import { GroupCrop } from './GroupCrop';
+import { groupCropPaint, type GroupCropElement } from '../../utils/model/groupCrop';
 import { SVGStrokeCoverage } from './SVGStrokeCoverage';
-import { resolveShapePaint, rectangleRadii } from '../../utils/shapePaint';
-import { resolveShapeGeometry } from '../../utils/vectorGeometry';
-import { getRotationCenter } from '../../utils/geometry';
+import { cropFadeRegions, type CropFadeImage } from '../../utils/animation/cropAnimation';
+import { resolveShapePaint, rectangleRadii } from '../../utils/paint/shapePaint';
+import { resolveShapeGeometry } from '../../utils/geometry/vectorGeometry';
+import { getRotationCenter } from '../../utils/geometry/geometry';
 import React, { memo, useId } from 'react';
 import { ShapeFillPaint } from './ShapeFillPaint';
 import { SVGStrokeClip } from './SVGStrokeClip';
 import { SVGTextPaths } from './SVGTextPaths';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
-import { pathArrowGeometry, strokeDashFor, type ArrowheadGeometry } from '../../utils/pathShapes';
+import { pathArrowGeometry, strokeDashFor, type ArrowheadGeometry } from '../../utils/paths/pathShapes';
 import type { SlideElement, TextElement, ShapeElement, ImageElement, Resource } from '../../types/presentation';
 
 // ============================================================================
@@ -61,7 +64,8 @@ interface ShapeProps {
 }
 
 export const RenderShape: React.FC<ShapeProps> = memo(({ element }) => {
-  return <ShapeFillPaint element={element}>{paint => <ShapeBody element={element} fillPaint={paint} />}</ShapeFillPaint>;
+  const painted = groupCropPaint(element);
+  return <GroupCrop element={element}><ShapeFillPaint element={painted}>{paint => <ShapeBody element={painted} fillPaint={paint} />}</ShapeFillPaint></GroupCrop>;
 });
 
 const ShapeBody: React.FC<ShapeProps & { fillPaint?: string }> = memo(({ element, fillPaint }) => {
@@ -109,6 +113,7 @@ const ShapeBody: React.FC<ShapeProps & { fillPaint?: string }> = memo(({ element
         </g>
       );
 
+    case 'dot':
     case 'ellipse':
       return (
         <g transform={transform}>
@@ -268,9 +273,52 @@ interface ImageProps {
 // elements behind/in front in the same SVG document; the editor adds its own
 // transparent hit <rect> at the element layer.
 export const RenderImage: React.FC<ImageProps> = memo(({ element, resource, videoAutoplay }) => {
+  const cropMaskId = `crop-fade-${useId().replace(/:/g, '')}`;
+  if ((element as GroupCropElement)._groupClips?.length) {
+    const plain = { ...element, _groupClips: undefined };
+    return <GroupCrop element={element}><RenderImage element={plain} resource={resource} videoAutoplay={videoAutoplay} /></GroupCrop>;
+  }
   if (!element.visible) return null;
 
   const { x, y, width, height, rotation, opacity, cropX, cropY, cropWidth, cropHeight } = element;
+  const lift = (element as CropFadeImage)._cropLift;
+  if (lift && resource) {
+    const original: CropFadeImage = { ...lift.original, _cropFade: undefined, _cropLift: undefined, opacity: 1 - lift.t };
+    const foreground: CropFadeImage = { ...element, _cropFade: undefined, _cropLift: undefined, opacity: 1 };
+    return <g opacity={opacity} data-crop-lift="">
+      <RenderImage element={original} resource={resource} videoAutoplay={videoAutoplay} />
+      <RenderImage element={foreground} resource={resource} videoAutoplay={videoAutoplay} />
+    </g>;
+  }
+  const fade = (element as CropFadeImage)._cropFade;
+  if (fade && resource && cropWidth > 0 && cropHeight > 0) {
+    const sx = width / cropWidth, sy = height / cropHeight;
+    const left = Math.min(fade.from.x, fade.to.x);
+    const top = Math.min(fade.from.y, fade.to.y);
+    const w = Math.max(fade.from.x + fade.from.width, fade.to.x + fade.to.width) - left;
+    const h = Math.max(fade.from.y + fade.from.height, fade.to.y + fade.to.height) - top;
+    const px = (u: number) => x + (u - cropX) * sx;
+    const py = (v: number) => y + (v - cropY) * sy;
+    const media: CropFadeImage = {
+      ...element, _cropFade: undefined, rotation: 0, opacity: 1,
+      x: px(left), y: py(top), width: w * sx, height: h * sy,
+      cropX: left, cropY: top, cropWidth: w, cropHeight: h,
+    };
+    return (
+      <g opacity={opacity} transform={`rotate(${rotation}, ${x + width / 2}, ${y + height / 2})`}>
+        <defs>
+          <mask id={cropMaskId} maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse"
+            x={media.x} y={media.y} width={media.width} height={media.height} style={{ maskType: 'alpha' }}>
+            {cropFadeRegions(fade).map((r, i) => <rect key={i} x={px(r.x)} y={py(r.y)}
+              width={r.width * sx} height={r.height * sy} fill="white" opacity={r.opacity} />)}
+          </mask>
+        </defs>
+        <g mask={`url(#${cropMaskId})`}>
+          <RenderImage element={media} resource={resource} videoAutoplay={videoAutoplay} />
+        </g>
+      </g>
+    );
+  }
 
   // No resource - render placeholder. Vector, doesn't move much, stays SVG.
   if (!resource) {
@@ -332,6 +380,9 @@ export const RenderImage: React.FC<ImageProps> = memo(({ element, resource, vide
               top: `${-cropY * scaleY}px`,
               width: `${resource.originalWidth * scaleX}px`,
               height: `${resource.originalHeight * scaleY}px`,
+              // Cropping requires media wider than its clipping box. Override
+              // Tailwind preflight's img/video max-width: 100% constraint.
+              maxWidth: 'none',
               display: 'block',
               pointerEvents: 'none',
             };

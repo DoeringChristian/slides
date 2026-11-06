@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { readEditorLocation, rememberEditorLocation } from './utils/io/editorLocation';
+import { useEffect, useState, useRef } from 'react';
 import { AppLayout } from './components/layout/AppLayout';
 import { AppLayoutMobile } from './components/layout/AppLayoutMobile';
 import { PresenterView } from './components/presenter/PresenterView';
@@ -11,9 +12,9 @@ import { useVaultStore } from './store/vaultStore';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useIsMobile } from './hooks/useIsMobile';
 import { useProjectCollab } from './hooks/useProjectCollab';
-import { readStandaloneBoot, applyStandaloneBoot } from './utils/standaloneBoot';
+import { readStandaloneBoot, applyStandaloneBoot } from './utils/io/standaloneBoot';
 import { addJoinedProject } from './store/joinedStore';
-import { setStorageConfig } from './utils/storageClient';
+import { setStorageConfig } from './utils/io/storageClient';
 
 // Check if this is the audience window
 const isAudienceMode = new URLSearchParams(window.location.search).get('audience') === 'true';
@@ -68,7 +69,7 @@ function App() {
   const activeProjectId = useVaultStore((s) => s.activeProjectId);
   const initializeVault = useVaultStore((s) => s.initialize);
   const scheduleSave = useVaultStore((s) => s.scheduleSave);
-  const openProject = useVaultStore((s) => s.openProject);
+  const bootPromise = useRef<Promise<void> | null>(null);
   const storageMode = useVaultStore((s) => s.storageMode);
 
   const collab = useProjectCollab({ disabled: isAudienceMode || !!standaloneBoot });
@@ -96,16 +97,40 @@ function App() {
   // Initialize vault store on mount (skip for audience and standalone modes)
   useEffect(() => {
     if (isAudienceMode || standaloneBoot) return;
-    initializeVault().then(() => setVaultInitialized(true));
+    // StrictMode and Fast Refresh must not start competing project loads.
+    bootPromise.current ??= (async () => {
+      const location = readEditorLocation();
+      await initializeVault();
+      const vault = useVaultStore.getState();
+      if (vault.activeProjectId) return;
+      if (pendingJoin) {
+        await vault.openProject(pendingJoin.projectId);
+      } else if (location && vault.storageMode === location.storageMode && vault.serverUrl === location.serverUrl) {
+        await vault.openProject(location.projectId);
+        if (useVaultStore.getState().activeProjectId === location.projectId &&
+            usePresentationStore.getState().presentation.slides[location.slideId]) {
+          useEditorStore.getState().setActiveSlide(location.slideId);
+        }
+      }
+    })();
+    void bootPromise.current.then(() => setVaultInitialized(true));
   }, [initializeVault]);
 
-  // After vault is up, if we boot-detected a share URL, open the joined
-  // project. openProject reads the token from the joinedStore entry we wrote
-  // synchronously at module load.
+  // Keep navigation separate from document persistence. Never rewrite the
+  // saved location while startup is restoring it or after a failed reopen.
   useEffect(() => {
-    if (!vaultInitialized || !pendingJoin) return;
-    void openProject(pendingJoin.projectId);
-  }, [vaultInitialized, openProject]);
+    if (!vaultInitialized || isAudienceMode || standaloneBoot) return;
+    const remember = () => {
+      const vault = useVaultStore.getState();
+      const slideId = useEditorStore.getState().activeSlideId;
+      if (vault.activeProjectId && slideId && usePresentationStore.getState().presentation.id === vault.activeProjectId) {
+        rememberEditorLocation({projectId: vault.activeProjectId, slideId, storageMode: vault.storageMode, serverUrl: vault.serverUrl});
+      }
+    };
+    remember();
+    const offEditor = useEditorStore.subscribe(remember), offVault = useVaultStore.subscribe(remember);
+    return () => { offEditor(); offVault(); };
+  }, [vaultInitialized]);
 
   // Initialize active slide on mount
   useEffect(() => {

@@ -1,6 +1,6 @@
+import { snapViewport } from '../../utils/snapping/snapViewport';
 import { useCanvasGestureGuard } from './useCanvasGestureGuard';
 import { CONTROL_THEME } from './controlTheme';
-import { screenPixelsToSlide } from '../../utils/screenSpace';
 import React, { useState, useEffect, useCallback, useMemo, useRef, useId } from 'react';
 import type { SlideElement, ShapeElement, ConnectorBinding } from '../../types/presentation';
 import {
@@ -8,16 +8,16 @@ import {
   pathEndpointDirection,
   sampledPath,
   catmullTangents,
-} from '../../utils/pathShapes';
+} from '../../utils/paths/pathShapes';
 import { getActiveUndoManager } from '../../collab/activeUndo';
 import { useEditorStore } from '../../store/editorStore';
-import { computePointSnap, type Guide } from '../../hooks/useAlignmentGuides';
-import { getMarginLayout, getMarginBounds } from '../../utils/marginLayouts';
-import { centeredPathResize } from '../../utils/centeredPathResize';
-import { bindingDrop, resolveBinding, bindingAimPoint, silhouetteDistance, type ConnectorHighlightCallback } from '../../utils/connectorUtils';
+import { type Guide } from '../../hooks/useAlignmentGuides';
+import { getMarginLayout, getMarginBounds } from '../../utils/geometry/marginLayouts';
+import { centeredPathResize } from '../../utils/geometry/centeredPathResize';
+import { bindingDrop, resolveBinding, bindingAimPoint, silhouetteDistance, type ConnectorHighlightCallback } from '../../utils/paths/connectorUtils';
 import { useCoarsePointer } from '../../hooks/useCoarsePointer';
-import { snapPathPoint, resolvedPointGuides, vertexAlignmentSources, withVertexMagnets } from '../../utils/pathSnapping';
-import { pathPointToSlide, slidePointToPath, pathPointsInSlide, pathGeometryUpdate } from '../../utils/pathEditing';
+import { snapConnectorPoint, snapPathPoint, resolvedPointGuides, vertexAlignmentSources, withVertexMagnets } from '../../utils/snapping/pathSnapping';
+import { pathPointToSlide, slidePointToPath, pathPointsInSlide, pathGeometryUpdate } from '../../utils/paths/pathEditing';
 import { useScreenToSVG } from './useScreenToSVG';
 
 interface Props {
@@ -398,10 +398,10 @@ export const SVGPathHandles: React.FC<Props> = ({
         const { snapToGrid, marginLayoutId } = useEditorStore.getState();
         const layout = getMarginLayout(marginLayoutId);
         const snapped = snapPathPoint(pos, [midpoint], zoom, e.shiftKey,
-          snapToGrid && !e.metaKey && elements ? { others: elements.filter(el => el.id !== element.id && el.visible), marginBounds: layout ? getMarginBounds(layout) : null } : undefined);
+          snapToGrid && !e.metaKey && elements ? { viewport: snapViewport(svgRef?.current), others: elements.filter(el => el.id !== element.id && el.visible), marginBounds: layout ? getMarginBounds(layout) : null } : undefined);
         const endpoint = snapped.point;
         const raw = centeredPathResize(element, dragging.idx, endpoint);
-        let drop = !e.metaKey && elements ? bindingDrop(endpoint, raw.opposite, elements, element.id, zoom, e.shiftKey) : null;
+        let drop = snapToGrid && !e.metaKey && elements ? bindingDrop(endpoint, raw.opposite, elements, element.id, zoom, e.shiftKey) : null;
         let next = raw;
         if (drop) {
           const candidate = centeredPathResize(element, dragging.idx, drop.point);
@@ -434,50 +434,22 @@ export const SVGPathHandles: React.FC<Props> = ({
         const adj = liveN === 2 && curve === 'linear' && oppositeBinding?.mode === 'aim' && oppositeTarget
           ? bindingAimPoint(oppositeBinding, oppositeTarget)
           : pathPointToSlide(element, prevPts[2 * adjIdx], prevPts[2 * adjIdx + 1]);
-        if (e.shiftKey) {
-          const constrained = snapPathPoint(pos, [adj], zoom, true).point;
-          absX = constrained.x;
-          absY = constrained.y;
-        }
-        const drop = !e.metaKey && elements
-          ? bindingDrop({ x: absX, y: absY }, adj, elements, element.id, zoom, e.shiftKey, dragging.kind !== 'focus')
-          : null;
-        if (drop) {
-          dropBindingRef.current = drop.binding;
-          absX = drop.point.x;
-          absY = drop.point.y;
-          onConnectorHighlight?.(drop.target.id, drop.dock);
-          onGuidesChange?.(e.shiftKey ? [{ type: 'direction', destination: drop.point, x1: adj.x, y1: adj.y, x2: absX, y2: absY }] : []);
-        } else {
-          dropBindingRef.current = null;
-          onConnectorHighlight?.(null);
-          // Snap to sibling elements (Cmd disables, like every drag).
-          const { snapToGrid: snappingEnabled, marginLayoutId } = useEditorStore.getState();
-          if (snappingEnabled && !e.metaKey && elements) {
-            const marginLayout = getMarginLayout(marginLayoutId);
-            const marginBounds = marginLayout ? getMarginBounds(marginLayout) : null;
-            // Own vertices first: an exact tie resolves to this path's own
-            // geometry, and the first vertex outranks later ones.
-            const others = [
-              ...vertexAlignmentSources(ownVertices, [dragging.idx]),
-              ...elements
-                .filter((el) => el.id !== element.id && el.visible)
-                .map((el) => ({ x: el.x, y: el.y, width: el.width, height: el.height })),
-            ];
-            const snapResult = computePointSnap({ x: absX, y: absY }, others, screenPixelsToSlide(5, zoom), marginBounds, e.shiftKey ? adj : undefined);
-            const candidate = { x: snapResult.snapX ?? absX, y: snapResult.snapY ?? absY };
-            const alignedDrop = bindingDrop(candidate, adj, elements, element.id, zoom, e.shiftKey, dragging.kind !== 'focus');
-            const visible = alignedDrop?.point ?? candidate;
-            dropBindingRef.current = alignedDrop?.binding ?? null;
-            onConnectorHighlight?.(alignedDrop?.target.id ?? null, alignedDrop?.dock);
-            absX = visible.x; absY = visible.y;
-            onGuidesChange?.(resolvedPointGuides([...(e.shiftKey ? [{ type: 'direction' as const, destination: candidate, x1: adj.x, y1: adj.y, x2: candidate.x, y2: candidate.y }] : []), ...snapResult.guides], visible, adj));
-          } else {
-            onGuidesChange?.(e.shiftKey ? [{ type: 'direction', destination: { x: absX, y: absY }, x1: adj.x, y1: adj.y, x2: absX, y2: absY }] : []);
-          }
-        }
-
+        const { snapToGrid: snappingEnabled, marginLayoutId } = useEditorStore.getState();
+        const layout = getMarginLayout(marginLayoutId);
+        const alignment = snappingEnabled && !e.metaKey && elements ? {
+          viewport: snapViewport(svgRef?.current),
+          others: [...vertexAlignmentSources(ownVertices, [dragging.idx]), ...elements.filter(el => el.id !== element.id && el.visible)],
+          marginBounds: layout ? getMarginBounds(layout) : null,
+        } : undefined;
+        const snapped = snapConnectorPoint(pos, adj, elements ?? [], zoom, e.shiftKey,
+          e.metaKey || !snappingEnabled, alignment, element.id, dragging.kind !== 'focus');
+        const visible = snapped.drop?.point ?? snapped.point;
+        absX = visible.x; absY = visible.y;
+        dropBindingRef.current = snapped.drop?.binding ?? null;
+        onConnectorHighlight?.(snapped.drop?.target.id ?? null, snapped.drop?.dock);
+        onGuidesChange?.(snapped.guides);
       }
+
       // Interior controls constrain to the adjacent vertex only with Shift, and
       // sibling object alignment stays Shift-only here (the endpoint branch owns
       // it otherwise) — but this path's own vertices magnetize either way.
@@ -486,8 +458,8 @@ export const SVGPathHandles: React.FC<Props> = ({
         const { snapToGrid, marginLayoutId } = useEditorStore.getState();
         const layout = getMarginLayout(marginLayoutId);
         const objects = e.shiftKey && elements
-          ? { others: elements.filter(el => el.id !== element.id && el.visible), marginBounds: layout ? getMarginBounds(layout) : null }
-          : { others: [] };
+          ? { viewport: snapViewport(svgRef?.current), others: elements.filter(el => el.id !== element.id && el.visible), marginBounds: layout ? getMarginBounds(layout) : null }
+          : { others: [], viewport: snapViewport(svgRef?.current) };
         const alignment = snapToGrid && !e.metaKey ? withVertexMagnets(objects, ownVertices, [dragging.idx]) : undefined;
         if (e.shiftKey || alignment) {
           const constrained = snapPathPoint(pos, [pathPointToSlide(element, prevPts[2*i], prevPts[2*i+1])], zoom, e.shiftKey, alignment);
@@ -557,7 +529,7 @@ export const SVGPathHandles: React.FC<Props> = ({
       window.removeEventListener('keyup', onKey, true);
       window.removeEventListener('blur', cancel);
     };
-  }, [dragging, closed, curve, element, elements, points, baseTangents, zoom, screenToSVG, geometryUpdate, onUpdate, onGuidesChange, onConnectorHighlight, onPreview, finishGuard, cancel]);
+  }, [dragging, svgRef, closed, curve, element, elements, points, baseTangents, zoom, screenToSVG, geometryUpdate, onUpdate, onGuidesChange, onConnectorHighlight, onPreview, finishGuard, cancel]);
 
   // ---------------------------------------------------------------------------
   // Delete the hovered vertex on Backspace / Delete. Closed paths keep ≥3
@@ -570,9 +542,10 @@ export const SVGPathHandles: React.FC<Props> = ({
       if (e.defaultPrevented || (e.key !== 'Backspace' && e.key !== 'Delete')) return;
       const target = e.target as HTMLElement;
       if (target.isContentEditable || target.closest('input,textarea,[role=dialog]')) return;
+      // If no vertex can be removed, let the object-hide shortcut handle it.
+      if (n <= minVertices) return;
       e.preventDefault();
       e.stopPropagation();
-      if (n <= minVertices) return;
       const newRel = points.slice();
       newRel.splice(2 * hoverIdx, 2);
       let newTan: number[] | null = null;

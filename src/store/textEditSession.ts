@@ -1,15 +1,15 @@
-import { autoFitTextGeometry, canAutoFitText } from '../utils/textAutoFit';
+import { autoFitTextGeometry, canAutoFitText } from '../utils/text/textAutoFit';
 import type { SlideElement, TextElement } from '../types/presentation';
 import { yDocToJsonSlideOnly } from '../collab/ySchema';
 import { getActiveDoc, subscribeActiveDocChange } from '../collab/yDocAdapter';
 import { getActiveUndoManager } from '../collab/activeUndo';
 import { readElementForMutation, readSlideForMutation } from './currentMutation';
 import { usePresentationStore } from './presentationStore';
-import { hasContentSizing, measureUserText } from '../utils/userTextSizing';
-import { layoutSvgText } from '../utils/textLayout';
-import { boundTextBaseline, boundTextMeasurementKey, supportsMeasuredBoundText, type BoundTextFitContext } from '../utils/boundTextLayout';
-import type { GesturePatch } from '../utils/gestureProjection';
-import { fitLabelToDoc, labelWrapWidthFor } from '../utils/syncDependents';
+import { hasContentSizing, measureUserText } from '../utils/text/userTextSizing';
+import { layoutSvgText } from '../utils/text/textLayout';
+import { boundTextBaseline, boundTextMeasurementKey, supportsMeasuredBoundText, type BoundTextFitContext } from '../utils/text/boundTextLayout';
+import type { GesturePatch } from '../utils/editor/gestureProjection';
+import { fitLabelToDoc, labelWrapWidthFor } from '../utils/model/syncDependents';
 
 // An A→B→A document/deck round trip must not resurrect accepted work.
 let ownershipRevision = 0;

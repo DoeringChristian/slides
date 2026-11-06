@@ -40,15 +40,35 @@ function backendServer() {
 
   return {
     name: 'backend-server',
-    configureServer() {
+    async configureServer(server: ViteDevServer) {
+      // Another dev session may already own the backend. Reuse it without
+      // claiming ownership (closing this Vite session must not kill it).
+      try {
+        const response = await fetch('http://localhost:3001/api/health', {
+          signal: AbortSignal.timeout(1500),
+        });
+        const health = await response.json();
+        if (response.ok && health && typeof health === 'object' &&
+            'status' in health && health.status === 'ok' &&
+            'timestamp' in health && typeof health.timestamp === 'number') {
+          console.log('Using existing Slides backend on http://localhost:3001');
+          return;
+        }
+        throw new Error('Port 3001 is occupied by an unexpected service');
+      } catch (error) {
+        // Only a refused connection means it is safe to start a backend.
+        const cause = (error as { cause?: { code?: string; errors?: { code?: string }[] } }).cause;
+        const refused = cause?.code === 'ECONNREFUSED' ||
+          (cause?.errors?.length && cause.errors.every(e => e.code === 'ECONNREFUSED'));
+        if (!refused) throw error;
+      }
       const serverDir = path.resolve(__dirname, 'server');
 
       console.log('\x1b[36m%s\x1b[0m', '🚀 Starting backend server...');
 
-      // Spawn the server via tsx so it can import TypeScript files (e.g. the
-      // shared collab schema in src/). tsx is hoisted to the workspace root.
-      const tsxBin = path.resolve(__dirname, 'node_modules', '.bin', 'tsx');
-      serverProcess = spawn(tsxBin, ['index.js'], {
+      // Run Node directly with the tsx loader, so the owned child is the
+      // backend itself rather than a CLI wrapper that can leave it orphaned.
+      serverProcess = spawn(process.execPath, ['--import', 'tsx', 'index.js'], {
         cwd: serverDir,
         stdio: ['ignore', 'pipe', 'pipe'],
         env: { ...process.env, PORT: '3001' }
@@ -66,18 +86,20 @@ function backendServer() {
         console.error('\x1b[31m[server] Failed to start:\x1b[0m', err.message);
       });
 
-      // Clean up on exit
-      process.on('exit', () => {
+      const cleanup = () => {
         serverProcess?.kill();
-      });
-      process.on('SIGINT', () => {
-        serverProcess?.kill();
-        process.exit();
-      });
-      process.on('SIGTERM', () => {
-        serverProcess?.kill();
-        process.exit();
-      });
+        serverProcess = null;
+        process.off('exit', cleanup);
+        process.off('SIGINT', onInterrupt);
+        process.off('SIGTERM', onTerminate);
+      };
+      const onInterrupt = () => { cleanup(); process.exit(130); };
+      const onTerminate = () => { cleanup(); process.exit(143); };
+      process.once('exit', cleanup);
+      process.once('SIGINT', onInterrupt);
+      process.once('SIGTERM', onTerminate);
+      // Also covers server.close() and Vite config restarts.
+      server.httpServer?.once('close', cleanup);
     }
   };
 }
@@ -144,7 +166,7 @@ export default defineConfig(({ command }) => {
     },
     define: {
       __SLIDES_STANDALONE_BUILD__: 'false',
-      __SLIDES_EDITOR_ORIGIN__: JSON.stringify(process.env.VITE_EDITOR_ORIGIN || 'https://doeringc.ch/slides'),
+      __SLIDES_EDITOR_ORIGIN__: JSON.stringify(process.env.VITE_EDITOR_ORIGIN || 'https://doeringc.de/slides'),
     },
     plugins: command === 'serve'
       ? [react(), ...(isVitest ? [] : [backendServer(), standaloneTemplateMiddleware()])]

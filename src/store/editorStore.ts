@@ -6,6 +6,7 @@ import type {
   EasingType, TransitionGroup, TransitionOptions,
 } from '../types/presentation';
 import { usePresentationStore } from './presentationStore';
+import { expandObjectGroups, objectGroupRoot } from '../utils/model/objectGroups';
 
 export interface MarginLayout {
   id: string;
@@ -19,6 +20,10 @@ export interface MarginLayout {
 export type StandaloneMode = 'off' | 'editor' | 'viewer';
 
 interface EditorStore extends EditorState {
+  activeObjectGroupId: string | null;
+  hoverPreviewHidden: boolean;
+  enterObjectGroup: (id: string, groupId?: string) => boolean;
+  exitObjectGroup: () => void;
   objectDrawerOpen: boolean;
   standaloneMode: StandaloneMode;
   standaloneEditorOrigin: string | null;
@@ -53,7 +58,7 @@ interface EditorStore extends EditorState {
     options?: TransitionOptions,
   ) => void;
   setObjectDrawerOpen: (open: boolean) => void;
-  setHoveredObjectId: (id: string | null) => void;
+  setHoveredObjectId: (id: string | null, source?: 'canvas' | 'object-list') => void;
   setActiveSlide: (slideId: string) => void;
   setSelectedElements: (ids: string[]) => void;
   addToSelection: (id: string) => void;
@@ -84,6 +89,7 @@ interface EditorStore extends EditorState {
 
 export const useEditorStore = create<EditorStore>()((set) => ({
   activeSlideId: '',
+  activeObjectGroupId: null,
   selectedElementIds: [],
   zoom: 1,
   tool: 'select',
@@ -94,6 +100,7 @@ export const useEditorStore = create<EditorStore>()((set) => ({
   snapToGrid: true,
   gridSize: 20,
   clipboard: [],
+  hoverPreviewHidden: false,
   editingTextId: null,
   isPanning: false,
   objectDrawerOpen: true,
@@ -112,6 +119,24 @@ export const useEditorStore = create<EditorStore>()((set) => ({
   lastEasings: {},
   lastEasingOptions: {},
 
+  enterObjectGroup: (id, groupId) => {
+    const state = useEditorStore.getState();
+    const doc = getActiveDoc();
+    const slide = doc ? yDocToJsonSlideOnly(doc, state.activeSlideId) : usePresentationStore.getState().presentation.slides[state.activeSlideId];
+    const el = slide?.elements[id];
+    const group = groupId ? (el?.objectGroupIds?.includes(groupId) ? groupId : undefined) : objectGroupRoot(el, state.activeObjectGroupId);
+    if (!group || !slide) return false;
+    set({ activeObjectGroupId: group, selectedElementIds: expandObjectGroups(slide.elements, [id], group), editingTextId: null });
+    return true;
+  },
+  exitObjectGroup: () => set(s => {
+    const elements = usePresentationStore.getState().presentation.slides[s.activeSlideId]?.elements ?? {};
+    const member = Object.values(elements).find(el => el.objectGroupIds?.includes(s.activeObjectGroupId ?? ''));
+    const path = member?.objectGroupIds ?? [];
+    const parent = path[path.indexOf(s.activeObjectGroupId ?? '') - 1] ?? null;
+    return { activeObjectGroupId: parent, editingTextId: null,
+      selectedElementIds: member ? expandObjectGroups(elements, [member.id], parent) : [] };
+  }),
   setAutoDrawMode: (on) => set({ autoDrawMode: on }),
   rememberEasing: (elementType, group, easing, options) => set((s) => {
     const byType = { ...s.lastEasings };
@@ -127,7 +152,11 @@ export const useEditorStore = create<EditorStore>()((set) => ({
   }),
   setStandaloneMode: (mode, editorOrigin) => set({ standaloneMode: mode, standaloneEditorOrigin: editorOrigin }),
   setObjectDrawerOpen: (open) => set({ objectDrawerOpen: open }),
-  setHoveredObjectId: (id) => set({ hoveredObjectId: id }),
+  setHoveredObjectId: (id, source = 'canvas') => set(s => {
+    const doc = getActiveDoc();
+    const slide = doc ? yDocToJsonSlideOnly(doc, s.activeSlideId) : usePresentationStore.getState().presentation.slides[s.activeSlideId];
+    return {hoveredObjectId: id, hoverPreviewHidden: !!id && source === 'object-list' && !slide?.elements[id]?.visible};
+  }),
   setActiveSlide: (slideId) => set((s) => {
     // A collab add/duplicate returns BEFORE the microtask Y→Zustand sync.
     // Read the authoritative new keyframe, not the stale UI snapshot.
@@ -141,17 +170,27 @@ export const useEditorStore = create<EditorStore>()((set) => ({
     // This allows proper multi-select behavior
     return {
       activeSlideId: slideId,
+      hoveredObjectId: null,
+      hoverPreviewHidden: false,
+      activeObjectGroupId: null,
       pathExtension: null,
-      selectedElementIds: kept,
+      selectedElementIds: slide ? expandObjectGroups(slide.elements, kept) : kept,
       editingTextId: null,
     };
   }),
   setSelectedElements: (ids) => set((s) => {
+    const doc = getActiveDoc();
+    const slide = doc ? yDocToJsonSlideOnly(doc, s.activeSlideId)
+      : usePresentationStore.getState().presentation.slides[s.activeSlideId];
+    let scope = s.activeObjectGroupId;
+    if (scope && ids.some(id => !slide?.elements[id]?.objectGroupIds?.includes(scope!))) scope = null;
+    if (slide) ids = expandObjectGroups(slide.elements, ids, scope);
     // Reset slide selection when switching objects or deselecting all
     const hadSelection = s.selectedElementIds.length > 0;
     const changed = hadSelection &&
       (ids.length !== s.selectedElementIds.length || ids.some((id, i) => id !== s.selectedElementIds[i]));
     return {
+      activeObjectGroupId: scope,
       selectedElementIds: ids,
       ...(changed && s.selectedSlideIds.length > 1 ? { selectedSlideIds: [s.activeSlideId] } : {}),
     };
@@ -164,6 +203,7 @@ export const useEditorStore = create<EditorStore>()((set) => ({
   })),
   clearSelection: () => set((s) => ({
     selectedElementIds: [],
+    activeObjectGroupId: null,
     editingTextId: null,
     ...(s.selectedSlideIds.length > 1 ? { selectedSlideIds: [s.activeSlideId] } : {}),
   })),

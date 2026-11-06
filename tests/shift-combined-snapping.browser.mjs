@@ -50,7 +50,7 @@ const close = (actual, expected, label) => { assert(actual, label); actual.forEa
 async function setup({ collab = false, zoom = 1, shapeType = 'rect', rotation = 0, tool = 'arrow', subject, secondSlide = false, target = {} } = {}) {
   await evaluate(`canvasTest.resetPreferences()`);
   await evaluate(`(async()=>{const {useCreationPreferences}=await import('/src/store/creationPreferences.ts');useCreationPreferences.getState().remember('${tool}',{stroke:'#a02555',strokeWidth:5});})()`);
-  await evaluate(`canvasTest.setup(${JSON.stringify({ mode: 'production', collab, zoom, tool, empty: !subject, subject, secondSlide, targets: [{ id: 'box', shapeType, x: 400, y: 250, width: 180, height: 120, rotation, fill: '#d8efec', ...target }] })})`);
+  await evaluate(`canvasTest.setup(${JSON.stringify({ mode: 'production', snap: true, collab, zoom, tool, empty: !subject, subject, secondSlide, targets: [{ id: 'box', shapeType, x: 400, y: 250, width: 180, height: 120, rotation, fill: '#d8efec', ...target }] })})`);
   await wait(180);
   const dock = await evaluate(`(async()=>{const {bindingAimPoint}=await import('/src/utils/connectorUtils.ts');const box=canvasTest.snapshot().slide.elements.box;const p=bindingAimPoint({elementId:box.id,mode:'pinned',fixedPoint:[1,.5]},box);return [p.x,p.y]})()`);
   await evaluate(`(()=>{const p=document.querySelector('.canvas-scroll-parent'),svg=p.querySelector('svg'),m=svg.getScreenCTM(),r=new DOMPoint(${dock[0]},${dock[1]}).matrixTransform(m);p.scrollLeft+=r.x-460;p.scrollTop+=r.y-380;})()`); await wait(40);
@@ -78,7 +78,7 @@ try {
   for(const collab of [false,true]) {
     await setup({collab,tool:'line'});await evaluate(`canvasTest.editor.setState({snapToGrid:true})`);await pan([300,180]);await wait(40);
     {const a=await screen([200,100]),b=await screen([204,248]),before=await authoritative();await mouse('mousePressed',a);await mouse('mouseReleased',a);await modifier('Shift',true,8);await mouse('mouseMoved',b,8);close(await shaft(),[200,100,200,250],'vertical new-point horizontal guide');const live=await shaft();await key('Enter','Enter',8);await modifier('Shift',false,0);close(await shaft(),live,'vertical commit');await key('z','KeyZ',2);assert.equal(await authoritative(),before);matrix.push({collab,verticalGuide:true});}
-    for(const [origin,end,compatible] of [[[750,310],[585,310],true],[[750,315],[585,315],false],[[750,480],[585,315],true]]) {
+    for(const [origin,end,compatible] of [[[750,310],[585,310],true],[[750,323],[585,323],false],[[750,480],[583,313],true]]) {
       const dock=await setup({collab,tool:'line'}),a=await screen(origin),b=await screen(end),before=await authoritative();
       await mouse('mousePressed',a);await modifier('Shift',true,8);await mouse('mouseMoved',b,8);
       const c=await cue();assert.equal(c?.state==='active',compatible,'only compatible dock acquisition');

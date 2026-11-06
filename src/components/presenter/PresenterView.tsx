@@ -3,7 +3,7 @@ import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useSlideAnimation } from '../../hooks/useSlideAnimation';
 import { useAutoAdvanceChain } from '../../hooks/useAutoAdvanceChain';
-import { manualNextTarget } from '../../utils/presenterAdvance';
+import { manualNextTarget } from '../../utils/animation/presenterAdvance';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 import { composeSlideFrame, renderPresenterElement } from './presenterUtils';
 

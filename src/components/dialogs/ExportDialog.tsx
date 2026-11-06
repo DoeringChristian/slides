@@ -23,21 +23,21 @@ export const ExportDialog: React.FC<Props> = ({ isOpen, onClose }) => {
     setError(null);
     try {
       if (format === 'html') {
-        const { exportStandaloneHtml } = await import('../../utils/exportStandaloneHtml');
+        const { exportStandaloneHtml } = await import('../../utils/io/exportStandaloneHtml');
         await exportStandaloneHtml(presentation, {
           mode: includeEditor ? 'editor' : 'viewer',
         });
       } else if (format === 'pdf') {
-        const { exportPdf } = await import('../../utils/exportPdf');
+        const { exportPdf } = await import('../../utils/io/exportPdf');
         await exportPdf(presentation);
       } else if (format === 'png') {
-        const { exportImage } = await import('../../utils/exportImage');
+        const { exportImage } = await import('../../utils/io/exportImage');
         await exportImage(presentation);
       } else if (format === 'pptx') {
-        const { exportPptx } = await import('../../utils/exportPptx');
+        const { exportPptx } = await import('../../utils/io/exportPptx');
         await exportPptx(presentation);
       } else if (format === 'odp') {
-        const { exportOdp } = await import('../../utils/exportOdp');
+        const { exportOdp } = await import('../../utils/io/exportOdp');
         await exportOdp(presentation);
       }
       onClose();

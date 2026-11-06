@@ -1,8 +1,8 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { creationKeyForShape, CREATION_PREFERENCES_KEY, readCreationPreferences, sanitizeCreationStyle, useCreationPreferences } from './creationPreferences';
-import { composeUserShape, creationBox } from '../utils/userShapeCreation';
-import { CURATED_ICONS } from '../utils/curatedIcons';
-import { createShapeElement } from '../utils/slideFactory';
+import { composeUserShape, creationBox } from '../utils/editor/userShapeCreation';
+import { CURATED_ICONS } from '../utils/editor/curatedIcons';
+import { createShapeElement } from '../utils/model/slideFactory';
 afterEach(() => { useCreationPreferences.setState({ styles: {}, iconId: 'house' }); vi.unstubAllGlobals(); });
 it('versioned hydration sanitizes keys, colors, numbers and applicability; unavailable storage is harmless', () => {
   const getItem = vi.fn(() => JSON.stringify({ version: 1, styles: { rect: { id: 'bad', x: 88, width: 90, opacity: .2, transitions: {}, cornerRadius: 999, strokeWidth: -3, fill: 'url(bad)', stroke: '#1234' }, icon: { curve: 'smooth' }, unknown: { fill: '#fff' } } }));

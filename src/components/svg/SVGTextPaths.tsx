@@ -1,10 +1,12 @@
+import type { GroupCropElement } from '../../utils/model/groupCrop';
+import { GroupCrop } from './GroupCrop';
 import React, { useEffect, useMemo, useState, memo } from 'react';
 import type { TextElement } from '../../types/presentation';
-import type { WriteEffect } from '../../utils/interpolation';
-import { textInsets, textInkOverflow } from '../../utils/boundTextLayout';
-import { layoutSvgText, textVerticalOffset, type SvgTextDoc } from '../../utils/textLayout';
-import { prewarmFonts } from '../../utils/glyphPaths';
-import { layoutUserText } from '../../utils/userTextSizing';
+import type { WriteEffect } from '../../utils/animation/interpolation';
+import { textInsets, textInkOverflow } from '../../utils/text/boundTextLayout';
+import { layoutSvgText, textVerticalOffset, type SvgTextDoc } from '../../utils/text/textLayout';
+import { prewarmFonts } from '../../utils/text/glyphPaths';
+import { layoutUserText } from '../../utils/text/userTextSizing';
 import { RenderPaths } from './RenderPaths';
 import { SVGTextContent } from './SVGTextContent';
 
@@ -123,7 +125,7 @@ export const SVGTextPaths: React.FC<Props> = memo(({
   const verticalOffset = textVerticalOffset(style.verticalAlign, height, padding, doc.height);
 
   return (
-    <g transform={transform} style={{ pointerEvents: 'none' }}>
+    <GroupCrop element={element}><g transform={transform} style={{ pointerEvents: 'none' }}>
       <defs>
         <clipPath id={clipId}>
           <rect
@@ -139,10 +141,10 @@ export const SVGTextPaths: React.FC<Props> = memo(({
           transform={`translate(${elementX + padding}, ${elementY + padding + verticalOffset})`}
           opacity={opacity}
         >
-          <RenderPaths paths={doc.paths} writeFx={writeFx} strokeWidth={Math.max(1.2, style.fontSize / 20)} />
+          <RenderPaths paths={doc.paths} writeFx={writeFx} strokeWidth={1.2} />
         </g>
       </g>
-    </g>
+    </g></GroupCrop>
   );
 }, (prev, next) => {
   const a = prev.element;
@@ -152,6 +154,7 @@ export const SVGTextPaths: React.FC<Props> = memo(({
     prev.opacity === next.opacity &&
     prev.clipIdPrefix === next.clipIdPrefix &&
     prev.clipPadding === next.clipPadding &&
+    (a as GroupCropElement)._groupClips === (b as GroupCropElement)._groupClips &&
     a.containerId === b.containerId &&
     a.textSizing === b.textSizing &&
     a.boundTextLayout === b.boundTextLayout &&

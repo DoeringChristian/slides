@@ -1,15 +1,15 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { ReactElement } from 'react';
-vi.mock('../utils/keyboard', () => ({ isShiftHeld: () => false, isCtrlHeld: () => false }));
+vi.mock('../utils/editor/keyboard', () => ({ isShiftHeld: () => false, isCtrlHeld: () => false }));
 import { usePresentationStore as store } from './presentationStore';
 import { useEditorStore as editor } from './editorStore';
-import { createPresentation, createTextElement, copySlideAsKeyframe } from '../utils/slideFactory';
+import { createPresentation, createTextElement, copySlideAsKeyframe } from '../utils/model/slideFactory';
 import { jsonToYDoc, yDocToJson, getYElement } from '../collab/ySchema';
 import { setActiveDoc } from '../collab/yDocAdapter';
 import { createUndoManagerFor, beginScrubCapture } from '../collab/activeUndo';
 import { runScrubSession } from '../components/controls/useScrubCommit';
 import { ColorProperty, SelectProperty, PreviewSelectProperty, NumberProperty, CheckboxProperty, copyNestedFields } from '../components/properties/Property';
-import { beforeLocalMutation } from '../utils/scrubMutation';
+import { beforeLocalMutation } from '../utils/editor/scrubMutation';
 import { readElementForMutation, readKeyframeForMutation, updateElementFromCurrent, type CurrentChange } from './currentMutation';
 import type { TextElement } from '../types/presentation';
 

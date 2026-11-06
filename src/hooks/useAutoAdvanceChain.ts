@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import type { Slide } from '../types/presentation';
-import { chainTargetAfterLanding } from '../utils/presenterAdvance';
+import { chainTargetAfterLanding } from '../utils/animation/presenterAdvance';
 
 export interface ChainOptions {
   /** This surface currently owns presenter navigation (presenting, and not

@@ -1,9 +1,9 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { SVGShapeNode } from './SVGShapeNode';
-import { createShapeElement } from '../../utils/slideFactory';
-import { pathPointsInSlide } from '../../utils/pathEditing';
-import { getRotationCenter } from '../../utils/geometry';
+import { createShapeElement } from '../../utils/model/slideFactory';
+import { pathPointsInSlide } from '../../utils/paths/pathEditing';
+import { getRotationCenter } from '../../utils/geometry/geometry';
 
 describe('SVGShapeNode path body input geometry', () => {
   it.each([0, 37, 90])('negative-relative line visual and input share origin at %s°', rotation => {

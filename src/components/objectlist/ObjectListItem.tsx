@@ -1,5 +1,8 @@
+import { useEditorStore } from '../../store/editorStore';
+import { usePresentationStore } from '../../store/presentationStore';
+import { expandObjectGroups } from '../../utils/model/objectGroups';
 import React, { useState, useRef, useCallback } from 'react';
-import { Eye, EyeOff, Type, X } from 'lucide-react';
+import { Eye, EyeOff, Type, X, Group } from 'lucide-react';
 import type { ObjectMeta, SlideElement } from '../../types/presentation';
 import { ObjectPreview } from './ObjectPreview';
 import { MergeIntoButton } from './MergeIntoButton';
@@ -15,7 +18,7 @@ interface Props {
   isHovered: boolean;
   /** The OTHER listed objects — candidate merge targets for "Merge into…". */
   mergeCandidates: ObjectMeta[];
-  onSelect: () => void;
+  onSelect: (event: React.MouseEvent | React.KeyboardEvent) => void;
   onRename: (name: string) => void;
   onToggleVisibility: () => void;
   onDelete: () => void;
@@ -61,6 +64,11 @@ export const ObjectListItem: React.FC<Props> = ({
   }, [editName, object.name, onRename]);
 
   const handleDragStart = useCallback((e: React.DragEvent) => {
+    const state = useEditorStore.getState();
+    const elements = usePresentationStore.getState().presentation.slides[state.activeSlideId]?.elements ?? {};
+    const ids = state.selectedElementIds.includes(object.id) ? state.selectedElementIds : expandObjectGroups(elements, [object.id], state.activeObjectGroupId);
+    e.dataTransfer.setData('application/x-object-slide', state.activeSlideId);
+    e.dataTransfer.setData('application/x-object-ids', JSON.stringify(ids));
     e.dataTransfer.setData('application/x-object-id', object.id);
     e.dataTransfer.effectAllowed = 'move';
   }, [object.id]);
@@ -77,6 +85,11 @@ export const ObjectListItem: React.FC<Props> = ({
 
   return (
     <div
+      data-object-id={object.id}
+      role="option"
+      aria-selected={isSelected}
+      aria-disabled={!isVisibleOnSlide}
+      tabIndex={isVisibleOnSlide ? 0 : -1}
       className={`group flex flex-col rounded-md border cursor-pointer select-none overflow-hidden ${
         isSelected
           ? 'border-blue-500 bg-blue-50'
@@ -85,6 +98,14 @@ export const ObjectListItem: React.FC<Props> = ({
           : 'border-gray-200 hover:border-gray-300 bg-white'
       } ${!isVisibleOnSlide ? 'opacity-50' : ''}`}
       onClick={onSelect}
+      onDoubleClick={() => { if (isVisibleOnSlide) useEditorStore.getState().enterObjectGroup(object.id); }}
+      onKeyDown={(e) => {
+        if (e.target === e.currentTarget && (e.key === ' ' || e.key === 'Enter')) {
+          e.preventDefault();
+          e.stopPropagation();
+          onSelect(e);
+        }
+      }}
       onMouseEnter={onHover}
       onMouseLeave={onHoverEnd}
       draggable
@@ -93,6 +114,11 @@ export const ObjectListItem: React.FC<Props> = ({
       {/* Preview area */}
       <div className="relative aspect-square overflow-hidden">
         <ObjectPreview element={element} objectType={object.type} />
+        {!!element?.objectGroupIds?.length && (
+          <span className="absolute bottom-1 left-1 p-0.5 rounded bg-white/80" title={`Grouped (${element.objectGroupIds.length} levels)`}>
+            <Group size={12} />
+          </span>
+        )}
         {/* Bound-label badge */}
         {hasBoundLabel && (
           <span
@@ -138,6 +164,7 @@ export const ObjectListItem: React.FC<Props> = ({
         {isEditing ? (
           <input
             ref={inputRef}
+            onClick={(e) => e.stopPropagation()}
             value={editName}
             onChange={(e) => setEditName(e.target.value)}
             onBlur={handleRenameSubmit}

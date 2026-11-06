@@ -2,7 +2,7 @@ import React, { useRef, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ImageOff, Upload, Film } from 'lucide-react';
 import { usePresentationStore } from '../../store/presentationStore';
-import { loadImageFile, loadVideoFile } from '../../utils/slideFactory';
+import { loadImageFile, loadVideoFile } from '../../utils/model/slideFactory';
 import type { Resource } from '../../types/presentation';
 
 const POPOVER_WIDTH = 320;

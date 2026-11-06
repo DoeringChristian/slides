@@ -1,6 +1,6 @@
 import React from 'react';
 import { useEditorStore } from '../../store/editorStore';
-import { getMarginLayout, getMarginBounds } from '../../utils/marginLayouts';
+import { getMarginLayout, getMarginBounds } from '../../utils/geometry/marginLayouts';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 
 interface Props {

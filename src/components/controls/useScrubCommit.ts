@@ -1,10 +1,10 @@
 import { CreationDraftContext } from '../properties/CreationDraftContext';
 import { useContext, useEffect, useRef, useState } from 'react';
-import { ownScrubMutation, registerScrubMutation } from '../../utils/scrubMutation';
+import { ownScrubMutation, registerScrubMutation } from '../../utils/editor/scrubMutation';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { getActiveUndoManager, beginScrubCapture } from '../../collab/activeUndo';
-import { copyNestedFields } from '../properties/Property';
+import { copyNestedFields } from '../../utils/editor/propertyFields';
 import type { CurrentChange } from '../../store/currentMutation';
 
 /**
@@ -138,7 +138,7 @@ export function snapshotFields<E>(element: E, fields: string[]): Partial<E> {
 
 export interface UseScrubCommitArgs<T extends object> {
   element: T;
-  update: ((changes: CurrentChange<T>) => void) & { commit?: (changes: CurrentChange<T>) => void };
+  update: ((changes: CurrentChange<T>) => void) & { commit?: (changes: CurrentChange<T>) => void; snapshot?: (fields: string[]) => CurrentChange<T> };
   /** All field paths the gesture may touch (the property's `syncFields`),
    *  snapshotted at begin() and restored at end()/cancel(). */
   syncFields: string[];
@@ -159,6 +159,9 @@ export function useScrubCommit<T extends object>(
   const draftRef = useRef(draft);
   const elementRef = useRef(element);
   const updateRef = useRef(update);
+  // Batch adapters own the geometry captured at gesture start. Keep that
+  // writer through rerenders so previews use one fixed pivot/bounds.
+  const snapshotWriterRef = useRef<typeof update | null>(null);
   const syncFieldsRef = useRef(syncFields);
   // Closes the collab capture window opened at `pause`. Held in a ref (not a
   // closure variable) because the session handles are built once and mutate
@@ -191,14 +194,22 @@ export function useScrubCommit<T extends object>(
         if (draftRef.current) return;
         usePresentationStore.temporal.getState().resume();
       },
-      apply: (changes) => updateRef.current(changes),
-      commit: (changes) => (updateRef.current.commit ?? updateRef.current)(changes),
+      apply: (changes) => (snapshotWriterRef.current ?? updateRef.current)(changes),
+      commit: (changes) => {
+        const writer = snapshotWriterRef.current ?? updateRef.current;
+        (writer.commit ?? writer)(changes);
+      },
       snapshot: () => {
         const source = elementRef.current, fields = syncFieldsRef.current;
+        if (updateRef.current.snapshot) {
+          snapshotWriterRef.current = updateRef.current;
+          return updateRef.current.snapshot(fields);
+        }
         // The captured values belong to the gesture; sibling values do not.
         return current => copyNestedFields(source, current, fields);
       },
       finish: (cancelled) => {
+        snapshotWriterRef.current = null;
         draftRef.current?.discard();
         finishCaptureRef.current?.(cancelled);
         finishCaptureRef.current = undefined;

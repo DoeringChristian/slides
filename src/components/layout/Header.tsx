@@ -68,7 +68,7 @@ export const Header: React.FC = () => {
   };
 
   const handleSave = async () => {
-    const { exportStandaloneHtml } = await import('../../utils/exportStandaloneHtml');
+    const { exportStandaloneHtml } = await import('../../utils/io/exportStandaloneHtml');
     try {
       await exportStandaloneHtml(usePresentationStore.getState().presentation, { mode: 'viewer' });
     } catch (err) {

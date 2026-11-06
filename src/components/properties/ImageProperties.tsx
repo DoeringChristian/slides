@@ -1,4 +1,6 @@
-import React, { useState, useRef } from 'react';
+import { SelectionPropertiesContext } from './SelectionPropertiesContext';
+import { commitSelectionProperties } from '../../store/selectionPropertyMutation';
+import React, { useState, useRef, useContext } from 'react';
 import { Play, Pause, Repeat, VolumeX, Volume2 } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
@@ -8,7 +10,7 @@ import { PropertyList } from './PropertyList';
 import { PanelHeader } from './PanelHeader';
 import { IconButtonRow } from '../controls/IconButtonRow';
 import { Property, NumberProperty, ReadoutProperty } from './Property';
-import { computeResourceUpdate } from '../../utils/imageUtils';
+import { computeResourceUpdate } from '../../utils/editor/imageUtils';
 import type { ImageElement } from '../../types/presentation';
 
 /**
@@ -61,7 +63,12 @@ interface Props {
 export const ImageProperties: React.FC<Props> = ({ element }) => {
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const updateElement = usePresentationStore((s) => s.updateElement);
-  const update = useMultiSlideUpdate(element.id);
+  const ids = useContext(SelectionPropertiesContext);
+  const singleUpdate = useMultiSlideUpdate(element.id);
+  const update = (changes: Partial<ImageElement>) => {
+    if (ids) commitSelectionProperties(activeSlideId, ids, members => members.filter(el => el.type === 'image').map(el => ({ elementId: el.id, changes })));
+    else singleUpdate(changes);
+  };
   const resources = usePresentationStore((s) => s.presentation.resources);
   const resource = element.resourceId ? resources[element.resourceId] : undefined;
 
@@ -80,7 +87,8 @@ export const ImageProperties: React.FC<Props> = ({ element }) => {
     // Read fresh — addResource may have just landed.
     const currentResources = usePresentationStore.getState().presentation.resources;
     const newResource = resourceId ? currentResources[resourceId] : undefined;
-    updateElement(activeSlideId, element.id, computeResourceUpdate(resourceId, newResource, element));
+    if (ids) commitSelectionProperties(activeSlideId, ids, members => members.flatMap(el => el.type === 'image' ? [{ elementId: el.id, changes: computeResourceUpdate(resourceId, newResource, el) }] : []));
+    else updateElement(activeSlideId, element.id, computeResourceUpdate(resourceId, newResource, element));
   };
 
   return (

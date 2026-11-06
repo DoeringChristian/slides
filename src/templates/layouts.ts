@@ -1,5 +1,5 @@
 import type { Slide } from '../types/presentation';
-import { createSlide, createTextElement } from '../utils/slideFactory';
+import { createSlide, createTextElement } from '../utils/model/slideFactory';
 
 export interface SlideLayout {
   name: string;

@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { createPresentation, createTextElement, createShapeElement } from '../utils/slideFactory';
+import { createPresentation, createTextElement, createShapeElement } from '../utils/model/slideFactory';
 import { autoFitText, beginTextEditSession, subscribeTextFinishes, textFinishRevision, hasPendingTextFinish, getTextEditInitialText, markTextCreation } from './textEditSession';
 import { usePresentationStore as store } from './presentationStore';
 import { jsonToYDoc, yDocToJson, getYElement } from '../collab/ySchema';
 import { setActiveDoc } from '../collab/yDocAdapter';
 import { createUndoManagerFor, setActiveUndoManager, getActiveUndoManager } from '../collab/activeUndo';
-import { layoutSvgText, type SvgTextDoc } from '../utils/textLayout';
-import { textSizeFromDoc } from '../utils/userTextSizing';
+import { layoutSvgText, type SvgTextDoc } from '../utils/text/textLayout';
+import { textSizeFromDoc } from '../utils/text/userTextSizing';
 import type { TextElement } from '../types/presentation';
-vi.mock('../utils/textLayout', () => ({ layoutSvgText: vi.fn() }));
+vi.mock('../utils/text/textLayout', () => ({ layoutSvgText: vi.fn() }));
 const docResult = { width: 80, height: 60, paths: [], totalLength: 0, lines: [] } satisfies SvgTextDoc;
 let ydoc: ReturnType<typeof jsonToYDoc> | undefined;
 afterEach(() => { setActiveUndoManager(null); setActiveDoc(null); ydoc?.destroy(); ydoc = undefined; vi.resetAllMocks(); });
@@ -32,7 +32,7 @@ for (const collab of [false, true]) describe(collab ? 'Yjs text edit session' : 
   it('auto-fit switches user-width sizing with draft/newlines and one atomic geometry undo', async () => {
     const { sid, el, read, undoCount } = setup(collab, { textSizing: 'user-width', rotation: 37,
       transitions: { size: 'ease' }, style: { ...createTextElement().style, align: 'right', verticalAlign: 'bottom' } });
-    const { autoFitTextGeometry } = await import('../utils/textAutoFit');
+    const { autoFitTextGeometry } = await import('../utils/text/textAutoFit');
     await beginTextEditSession(sid, el).finish('draft\n\nnew line\n', 'auto-content');
     expect(read().slides[sid].elements.text).toEqual({ ...el, text: 'draft\n\nnew line\n', textSizing: 'auto-content',
       ...autoFitTextGeometry(el, { width: 80, height: 60 }) });
@@ -60,7 +60,7 @@ for (const collab of [false, true]) describe(collab ? 'Yjs text edit session' : 
     store.getState().updateElement(sid, el.id, { x: 444, rotation: 53, style: { ...el.style, fontSize: 40, align: 'right' } });
     const latest = read().slides[sid].elements.text as TextElement;
     resolve(docResult); await fit;
-    const { autoFitTextGeometry } = await import('../utils/textAutoFit');
+    const { autoFitTextGeometry } = await import('../utils/text/textAutoFit');
     expect(read().slides[sid].elements.text).toMatchObject({ ...autoFitTextGeometry(latest, { width: 80, height: 60 }), textSizing: 'auto-content' });
     expect(layoutSvgText).toHaveBeenLastCalledWith('old', expect.objectContaining({ fontSize: 40, align: 'right' }), 80.001, undefined);
   });

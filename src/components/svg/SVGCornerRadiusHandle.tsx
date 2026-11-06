@@ -3,7 +3,7 @@ import { CONTROL_THEME } from './controlTheme';
 import { SVGAdjustmentGlyph } from './SVGAdjustmentGlyph';
 import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import type { ShapeElement } from '../../types/presentation';
-import { cornerRadiusControl, cornerRadiusClearance, readRadiusControlObstacles, type CornerRadiusPlacement } from '../../utils/cornerRadiusControl';
+import { cornerRadiusControl, cornerRadiusClearance, readRadiusControlObstacles, type CornerRadiusPlacement } from '../../utils/geometry/cornerRadiusControl';
 import { useCoarsePointer } from '../../hooks/useCoarsePointer';
 import { useScreenToSVG } from './useScreenToSVG';
 

@@ -4,9 +4,9 @@ import { useEditorStore } from './editorStore';
 import * as schema from '../collab/ySchema';
 import { setActiveDoc } from '../collab/yDocAdapter';
 import { createUndoManagerFor } from '../collab/activeUndo';
-import { createPresentation, createShapeElement, createTextElement, copySlideAsKeyframe } from '../utils/slideFactory';
-import { mergeObjectConflictSlideIds } from '../utils/mergeObjects';
-import { findBoundText } from '../utils/syncDependents';
+import { createPresentation, createShapeElement, createTextElement, copySlideAsKeyframe } from '../utils/model/slideFactory';
+import { mergeObjectConflictSlideIds } from '../utils/model/mergeObjects';
+import { findBoundText } from '../utils/model/syncDependents';
 
 function fixture(sourceVisible = true, targetVisible = false, labels = true) {
   const p = createPresentation(), slide = p.slides[p.slideOrder[0]];

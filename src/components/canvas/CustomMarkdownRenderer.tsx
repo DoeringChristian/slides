@@ -1,7 +1,7 @@
 import React, { useMemo, memo } from 'react';
 import 'katex/dist/katex.min.css';
 import type { TextStyle } from '../../types/presentation';
-import { renderLatex } from '../../utils/latexUtils';
+import { renderLatex } from '../../utils/text/latexUtils';
 
 interface Props {
   text: string;

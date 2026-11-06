@@ -1,14 +1,14 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { Presentation } from '../types/presentation';
 import type { ProjectMeta } from '../types/vault';
-import { createPresentation, createTextElement } from '../utils/slideFactory';
-import { loadProject, saveProject } from '../utils/projectFiles';
+import { createPresentation, createTextElement } from '../utils/model/slideFactory';
+import { loadProject, saveProject } from '../utils/io/projectFiles';
 import { usePresentationStore } from './presentationStore';
 import { getActiveDoc, setActiveDoc } from '../collab/yDocAdapter';
 import { jsonToYDoc } from '../collab/ySchema';
 vi.stubGlobal('window', {});
 const client = vi.hoisted(() => ({ saveProject: vi.fn(), getProject: vi.fn() }));
-vi.mock('../utils/storageClient', () => ({ getStorageClient: () => client }));
+vi.mock('../utils/io/storageClient', () => ({ getStorageClient: () => client }));
 const { useVaultStore } = await import('./vaultStore');
 
 // In-memory FileSystemHandle fake, NOT a browser permission/picker test.

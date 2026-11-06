@@ -4,7 +4,7 @@ import { Link2, Ungroup } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useGroupRuns } from '../../store/selectors';
-import { findRunAt } from '../../utils/presenterAdvance';
+import { findRunAt } from '../../utils/animation/presenterAdvance';
 import { ColorPicker } from '../toolbar/ColorPicker';
 import { SlidePropertyRow } from './SlidePropertyRow';
 import {

@@ -1,13 +1,15 @@
+import { selectionResizeBounds } from '../../utils/geometry/resizeGeometry';
 import { CONTROL_THEME } from './controlTheme';
 import React from 'react';
 import { usePresentationStore } from '../../store/presentationStore';
-import { getRotationCenter } from '../../utils/geometry';
-import { useElementVisualBounds, selectionControlMetrics } from '../../utils/shapeVisualBounds';
+import { getRotationCenter } from '../../utils/geometry/geometry';
+import { useElementVisualBounds, selectionControlMetrics } from '../../utils/geometry/shapeVisualBounds';
 import { RenderShape } from './ElementRenderer';
 import type { SlideElement, ShapeElement, ImageElement } from '../../types/presentation';
 
 interface Props {
   element: SlideElement;
+  members?: SlideElement[];
   isVisibleOnSlide: boolean;
   zoom?: number;
 }
@@ -90,13 +92,15 @@ const GhostElement: React.FC<{ element: SlideElement }> = ({ element }) => {
   return null;
 };
 
-const HighlightRect: React.FC<{ element: SlideElement; zoom: number }> = ({ element, zoom }) => {
-  const bounds = useElementVisualBounds(element)!;
+const HighlightRect: React.FC<{ element: SlideElement; members?: SlideElement[]; zoom: number }> = ({ element, members, zoom }) => {
+  const grouped = !!members && members.length > 1;
+  const visual = useElementVisualBounds(grouped ? null : element);
+  const bounds = visual ?? selectionResizeBounds(members!);
   const center = getRotationCenter(element);
-  const transform = element.rotation ? `rotate(${element.rotation}, ${center.x}, ${center.y})` : undefined;
+  const transform = !grouped && element.rotation ? `rotate(${element.rotation}, ${center.x}, ${center.y})` : undefined;
 
   // Scale sizes inversely with zoom to keep them constant on screen
-  const padding = selectionControlMetrics(element, zoom).padding;
+  const padding = selectionControlMetrics(grouped ? null : element, zoom).padding;
   const strokeW = 1 / zoom;
 
   return (
@@ -114,9 +118,9 @@ const HighlightRect: React.FC<{ element: SlideElement; zoom: number }> = ({ elem
   );
 };
 
-export const SVGHoverOverlay: React.FC<Props> = ({ element, isVisibleOnSlide, zoom = 1 }) => {
+export const SVGHoverOverlay: React.FC<Props> = ({ element, members, isVisibleOnSlide, zoom = 1 }) => {
   if (isVisibleOnSlide) {
-    return <HighlightRect element={element} zoom={zoom} />;
+    return <HighlightRect element={element} members={members} zoom={zoom} />;
   }
 
   return (

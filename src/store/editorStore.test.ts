@@ -3,7 +3,7 @@ import { useEditorStore as editor } from './editorStore';
 import { usePresentationStore as store } from './presentationStore';
 import { setActiveDoc } from '../collab/yDocAdapter';
 import { jsonToYDoc } from '../collab/ySchema';
-import { createPresentation, createShapeElement } from '../utils/slideFactory';
+import { createPresentation, createShapeElement } from '../utils/model/slideFactory';
 
 afterEach(() => { setActiveDoc(null); editor.setState({ selectedElementIds: [], selectedSlideIds: [] }); });
 describe('create keyframe below → immediately activate (SlidePanel caller sequence)', () => {

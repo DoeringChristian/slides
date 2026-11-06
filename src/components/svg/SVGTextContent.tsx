@@ -1,7 +1,7 @@
 import React, { useMemo, memo } from 'react';
 import type { TextElement } from '../../types/presentation';
 import { renderMarkdownToHtml, containerStyleForMarkdown } from '../canvas/CustomMarkdownRenderer';
-import { textInsets, textInkOverflow } from '../../utils/boundTextLayout';
+import { textInsets, textInkOverflow } from '../../utils/text/boundTextLayout';
 
 interface Props {
   element: TextElement;

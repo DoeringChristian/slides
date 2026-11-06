@@ -1,6 +1,6 @@
 import React, { useId } from 'react';
 import type { ShapeElement } from '../../types/presentation';
-import { hasPatternFill, hatchPath, HATCH_WIDTH } from '../../utils/shapeFill';
+import { hasPatternFill, hatchPath, HATCH_WIDTH } from '../../utils/paint/shapeFill';
 
 /** Shared fill paint server for static shapes and outline/Create previews.
  * Painting the outline with this server clips to the actual silhouette. */

@@ -1,12 +1,12 @@
 import { ColorPicker } from '../toolbar/ColorPicker';
-import { withPaintAlpha, withPaintRgb } from '../../utils/paintColor';
+import { withPaintAlpha, withPaintRgb } from '../../utils/paint/paintColor';
 import type { CurrentChange } from '../../store/currentMutation';
 import { ScrubInput } from '../controls/ScrubInput';
 import { ScrubPair } from '../controls/ScrubPair';
 import { SliderWithReadout } from '../controls/SliderWithReadout';
 import { useScrubCommit } from '../controls/useScrubCommit';
 import { getNested, setNestedPartial } from './Property';
-import type { ScrubSpec } from '../../utils/scrub';
+import type { ScrubSpec } from '../../utils/editor/scrub';
 
 /**
  * Scrub-capable editor bodies for the Property classes.

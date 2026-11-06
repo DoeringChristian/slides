@@ -5,7 +5,7 @@ import { useYToStoreSync } from './yToStoreSync';
 import { jsonToYDoc } from './ySchema';
 import { setActiveDoc } from './yDocAdapter';
 import { usePresentationStore } from '../store/presentationStore';
-import { createPresentation } from '../utils/slideFactory';
+import { createPresentation } from '../utils/model/slideFactory';
 afterEach(() => { effects.cleanup?.(); setActiveDoc(null); });
 it('does not apply a queued pull after effect cleanup', async () => {
   const old = jsonToYDoc(createPresentation()); setActiveDoc(old);

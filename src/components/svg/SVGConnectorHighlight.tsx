@@ -1,7 +1,7 @@
 import React from 'react';
 import type { SlideElement, ShapeElement } from '../../types/presentation';
-import { bindingAimPoint, type ConnectorDockCue } from '../../utils/connectorUtils';
-import { shapeToPathD } from '../../utils/shapeToPath';
+import { bindingAimPoint, type ConnectorDockCue } from '../../utils/paths/connectorUtils';
+import { shapeToPathD } from '../../utils/paths/shapeToPath';
 
 interface Props {
   element: SlideElement;

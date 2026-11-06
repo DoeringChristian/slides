@@ -1,15 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-vi.mock('../utils/keyboard', () => ({ isShiftHeld: () => false, isCtrlHeld: () => false }));
+vi.mock('../utils/editor/keyboard', () => ({ isShiftHeld: () => false, isCtrlHeld: () => false }));
 import { usePresentationStore as store } from './presentationStore';
 import { useEditorStore as editor } from './editorStore';
 import { useCreationPreferences } from './creationPreferences';
-import { createPresentation } from '../utils/slideFactory';
-import { composeUserShape } from '../utils/userShapeCreation';
+import { createPresentation } from '../utils/model/slideFactory';
+import { composeUserShape } from '../utils/editor/userShapeCreation';
 import { jsonToYDoc, yDocToJson } from '../collab/ySchema';
 import { setActiveDoc } from '../collab/yDocAdapter';
 import { createUndoManagerFor, setActiveUndoManager } from '../collab/activeUndo';
-import { CURATED_ICONS } from '../utils/curatedIcons';
-import { resolveBinding } from '../utils/connectorUtils';
+import { CURATED_ICONS } from '../utils/editor/curatedIcons';
+import { resolveBinding } from '../utils/paths/connectorUtils';
 import type { ShapeElement } from '../types/presentation';
 afterEach(() => { setActiveUndoManager(null); setActiveDoc(null); useCreationPreferences.setState({ styles: {}, iconId: 'house' }); });
 describe.each([false, true])('native vector collab=%s', collab => {

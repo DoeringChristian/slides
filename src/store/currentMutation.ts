@@ -2,7 +2,7 @@ import type * as Y from 'yjs';
 import type { Slide, SlideElement } from '../types/presentation';
 import { getActiveDoc } from '../collab/yDocAdapter';
 import { yDocToJsonSlideOnly, getYRoot } from '../collab/ySchema';
-import { beforeLocalMutation } from '../utils/scrubMutation';
+import { beforeLocalMutation } from '../utils/editor/scrubMutation';
 import { usePresentationStore } from './presentationStore';
 
 /** Sibling-bearing partials must be assembled AFTER scrub cancellation, not

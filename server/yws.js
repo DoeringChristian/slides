@@ -1,3 +1,4 @@
+import { upgradeNativePresentation } from '../src/utils/model/legacyPresentation.ts';
 // Y.Doc transport + persistence + cold-start.
 //
 // Wires `@y/websocket-server` (the protocol helpers) onto the existing
@@ -12,13 +13,17 @@
 // validate the URL projectId against an alphanumeric whitelist purely
 // to keep leveldb directories well-formed.
 
+import { createRequire } from 'node:module';
 import wsUtils from 'y-websocket/bin/utils';
+// This legacy transport constructs CommonJS Y types. Decode its wire bytes
+// with that same runtime; never insert ESM Y types into a transport document.
+const transportY = createRequire(import.meta.url)('yjs');
 const { setupWSConnection, setPersistence, docs } = wsUtils;
 import { LeveldbPersistence } from 'y-leveldb';
 import { WebSocketServer } from 'ws';
 import * as Y from 'yjs';
 import path from 'path';
-import { jsonToYDoc, yDocToJson } from '../src/collab/ySchema.ts';
+import { jsonToYDoc, yDocToJson, restoreStoredYProject } from '../src/collab/ySchema.ts';
 
 // =============================================================================
 // Tunables
@@ -42,6 +47,18 @@ const persistence = new LeveldbPersistence(LEVELDB_DIR);
 // the leveldb read inside bindState, the client would receive "doc is empty"
 // before our async load completes.
 const preloadedStates = new Map();
+const pendingWrites = new Map();
+const closingRooms = new Map();
+const snapshotStates = new WeakMap();
+async function flushSnapshot(doc) {
+  const state = snapshotStates.get(doc);
+  if (!state) return Promise.resolve();
+  clearTimeout(state.timer);
+  state.timer = null;
+  const presentation = yDocToJson(doc);
+  state.pending = state.pending.catch(() => {}).then(() => state.storage.saveProject(presentation));
+  return state.pending;
+}
 
 // bindState only runs the synchronous apply + subscribes to future updates.
 // Subscribers fan back into LevelDB; writes are async but their order is
@@ -50,22 +67,25 @@ const wsPersistence = {
   provider: persistence,
   bindState: (docName, ydoc) => {
     const preloaded = preloadedStates.get(docName);
-    if (preloaded) Y.applyUpdate(ydoc, preloaded);
+    if (preloaded) transportY.applyUpdate(ydoc, preloaded);
+    preloadedStates.delete(docName);
     ydoc.on('update', (update) => {
-      persistence.storeUpdate(docName, update);
+      const pending = (pendingWrites.get(docName) ?? Promise.resolve()).then(() => persistence.storeUpdate(docName, update));
+      pendingWrites.set(docName, pending);
+      pending.catch(err => console.error(`[yws] persistence failed for ${docName}:`, err));
     });
   },
-  writeState: async () => {
-    // Updates stream eagerly in the `update` handler; nothing to flush.
+  writeState: (docName, doc) => {
+    // The transport removes the room immediately after this call. A fresh
+    // connection must await its writes before loading a replacement Y.Doc.
+    const closing = Promise.all([pendingWrites.get(docName), flushSnapshot(doc)]).then(() => {});
+    closingRooms.set(docName, closing);
+    closing.catch(err => console.error(`[yws] close flush failed for ${docName}:`, err));
+    return closing.catch(() => {});
   },
 };
 setPersistence(wsPersistence);
 
-/** projectId → debounced snapshot timer */
-const snapshotTimers = new Map();
-/** projectId → bool; tracks which docs we've already attached the snapshot
- *  listener to (avoids N listeners per N connections to the same room). */
-const snapshotSubscribed = new Set();
 /** projectId → Promise; ensures cold-start only runs once even if multiple
  *  clients race to open the same project. */
 const coldStarts = new Map();
@@ -76,17 +96,21 @@ const coldStarts = new Map();
 // =============================================================================
 
 async function ensureLeveldbBootstrapped(projectId, storage) {
+  await closingRooms.get(projectId);
+  if (docs.has(projectId)) return;
   if (coldStarts.has(projectId)) return coldStarts.get(projectId);
   const p = (async () => {
     // y-leveldb's `getYDoc` returns a Y.Doc with all stored updates already
     // applied. If `store.clients` is empty, nothing has ever been stored.
-    let liveDoc = await persistence.getYDoc(projectId);
+    await pendingWrites.get(projectId);
+    const liveDoc = await persistence.getYDoc(projectId);
+    try {
     if (liveDoc.store.clients.size === 0) {
       // Cold-start: hydrate from the JSON snapshot, persist as the initial
       // leveldb update, then re-read so liveDoc has the cold-started state.
       const result = await storage.getProject(projectId);
       if (result?.presentation) {
-        jsonToYDoc(result.presentation, liveDoc);
+        jsonToYDoc(upgradeNativePresentation(result.presentation), liveDoc);
         const update = Y.encodeStateAsUpdate(liveDoc);
         await persistence.storeUpdate(projectId, update);
         console.log(`[yws] cold-started ${projectId} from JSON snapshot`);
@@ -95,12 +119,17 @@ async function ensureLeveldbBootstrapped(projectId, storage) {
         return;
       }
     }
+    if (restoreStoredYProject(liveDoc)) {
+      await persistence.storeUpdate(projectId, Y.encodeStateAsUpdate(liveDoc));
+      await storage.saveProject(yDocToJson(liveDoc));
+    }
     // Cache the current state so the (synchronous) bindState can apply it
     // before y-websocket runs sync-step-1.
-    preloadedStates.set(projectId, Y.encodeStateAsUpdate(liveDoc));
+    if (!docs.has(projectId)) preloadedStates.set(projectId, Y.encodeStateAsUpdate(liveDoc));
+    } finally { liveDoc.destroy(); }
   })();
   coldStarts.set(projectId, p);
-  await p;
+  try { await p; } finally { coldStarts.delete(projectId); }
 }
 
 // =============================================================================
@@ -108,24 +137,15 @@ async function ensureLeveldbBootstrapped(projectId, storage) {
 // =============================================================================
 
 function subscribeSnapshot(projectId, storage) {
-  if (snapshotSubscribed.has(projectId)) return;
-  snapshotSubscribed.add(projectId);
-
   const doc = docs.get(projectId);
-  if (!doc) return;
-
+  if (!doc || snapshotStates.has(doc)) return;
+  const state = { storage, timer: null, pending: Promise.resolve() };
+  snapshotStates.set(doc, state);
   doc.on('update', () => {
-    clearTimeout(snapshotTimers.get(projectId));
-    const t = setTimeout(async () => {
-      snapshotTimers.delete(projectId);
-      try {
-        const presentation = yDocToJson(doc);
-        await storage.saveProject(presentation);
-      } catch (err) {
-        console.error(`[yws] snapshot failed for ${projectId}:`, err);
-      }
+    clearTimeout(state.timer);
+    state.timer = setTimeout(() => {
+      flushSnapshot(doc).catch(err => console.error(`[yws] snapshot failed for ${projectId}:`, err));
     }, SNAPSHOT_DEBOUNCE_MS);
-    snapshotTimers.set(projectId, t);
   });
 }
 

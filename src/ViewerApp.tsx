@@ -1,5 +1,5 @@
 import { PresenterView } from './components/presenter/PresenterView';
-import { readStandaloneBoot, applyStandaloneBoot } from './utils/standaloneBoot';
+import { readStandaloneBoot, applyStandaloneBoot } from './utils/io/standaloneBoot';
 
 // Thin viewer-only shell. Reuses the editor's PresenterView, presenterUtils, and
 // presentation/editor stores — there is no separate slide renderer here.

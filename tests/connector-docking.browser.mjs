@@ -49,7 +49,7 @@ const close = (actual, expected, label) => { assert(actual, label); actual.forEa
 async function setup({ collab = false, zoom = 1, shapeType = 'rect', rotation = 0, tool = 'arrow', subject, secondSlide = false } = {}) {
   await evaluate(`canvasTest.resetPreferences()`);
   await evaluate(`(async()=>{const {useCreationPreferences}=await import('/src/store/creationPreferences.ts');useCreationPreferences.getState().remember('${tool}',{stroke:'#a02555',strokeWidth:5});})()`);
-  await evaluate(`canvasTest.setup(${JSON.stringify({ mode: 'production', collab, zoom, tool, empty: !subject, subject, secondSlide, targets: [{ id: 'box', shapeType, x: 400, y: 250, width: 180, height: 120, rotation, fill: '#d8efec' }] })})`);
+  await evaluate(`canvasTest.setup(${JSON.stringify({ mode: 'production', snap: true, collab, zoom, tool, empty: !subject, subject, secondSlide, targets: [{ id: 'box', shapeType, x: 400, y: 250, width: 180, height: 120, rotation, fill: '#d8efec' }] })})`);
   await wait(180);
   const dock = await evaluate(`(async()=>{const {bindingAimPoint}=await import('/src/utils/connectorUtils.ts');const box=canvasTest.snapshot().slide.elements.box;const p=bindingAimPoint({elementId:box.id,mode:'pinned',fixedPoint:[1,.5]},box);return [p.x,p.y]})()`);
   await evaluate(`(()=>{const p=document.querySelector('.canvas-scroll-parent'),svg=p.querySelector('svg'),m=svg.getScreenCTM(),r=new DOMPoint(${dock[0]},${dock[1]}).matrixTransform(m);p.scrollLeft+=r.x-460;p.scrollTop+=r.y-380;})()`); await wait(40);
@@ -63,7 +63,7 @@ try {
     const rotation = shapeType === 'ellipse' ? 37 : 0, tool = shapeType === 'rect' ? 'arrow' : 'line';
     const dock = await setup({ collab, zoom, shapeType, rotation, tool });
     const r = rotation * Math.PI / 180;
-    const physical = [dock[0] + 5 * Math.cos(r), dock[1] + 5 * Math.sin(r)];
+    const physical = [dock[0] + (4 / zoom) * Math.cos(r), dock[1] + (4 / zoom) * Math.sin(r)];
     const start = await screen(physical), endWorld = [dock[0] + 155, dock[1] + 103], end = await screen(endWorld);
     const before = await snap(), raw = await authoritative();
     await mouse('mouseMoved', start);

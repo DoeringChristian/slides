@@ -1,3 +1,4 @@
+import { GroupCrop } from './GroupCrop';
 import React, { useRef, useCallback, useState } from 'react';
 import { usePresentationStore } from '../../store/presentationStore';
 import { RenderImage } from './ElementRenderer';
@@ -96,7 +97,7 @@ export const SVGImageNode: React.FC<Props> = React.memo(({
     };
 
     return (
-      <g
+      <GroupCrop element={element}><g
         transform={transform}
         data-element-id={element.id}
         onMouseEnter={disableInteraction ? undefined : handleVideoMouseEnter}
@@ -171,7 +172,7 @@ export const SVGImageNode: React.FC<Props> = React.memo(({
             )}
           </g>
         )}
-      </g>
+      </g></GroupCrop>
     );
   }
 

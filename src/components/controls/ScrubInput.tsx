@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { usePointerDrag } from '../../hooks/usePointerDrag';
-import { isCtrlHeld, isShiftHeld } from '../../utils/keyboard';
+import { isCtrlHeld, isShiftHeld } from '../../utils/editor/keyboard';
 import { DRAG_SLOP_MOUSE, DRAG_SLOP_TOUCH } from '../../utils/constants';
 import {
   applyScrubDelta,
@@ -8,7 +8,7 @@ import {
   formatValue,
   parseInput,
   type ScrubSpec,
-} from '../../utils/scrub';
+} from '../../utils/editor/scrub';
 
 /**
  * Blender-style numeric input: the whole field is a drag-to-scrub surface,

@@ -1,0 +1,47 @@
+import { afterEach, expect, it } from 'vitest';
+import { usePresentationStore as store } from './presentationStore';
+import { useEditorStore as editor } from './editorStore';
+import { createPresentation, createShapeElement } from '../utils/model/slideFactory';
+import { jsonToYDoc, yDocToJson } from '../collab/ySchema';
+import { setActiveDoc } from '../collab/yDocAdapter';
+import { createUndoManagerFor, setActiveUndoManager } from '../collab/activeUndo';
+import { resizeSelection, selectionResizeBounds } from '../utils/geometry/resizeGeometry';
+import { planElementTranslation } from '../utils/geometry/elementTranslation';
+
+afterEach(()=>{setActiveUndoManager(null);setActiveDoc(null);editor.setState({selectedSlideIds:[]});});
+it.each([false,true])('multi-slide operations preserve each keyframe and share one undo (collab=%s)',collab=>{
+ const p=createPresentation(),s=p.slides[p.slideOrder[0]];
+ const a=createShapeElement('path',{id:'a',x:100,y:100,width:100,height:100,points:[0,0,100,100],stroke:'#123456'});
+ const b=createShapeElement('rect',{id:'b',x:300,y:100,width:100,height:100});
+ s.elements={a,b};s.elementOrder=['a','b'];
+ const earlier={...structuredClone(s),id:'earlier'};
+ earlier.elements.a={...a,x:20,y:30,width:200,height:100,points:[0,100,50,20,200,0],visible:false,stroke:'#abcdef',endHead:'circle'};
+ earlier.elements.b={...b,x:600,width:200,visible:false};p.slides.earlier=earlier;p.slideOrder.unshift('earlier');
+ store.setState({presentation:structuredClone(p)});store.temporal.getState().clear();
+ editor.setState({activeSlideId:s.id,selectedSlideIds:['earlier',s.id],autoDrawMode:false});
+ const doc=collab?jsonToYDoc(p):null;setActiveDoc(doc);const undo=doc?createUndoManagerFor(doc):null;setActiveUndoManager(undo);
+ const read=()=>doc?yDocToJson(doc):store.getState().presentation;
+ const undoOnce=()=>{if(undo)undo.undo();else store.temporal.getState().undo();};
+ const isolate=()=>{undo?.stopCapturing();};
+ store.getState().updateElement(s.id,'a',{x:a.x});
+ expect(read().slides.earlier).toEqual(earlier);
+ store.temporal.getState().clear();undo?.clear();
+ store.getState().updateElements(s.id,planElementTranslation(s.elements,new Map([['a',a],['b',b]]),{x:25,y:40}));
+ expect(read().slides.earlier.elements.a).toEqual({...earlier.elements.a,x:45,y:70});
+ expect(read().slides.earlier.elements.b).toEqual({...earlier.elements.b,x:625,y:140});
+ undoOnce();expect(read().slides).toEqual(p.slides);isolate();
+ const resized=resizeSelection([a],selectionResizeBounds([a]),{x:100,y:100,width:200,height:200});
+ store.getState().updateElements(s.id,resized);
+ const e=read().slides.earlier.elements.a;
+ expect(e).toMatchObject({x:20,y:30,width:400,height:200,points:[0,200,100,40,400,0],visible:false,stroke:'#abcdef',endHead:'circle'});
+ undoOnce();expect(read().slides).toEqual(p.slides);isolate();
+ // Full render snapshots must not leak unchanged visibility or path topology.
+ store.getState().updateElement(s.id,'a',{...a,x:120});
+ expect(read().slides.earlier.elements.a).toEqual({...earlier.elements.a,x:40});
+ undoOnce();expect(read().slides).toEqual(p.slides);isolate();
+ store.getState().updateElement(s.id,'a',{rotation:30});
+ expect(read().slides.earlier.elements.a).toMatchObject({...earlier.elements.a,rotation:30});
+ undoOnce();expect(read().slides).toEqual(p.slides);isolate();
+ store.getState().updateElement(s.id,'a',{visible:true});
+ expect(read().slides.earlier.elements.a.visible).toBe(true);
+});

@@ -1,7 +1,10 @@
+import { SelectionPropertiesContext } from './SelectionPropertiesContext';
+import { batchPropertyEditor, selectionProxy } from '../../store/batchPropertyEditor';
+import { usePresentationStore } from '../../store/presentationStore';
 import React, { useContext } from 'react';
 import { CreationDraftContext } from './CreationDraftContext';
 import { updateShapeStyleFromCurrent } from '../../store/shapeStyleMutation';
-import { isOwnedScrubMutation } from '../../utils/scrubMutation';
+import { isOwnedScrubMutation } from '../../utils/editor/scrubMutation';
 import type { ShapeElement } from '../../types/presentation';
 import { usePrevKeyframeElement, useNextKeyframeElement } from '../../store/selectors';
 import { TransitionButton } from './TransitionButton';
@@ -34,6 +37,12 @@ export function PropertyRow<E extends SlideElement>({ property, element }: Props
   const next = useNextKeyframeElement(element.id) as E | undefined;
   const activeSlideId = useEditorStore(s => s.activeSlideId);
   const draft = useContext(CreationDraftContext);
+  const batchIds = useContext(SelectionPropertiesContext);
+  const slide = usePresentationStore(s => s.presentation.slides[activeSlideId]);
+  const geometry = ['position', 'size', 'rotation'].includes(property.key);
+  const members = batchIds?.map(id => slide?.elements[id]).filter((el): el is E => !!el && (geometry || el.type === element.type) && property.visibleFor(el as E)) ?? [];
+  const display = batchIds && members.length ? (geometry ? selectionProxy(members) : members[0]) as E : element;
+  const batchEdit = batchIds ? batchPropertyEditor(activeSlideId, batchIds, geometry, el => geometry || (el.type === element.type && property.visibleFor(el as E))) : null;
   const update = (changes: CurrentChange<E>) => {
     if (draft) { draft.update(changes as CurrentChange<ShapeElement>); return; }
     updateElementFromCurrent(activeSlideId, element, changes);
@@ -48,16 +57,16 @@ export function PropertyRow<E extends SlideElement>({ property, element }: Props
     else accept(changes);
   }, { commit: accept });
 
-  if (!property.visibleFor(element)) return null;
+  if (batchIds ? !members.length : !property.visibleFor(element)) return null;
 
-  const label = property instanceof ReadoutProperty ? property.formattedLabel(element) : property.label;
-  const editor = property.renderEditor({ element, update: edit });
+  const label = property instanceof ReadoutProperty ? property.formattedLabel(display) : property.label;
+  const editor = property.renderEditor({ element: display, update: batchEdit as typeof edit ?? edit });
 
   return (
-    <div className="min-w-0">
+    <div className="min-w-0" data-property={property.key}>
       <div className={editor ? 'mb-1 min-w-0' : 'min-w-0'}>
-        <div className="text-xs text-gray-500 break-words">{label}</div>
-        {!draft && <div className="flex flex-wrap items-center gap-0.5 min-w-0 mt-0.5">
+        <div className="text-xs text-gray-500 break-words">{label}{batchIds && !geometry && members.some(el => property.differsFromKeyframe(members[0], el)) && <span className="ml-1 text-gray-400">(Mixed)</span>}</div>
+        {!draft && <SelectionPropertiesContext.Provider value={batchIds ? members.map(el => el.id) : null}><div className="flex flex-wrap items-center gap-0.5 min-w-0 mt-0.5">
           <SlideSyncButton elementId={element.id} fields={property.syncFields} />
           {property.transitionGroup && (
             <>
@@ -66,7 +75,7 @@ export function PropertyRow<E extends SlideElement>({ property, element }: Props
             </>
           )}
           <KeyframeButtons property={property} element={element} prev={prev} next={next} update={update} />
-        </div>}
+        </div></SelectionPropertiesContext.Provider>}
       </div>
       {editor}
     </div>

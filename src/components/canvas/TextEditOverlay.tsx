@@ -1,19 +1,19 @@
 import { SVGTextAutoFitHandle } from '../svg/SVGTextAutoFitHandle';
 import { flushSync } from 'react-dom';
-import { textEditorSourceOffset, textEditorCursorPoint } from '../../utils/textEditorSelection';
+import { textEditorSourceOffset, textEditorCursorPoint } from '../../utils/text/textEditorSelection';
 import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { useActiveSlide } from '../../store/selectors';
 import { CANVAS_PADDING } from '../../utils/constants';
-import { calculateCursorFromClick } from '../../utils/textHitTest';
-import { layoutSvgText, textRowMetrics, type SvgTextDoc } from '../../utils/textLayout';
-import { textInsets } from '../../utils/boundTextLayout';
-import type { GesturePatch } from '../../utils/gestureProjection';
-import { maxLabelWidthFor } from '../../utils/syncDependents';
+import { calculateCursorFromClick } from '../../utils/text/textHitTest';
+import { layoutSvgText, textRowMetrics, type SvgTextDoc } from '../../utils/text/textLayout';
+import { textInsets } from '../../utils/text/boundTextLayout';
+import type { GesturePatch } from '../../utils/editor/gestureProjection';
+import { maxLabelWidthFor } from '../../utils/model/syncDependents';
 import { SVGTextPaths } from '../svg/SVGTextPaths';
-import { injectInterFontFace, nativeTextBaseline } from '../../utils/glyphPaths';
+import { injectInterFontFace, nativeTextBaseline } from '../../utils/text/glyphPaths';
 import { beginTextEditSession, getTextEditInitialText } from '../../store/textEditSession';
-import { hasContentSizing, layoutUserText, measureUserText, textSizingWidth } from '../../utils/userTextSizing';
+import { hasContentSizing, layoutUserText, measureUserText, textSizingWidth } from '../../utils/text/userTextSizing';
 import type { TextElement } from '../../types/presentation';
 
 // Inject the InterEdit @font-face so the contentEditable uses the SAME font

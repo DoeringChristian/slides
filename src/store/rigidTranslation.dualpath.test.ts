@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-vi.mock('../utils/keyboard', () => ({ isShiftHeld: () => false, isCtrlHeld: () => false }));
+vi.mock('../utils/editor/keyboard', () => ({ isShiftHeld: () => false, isCtrlHeld: () => false }));
 import { usePresentationStore as store } from './presentationStore';
 import { useEditorStore as editor } from './editorStore';
 import { setActiveDoc } from '../collab/yDocAdapter';
 import { jsonToYDoc, yDocToJson } from '../collab/ySchema';
-import { createPresentation, createShapeElement } from '../utils/slideFactory';
-import { bindingAimPoint, bindingFor, resolveBinding } from '../utils/connectorUtils';
-import { pathPointsInSlide } from '../utils/pathEditing';
-import { planElementTranslation } from '../utils/elementTranslation';
+import { createPresentation, createShapeElement } from '../utils/model/slideFactory';
+import { bindingAimPoint, bindingFor, resolveBinding } from '../utils/paths/connectorUtils';
+import { pathPointsInSlide } from '../utils/paths/pathEditing';
+import { planElementTranslation } from '../utils/geometry/elementTranslation';
 import type { ShapeElement, SlideElement } from '../types/presentation';
 
 afterEach(() => setActiveDoc(null));

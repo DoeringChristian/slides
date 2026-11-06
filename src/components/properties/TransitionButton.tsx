@@ -1,3 +1,7 @@
+import { useContext } from 'react';
+import { SelectionPropertiesContext } from './SelectionPropertiesContext';
+import { readSlideForMutation } from '../../store/currentMutation';
+import { getActiveUndoManager } from '../../collab/activeUndo';
 import React from 'react';
 import { PreviewSelect } from '../controls/PreviewSelect';
 import {
@@ -16,9 +20,9 @@ import type {
 } from '../../types/presentation';
 import { TransitionPreview } from './TransitionPreview';
 import { isVisibilityFadeOut, optionsKeyFor } from './transitionSide';
-import { defaultVisibilityEasing } from '../../utils/interpolation';
-import { DEFAULT_TYPES, RESOURCE_TYPES, CONTENT_TYPES, MORPH_TYPES, visibilityTypesFor } from '../../utils/easingCatalog';
-import { EASING_LABELS, easingHasOptions, transitionPropertiesDiffer } from '../../utils/transitionProperties';
+import { defaultVisibilityEasing } from '../../utils/animation/interpolation';
+import { DEFAULT_TYPES, CROP_TYPES, RESOURCE_TYPES, CONTENT_TYPES, MORPH_TYPES, visibilityTypesFor } from '../../utils/animation/easingCatalog';
+import { EASING_LABELS, easingHasOptions, transitionPropertiesDiffer } from '../../utils/animation/transitionProperties';
 
 interface Props {
   elementId: string;
@@ -29,6 +33,10 @@ interface Props {
 const ICON_SIZE = 14;
 
 const EASING_ICONS: Record<EasingType, React.ReactNode> = {
+  croplift: <Layers size={ICON_SIZE} />,
+  cropliftease: <Layers size={ICON_SIZE} />,
+  cropfade: <Layers size={ICON_SIZE} />,
+  cropfadeease: <Layers size={ICON_SIZE} />,
   const: <Minus size={ICON_SIZE} />,
   linear: <TrendingUp size={ICON_SIZE} />,
   ease: <Spline size={ICON_SIZE} />,
@@ -53,7 +61,8 @@ export const TransitionButton: React.FC<Props> = ({
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const slideOrder = usePresentationStore((s) => s.presentation.slideOrder);
   const slides = usePresentationStore((s) => s.presentation.slides);
-  const updateElement = usePresentationStore((s) => s.updateElement);
+  const batchIds = useContext(SelectionPropertiesContext);
+  const ids = batchIds ?? [elementId];
   // Read this hook unconditionally — it MUST be above the `if (!canEdit)
   // early return below, or the hook count varies between renders and React
   // aborts mid-reconcile. That abort leaves fibers half-attached and shows
@@ -70,20 +79,23 @@ export const TransitionButton: React.FC<Props> = ({
   const targetSlideId = slideOrder[targetSlideIndex];
   const sourceSlide = sourceSlideId ? slides[sourceSlideId] : undefined;
   const targetSlide = targetSlideId ? slides[targetSlideId] : undefined;
-  const sourceElement = sourceSlide?.elements[elementId];
-
-  const targetElement = targetSlide?.elements[elementId];
+  const candidates = ids.map(id => ({ id, source: sourceSlide?.elements[id], target: targetSlide?.elements[id] }))
+    .filter(({ source, target }) => transitionPropertiesDiffer(source, target, group));
+  const sourceElement = candidates[0]?.source;
+  const targetElement = candidates[0]?.target;
 
   // Visibility options depend on the element type (shapes get Create, text
   // gets glyph effects, etc.). The element exists on at least one side of
   // the transition.
   const elementType = (sourceElement ?? targetElement)?.type;
-  const types =
+  const typesFor = (elementType: SlideElement['type'] | undefined) =>
     group === 'content' ? CONTENT_TYPES :
+    group === 'crop' ? CROP_TYPES :
     group === 'resource' ? RESOURCE_TYPES :
     group === 'visibility' ? visibilityTypesFor(elementType) :
     group === 'morph' ? MORPH_TYPES :
     DEFAULT_TYPES;
+  const types = typesFor(elementType).filter(type => candidates.every(c => typesFor((c.source ?? c.target)?.type).includes(type)));
 
   const differs = transitionPropertiesDiffer(sourceElement, targetElement, group);
 
@@ -91,7 +103,7 @@ export const TransitionButton: React.FC<Props> = ({
   // visibility changes (because target doesn't exist).
   const isFadeOut = isVisibilityFadeOut(sourceElement, targetElement, group);
   const transitionElement = isFadeOut ? sourceElement : targetElement;
-  const transitionSlideId = isFadeOut ? sourceSlideId : targetSlideId;
+
 
   const defaultEasing: EasingType =
     group === 'resource' ? 'dissolve' :
@@ -111,9 +123,23 @@ export const TransitionButton: React.FC<Props> = ({
   if (!canEdit) return null;
 
   const writeNewTransitions = (mutate: (t: PropertyTransitions) => void) => {
-    const next: PropertyTransitions = { ...(transitionElement!.transitions || {}) };
-    mutate(next);
-    updateElement(transitionSlideId!, elementId, { transitions: next } as Partial<SlideElement>);
+    const source = sourceSlideId ? readSlideForMutation(sourceSlideId) : undefined;
+    const target = targetSlideId ? readSlideForMutation(targetSlideId) : undefined;
+    const updates = ids.flatMap(id => {
+      const from = source?.elements[id], to = target?.elements[id];
+      if (!transitionPropertiesDiffer(from, to, group)) return [];
+      const fadeOut = isVisibilityFadeOut(from, to, group);
+      const element = fadeOut ? from : to, slideId = fadeOut ? sourceSlideId : targetSlideId;
+      if (!element || !slideId) return [];
+      const transitions = { ...element.transitions };
+      mutate(transitions);
+      return [{ slideId, elementId: id, changes: { transitions } }];
+    });
+    const undo = getActiveUndoManager();
+    undo?.stopCapturing();
+    if (batchIds) usePresentationStore.getState().updateAcrossSlides(updates);
+    else for (const update of updates) usePresentationStore.getState().updateElement(update.slideId, update.elementId, update.changes);
+    undo?.stopCapturing();
   };
 
   const handleSelect = (easing: EasingType) => {
@@ -123,7 +149,7 @@ export const TransitionButton: React.FC<Props> = ({
 
   const handleOptionChange = (nextOptions: TransitionOptions) => {
     if (!optKey) return;
-    writeNewTransitions((t) => { t[optKey] = nextOptions; });
+    writeNewTransitions((t) => { t[optKey] = { ...t[optKey], [currentEasing]: nextOptions[currentEasing as keyof TransitionOptions] }; });
     if (elementType) rememberEasing(elementType, group, currentEasing, nextOptions);
   };
 
@@ -133,6 +159,7 @@ export const TransitionButton: React.FC<Props> = ({
       value={currentEasing}
       onChange={handleSelect}
       closeOnSelect={false}
+      alwaysChoose={ids.length > 1}
       previewHeight={80}
       trigger={<>
         {direction === 'in' ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
@@ -143,8 +170,8 @@ export const TransitionButton: React.FC<Props> = ({
         value: easing,
         label: EASING_LABELS[easing],
         preview: <TransitionPreview
-          sourceElement={sourceElement}
-          targetElement={targetElement}
+          sourceElements={ids.flatMap(id => sourceSlide?.elements[id] ? [sourceSlide.elements[id]] : [])}
+          targetElements={ids.flatMap(id => targetSlide?.elements[id] ? [targetSlide.elements[id]] : [])}
           group={group}
           easing={easing}
           options={easing === currentEasing ? currentOptions : undefined}

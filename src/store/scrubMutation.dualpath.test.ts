@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
-vi.mock('../utils/keyboard', () => ({ isShiftHeld: () => false, isCtrlHeld: () => false }));
+vi.mock('../utils/editor/keyboard', () => ({ isShiftHeld: () => false, isCtrlHeld: () => false }));
 import { usePresentationStore as store } from './presentationStore';
 import { useEditorStore as editor } from './editorStore';
-import { createPresentation, createTextElement } from '../utils/slideFactory';
+import { createPresentation, createTextElement } from '../utils/model/slideFactory';
 import { jsonToYDoc, yDocToJson } from '../collab/ySchema';
 import { setActiveDoc } from '../collab/yDocAdapter';
 import { beginScrubCapture, createUndoManagerFor } from '../collab/activeUndo';
 import { runScrubSession } from '../components/controls/useScrubCommit';
-import { beforeLocalMutation } from '../utils/scrubMutation';
+import { beforeLocalMutation } from '../utils/editor/scrubMutation';
 
 afterEach(() => { beforeLocalMutation(); setActiveDoc(null); vi.useRealTimers(); });
 

@@ -1,18 +1,19 @@
-import { anchorTextSize, measureFreeTextResizeBaseline, resizeFreeText, scalesFreeText } from '../../utils/freeTextResize';
+import { snapViewport } from '../../utils/snapping/snapViewport';
+import { anchorTextSize, measureFreeTextResizeBaseline, resizeFreeText, scalesFreeText } from '../../utils/geometry/freeTextResize';
 import { useCanvasGestureGuard } from './useCanvasGestureGuard';
 import { CONTROL_THEME } from './controlTheme';
 /* eslint-disable react-hooks/refs -- gesture refs are accessed only by pointer/key callbacks, never during render */
-import { screenPixelsToSlide } from '../../utils/screenSpace';
+import { SNAP_DISTANCE_PX, screenPixelsToSlide } from '../../utils/geometry/screenSpace';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useElementVisualBounds, selectionControlMetrics } from '../../utils/shapeVisualBounds';
-import { getRotationCenter } from '../../utils/geometry';
+import { useElementVisualBounds, selectionControlMetrics } from '../../utils/geometry/shapeVisualBounds';
+import { getRotationCenter } from '../../utils/geometry/geometry';
 import type { SlideElement } from '../../types/presentation';
 import { getActiveDoc } from '../../collab/yDocAdapter';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useEditorStore } from '../../store/editorStore';
 import { computeResizeSnap, type Guide } from '../../hooks/useAlignmentGuides';
-import { getMarginLayout, getMarginBounds } from '../../utils/marginLayouts';
-import { resizeBounds, resizeSelection, selectionResizeBounds, rotateDelta, type ResizeUpdate } from '../../utils/resizeGeometry';
+import { getMarginLayout, getMarginBounds } from '../../utils/geometry/marginLayouts';
+import { resizeBounds, resizeSelection, selectionResizeBounds, rotateDelta, rotateSelection, type ResizeUpdate } from '../../utils/geometry/resizeGeometry';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { useCoarsePointer } from '../../hooks/useCoarsePointer';
 import { useScreenToSVG } from './useScreenToSVG';
@@ -174,11 +175,17 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
         const cx = start.x + start.width / 2, cy = start.y + start.height / 2;
         let angle = rot + (Math.atan2(to.y - cy, to.x - cx) - Math.atan2(from.y - cy, from.x - cx)) * 180 / Math.PI;
         if (e.shiftKey) angle = Math.round(angle / 15) * 15;
-        updates = [{ elementId: original[0].id, changes: { rotation: (angle % 360 + 360) % 360 } }];
+        updates = original.length === 1
+          ? [{ elementId: original[0].id, changes: { rotation: (angle % 360 + 360) % 360 } }]
+          : rotateSelection(original, { x: cx, y: cy }, angle - rot);
       } else {
         const delta = rotateDelta({ x: (e.clientX - pointer.clientX) / zoom, y: (e.clientY - pointer.clientY) / zoom }, -rot);
         const freeText = original.length === 1 && original[0].type === 'text' && !original[0].containerId ? original[0] : null;
-        const aspect = freeText ? scalesFreeText(anchor, e.shiftKey) : e.shiftKey;
+        // Image elements also represent video resources. Shift temporarily
+        // unlocks their aspect ratio; other objects retain Shift-to-lock.
+        const media = original.length === 1 && original[0].type === 'image';
+        const dot = original.length === 1 && original[0].type === 'shape' && original[0].shapeType === 'dot';
+        const aspect = dot || (freeText ? scalesFreeText(anchor, e.shiftKey) : media ? !e.shiftKey : e.shiftKey);
         const constrainedBounds = (baseline: typeof start) => {
           let next = resizeBounds(baseline, anchor, delta, aspect, e.ctrlKey, rot);
           onGuidesChange?.([]);
@@ -186,8 +193,9 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
           if (!rot && editor.snapToGrid && !e.metaKey) {
             const layout = getMarginLayout(editor.marginLayoutId);
             const others = elements.filter(el => !original.some(o => o.id === el.id) && el.visible);
-            const tolerance = screenPixelsToSlide(5, zoom);
-            const snap = computeResizeSnap(next, others, tolerance, layout ? getMarginBounds(layout) : null);
+            const tolerance = screenPixelsToSlide(SNAP_DISTANCE_PX, zoom);
+            const viewport = snapViewport(svgRef?.current);
+            const snap = computeResizeSnap(next, others, tolerance, layout ? getMarginBounds(layout) : null, viewport);
             // Snap a driven handle coordinate, then rerun the SAME constrained
             // geometry. Never independently snap a passive/opposite edge.
             const candidates: { delta: typeof delta; distance: number }[] = [];
@@ -197,7 +205,7 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
             if (anchor.includes('bottom') && snap.bottomSnap !== null) candidates.push({ delta: { ...delta, y: delta.y + snap.bottomSnap - next.y - next.height }, distance: Math.abs(snap.bottomSnap - next.y - next.height) });
             candidates.sort((a,b) => a.distance - b.distance);
             if (candidates[0]) next = resizeBounds(baseline, anchor, candidates[0].delta, aspect, e.ctrlKey, rot);
-            onGuidesChange?.(computeResizeSnap(next, others, 1e-6, layout ? getMarginBounds(layout) : null).guides);
+            onGuidesChange?.(computeResizeSnap(next, others, 1e-6, layout ? getMarginBounds(layout) : null, viewport).guides);
           }
           return next;
         };
@@ -266,7 +274,7 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
       window.removeEventListener('keydown', key, true); window.removeEventListener('keyup', key, true);
       window.removeEventListener('contextmenu', context, true);
     };
-  }, [gesture, zoom, elements, selectedIds, screenToSVG, onTransform, onTransformEnd, onBatchTransform, onBatchTransformEnd, onTransformCancel, onGuidesChange, finishGuard]);
+  }, [gesture, svgRef, zoom, elements, selectedIds, screenToSVG, onTransform, onTransformEnd, onBatchTransform, onBatchTransformEnd, onTransformCancel, onGuidesChange, finishGuard]);
 
   // Early return after all hooks are called
   if (selectedIds.length === 0 || selectedElements.length === 0) return null;
@@ -374,8 +382,8 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
         );
       })}
 
-      {/* Rotation anchor (only for single selection) */}
-      {!locked && singleElement && (
+      {/* One shared rotation pivot for a selection or persistent group. */}
+      {!locked && (
         <>
           {/* Invisible input-appropriate hit ring for the rotation handle (touch-friendly). */}
           <circle

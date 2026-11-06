@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-vi.mock('../utils/keyboard', () => ({ isShiftHeld: () => false, isCtrlHeld: () => false }));
+vi.mock('../utils/editor/keyboard', () => ({ isShiftHeld: () => false, isCtrlHeld: () => false }));
 vi.mock('../utils/idGenerator', () => ({ generateId: vi.fn() }));
 import { generateId } from '../utils/idGenerator';
 import { usePresentationStore as store } from './presentationStore';
 import { useEditorStore as editor } from './editorStore';
-import { createPresentation, createSlide, createShapeElement } from '../utils/slideFactory';
+import { createPresentation, createSlide, createShapeElement } from '../utils/model/slideFactory';
 import { jsonToYDoc, yDocToJson } from '../collab/ySchema';
 import { setActiveDoc } from '../collab/yDocAdapter';
 import { createUndoManagerFor, setActiveUndoManager } from '../collab/activeUndo';

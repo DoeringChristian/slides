@@ -1,8 +1,11 @@
-import React from 'react';
+import React, { useContext } from 'react';
+import { SelectionPropertiesContext } from './SelectionPropertiesContext';
+import { setSelectedProperty } from '../../store/selectionPropertyMutation';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useMultiSlideUpdate } from '../../store/selectors';
 import { ArrowUp, ArrowDown, ChevronsUp, ChevronsDown, Lock, Unlock, Eye, EyeOff } from 'lucide-react';
+import { SlideSyncButton } from './SlideSyncButton';
 import { PropertyList } from './PropertyList';
 import { Property, PairNumberProperty, NumberProperty } from './Property';
 import type { SlideElement } from '../../types/presentation';
@@ -20,10 +23,12 @@ const ARRANGE_PROPERTIES: Property<SlideElement>[] = [
   }),
   new PairNumberProperty<SlideElement>({
     key: 'size', label: 'Size',
+    visibleFor: el => !(el.type === 'shape' && el.shapeType === 'dot'),
     transitionGroup: 'size', keys: ['width', 'height'], labels: ['W', 'H'], precision: 0,
   }),
   new NumberProperty<SlideElement>({
     key: 'rotation', label: 'Rotation',
+    visibleFor: el => !(el.type === 'shape' && el.shapeType === 'dot'),
     transitionGroup: 'rotation', min: 0, wrap: 360, step: 1, precision: 1, unit: '°',
   }),
 ];
@@ -33,12 +38,21 @@ interface Props {
 }
 
 export const ArrangePanel: React.FC<Props> = ({ element }) => {
+  const batchIds = useContext(SelectionPropertiesContext);
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const moveForward = usePresentationStore((s) => s.moveElementForward);
   const moveBackward = usePresentationStore((s) => s.moveElementBackward);
   const moveToFront = usePresentationStore((s) => s.moveElementToFront);
   const moveToBack = usePresentationStore((s) => s.moveElementToBack);
-  const update = useMultiSlideUpdate(element.id);
+  const singleUpdate = useMultiSlideUpdate(element.id);
+  const update = (changes: Partial<SlideElement>) => {
+    if (batchIds) for (const [key, value] of Object.entries(changes)) setSelectedProperty(activeSlideId, batchIds, key, value);
+    else singleUpdate(changes);
+  };
+  const move = (mode: 'front' | 'back' | 1 | -1) => {
+    if (batchIds) usePresentationStore.getState().moveElements(activeSlideId, batchIds, mode);
+    else ({ front: moveToFront, back: moveToBack, 1: moveForward, '-1': moveBackward })[mode](activeSlideId, element.id);
+  };
 
   return (
     <div className="space-y-3 border-t border-gray-200 pt-3">
@@ -48,16 +62,16 @@ export const ArrangePanel: React.FC<Props> = ({ element }) => {
 
       <div className="flex items-center gap-1">
         <span className="text-xs text-gray-500 mr-auto">Layer</span>
-        <button onClick={() => moveToBack(activeSlideId, element.id)} className="p-1 rounded hover:bg-gray-100 text-gray-600" title="Send to Back">
+        <button onClick={() => move('back')} className="p-1 rounded hover:bg-gray-100 text-gray-600" title="Send to Back">
           <ChevronsDown size={14} />
         </button>
-        <button onClick={() => moveBackward(activeSlideId, element.id)} className="p-1 rounded hover:bg-gray-100 text-gray-600" title="Send Backward">
+        <button onClick={() => move(-1)} className="p-1 rounded hover:bg-gray-100 text-gray-600" title="Send Backward">
           <ArrowDown size={14} />
         </button>
-        <button onClick={() => moveForward(activeSlideId, element.id)} className="p-1 rounded hover:bg-gray-100 text-gray-600" title="Bring Forward">
+        <button onClick={() => move(1)} className="p-1 rounded hover:bg-gray-100 text-gray-600" title="Bring Forward">
           <ArrowUp size={14} />
         </button>
-        <button onClick={() => moveToFront(activeSlideId, element.id)} className="p-1 rounded hover:bg-gray-100 text-gray-600" title="Bring to Front">
+        <button onClick={() => move('front')} className="p-1 rounded hover:bg-gray-100 text-gray-600" title="Bring to Front">
           <ChevronsUp size={14} />
         </button>
       </div>
@@ -75,7 +89,7 @@ export const ArrangePanel: React.FC<Props> = ({ element }) => {
       {/* Visibility toggle (verb). The appear / disappear transition icons
           used to sit in this row's right side but were hoisted next to the
           element type label at the top of the panel. */}
-      <div className="flex items-center">
+      <div className="flex items-center gap-1" data-property="visibility">
         <button
           onClick={() => update({ visible: !element.visible })}
           className={`flex items-center gap-2 text-xs ${element.visible ? 'text-gray-600 hover:text-gray-800' : 'text-orange-500 hover:text-orange-600'}`}
@@ -83,6 +97,7 @@ export const ArrangePanel: React.FC<Props> = ({ element }) => {
           {element.visible ? <Eye size={12} /> : <EyeOff size={12} />}
           {element.visible ? 'Visible' : 'Hidden'}
         </button>
+        <div className="ml-auto"><SlideSyncButton elementId={element.id} fields={['visible']} /></div>
       </div>
     </div>
   );

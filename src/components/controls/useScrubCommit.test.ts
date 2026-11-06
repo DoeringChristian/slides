@@ -13,7 +13,7 @@ import { temporal } from 'zundo';
 // which installs window listeners at import time; this suite runs in the
 // node environment, so stub the keyboard module (modifier polling is
 // irrelevant to session math).
-vi.mock('../../utils/keyboard', () => ({
+vi.mock('../../utils/editor/keyboard', () => ({
   isShiftHeld: () => false,
   isCtrlHeld: () => false,
 }));

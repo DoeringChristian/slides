@@ -1,10 +1,10 @@
 import React, { useMemo } from 'react';
 import type { TextElement } from '../../types/presentation';
-import type { SvgTextDoc } from '../../utils/textLayout';
+import type { SvgTextDoc } from '../../utils/text/textLayout';
 import { SVGTextPaths } from './SVGTextPaths';
 import { parseBlocks, getBlockFontMultiplier } from '../canvas/CustomMarkdownRenderer';
-import { measureBlockHeight } from '../../utils/textHitTest';
-import { textInsets } from '../../utils/boundTextLayout';
+import { measureBlockHeight } from '../../utils/text/textHitTest';
+import { textInsets } from '../../utils/text/boundTextLayout';
 
 interface Props {
   element: TextElement;

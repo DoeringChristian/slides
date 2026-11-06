@@ -1,3 +1,5 @@
+import { clearEditorLocation } from '../utils/io/editorLocation';
+import { upgradeNativePresentation } from '../utils/model/legacyPresentation';
 import { create } from 'zustand';
 import type { ProjectMeta } from '../types/vault';
 import type { Presentation } from '../types/presentation';
@@ -8,7 +10,7 @@ import {
   loadVaultHandle,
   clearVaultHandle,
   verifyVaultPermission,
-} from '../utils/vaultStorage';
+} from '../utils/io/vaultStorage';
 import {
   listProjects as listProjectsFS,
   loadProject as loadProjectFS,
@@ -16,19 +18,19 @@ import {
   saveImportedProject,
   deleteProject as deleteProjectFS,
   duplicateProject as duplicateProjectFS,
-} from '../utils/projectFiles';
+} from '../utils/io/projectFiles';
 import {
   getStorageClient,
   getStorageConfig,
   setStorageConfig,
   initStorageConfig,
   testServerConnection,
-} from '../utils/storageClient';
+} from '../utils/io/storageClient';
 import { usePresentationStore } from './presentationStore';
 import { useEditorStore } from './editorStore';
 import { getJoinedProject, updateJoinedProjectMeta } from './joinedStore';
-import { createPresentation } from '../utils/slideFactory';
-import { assertPresentation } from '../utils/currentPresentation';
+import { createPresentation } from '../utils/model/slideFactory';
+import { assertPresentation } from '../utils/model/currentPresentation';
 
 const supportsFileSystem = isFileSystemAccessSupported();
 
@@ -116,9 +118,10 @@ export const useVaultStore = create<VaultStore>()((set, get) => ({
           await get().loadProjects();
           return;
         } else {
-          // Fall back to local if server unavailable
-          console.warn('Server unavailable, falling back to local storage');
-          setStorageConfig({ mode: 'local' });
+          // A temporary restart must not silently switch to a different
+          // database and make the user's server projects appear missing.
+          set({ storageMode: 'server', serverUrl: config.serverUrl, error: 'Server unavailable. Your server storage setting is unchanged; reconnect and retry.' });
+          return;
         }
       }
 
@@ -345,6 +348,7 @@ export const useVaultStore = create<VaultStore>()((set, get) => ({
 
       // A rejected open must leave the current collaborative session attached.
       // Validate before any document switch; the store also guards direct loads.
+      presentation = upgradeNativePresentation(presentation);
       assertPresentation(presentation);
       // The old room must not mirror queued updates over the newly loaded
       // project while React tears down/reconnects the collaboration effect.
@@ -357,7 +361,7 @@ export const useVaultStore = create<VaultStore>()((set, get) => ({
         currentFilename: owned?.filename || null,
       });
     } catch (error) {
-      set({ error: 'Failed to open project' });
+      set({ error: 'Failed to open project: ' + (error instanceof Error ? error.message : String(error)) });
       console.error('Open project error:', error);
     } finally {
       set({ isLoading: false });
@@ -486,6 +490,7 @@ export const useVaultStore = create<VaultStore>()((set, get) => ({
     // activeProjectId first, a fast reopen can race the async save and load the
     // stale snapshot.
     await get().saveCurrentProject();
+    clearEditorLocation();
 
     set({
       activeProjectId: null,

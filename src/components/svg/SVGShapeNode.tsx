@@ -1,12 +1,12 @@
-import { resolveShapePaint } from '../../utils/shapePaint';
+import { resolveShapePaint } from '../../utils/paint/shapePaint';
 import React from 'react';
 import type { ShapeElement } from '../../types/presentation';
 import { RenderShape } from './ElementRenderer';
-import { getRotationCenter } from '../../utils/geometry';
-import { shapeToSvgPaths } from '../../utils/shapeToPath';
-import { parsePaintColor, noPaint } from '../../utils/paintColor';
+import { getRotationCenter } from '../../utils/geometry/geometry';
+import { shapeToSvgPaths } from '../../utils/paths/shapeToPath';
+import { parsePaintColor, noPaint } from '../../utils/paint/paintColor';
 import { useEditorStore } from '../../store/editorStore';
-import { useElementVisualBounds } from '../../utils/shapeVisualBounds';
+import { useElementVisualBounds } from '../../utils/geometry/shapeVisualBounds';
 import { SVGStrokeClip } from './SVGStrokeClip';
 
 interface Props {

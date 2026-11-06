@@ -1,3 +1,6 @@
+import { upgradeNativePresentation } from '../utils/model/legacyPresentation';
+import { assertPresentation } from '../utils/model/currentPresentation';
+import { restoreProjectTimestamp } from '../utils/model/currentPresentation';
 // Y.Doc schema mirroring the Presentation JSON shape (see
 // src/types/presentation.ts). Functions are deterministic and pure: build a
 // fresh Y.Doc from a JSON Presentation, or materialise a Y.Doc back to JSON.
@@ -5,7 +8,7 @@
 // Shared by the converter and adapter to prevent schema drift.
 
 import * as Y from 'yjs';
-import { assertCurrentPresentation } from '../utils/currentPresentation';
+import { assertCurrentPresentation } from '../utils/model/currentPresentation';
 import type {
   Presentation,
   Slide,
@@ -53,7 +56,7 @@ export function yDocToJson(doc: Y.Doc): Presentation {
   // Yjs' .toJSON() recurses through every nested Y type, returning plain
   // strings / arrays / objects. The schema is laid out so the recursion
   // matches the Presentation TypeScript shape exactly.
-  return assertCurrentPresentation(root.toJSON() as Presentation);
+  return assertCurrentPresentation(restoreProjectTimestamp(root.toJSON() as Presentation));
 }
 
 // =============================================================================
@@ -68,7 +71,7 @@ function populateRoot(root: Y.Map<unknown>, p: Presentation) {
   root.set('width', p.width);
   root.set('height', p.height);
   root.set('createdAt', p.createdAt);
-  root.set('updatedAt', p.updatedAt);
+  root.set('updatedAt', restoreProjectTimestamp(p).updatedAt);
 
   // Concurrent typing → Y.Text.
   root.set('title', mkText(p.title));
@@ -187,6 +190,7 @@ export function elementToYMap(el: SlideElement): Y.Map<unknown> {
   m.set('opacity', el.opacity);
   m.set('locked', el.locked);
   m.set('visible', el.visible);
+  if (el.objectGroupIds?.length) m.set('objectGroupIds', [...el.objectGroupIds]);
   if (el.transitions) {
     m.set('transitions', mkScalarMap(el.transitions));
   }
@@ -208,6 +212,7 @@ export function elementToYMap(el: SlideElement): Y.Map<unknown> {
     case 'shape': {
       const s = el as ShapeElement;
       m.set('shapeType', s.shapeType);
+      setIfDefined(m, 'cropGroupId', s.cropGroupId);
       setIfDefined(m, 'creationPreset', s.creationPreset);
       if (s.geometry) m.set('geometry', JSON.parse(JSON.stringify(s.geometry)));
       m.set('fill', s.fill);
@@ -352,4 +357,46 @@ export function applyChangesToYElement(elMap: Y.Map<unknown>, changes: Record<st
     }
     elMap.set(key, value);
   }
+}
+
+/** Server-side startup repair, before any peer sees the room. Does not
+ * replace Y subtrees or rewrite user content/undo history. */
+export function restoreStoredYProject(doc: Y.Doc): boolean {
+  const root = getYRoot(doc);
+  if (!root.size) return false;
+  const raw = root.toJSON() as Presentation;
+  const recovered = upgradeNativePresentation(raw);
+  if (recovered === raw) return false;
+  // Never persist a repair that would mask a different content error.
+  assertPresentation(recovered);
+  doc.transact(() => {
+    if (raw.updatedAt !== recovered.updatedAt) root.set('updatedAt', recovered.updatedAt);
+    for (const collection of ['slides', 'templates'] as const) {
+      const map = root.get(collection) as Y.Map<Y.Map<unknown>>;
+      for (const [id, slide] of Object.entries(recovered[collection])) {
+        const original = raw[collection][id];
+        const ys = map.get(id)!;
+        if ('autoAdvance' in original) ys.delete('autoAdvance');
+        if ('groupId' in slide && slide.groupId !== (original as Slide).groupId) ys.set('groupId', slide.groupId);
+        if (slide.elementOrder.length !== original.elementOrder.length) {
+          (ys.get('elementOrder') as Y.Array<string>).push(slide.elementOrder.slice(original.elementOrder.length));
+        }
+        const elements = ys.get('elements') as Y.Map<Y.Map<unknown>>;
+        for (const [eid, el] of Object.entries(slide.elements)) {
+          const before = original.elements[eid] as unknown as Record<string, unknown>;
+          const after = el as unknown as Record<string, unknown>;
+          const changes: Record<string, unknown> = {};
+          const ye = elements.get(eid)!;
+          for (const key of Object.keys(before)) if (!(key in after)) ye.delete(key);
+          for (const [key, value] of Object.entries(after)) if (JSON.stringify(before[key]) !== JSON.stringify(value)) changes[key] = value;
+          if (Object.keys(changes).length) applyChangesToYElement(ye, changes as Partial<SlideElement>);
+        }
+      }
+    }
+    if (raw.slideOrder.length !== recovered.slideOrder.length) {
+      const order = root.get('slideOrder') as Y.Array<string>;
+      order.push(recovered.slideOrder.slice(raw.slideOrder.length));
+    }
+  }, 'restore-project-bookkeeping');
+  return true;
 }

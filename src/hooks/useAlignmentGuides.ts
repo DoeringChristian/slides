@@ -1,3 +1,4 @@
+import { SNAP_DISTANCE_PX } from '../utils/geometry/screenSpace';
 /** Actual resolved point destination, in slide coordinates. Only point-snap
  * producers set this; renderers must not infer a destination from a line. */
 export interface SnapDestination { x: number; y: number }
@@ -32,7 +33,11 @@ export function guideKey(g: Guide): string {
     : `${g.type}-${g.position}${g.destination ? `-${g.destination.x}-${g.destination.y}` : ''}`;
 }
 
-interface ElementBounds {
+export interface ElementBounds {
+  centerOnly?: boolean;
+  shapeType?: string;
+  /** Rendered text flow offsets, including its final line advance. */
+  textFlow?: { top: number; bottom: number };
   x: number;
   y: number;
   width: number;
@@ -58,11 +63,12 @@ interface CandidateLines {
 // source, checked last.
 function candidateLines(
   others: ElementBounds[],
-  marginBounds?: MarginBounds | null
+  marginBounds?: MarginBounds | null,
+  viewport?: ElementBounds
 ): CandidateLines[] {
-  const candidates: CandidateLines[] = others.map((other) => ({
-    verticals: [other.x, other.x + other.width / 2, other.x + other.width],
-    horizontals: [other.y, other.y + other.height / 2, other.y + other.height],
+  const candidates: CandidateLines[] = visibleSources(others, viewport).map((other) => ({
+    verticals: other.centerOnly || other.shapeType === 'dot' ? [other.x + other.width / 2] : [other.x, other.x + other.width / 2, other.x + other.width],
+    horizontals: other.centerOnly || other.shapeType === 'dot' ? [other.y + other.height / 2] : [other.y, other.y + other.height / 2, other.y + other.height],
   }));
   if (marginBounds) {
     candidates.push({
@@ -70,7 +76,18 @@ function candidateLines(
       horizontals: [marginBounds.top, marginBounds.centerY, marginBounds.bottom],
     });
   }
-  return candidates;
+  return viewport ? candidates.map(c => ({
+    verticals: c.verticals.filter(x => x >= viewport.x && x <= viewport.x + viewport.width),
+    horizontals: c.horizontals.filter(y => y >= viewport.y && y <= viewport.y + viewport.height),
+  })) : candidates;
+}
+
+/** Partially visible objects retain their real edges; never invent viewport edges. */
+function visibleSources(others: ElementBounds[], viewport?: ElementBounds) {
+  if (!viewport) return others;
+  return others.filter(b => viewport.width >= 0 && viewport.height >= 0 &&
+    b.x <= viewport.x + viewport.width && b.x + b.width >= viewport.x &&
+    b.y <= viewport.y + viewport.height && b.y + b.height >= viewport.y);
 }
 
 function dedupeGuides(guides: Guide[]): Guide[] {
@@ -101,7 +118,8 @@ function bestSpacingSnap(
   dragged: ElementBounds,
   others: ElementBounds[],
   threshold: number,
-  axis: 'x' | 'y'
+  axis: 'x' | 'y',
+  viewport?: ElementBounds
 ): SpacingSnap | null {
   const main = (b: ElementBounds): Range =>
     axis === 'x' ? { lo: b.x, hi: b.x + b.width } : { lo: b.y, hi: b.y + b.height };
@@ -115,6 +133,13 @@ function bestSpacingSnap(
   let best: SpacingSnap | null = null;
   // `target` is where dragged's leading edge (lo) would land.
   const consider = (target: number, segments: SpacingSegment[], at: number) => {
+    if (viewport) {
+      const main = axis === 'x' ? viewport.x : viewport.y;
+      const size = axis === 'x' ? viewport.width : viewport.height;
+      const cross = axis === 'x' ? viewport.y : viewport.x;
+      const crossSize = axis === 'x' ? viewport.height : viewport.width;
+      if (at < cross || at > cross + crossSize || segments.some(s => s.from < main || s.to > main + size)) return;
+    }
     const dist = Math.abs(d.lo - target);
     if (dist > threshold) return;
     if (best && best.dist <= dist) return;
@@ -177,8 +202,9 @@ function bestSpacingSnap(
 export function computeGuides(
   dragged: ElementBounds,
   others: ElementBounds[],
-  threshold: number = 5,
-  marginBounds?: MarginBounds | null
+  threshold: number = SNAP_DISTANCE_PX,
+  marginBounds?: MarginBounds | null,
+  viewport?: ElementBounds
 ): { guides: Guide[]; snapX: number | null; snapY: number | null } {
   const guides: Guide[] = [];
   let snapX: number | null = null;
@@ -191,13 +217,14 @@ export function computeGuides(
   const dragCenterY = dragged.y + dragged.height / 2;
   const dragBottom = dragged.y + dragged.height;
 
-  const dragVerticals = [dragLeft, dragCenterX, dragRight];
-  const dragHorizontals = [dragTop, dragCenterY, dragBottom];
+  const centerOnly = dragged.centerOnly || dragged.shapeType === 'dot';
+  const dragVerticals = centerOnly ? [dragCenterX] : [dragLeft, dragCenterX, dragRight];
+  const dragHorizontals = centerOnly ? [dragCenterY] : [dragTop, dragCenterY, dragBottom];
 
   let bestDx = threshold + 1;
   let bestDy = threshold + 1;
 
-  for (const { verticals, horizontals } of candidateLines(others, marginBounds)) {
+  for (const { verticals, horizontals } of candidateLines(others, marginBounds, viewport)) {
     // Check vertical alignments (x-axis)
     for (const dv of dragVerticals) {
       for (const ov of verticals) {
@@ -230,17 +257,38 @@ export function computeGuides(
   // Equal-spacing magnets compete with edge/center alignment on the same
   // axis; the closer candidate wins. Only the winning spacing guide is
   // emitted (all matching gap pairs at once would be visual noise).
-  const spacingX = bestSpacingSnap(dragged, others, threshold, 'x');
+  const spacingX = !centerOnly && bestSpacingSnap(dragged, visibleSources(others, viewport).filter(o => !o.centerOnly && o.shapeType !== 'dot'), threshold, 'x', viewport);
   if (spacingX && spacingX.dist < bestDx) {
     bestDx = spacingX.dist;
     snapX = spacingX.target;
     guides.push(spacingX.guide);
   }
-  const spacingY = bestSpacingSnap(dragged, others, threshold, 'y');
+  const spacingY = !centerOnly && bestSpacingSnap(dragged, visibleSources(others, viewport).filter(o => !o.centerOnly && o.shapeType !== 'dot'), threshold, 'y', viewport);
   if (spacingY && spacingY.dist < bestDy) {
     bestDy = spacingY.dist;
     snapY = spacingY.target;
     guides.push(spacingY.guide);
+  }
+
+  // Continue a text flow below (or above) another text box. Only the
+  // content start/end participate, never the dragged centre or arbitrary shapes.
+  if (dragged.textFlow) {
+    for (const other of visibleSources(others, viewport)) {
+      if (!other.textFlow || dragged.x + dragged.width < other.x || other.x + other.width < dragged.x) continue;
+      const targets = [
+        { y: other.y + other.textFlow.bottom - dragged.textFlow.top, line: other.y + other.textFlow.bottom },
+        { y: other.y + other.textFlow.top - dragged.textFlow.bottom, line: other.y + other.textFlow.top },
+      ];
+      for (const target of targets) {
+        if (viewport && (target.line < viewport.y || target.line > viewport.y + viewport.height)) continue;
+        const dist = Math.abs(dragged.y - target.y);
+        if (dist <= threshold && dist <= bestDy) {
+          bestDy = dist;
+          snapY = target.y;
+          guides.push({ type: 'horizontal', position: target.line });
+        }
+      }
+    }
   }
 
   return { guides: dedupeGuides(guides), snapX, snapY };
@@ -253,9 +301,10 @@ export function computeGuides(
 export function computePointSnap(
   point: { x: number; y: number },
   others: ElementBounds[],
-  threshold: number = 5,
+  threshold: number = SNAP_DISTANCE_PX,
   marginBounds?: MarginBounds | null,
-  rayOrigin?: SnapDestination
+  rayOrigin?: SnapDestination,
+  viewport?: ElementBounds
 ): { guides: Guide[]; snapX: number | null; snapY: number | null } {
   // Intersections use the same object/margin candidates as unconstrained snaps.
   // Compare full displacement, not axis distance: near-parallel rays cannot jump.
@@ -263,7 +312,7 @@ export function computePointSnap(
     const dx = point.x - rayOrigin.x, dy = point.y - rayOrigin.y;
     const length = Math.hypot(dx, dy);
     let destination = point, best = threshold + 1;
-    const lines = candidateLines(others, marginBounds);
+    const lines = candidateLines(others, marginBounds, viewport);
     for (const { verticals, horizontals } of lines) {
       for (const [axis, values] of [['x', verticals], ['y', horizontals]] as const) {
         const delta = axis === 'x' ? dx : dy;
@@ -291,7 +340,7 @@ export function computePointSnap(
   let bestDx = threshold + 1;
   let bestDy = threshold + 1;
 
-  for (const { verticals, horizontals } of candidateLines(others, marginBounds)) {
+  for (const { verticals, horizontals } of candidateLines(others, marginBounds, viewport)) {
     for (const ov of verticals) {
       const dist = Math.abs(point.x - ov);
       if (dist <= threshold) {
@@ -320,8 +369,9 @@ export function computePointSnap(
 export function computeResizeSnap(
   bounds: ElementBounds,
   others: ElementBounds[],
-  threshold: number = 5,
-  marginBounds?: MarginBounds | null
+  threshold: number = SNAP_DISTANCE_PX,
+  marginBounds?: MarginBounds | null,
+  viewport?: ElementBounds
 ): {
   guides: Guide[];
   leftSnap: number | null;
@@ -345,7 +395,7 @@ export function computeResizeSnap(
   let topSnap: number | null = null;
   let bottomSnap: number | null = null;
 
-  for (const { verticals, horizontals } of candidateLines(others, marginBounds)) {
+  for (const { verticals, horizontals } of candidateLines(others, marginBounds, viewport)) {
     for (const ov of verticals) {
       const dLeft = Math.abs(left - ov);
       if (dLeft <= threshold) {

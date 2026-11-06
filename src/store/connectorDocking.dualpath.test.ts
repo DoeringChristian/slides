@@ -1,15 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-vi.mock('../utils/keyboard', () => ({ isShiftHeld: () => false, isCtrlHeld: () => false }));
+vi.mock('../utils/editor/keyboard', () => ({ isShiftHeld: () => false, isCtrlHeld: () => false }));
 import { usePresentationStore as store } from './presentationStore';
 import { useEditorStore as editor } from './editorStore';
 import { createUndoManagerFor } from '../collab/activeUndo';
 import { setActiveDoc } from '../collab/yDocAdapter';
 import { jsonToYDoc, yDocToJson } from '../collab/ySchema';
-import { createPresentation, createShapeElement, createTextElement } from '../utils/slideFactory';
-import { bindingAimPoint, bindDraftEndpoints, connectorDockCue } from '../utils/connectorUtils';
-import { pathPointsInSlide } from '../utils/pathEditing';
-import { pathBoundsFor } from '../utils/pathShapes';
-import { projectGestureScene } from '../utils/gestureProjection';
+import { createPresentation, createShapeElement, createTextElement } from '../utils/model/slideFactory';
+import { bindingAimPoint, bindDraftEndpoints, connectorDockCue } from '../utils/paths/connectorUtils';
+import { pathPointsInSlide } from '../utils/paths/pathEditing';
+import { pathBoundsFor } from '../utils/paths/pathShapes';
+import { projectGestureScene } from '../utils/editor/gestureProjection';
 import type { ShapeElement } from '../types/presentation';
 afterEach(() => setActiveDoc(null));
 
