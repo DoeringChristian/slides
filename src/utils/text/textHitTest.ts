@@ -1,6 +1,6 @@
 import type { TextElement } from '../../types/presentation';
 import { parseBlocks, getBlockFontMultiplier, parseInlineSegments } from '../../components/canvas/CustomMarkdownRenderer';
-import { nativeTextBaseline } from './glyphPaths';
+import { editFontFamily, nativeTextBaseline } from './glyphPaths';
 import { textInsets } from './boundTextLayout';
 import { textRowMetrics, type SvgTextDoc } from './textLayout';
 import { getUserTextLayoutSync, layoutUserText } from './userTextSizing';
@@ -70,7 +70,7 @@ export function measureBlockHeight(
     visibility: hidden;
     width: ${maxWidth}px;
     font-size: ${fontSize}px;
-    font-family: 'InterEdit', ${fontFamily};
+    font-family: '${editFontFamily(fontFamily)}', ${fontFamily};
     font-weight: ${fontWeight};
     line-height: ${row.advance}px;
     white-space: pre-wrap;
@@ -98,7 +98,7 @@ export function measureBlockHeight(
  * runs this on the edit-mode-entry path, which is async-friendly.
  *
  * X mapping uses the DOM Range API against the displayContent of the
- * clicked block, in InterEdit at the same font-size + line-height + kerning
+ * clicked block, in the bundled face at the same font-size + line-height + kerning
  * settings as the renderer. Browser shaping isn't bit-identical to
  * opentype.js, but with kerning off the per-char advance widths line up
  * within a sub-pixel.
@@ -190,7 +190,7 @@ function findCharIndexAt(opts: CharLookup): number {
     visibility: hidden;
     width: ${opts.boxWidth}px;
     font-size: ${opts.fontSize}px;
-    font-family: 'InterEdit', ${opts.fontFamily};
+    font-family: '${editFontFamily(opts.fontFamily)}', ${opts.fontFamily};
     font-weight: ${opts.fontWeight};
     font-style: ${opts.fontStyle};
     line-height: ${row.advance}px;

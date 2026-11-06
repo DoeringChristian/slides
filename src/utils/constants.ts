@@ -9,7 +9,13 @@ export const CANVAS_PADDING = SLIDE_WIDTH;
 export const TEXT_BOX_PADDING = 14; // Inner padding for text elements (includes space for transform handles)
 
 export const DEFAULT_TEXT_STYLE = {
-  fontFamily: 'Arial',
+  // A bundled face: the outline renderer can only draw fonts we ship, so the
+  // default must be one of them. ('Arial' here used to render as Inter anyway.)
+  // Deliberately a literal, not an import: constants.ts is a leaf that even
+  // node-side code pulls in, and the registry imports binary font assets that
+  // a bare tsx/node loader cannot handle. fontRegistry.test.ts asserts this
+  // stays equal to DEFAULT_TEXT_FONT.
+  fontFamily: 'Inter',
   fontSize: 24,
   fontWeight: 'normal' as const,
   fontStyle: 'normal' as const,
@@ -36,19 +42,6 @@ export const PRESET_COLORS = [
   '#cc0000', '#e69138', '#f1c232', '#6aa84f', '#3d85c6', '#674ea7',
   '#990000', '#b45f06', '#bf9000', '#38761d', '#0b5394', '#351c75',
   '#4285f4', '#ea4335', '#fbbc04', '#34a853', '#ff6d01', '#46bdc6',
-];
-
-export const FONT_FAMILIES = [
-  'Arial',
-  'Helvetica',
-  'Times New Roman',
-  'Georgia',
-  'Courier New',
-  'Verdana',
-  'Trebuchet MS',
-  'Impact',
-  'Comic Sans MS',
-  'Palatino',
 ];
 
 export const FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 48, 56, 64, 72, 96];

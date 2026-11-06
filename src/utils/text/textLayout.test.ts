@@ -88,7 +88,7 @@ describe('shared native/SVG text rows', () => {
   ];
   for (const align of ['left', 'center', 'right'] as const) for (const fixture of mixedSpaces) {
     it(`aligns ${fixture.name}, ${align}, without merging hanging and non-hanging units`, async () => {
-      const font = await loadFont('normal', 'normal');
+      const font = await loadFont('Inter', 'normal', 'normal');
       const doc = await layoutSvgText(fixture.text, { ...style, align }, 100, new Set([0, 1]));
       const alignedText = fixture.soft ? fixture.firstRow.replace(/[ \t]+$/, '') : fixture.firstRow;
       const width = textToGlyphPaths(alignedText, font, 24, 0, 0).endX;

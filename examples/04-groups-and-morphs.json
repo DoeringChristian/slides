@@ -24,7 +24,7 @@
           "textSizing": "auto-content",
           "boundTextLayout": "padded",
           "style": {
-            "fontFamily": "Arial",
+            "fontFamily": "Inter",
             "fontSize": 30,
             "fontWeight": "normal",
             "fontStyle": "normal",
@@ -116,7 +116,7 @@
           "textSizing": "auto-content",
           "boundTextLayout": "padded",
           "style": {
-            "fontFamily": "Arial",
+            "fontFamily": "Inter",
             "fontSize": 14,
             "fontWeight": "normal",
             "fontStyle": "normal",
@@ -162,7 +162,7 @@
           "textSizing": "auto-content",
           "boundTextLayout": "padded",
           "style": {
-            "fontFamily": "Arial",
+            "fontFamily": "Inter",
             "fontSize": 30,
             "fontWeight": "normal",
             "fontStyle": "normal",
@@ -266,7 +266,7 @@
           "textSizing": "auto-content",
           "boundTextLayout": "padded",
           "style": {
-            "fontFamily": "Arial",
+            "fontFamily": "Inter",
             "fontSize": 14,
             "fontWeight": "normal",
             "fontStyle": "normal",
@@ -312,7 +312,7 @@
           "textSizing": "auto-content",
           "boundTextLayout": "padded",
           "style": {
-            "fontFamily": "Arial",
+            "fontFamily": "Inter",
             "fontSize": 30,
             "fontWeight": "normal",
             "fontStyle": "normal",
@@ -387,7 +387,7 @@
           "textSizing": "auto-content",
           "boundTextLayout": "padded",
           "style": {
-            "fontFamily": "Arial",
+            "fontFamily": "Inter",
             "fontSize": 14,
             "fontWeight": "normal",
             "fontStyle": "normal",
@@ -432,7 +432,7 @@
           "textSizing": "auto-content",
           "boundTextLayout": "padded",
           "style": {
-            "fontFamily": "Arial",
+            "fontFamily": "Inter",
             "fontSize": 30,
             "fontWeight": "normal",
             "fontStyle": "normal",
@@ -477,7 +477,7 @@
           "textSizing": "auto-content",
           "boundTextLayout": "padded",
           "style": {
-            "fontFamily": "Arial",
+            "fontFamily": "Inter",
             "fontSize": 64,
             "fontWeight": "normal",
             "fontStyle": "normal",
@@ -522,7 +522,7 @@
           "textSizing": "auto-content",
           "boundTextLayout": "padded",
           "style": {
-            "fontFamily": "Arial",
+            "fontFamily": "Inter",
             "fontSize": 30,
             "fontWeight": "normal",
             "fontStyle": "normal",
@@ -613,7 +613,7 @@
           "textSizing": "auto-content",
           "boundTextLayout": "padded",
           "style": {
-            "fontFamily": "Arial",
+            "fontFamily": "Inter",
             "fontSize": 30,
             "fontWeight": "normal",
             "fontStyle": "normal",
@@ -658,7 +658,7 @@
           "textSizing": "auto-content",
           "boundTextLayout": "padded",
           "style": {
-            "fontFamily": "Arial",
+            "fontFamily": "Inter",
             "fontSize": 14,
             "fontWeight": "normal",
             "fontStyle": "normal",
@@ -706,7 +706,7 @@
           "textSizing": "auto-content",
           "boundTextLayout": "padded",
           "style": {
-            "fontFamily": "Arial",
+            "fontFamily": "Inter",
             "fontSize": 30,
             "fontWeight": "normal",
             "fontStyle": "normal",
@@ -755,7 +755,7 @@
           "textSizing": "auto-content",
           "boundTextLayout": "padded",
           "style": {
-            "fontFamily": "Arial",
+            "fontFamily": "Inter",
             "fontSize": 14,
             "fontWeight": "normal",
             "fontStyle": "normal",
@@ -803,7 +803,7 @@
           "textSizing": "auto-content",
           "boundTextLayout": "padded",
           "style": {
-            "fontFamily": "Arial",
+            "fontFamily": "Inter",
             "fontSize": 30,
             "fontWeight": "normal",
             "fontStyle": "normal",
@@ -852,7 +852,7 @@
           "textSizing": "auto-content",
           "boundTextLayout": "padded",
           "style": {
-            "fontFamily": "Arial",
+            "fontFamily": "Inter",
             "fontSize": 14,
             "fontWeight": "normal",
             "fontStyle": "normal",
@@ -900,7 +900,7 @@
           "textSizing": "auto-content",
           "boundTextLayout": "padded",
           "style": {
-            "fontFamily": "Arial",
+            "fontFamily": "Inter",
             "fontSize": 30,
             "fontWeight": "normal",
             "fontStyle": "normal",
@@ -926,7 +926,7 @@
           "textSizing": "auto-content",
           "boundTextLayout": "padded",
           "style": {
-            "fontFamily": "Arial",
+            "fontFamily": "Inter",
             "fontSize": 14,
             "fontWeight": "normal",
             "fontStyle": "normal",

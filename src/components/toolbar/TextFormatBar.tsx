@@ -6,7 +6,7 @@ import { ColorPicker } from './ColorPicker';
 import { ScrubInput } from '../controls/ScrubInput';
 import { useScrubCommit } from '../controls/useScrubCommit';
 import { Bold, Italic, Underline, Strikethrough, AlignLeft, AlignCenter, AlignRight } from 'lucide-react';
-import { FONT_FAMILIES } from '../../utils/constants';
+import { FONT_FAMILIES } from '../../utils/text/fontRegistry';
 import type { TextElement, TextStyle } from '../../types/presentation';
 
 /**

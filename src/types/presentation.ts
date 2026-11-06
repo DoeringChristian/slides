@@ -221,7 +221,11 @@ export interface BaseElement {
 }
 
 export interface TextStyle {
+  /** A bundled face id from `fontRegistry` — also the CSS family name. */
   fontFamily: string;
+  /** MathJax font package for `$…$` segments. Omitted means "whatever
+   *  `fontFamily` pairs with", so prose and equations match by default. */
+  mathFont?: string;
   fontSize: number;
   fontWeight: 'normal' | 'bold';
   fontStyle: 'normal' | 'italic';

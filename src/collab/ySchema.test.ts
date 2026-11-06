@@ -451,4 +451,21 @@ describe('WS-2 Phase 4 bound text: containerId round-trip', () => {
     const out = yDocToJson(jsonToYDoc(withNull));
     expect('containerId' in out.slides['slide-a'].elements['el-title']).toBe(false);
   });
+  // Fonts: `style` crosses as a scalar map, so a new style field needs no
+  // schema change — but an OPTIONAL one must not round-trip as a defined key,
+  // because absent means "inherit the text font's math pairing".
+  test('carries style.mathFont, and keeps an unset one unset', () => {
+    const withFont: Presentation = makeFixture();
+    const styleOf = (el: unknown) => (el as { style: Record<string, unknown> }).style;
+    const style = styleOf(withFont.slides['slide-a'].elements['el-title']);
+    style.mathFont = 'mathjax-libertinus';
+    const out = yDocToJson(jsonToYDoc(withFont));
+    const back = styleOf(out.slides['slide-a'].elements['el-title']);
+    expect(back.mathFont).toBe('mathjax-libertinus');
+    expect(back.fontFamily).toBe('Inter');
+
+    const bare = yDocToJson(jsonToYDoc(makeFixture()));
+    const bareStyle = styleOf(bare.slides['slide-a'].elements['el-title']);
+    expect('mathFont' in bareStyle).toBe(false);
+  });
 });

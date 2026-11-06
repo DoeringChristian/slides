@@ -8,7 +8,7 @@ import {
   PreviewSelectProperty,
   TextPreviewProperty,
 } from './Property';
-import { FONT_FAMILIES } from '../../utils/constants';
+import { FONT_FAMILIES } from '../../utils/text/fontRegistry';
 import type { TextElement } from '../../types/presentation';
 
 /**

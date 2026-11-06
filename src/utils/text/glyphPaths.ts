@@ -6,15 +6,13 @@
  * along each glyph in turn. opentype.js is the only sensible way to get this
  * in a browser; no system-font path is exposed by the web platform.
  *
- * Initial release ships Inter only; the Write effect renders all plain text
- * as Inter regardless of `style.fontFamily`. Multi-font support is a
- * follow-up — the resolveFontUrl table is the single registration point.
+ * Which face is used comes from `style.fontFamily`, resolved through
+ * `fontRegistry` — the single place fonts are declared. Only bundled faces can
+ * be drawn as outlines, since the web platform exposes no outline data for
+ * system fonts, so an unknown family resolves to the default face.
  */
 import { parse as parseFont, type Font } from 'opentype.js';
-import interRegularUrl from '../../assets/fonts/Inter-Regular.ttf';
-import interBoldUrl from '../../assets/fonts/Inter-Bold.ttf';
-import interItalicUrl from '../../assets/fonts/Inter-Italic.ttf';
-import interBoldItalicUrl from '../../assets/fonts/Inter-BoldItalic.ttf';
+import { DEFAULT_TEXT_FONT, TEXT_FONTS, textFont } from './fontRegistry';
 
 export interface GlyphPath {
   /** SVG path data, local to the pen position. */
@@ -32,26 +30,29 @@ export interface GlyphPath {
 type Weight = 'normal' | 'bold';
 type Style = 'normal' | 'italic';
 
-function resolveFontUrl(weight: Weight, style: Style): string {
-  // URLs come from Vite imports so the bundler decides:
-  //   editor build → hashed asset served from /slides/assets/Inter-*.<hash>.ttf
+function resolveFontUrl(family: string, weight: Weight, style: Style): string {
+  // URLs come from Vite imports (via the registry) so the bundler decides:
+  //   editor build → hashed asset served from /slides/assets/<face>.<hash>
   //   standalone build → inlined as data: URL (assetsInlineLimit: 100MB)
   // Either way the runtime fetch finds the bytes without depending on a
   // sibling `fonts/` directory next to the HTML — which the single-file
   // standalone export doesn't have.
-  if (weight === 'bold' && style === 'italic') return interBoldItalicUrl;
-  if (weight === 'bold') return interBoldUrl;
-  if (style === 'italic') return interItalicUrl;
-  return interRegularUrl;
+  const { variants } = textFont(family);
+  if (weight === 'bold' && style === 'italic') return variants.boldItalic;
+  if (weight === 'bold') return variants.bold;
+  if (style === 'italic') return variants.italic;
+  return variants.regular;
 }
 
 const fontCache = new Map<string, Promise<Font>>();
 
-export function loadFont(weight: Weight, style: Style): Promise<Font> {
-  const key = `${weight}|${style}`;
+export function loadFont(family: string, weight: Weight, style: Style): Promise<Font> {
+  // Keyed on the RESOLVED id, so every alias of an unshipped family shares one
+  // entry instead of re-fetching the default face under each stored name.
+  const key = `${textFont(family).id}|${weight}|${style}`;
   const hit = fontCache.get(key);
   if (hit) return hit;
-  const url = resolveFontUrl(weight, style);
+  const url = resolveFontUrl(family, weight, style);
   const p = fetch(url)
     .then((res) => {
       if (!res.ok) throw new Error(`Font ${url} returned HTTP ${res.status}`);
@@ -70,59 +71,60 @@ export function loadFont(weight: Weight, style: Style): Promise<Font> {
  * less than the font fetch takes and the WritePaths render never appears
  * before the animation has completed.
  */
-export function prewarmFonts(): void {
+export function prewarmFonts(family: string = DEFAULT_TEXT_FONT): void {
   if (typeof document === 'undefined') return;
-  loadFont('normal', 'normal');
-  loadFont('bold', 'normal');
-  loadFont('normal', 'italic');
-  loadFont('bold', 'italic');
+  loadFont(family, 'normal', 'normal');
+  loadFont(family, 'bold', 'normal');
+  loadFont(family, 'normal', 'italic');
+  loadFont(family, 'bold', 'italic');
 }
 
 /**
- * Inject @font-face declarations for the same bundled Inter TTFs that
- * opentype parses, so the HTML edit overlay can render its text in the same
- * font as the SVG path renderer. Without this, edit mode falls back to the
- * element's style.fontFamily (Arial, Helvetica, etc.) and the layout shifts
- * visibly when entering / leaving edit mode.
+ * Inject an `@font-face` per bundled face, so the HTML edit overlay renders in
+ * the same font file opentype.js parses for the SVG path renderer. Without
+ * this, edit mode falls back to whatever the system resolves `style.fontFamily`
+ * to and the layout shifts visibly when entering / leaving edit mode.
+ *
+ * Each face is registered under an "<id> Edit" alias rather than its real
+ * family name, so a system-installed copy of the same family at a different
+ * version can never win over the bytes we measured.
  *
  * Idempotent: only injects once per page load.
  */
-let fontFaceInjected = false;
-export function injectInterFontFace(): void {
-  if (fontFaceInjected || typeof document === 'undefined') return;
-  fontFaceInjected = true;
+let fontFacesInjected = false;
+
+/** CSS family the edit overlay must ask for to get the bundled bytes. */
+export function editFontFamily(family: string | undefined): string {
+  return `${textFont(family).id} Edit`;
+}
+
+/** `format()` hint from the asset extension — .ttf and .otf differ. */
+function fontFormat(url: string): string {
+  return /\.otf(\?|$)/i.test(url) ? 'opentype' : 'truetype';
+}
+
+export function injectFontFaces(): void {
+  if (fontFacesInjected || typeof document === 'undefined') return;
+  fontFacesInjected = true;
+  const rule = (family: string, url: string, weight: number, style: Style) => `
+    @font-face {
+      font-family: '${family}';
+      src: url(${url}) format('${fontFormat(url)}');
+      font-weight: ${weight};
+      font-style: ${style};
+      font-display: block;
+    }`;
   const style = document.createElement('style');
-  style.setAttribute('data-inter-edit-font', '');
-  style.textContent = `
-    @font-face {
-      font-family: 'InterEdit';
-      src: url(${interRegularUrl}) format('truetype');
-      font-weight: 400;
-      font-style: normal;
-      font-display: block;
-    }
-    @font-face {
-      font-family: 'InterEdit';
-      src: url(${interBoldUrl}) format('truetype');
-      font-weight: 700;
-      font-style: normal;
-      font-display: block;
-    }
-    @font-face {
-      font-family: 'InterEdit';
-      src: url(${interItalicUrl}) format('truetype');
-      font-weight: 400;
-      font-style: italic;
-      font-display: block;
-    }
-    @font-face {
-      font-family: 'InterEdit';
-      src: url(${interBoldItalicUrl}) format('truetype');
-      font-weight: 700;
-      font-style: italic;
-      font-display: block;
-    }
-  `;
+  style.setAttribute('data-bundled-edit-fonts', '');
+  style.textContent = TEXT_FONTS.flatMap((font) => {
+    const alias = `${font.id} Edit`;
+    return [
+      rule(alias, font.variants.regular, 400, 'normal'),
+      rule(alias, font.variants.bold, 700, 'normal'),
+      rule(alias, font.variants.italic, 400, 'italic'),
+      rule(alias, font.variants.boldItalic, 700, 'italic'),
+    ];
+  }).join('\n');
   document.head.appendChild(style);
 }
 

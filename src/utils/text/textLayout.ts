@@ -64,6 +64,10 @@ function layoutCacheKey(
     : '';
   return JSON.stringify([
     text,
+    // Family and math font change the glyph outlines, so they are part of the
+    // identity of a layout — omitting them serves the previous font's result.
+    style.fontFamily,
+    style.mathFont,
     style.fontSize,
     style.fontWeight,
     style.fontStyle,
@@ -294,11 +298,12 @@ export async function layoutSvgText(
     const linesOut: SvgTextDoc['lines'] = [];
     // Pre-load every font variant up front. Single rendering pipeline ⇒ we
     // always need them (steady frame uses path rendering too).
+    const family = style.fontFamily;
     const [fontRegular, fontBold, fontItalic, fontBoldItalic] = await Promise.all([
-      loadFont('normal', 'normal'),
-      loadFont('bold', 'normal'),
-      loadFont('normal', 'italic'),
-      loadFont('bold', 'italic'),
+      loadFont(family, 'normal', 'normal'),
+      loadFont(family, 'bold', 'normal'),
+      loadFont(family, 'normal', 'italic'),
+      loadFont(family, 'bold', 'italic'),
     ]);
     const pickFont = (weight: string, fs: string) => {
       const bold = weight === 'bold' || Number(weight) >= 600;

@@ -133,7 +133,7 @@ function editorPwa() {
       // Precache app shell + assets. KaTeX fonts (≤ 100 KB each) are included
       // automatically by globPatterns; bumping maximumFileSizeToCacheInBytes
       // accommodates the editor's larger JS chunk.
-      globPatterns: ['**/*.{js,css,html,svg,png,ico,woff,woff2,ttf}'],
+      globPatterns: ['**/*.{js,css,html,svg,png,ico,woff,woff2,ttf,otf}'],
       maximumFileSizeToCacheInBytes: 5_000_000,
       navigateFallback: '/slides/index.html',
       // Don't precache the prebuilt standalone-template / viewer-template HTMLs

@@ -11,15 +11,15 @@ import { textInsets } from '../../utils/text/boundTextLayout';
 import type { GesturePatch } from '../../utils/editor/gestureProjection';
 import { maxLabelWidthFor } from '../../utils/model/syncDependents';
 import { SVGTextPaths } from '../svg/SVGTextPaths';
-import { injectInterFontFace, nativeTextBaseline } from '../../utils/text/glyphPaths';
+import { editFontFamily, injectFontFaces, nativeTextBaseline } from '../../utils/text/glyphPaths';
 import { beginTextEditSession, getTextEditInitialText } from '../../store/textEditSession';
 import { hasContentSizing, layoutUserText, measureUserText, textSizingWidth } from '../../utils/text/userTextSizing';
 import type { TextElement } from '../../types/presentation';
 
-// Inject the InterEdit @font-face so the contentEditable uses the SAME font
+// Inject the bundled @font-face rules so the contentEditable uses the SAME font
 // the SVG renderer reads via opentype.js. The browser shapes characters with
 // it (advance widths from font tables) → caret X lines up with SVG glyphs.
-injectInterFontFace();
+injectFontFaces();
 
 interface Props {
   stageRef: React.RefObject<HTMLDivElement | null>;
@@ -649,7 +649,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom, onPreview }) 
           left: padding,
           top: padding + verticalOffset * zoom,
           width: widthPx - padding * 2,
-          fontFamily: `'InterEdit', ${style.fontFamily}`,
+          fontFamily: `'${editFontFamily(style.fontFamily)}', ${style.fontFamily}`,
           fontWeight: style.fontWeight,
           fontStyle: style.fontStyle,
           textAlign: style.align,

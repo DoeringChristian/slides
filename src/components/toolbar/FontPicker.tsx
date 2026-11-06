@@ -1,5 +1,5 @@
 import React from 'react';
-import { FONT_FAMILIES } from '../../utils/constants';
+import { FONT_FAMILIES } from '../../utils/text/fontRegistry';
 
 interface Props {
   value: string;
