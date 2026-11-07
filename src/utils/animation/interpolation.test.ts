@@ -5,6 +5,7 @@ import {
   interpolateElement,
   interpolateWithVisibility,
   defaultVisibilityEasing,
+  defaultEasingFor,
   type WriteEffect,
   type TextDissolveSource,
   type CrossfadeSource,
@@ -14,6 +15,7 @@ import type {
   TextElement,
   ShapeElement,
   ImageElement,
+  TransitionGroup,
 } from '../../types/presentation';
 
 // =============================================================================
@@ -543,7 +545,7 @@ describe('path shape interpolation', () => {
     expect(mid.points!.length).toBeGreaterThan(4);
   });
 
-  test('endArrow easing produces a numeric _endArrowAlpha; without easing the head snaps', () => {
+  test('an appearing endArrow fades in, set or unset — only explicit const snaps', () => {
     const sa = makeShape({ shapeType: 'path', points: [0, 0, 100, 0] });
     const sbEased = makeShape({ shapeType: 'path', points: [0, 0, 100, 0], endHead: 'triangle', transitions: { endArrow: 'linear' } });
     const eased = interpolateElement(sa, sbEased, 0.3) as WithArrowAlpha;
@@ -553,11 +555,20 @@ describe('path shape interpolation', () => {
     expect(eased.endHead).toBe('triangle');
     expect(eased._startArrowAlpha).toBeUndefined(); // startHead agrees on both sides
 
-    const sbSnap = makeShape({ shapeType: 'path', points: [0, 0, 100, 0], endHead: 'triangle' });
-    const snapped = interpolateElement(sa, sbSnap, 0.3) as WithArrowAlpha;
+    // Unset is NOT a third behaviour: `defaultEasingFor('endArrow')` is
+    // 'linear', which is also what the picker has always displayed for this
+    // group, so an unset head fades identically.
+    const sbUnset = makeShape({ shapeType: 'path', points: [0, 0, 100, 0], endHead: 'triangle' });
+    const unset = interpolateElement(sa, sbUnset, 0.3) as WithArrowAlpha;
+    expect(unset._endArrowAlpha).toBeCloseTo(0.3);
+    expect(unset.endHead).toBe('triangle');
+
+    // Snapping is still available — by asking for it.
+    const sbConst = makeShape({ shapeType: 'path', points: [0, 0, 100, 0], endHead: 'triangle', transitions: { endArrow: 'const' } });
+    const snapped = interpolateElement(sa, sbConst, 0.3) as WithArrowAlpha;
     expect(snapped._endArrowAlpha).toBeUndefined();
     expect(snapped.endHead).toBeUndefined(); // head type snaps at t=0.5
-    expect((interpolateElement(sa, sbSnap, 0.7) as ShapeElement).endHead).toBe('triangle');
+    expect((interpolateElement(sa, sbConst, 0.7) as ShapeElement).endHead).toBe('triangle');
   });
 
   test("head TYPE change (both present) snaps at t=0.5; alpha stays undefined even when eased", () => {
@@ -865,5 +876,148 @@ describe('interpolateWithVisibility', () => {
     expect(interpolateWithVisibility(a, b, 0.25)!.x).toBeCloseTo(25);
     expect(interpolateWithVisibility(a, b, 0.5)!.x).toBeCloseTo(50);
     expect(interpolateWithVisibility(a, b, 0.75)!.x).toBeCloseTo(75);
+  });
+});
+
+// =============================================================================
+// Unset-group parity — the regression guard.
+//
+// Three consumers answer "what does an UNSET transition group do?": the
+// interpolator, TransitionButton (the pill in the picker) and
+// TransitionPreview (which ALWAYS injects an explicit easing, so it can only
+// ever show the explicit behaviour). When the interpolator's implicit
+// behaviour drifted from `defaultEasingFor`, a line that gained a vertex
+// froze and hard-cut at t=0.5 during playback while the picker said "Linear"
+// and its preview card animated smoothly. Nothing caught it because no test
+// compared the two paths.
+//
+// This pins the invariant directly: for every group, leaving it unset must
+// produce the SAME frame as setting it explicitly to `defaultEasingFor`.
+// =============================================================================
+
+describe('an unset transition group behaves exactly like its documented default', () => {
+  const T = [0, 0.1, 0.25, 0.49, 0.5, 0.51, 0.75, 0.9, 1];
+
+  // Pairs chosen so each group actually DIFFERS across the keyframes —
+  // otherwise the easing is never consulted and the test proves nothing.
+  const pairs: Array<{ name: string; group: TransitionGroup; a: SlideElement; b: SlideElement }> = [
+    {
+      name: 'line gains an interior vertex (the reported bug)',
+      group: 'controlPoints',
+      a: makeShape({ shapeType: 'path', points: [0, 0, 200, 100], curve: 'linear', closed: false, endHead: 'arrow' }),
+      b: makeShape({ shapeType: 'path', points: [10, 10, 120, 20, 210, 110], curve: 'linear', closed: false, endHead: 'arrow' }),
+    },
+    {
+      name: 'line keeps its vertex count',
+      group: 'controlPoints',
+      a: makeShape({ shapeType: 'path', points: [0, 0, 200, 100], curve: 'linear', closed: false }),
+      b: makeShape({ shapeType: 'path', points: [30, 40, 150, 60], curve: 'linear', closed: false }),
+    },
+    {
+      name: 'arrow gains an end head',
+      group: 'endArrow',
+      a: makeShape({ shapeType: 'path', points: [0, 0, 100, 0], endHead: 'none' }),
+      b: makeShape({ shapeType: 'path', points: [0, 0, 100, 0], endHead: 'arrow' }),
+    },
+    {
+      name: 'arrow loses a start head',
+      group: 'startArrow',
+      a: makeShape({ shapeType: 'path', points: [0, 0, 100, 0], startHead: 'triangle' }),
+      b: makeShape({ shapeType: 'path', points: [0, 0, 100, 0], startHead: 'none' }),
+    },
+    {
+      name: 'position moves',
+      group: 'position',
+      a: makeShape({ x: 0, y: 0 }),
+      b: makeShape({ x: 100, y: 50 }),
+    },
+    {
+      name: 'fill changes',
+      group: 'fill',
+      a: makeShape({ fill: '#ff0000' }),
+      b: makeShape({ fill: '#0000ff' }),
+    },
+    {
+      name: 'text content changes',
+      group: 'content',
+      a: makeText({ text: 'before' }),
+      b: makeText({ text: 'after' }),
+    },
+    {
+      name: 'image resource changes',
+      group: 'resource',
+      a: makeImage({ resourceId: 'res-a' }),
+      b: makeImage({ resourceId: 'res-b' }),
+    },
+    {
+      name: 'image crop changes',
+      group: 'crop',
+      a: makeImage({ cropX: 0, cropY: 0, cropWidth: 400, cropHeight: 200 }),
+      b: makeImage({ cropX: 50, cropY: 25, cropWidth: 200, cropHeight: 100 }),
+    },
+    {
+      name: 'shape type morphs',
+      group: 'morph',
+      a: makeShape({ shapeType: 'rect' }),
+      b: makeShape({ shapeType: 'ellipse' }),
+    },
+  ];
+
+  for (const { name, group, a, b } of pairs) {
+    test(`${group}: ${name}`, () => {
+      const explicit = defaultEasingFor(group, b);
+      for (const t of T) {
+        const unset = interpolateElement(a, b, t);
+        const set = interpolateElement(a, { ...b, transitions: { [group]: explicit } }, t);
+        // `transitions` itself is the only field allowed to differ — it is
+        // what we deliberately changed.
+        expect({ ...unset, transitions: undefined }, `${group} @ t=${t} (default ${explicit})`)
+          .toEqual({ ...set, transitions: undefined });
+      }
+    });
+  }
+
+  test('visibility is resolved through the same helper for both directions', () => {
+    const path = makeShape({ shapeType: 'path', points: [0, 0, 100, 0], visible: true });
+    expect(defaultEasingFor('visibility', path)).toBe(defaultVisibilityEasing(path));
+    const rect = makeShape({ shapeType: 'rect' });
+    expect(defaultEasingFor('visibility', rect)).toBe(defaultVisibilityEasing(rect));
+    expect(defaultEasingFor('visibility', undefined)).toBe('linear');
+  });
+});
+
+// =============================================================================
+// Path geometry must never freeze — the specific symptom the user reported.
+// =============================================================================
+
+describe('path geometry animates continuously across a vertex-count change', () => {
+  const line = (points: number[]) =>
+    makeShape({ shapeType: 'path', points, curve: 'linear', closed: false, endHead: 'arrow' });
+
+  test('a 2-point arrow growing a third vertex sweeps through intermediates', () => {
+    // Every retained vertex also MOVES, which is what used to defeat the
+    // stationary-vertex adapter and drop the transition into the old
+    // snap-at-0.5 branch.
+    const a = line([0, 0, 200, 100]);
+    const b = line([10, 10, 120, 20, 210, 110]);
+    const frames = [0.2, 0.4, 0.6, 0.8].map(
+      (t) => (interpolateElement(a, b, t) as ShapeElement).points!,
+    );
+    // Same topology at every in-flight frame …
+    for (const f of frames) expect(f).toHaveLength(6);
+    // … and strictly monotonic motion, i.e. never twice the same frame.
+    for (let i = 1; i < frames.length; i++) {
+      expect(frames[i]).not.toEqual(frames[i - 1]);
+      expect(frames[i][0]).toBeGreaterThan(frames[i - 1][0]);
+    }
+  });
+
+  test('an explicit const easing still snaps, because that is what const means', () => {
+    const a = line([0, 0, 200, 100]);
+    const b = line([10, 10, 120, 20, 210, 110]);
+    const at = (t: number) => (interpolateElement(a, { ...b, transitions: { controlPoints: 'const' } }, t) as ShapeElement).points!;
+    expect(at(0.25)).toEqual(at(0.49));
+    expect(at(0.51)).toEqual(at(0.75));
+    expect(at(0.25)).not.toEqual(at(0.75));
   });
 });

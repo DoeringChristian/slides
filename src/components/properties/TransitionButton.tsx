@@ -20,7 +20,7 @@ import type {
 } from '../../types/presentation';
 import { TransitionPreview } from './TransitionPreview';
 import { isVisibilityFadeOut, optionsKeyFor } from './transitionSide';
-import { defaultVisibilityEasing } from '../../utils/animation/interpolation';
+import { defaultEasingFor } from '../../utils/animation/interpolation';
 import { DEFAULT_TYPES, CROP_TYPES, RESOURCE_TYPES, CONTENT_TYPES, MORPH_TYPES, visibilityTypesFor } from '../../utils/animation/easingCatalog';
 import { EASING_LABELS, easingHasOptions, transitionPropertiesDiffer } from '../../utils/animation/transitionProperties';
 
@@ -105,14 +105,10 @@ export const TransitionButton: React.FC<Props> = ({
   const transitionElement = isFadeOut ? sourceElement : targetElement;
 
 
-  const defaultEasing: EasingType =
-    group === 'resource' ? 'dissolve' :
-    group === 'content' ? 'const' :
-    // Unset morph = the historical hard cut, which 'const' reproduces.
-    group === 'morph' ? 'const' :
-    group === 'visibility' ? defaultVisibilityEasing(transitionElement) :
-    'linear';
-  const currentEasing: EasingType = transitionElement?.transitions?.[group] || defaultEasing;
+  // Same helper the interpolator consults, so the pill in the picker always
+  // names the easing that will actually play.
+  const currentEasing: EasingType =
+    transitionElement?.transitions?.[group] || defaultEasingFor(group, transitionElement);
   const optKey = optionsKeyFor(group);
   const currentOptions: TransitionOptions | undefined = optKey
     ? transitionElement?.transitions?.[optKey]

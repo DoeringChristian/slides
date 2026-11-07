@@ -61,14 +61,13 @@ export const PropertiesPanel: React.FC = () => {
     <div className="w-64 bg-white border-l border-gray-200 flex flex-col shrink-0 overflow-y-auto">
       {showHeader && selected.length < 2 && (
         <div className="p-3 border-b border-gray-200">
-          {/* Shapes / groups have no "content" concept, so only the
-              visibility (appear / disappear) transition is hoisted next
-              to the type label. Text / image render their own header
-              with content + visibility icons in their own components. */}
+          {/* Which transition pickers appear here is derived from what
+              actually changed across the adjacent keyframes — see
+              headerGroups.ts. Text / image render their own header in their
+              own components. */}
           <PanelHeader
             label={element ? element.type : 'Slide'}
             elementId={element?.id}
-            groups={element ? ['visibility'] : []}
           >
             {hasPrevDiff && (
               <button

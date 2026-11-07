@@ -22,7 +22,7 @@ export function MultiSelectionProperties({ elements }: { elements: SlideElement[
   const shapes = elements.filter(el => el.type === 'shape');
   return <SelectionPropertiesContext.Provider value={ids}>
     <div className="space-y-4" data-multi-properties="">
-      <PanelHeader label={`${elements.length} objects`} elementId={ids[0]} groups={['visibility']} />
+      <PanelHeader label={`${elements.length} objects`} elementId={ids[0]} />
       {canJoinPaths(elements) && <IconButtonRow items={[{ icon: <Merge size={14} />, label: 'Join paths',
         title: 'Join nearest ends on this slide; keep the first selected path’s style and outer arrowheads', active: false,
         onClick: () => {

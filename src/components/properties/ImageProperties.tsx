@@ -96,7 +96,6 @@ export const ImageProperties: React.FC<Props> = ({ element }) => {
       <PanelHeader
         label={isVideo ? 'Video' : 'Image'}
         elementId={element.id}
-        groups={['visibility', 'resource']}
       />
 
       <PropertyList properties={IMAGE_PROPERTIES} element={element} />

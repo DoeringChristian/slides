@@ -4,7 +4,7 @@ import { parsePaintColor, formatPaintColor, noPaint } from '../paint/paintColor'
 import { stationaryPathPair } from './pathInterpolation';
 import { bsplineExtensionPair } from '../paths/bsplineExtension';
 import { pathGeometryInBox, pathPointsInSlide, slidePointToPath } from '../paths/pathEditing';
-import type { SlideElement, TextElement, ShapeElement, ImageElement, EasingType, ArrowheadType } from '../../types/presentation';
+import type { SlideElement, TextElement, ShapeElement, ImageElement, EasingType, ArrowheadType, TransitionGroup } from '../../types/presentation';
 import { resamplePath, catmullTangents, supportsPathClosure, pathEndpointDirection, type PathClosureEffect, type PathExtensionEffect, type ExtendEffect } from '../paths/pathShapes';
 import { lerpMorphedPaths, morphShapeOutlines, outlineIsClosed } from './morphGeometry';
 
@@ -143,19 +143,16 @@ export function lerpColor(a: string, b: string, t: number): string {
   return formatPaintColor({ r: lerp(rgbA.r, rgbB.r, t), g: lerp(rgbA.g, rgbB.g, t), b: lerp(rgbA.b, rgbB.b, t), a: lerp(ca.a, cb.a, t) });
 }
 
-function lerpPoints(a: number[], b: number[], t: number): number[] {
-  if (a.length !== b.length) return t < 0.5 ? a : b;
-  return a.map((v, i) => lerp(v, b[i], t));
-}
-
 /** Per-arrowhead fade alpha across a slide transition.
  *
  *  Works on head PRESENCE (any head vs 'none'/absent): returns `undefined`
  *  when both sides agree on presence (no fade needed — the typed field
  *  already carries the right glyph; a type-only change hard-cuts at t=0.5
- *  like every discrete property) or when no easing is set (default `const`
- *  behaviour: snap at t=0.5). Otherwise eases between 0 and 1 so the
- *  renderer can fade the arrowhead's opacity. */
+ *  like every discrete property) or when the easing is `const`. Otherwise
+ *  eases between 0 and 1 so the renderer can fade the arrowhead's opacity.
+ *  Callers resolve an unset group through `defaultEasingFor` first, so an
+ *  arrowhead that appears fades in by default — which is what the picker has
+ *  always advertised for this group. */
 function arrowAlpha(
   a: ArrowheadType | undefined,
   b: ArrowheadType | undefined,
@@ -618,10 +615,15 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
         nextClosed = false;
         nextTangents = undefined;
       } else {
-        const easedT = tr.controlPoints ? applyEasing(t, ease) : t;
-        nextPoints = tr.controlPoints
-          ? lerpControlPoints(sa.points, sb.points, easedT, aClosed || bClosed)
-          : lerpPoints(sa.points, sb.points, t);
+        // One path for set and unset alike. `ease` already resolves to the
+        // documented default, and resampling is identity for equal vertex
+        // counts — so this is bit-identical to a pairwise lerp whenever the
+        // counts match, and the only thing that changes for an unset group
+        // is that a count MISMATCH now eases through resampled intermediates
+        // instead of hard-cutting at t=0.5. Inserting a vertex into a line
+        // or arrow is exactly that case.
+        const easedT = applyEasing(t, ease);
+        nextPoints = lerpControlPoints(sa.points, sb.points, easedT, aClosed || bClosed);
         if (bezierPairLerp) {
           // Lerp against the tangents each keyframe RENDERS with (stored or
           // Catmull-Rom fallback) so missing arrays animate smoothly too.
@@ -640,8 +642,8 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
     // honours those over head presence. The head TYPE itself always snaps
     // at t=0.5 (mirroring the old boolean snap), so without an easing set
     // the whole head snaps (default `const` behaviour).
-    const startArrowAlpha = arrowAlpha(sa.startHead, sb.startHead, t, tr.startArrow);
-    const endArrowAlpha = arrowAlpha(sa.endHead, sb.endHead, t, tr.endArrow);
+    const startArrowAlpha = arrowAlpha(sa.startHead, sb.startHead, t, tr.startArrow ?? defaultEasingFor('startArrow', sb));
+    const endArrowAlpha = arrowAlpha(sa.endHead, sb.endHead, t, tr.endArrow ?? defaultEasingFor('endArrow', sb));
     // While a presence fade is active, the interpolated element must carry
     // the glyph of the side that HAS a head for the whole transition —
     // otherwise the t<0.5 half would render 'none' at partial alpha (i.e.
@@ -822,6 +824,28 @@ export function defaultVisibilityEasing(element: SlideElement | undefined): Easi
     return 'create';
   }
   return 'linear';
+}
+
+/** What an UNSET transition group means — the single source of truth.
+ *
+ *  Three consumers have to agree on this and used to answer it separately:
+ *  the interpolator (which actually animates), TransitionButton (which shows
+ *  the "current" easing in the picker) and TransitionPreview (which always
+ *  injects an explicit easing, so it can only ever show the explicit
+ *  behaviour). When they disagreed, playback snapped while the panel said
+ *  "Linear" and the preview card animated — see the parity test in
+ *  interpolation.test.ts, which pins unset == explicitly-set-to-this-default
+ *  for every group. Add a group here, not in a local ladder. */
+export function defaultEasingFor(group: TransitionGroup, element: SlideElement | undefined): EasingType {
+  switch (group) {
+    case 'resource': return 'dissolve';
+    // A text edit and a cross-type morph both default to the hard cut, which
+    // 'const' reproduces exactly.
+    case 'content':
+    case 'morph': return 'const';
+    case 'visibility': return defaultVisibilityEasing(element);
+    default: return 'linear';
+  }
 }
 
 /** Try to build a WriteEffect for a visibility transition. Returns null when

@@ -89,7 +89,7 @@ interface Props {
 
 export const TextProperties: React.FC<Props> = ({ element }) => (
   <div className="space-y-3">
-    <PanelHeader label="Text" elementId={element.id} groups={['visibility', 'content']} />
+    <PanelHeader label="Text" elementId={element.id} />
     <PropertyList properties={TEXT_PROPERTIES} element={element} />
   </div>
 );
