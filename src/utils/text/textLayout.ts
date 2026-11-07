@@ -13,6 +13,7 @@ import { parseTransformChain } from '../animation/morphGeometry';
  */
 
 import { parseBlocks, parseInlineSegments, getBlockFontMultiplier } from '../../components/canvas/CustomMarkdownRenderer';
+import type { InlineSegment } from '../../components/canvas/CustomMarkdownRenderer';
 import type { TextStyle } from '../../types/presentation';
 import { texFragmentToSvg } from '../../services/latexToSvg';
 import { loadFont, textToGlyphPaths, pathLengthFor } from './glyphPaths';
@@ -177,10 +178,6 @@ const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 const breakableTextSpaces = /([ \t]+|[\u2000-\u2006\u2008-\u200a\u205f\u3000]+)/;
 const onlyBreakableTextSpaces = /^[ \t\u2000-\u2006\u2008-\u200a\u205f\u3000]+$/;
 
-function escapeXml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
 // Parse a MathJax SVG fragment once. Returns the pixel dimensions used for
 // layout plus a closure that emits per-glyph paths at a given pen position.
 // The closure captures the DOM-walked glyph list and the viewBox-to-pixel
@@ -213,28 +210,26 @@ function parseMathSvg(mathSvg: string, fontPx: number): {
   const inner = doc.documentElement.querySelector('svg');
   if (!inner) return null;
 
-  // Dimensions: MathJax uses `ex` units; 1ex ≈ 0.5em ≈ 0.5 * fontPx.
-  const parseDim = (attr: string | null, fallback: number): number => {
-    if (!attr) return fallback;
-    const m = attr.match(/^([\d.]+)(ex|em|px)?$/);
-    if (!m) return fallback;
-    const val = parseFloat(m[1]);
-    const unit = m[2];
-    if (unit === 'em') return val * fontPx;
-    if (unit === 'px') return val;
-    return val * fontPx * 0.5;
-  };
-  const widthPx = parseDim(inner.getAttribute('width'), fontPx);
-  const heightPx = parseDim(inner.getAttribute('height'), fontPx);
-
-  const vbAttr = inner.getAttribute('viewBox') || '0 0 1 1';
-  const vb = vbAttr.split(/\s+/).map(parseFloat);
-  const [vbX, vbY, vbW, vbH] = vb.length === 4 ? vb : [0, 0, 1, 1];
-  if (!vbW || !vbH) {
-    return { widthPx, heightPx, aboveBaseline: heightPx, belowBaseline: 0, emitPaths: () => [] };
-  }
-  const scaleX = widthPx / vbW;
-  const scaleY = heightPx / vbH;
+  // Size comes from the viewBox, NOT from the width/height attributes.
+  //
+  // MathJax states those in `ex`, and one ex is the chosen font's x-height —
+  // 0.442em for newcm, different for every other math font. Reading them as
+  // a flat 0.5em (as this did) renders every equation ~13% oversized for
+  // newcm, with the baseline offsets inflated to match, so math sat too big
+  // and too low against its own text. Worse, width and height are rounded to
+  // three decimals, so scaleX and scaleY came out unequal and each glyph was
+  // very slightly stretched.
+  //
+  // The viewBox is in MathJax's own unit of 1/1000 em, which needs no font
+  // metrics and no rounding: one uniform scale, exact at any font size.
+  const vb = (inner.getAttribute('viewBox') || '').split(/\s+/).map(parseFloat);
+  if (vb.length !== 4 || vb.some((v) => !Number.isFinite(v))) return null;
+  const [vbX, vbY, vbW, vbH] = vb;
+  if (!vbW || !vbH) return null;
+  const scale = fontPx / 1000;
+  const scaleX = scale, scaleY = scale;
+  const widthPx = vbW * scale;
+  const heightPx = vbH * scale;
   // MathJax baseline is at vb y=0. vbY is typically negative (e.g. -792),
   // so -vbY gives the distance from baseline up to the viewBox top; vbY+vbH
   // gives the distance from baseline down to the viewBox bottom.
@@ -293,6 +288,25 @@ function parseMathSvg(mathSvg: string, fontPx: number): {
   };
 
   return { widthPx, heightPx, aboveBaseline, belowBaseline, emitPaths };
+}
+
+/** Convert one `$…$` / `$$…$$` segment to drawable geometry, or null when it
+ *  cannot be drawn (bad TeX, or no DOMParser in this environment). */
+async function parseMathSegment(
+  seg: InlineSegment,
+  style: TextStyle,
+  fontPx: number,
+): Promise<ReturnType<typeof parseMathSvg>> {
+  try {
+    const svg = await texFragmentToSvg(
+      seg.displayContent,
+      seg.isBlock,
+      resolveMathFont(style.fontFamily, style.mathFont).id,
+    );
+    return parseMathSvg(svg, fontPx);
+  } catch {
+    return null;
+  }
 }
 
 function buildTextDecoration(underline: boolean, strikethrough: boolean): string {
@@ -421,21 +435,14 @@ export async function layoutSvgText(
       };
 
       for (const seg of segments) {
-        if (seg.type === 'latex') {
-          let mathSvg: string;
-          try {
-            // Math follows the element's own choice, else whatever its text
-            // font pairs with — so prose and equations match by default.
-            mathSvg = await texFragmentToSvg(
-              seg.displayContent,
-              seg.isBlock,
-              resolveMathFont(style.fontFamily, style.mathFont).id,
-            );
-          } catch {
-            mathSvg = `<text fill="#d1242f" font-size="${blockFontSize * 0.8}" font-family="monospace">${escapeXml(seg.content)}</text>`;
-          }
-          const parsed = parseMathSvg(mathSvg, blockFontSize);
-          if (!parsed) continue;
+        // Math follows the element's own choice, else whatever its text font
+        // pairs with — so prose and equations match by default. Null means
+        // "could not be drawn": either the TeX did not convert or there is no
+        // DOMParser in this environment.
+        const parsed = seg.type === 'latex'
+          ? await parseMathSegment(seg, style, blockFontSize)
+          : null;
+        if (parsed) {
           const mathColor = style.color;
           const unit: PlacedUnit = {
             kind: 'math',
@@ -458,12 +465,20 @@ export async function layoutSvgText(
           continue;
         }
 
-        // text | formatted | link
+        // text | formatted | link, and any math that could not be drawn.
+        //
+        // That last case used to `continue` here, which DELETED the segment:
+        // an unconvertible expression left a hole in the line, so it read as
+        // "math is not rendering" rather than "this formula is wrong". Laying
+        // the source out as ordinary text keeps it visible, selectable and
+        // editable.
         let weight = blockWeight;
         let fontStyle = style.fontStyle || 'normal';
         let decoration = '';
         let color = style.color;
-        const txt = seg.displayContent;
+        // Delimiters included for unconverted math, so what is on the slide
+        // is exactly what has to be corrected.
+        const txt = seg.type === 'latex' ? seg.content : seg.displayContent;
         if (seg.type === 'formatted') {
           if (seg.bold) weight = 'bold';
           if (seg.italic) fontStyle = 'italic';

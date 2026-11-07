@@ -91,3 +91,71 @@ describe('latexToSvg', () => {
     }
   }, 180_000);
 });
+
+/**
+ * Regressions from the MathJax 4 migration. Each of these produced a visibly
+ * broken slide while the whole suite stayed green, because every assertion
+ * here is about something the OLD tests could not see.
+ */
+describe('the whole expression actually reaches the slide', () => {
+  beforeEach(() => { clearLatexCache(); });
+
+  /** Where glyphs are PLACED. `<defs>` is a cache and fills up regardless of
+   *  how much of the expression was rendered, so counting paths there cannot
+   *  tell a complete expression from a truncated one — which is exactly how a
+   *  one-glyph render passed for a 285-character formula. */
+  const placements = (svg: string) => (svg.match(/<use/g) ?? []).length;
+  const roots = (svg: string) => (svg.match(/<svg/g) ?? []).length;
+
+  // Every `\,`, `\quad` and binary operator is a potential line break.
+  const LONG = String.raw`\mathcal{L}\,\mathscr{H}\,\mathfrak{g}\,\mathbb{R}^3\,\boldsymbol{\omega}\,\nabla\cdot\vec{E}\quad \sum_{i=1}^{N}\prod_k\oint\iint\quad \left\langle \frac{\partial^2 u}{\partial t^2}\right\rangle \le \sqrt[3]{\xi}`;
+
+  it('returns ONE svg, because MathJax 4 would otherwise break inline math itself', async () => {
+    const svg = await texFragmentToSvg(LONG, false, 'mathjax-newcm');
+    // MathJax 4 breaks inline math at every opportunity and returns one <svg>
+    // per chunk with <mjx-break> between them. A consumer reading "the" svg
+    // then renders the FIRST chunk only: this expression came out as a lone
+    // `L`. Our layout owns line breaking, so the whole thing must be one unit.
+    expect(roots(svg)).toBe(1);
+    expect(svg).not.toContain('mjx-break');
+    // ~31 glyphs. The failure mode put this at 1.
+    expect(placements(svg)).toBeGreaterThan(25);
+  }, 30_000);
+
+  it('loads the font ranges MathJax fetches on demand', async () => {
+    // A MathJax 4 font keeps calligraphic, script, fraktur, double-struck and
+    // the rest in ~40 separately loaded range modules. With no
+    // `mathjax.asyncLoad` hook every one of these threw "MathJax retry" and
+    // the expression fell back to its own source text.
+    for (const tex of [String.raw`\mathcal{L}`, String.raw`\mathscr{H}`,
+      String.raw`\mathfrak{g}`, String.raw`\mathbb{R}`, String.raw`\left\langle x\right\rangle`]) {
+      const svg = await texFragmentToSvg(tex, false, 'mathjax-newcm');
+      expect(placements(svg), tex).toBeGreaterThan(0);
+    }
+  }, 30_000);
+
+  it('renders \\boldsymbol as a glyph rather than spelling out the macro', async () => {
+    // `noundefined` turns an unregistered macro into its own name in red, so a
+    // missing TeX extension looks like a font problem. Nine glyphs spelling
+    // "boldsymbol" is not a bold omega.
+    const bold = await texFragmentToSvg(String.raw`\boldsymbol{\omega}`, false, 'mathjax-newcm');
+    expect(placements(bold)).toBe(1);
+    expect(bold).not.toBe(await texFragmentToSvg(String.raw`\omega`, false, 'mathjax-newcm'));
+  }, 30_000);
+
+  it('states its size in a viewBox that needs no font metrics to read', async () => {
+    // The width/height attributes are in `ex`, and one ex is the x-height of
+    // whichever math font is selected — 0.442em for newcm, not the 0.5em the
+    // layout used to assume, so equations came out 13% oversized with their
+    // baselines pushed down to match. The viewBox is in MathJax's own unit of
+    // 1/1000 em: no font metrics, no rounding, one uniform scale.
+    const svg = await texFragmentToSvg(String.raw`x`, false, 'mathjax-newcm');
+    const vb = svg.match(/viewBox="([^"]+)"/)?.[1].split(/\s+/).map(Number);
+    const ex = Number(svg.match(/width="([\d.]+)ex"/)?.[1]);
+    expect(vb).toHaveLength(4);
+    expect(vb!.every(Number.isFinite)).toBe(true);
+    // An em is 1000 units, and this font's ex is well under half of one.
+    expect(vb![2] / ex).toBeGreaterThan(400);
+    expect(vb![2] / ex).toBeLessThan(470);
+  }, 30_000);
+});

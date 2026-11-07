@@ -263,6 +263,50 @@ export async function loadMathFontData(id: string | undefined): Promise<unknown>
   return cls[1];
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Dynamic glyph ranges
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A MathJax 4 font is NOT one module. The package's `svg.js` carries the
+ * common variants (roman, italic, bold, the operator sizes) and leaves ~40
+ * further ranges — calligraphic, script, fraktur, double-struck, accents,
+ * large delimiters, the alphabets — in `svg/dynamic/*.js`, to be fetched at
+ * render time. MathJax asks for them BY MODULE SPECIFIER through
+ * `mathjax.asyncLoad`, and if that hook is unset it throws
+ * "MathJax retry -- an asynchronous action is required".
+ *
+ * So the base ranges rendered and everything else failed: `x^2`, `\frac` and
+ * `\sum` worked while `\mathcal`, `\mathscr`, `\mathfrak`, `\mathbb`,
+ * `\boldsymbol` and `\left\langle` fell back to red source text. A single
+ * such token anywhere in an expression fails the whole expression.
+ *
+ * A bare specifier resolves in neither the browser nor a Vite build, so the
+ * resolution is handed to the bundler: each range becomes its own lazy chunk,
+ * and the range modules' own relative imports (`../../svg.js`) resolve
+ * normally. This lives beside the font definitions because that is what it
+ * is — the glob covers exactly the packages MATH_FONTS names.
+ */
+const DYNAMIC_RANGES = import.meta.glob<Record<string, unknown>>(
+  '/node_modules/@mathjax/*/mjs/svg/dynamic/*.js',
+);
+
+/**
+ * Resolve one dynamic range module for MathJax.
+ *
+ * The specifier looks like
+ * `@mathjax/mathjax-newcm-font/js/svg/dynamic/calligraphic.js` — `js/` is the
+ * package's own export alias for `mjs/`, which is what exists on disk and
+ * therefore what the glob keys use.
+ */
+export function loadMathFontRange(specifier: string): Promise<unknown> {
+  const parts = specifier.match(/(@mathjax\/[^/]+)\/(?:js|mjs)\/svg\/dynamic\/([^/]+?)(?:\.js)?$/);
+  const load = parts && DYNAMIC_RANGES[`/node_modules/${parts[1]}/mjs/svg/dynamic/${parts[2]}.js`];
+  return load
+    ? load()
+    : Promise.reject(new Error(`No such MathJax font range: ${specifier}`));
+}
+
 /**
  * Families offered in the pickers. Never hand-listed: only a bundled face can
  * be rendered as outlines, so advertising a system family would promise

@@ -6,6 +6,25 @@ import { VitePWA } from 'vite-plugin-pwa'
 import { spawn, ChildProcess } from 'child_process'
 import path from 'path'
 import fs from 'fs'
+import pkg from './package.json'
+
+// MathJax 4 must never be dependency-pre-bundled.
+//
+// A font package's `svg.js` exports the font class, and its ~40 lazily loaded
+// glyph ranges (`svg/dynamic/*.js`) register their characters onto that class
+// through a RELATIVE import of it. Pre-bundling rewrites the bare specifier
+// our font registry uses into `.vite/deps/…` while the range modules keep
+// resolving `../../svg.js` to the real file — two copies of the same class.
+// The ranges then decorate the copy nobody renders with, MathJax reports
+// "dynamic file 'double-struck' failed to load", and every expression using
+// \mathbb, \mathfrak, \boldsymbol or a large delimiter silently falls back
+// to its own source text.
+//
+// Rollup resolves both forms to one module id, so production was never
+// affected and neither was vitest — this is a dev-server-only split, which is
+// precisely the configuration being edited in. Derived from the dependency
+// list so adding a math font cannot forget it.
+const MATHJAX_PACKAGES = Object.keys(pkg.dependencies).filter((name) => name.startsWith('@mathjax/'))
 
 // Vite middleware: serve the prebuilt standalone/viewer templates during dev so the
 // editor's exporter can fetch them. Falls back to a friendly 404 if the templates
@@ -139,7 +158,14 @@ function editorPwa() {
       // Don't precache the prebuilt standalone-template / viewer-template HTMLs
       // — they're fetched on demand by the exporter (Workbox's runtime cache
       // can handle them) and would otherwise inflate the precache by ~7.5 MB.
-      globIgnores: ['standalone-template.html', 'viewer-template.html'],
+      // MathJax is lazy by construction — the engine, each of the 11 font
+      // packages and each font's ~40 glyph ranges are separate dynamic
+      // imports, fetched only by a deck that actually contains math, and only
+      // for the font and the characters it uses. Precaching all of it would
+      // put ~24 MB through the service worker on first load for every user,
+      // including the ones whose decks have no equations at all. Workbox's
+      // runtime cache keeps whatever does get fetched.
+      globIgnores: ['standalone-template.html', 'viewer-template.html', 'assets/mathjax/**'],
     },
     devOptions: {
       // Disable in dev to avoid SW caching getting in the way of HMR.
@@ -163,6 +189,24 @@ export default defineConfig(({ command }) => {
     // their own copies of the suites — don't double-run them.
     test: {
       exclude: [...configDefaults.exclude, '**/.claude/**', 'inkwell/**'],
+    },
+    optimizeDeps: {
+      exclude: MATHJAX_PACKAGES,
+    },
+    build: {
+      rollupOptions: {
+        output: {
+          // Park every MathJax chunk under assets/mathjax/ so the service
+          // worker can tell them apart from app code and leave them out of
+          // the precache (see globIgnores). Only chunks made ENTIRELY of
+          // MathJax modules move; anything mixed with app code stays put.
+          chunkFileNames: (chunk) => {
+            const ids = chunk.moduleIds ?? []
+            const allMathJax = ids.length > 0 && ids.every((id) => id.includes('/@mathjax/'))
+            return allMathJax ? 'assets/mathjax/[name]-[hash].js' : 'assets/[name]-[hash].js'
+          },
+        },
+      },
     },
     define: {
       __SLIDES_STANDALONE_BUILD__: 'false',
