@@ -12,7 +12,7 @@ import { parseTransformChain } from '../animation/morphGeometry';
  * inputs ⇒ instant cached return.
  */
 
-import { parseBlocks, parseInlineSegments, getBlockFontMultiplier } from '../../components/canvas/CustomMarkdownRenderer';
+import { parseBlocks, parseInlineSegments, getBlockFontMultiplier, type ParsedBlock } from '../../components/canvas/CustomMarkdownRenderer';
 import type { InlineSegment } from '../../components/canvas/CustomMarkdownRenderer';
 import type { TextStyle } from '../../types/presentation';
 import { texFragmentToSvg } from '../../services/latexToSvg';
@@ -178,17 +178,9 @@ const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
 const breakableTextSpaces = /([ \t]+|[\u2000-\u2006\u2008-\u200a\u205f\u3000]+)/;
 const onlyBreakableTextSpaces = /^[ \t\u2000-\u2006\u2008-\u200a\u205f\u3000]+$/;
 
-// Parse a MathJax SVG fragment once. Returns the pixel dimensions used for
-// layout plus a closure that emits per-glyph paths at a given pen position.
-// The closure captures the DOM-walked glyph list and the viewBox-to-pixel
-// scale so the layout pass can decide where the math goes and the emission
-// pass can produce its paths — without re-parsing the SVG.
-//
-// Math vertical alignment: MathJax viewBox uses y=0 as the baseline (vbY is
-// typically negative). The emit closure computes
-// yOffset = baselineY + vbY * scaleY so the math baseline lands exactly on
-// the surrounding text baseline.
-function parseMathSvg(mathSvg: string, fontPx: number): {
+/** One drawable piece of a formula: a whole formula, or — when MathJax was
+ *  asked to break an inline one — a single break-delimited piece of it. */
+interface MathChunk {
   widthPx: number;
   heightPx: number;
   /** Distance from the math baseline (vb y=0) to the TOP of the math. The
@@ -200,113 +192,184 @@ function parseMathSvg(mathSvg: string, fontPx: number): {
    *  line below either. */
   belowBaseline: number;
   emitPaths: (xCursor: number, baselineY: number, color: string) => SvgPath[];
-} | null {
-  if (typeof DOMParser === 'undefined') return null;
+}
+
+// Parse a MathJax SVG fragment once. Returns the pixel dimensions used for
+// layout plus a closure that emits per-glyph paths at a given pen position.
+// The closure captures the DOM-walked glyph list and the viewBox-to-pixel
+// scale so the layout pass can decide where the math goes and the emission
+// pass can produce its paths — without re-parsing the SVG.
+//
+// Several chunks come back when the formula was converted with inline
+// breaking on: MathJax then emits one <svg> per break opportunity, for the
+// host to flow. They are parsed TOGETHER because `fontCache: 'local'` puts
+// the glyph <defs> in the first chunk only and every later chunk <use>s ids
+// defined there — parsed one at a time, every chunk after the first would
+// come out empty.
+//
+// Math vertical alignment: MathJax viewBox uses y=0 as the baseline (vbY is
+// typically negative). The emit closure computes
+// yOffset = baselineY + vbY * scaleY so the math baseline lands exactly on
+// the surrounding text baseline.
+function parseMathChunks(mathSvg: string, fontPx: number): MathChunk[] {
+  if (typeof DOMParser === 'undefined') return [];
 
   const parser = new DOMParser();
   const wrapped = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">${mathSvg}</svg>`;
   const doc = parser.parseFromString(wrapped, 'image/svg+xml');
-  if (doc.querySelector('parsererror')) return null;
-  const inner = doc.documentElement.querySelector('svg');
-  if (!inner) return null;
+  if (doc.querySelector('parsererror')) return [];
+  const roots = Array.from(doc.documentElement.children).filter((el) => el.localName === 'svg');
+  if (roots.length === 0) return [];
 
-  // Size comes from the viewBox, NOT from the width/height attributes.
-  //
-  // MathJax states those in `ex`, and one ex is the chosen font's x-height —
-  // 0.442em for newcm, different for every other math font. Reading them as
-  // a flat 0.5em (as this did) renders every equation ~13% oversized for
-  // newcm, with the baseline offsets inflated to match, so math sat too big
-  // and too low against its own text. Worse, width and height are rounded to
-  // three decimals, so scaleX and scaleY came out unequal and each glyph was
-  // very slightly stretched.
-  //
-  // The viewBox is in MathJax's own unit of 1/1000 em, which needs no font
-  // metrics and no rounding: one uniform scale, exact at any font size.
-  const vb = (inner.getAttribute('viewBox') || '').split(/\s+/).map(parseFloat);
-  if (vb.length !== 4 || vb.some((v) => !Number.isFinite(v))) return null;
-  const [vbX, vbY, vbW, vbH] = vb;
-  if (!vbW || !vbH) return null;
-  const scale = fontPx / 1000;
-  const scaleX = scale, scaleY = scale;
-  const widthPx = vbW * scale;
-  const heightPx = vbH * scale;
-  // MathJax baseline is at vb y=0. vbY is typically negative (e.g. -792),
-  // so -vbY gives the distance from baseline up to the viewBox top; vbY+vbH
-  // gives the distance from baseline down to the viewBox bottom.
-  const aboveBaseline = -vbY * scaleY;
-  const belowBaseline = (vbY + vbH) * scaleY;
-
-  // id → path data lookup from <defs>.
+  // id → path data, gathered across every chunk before any of them is walked.
   const defs = new Map<string, string>();
-  inner.querySelectorAll('defs path').forEach((p) => {
+  doc.documentElement.querySelectorAll('defs path').forEach((p) => {
     const id = p.getAttribute('id');
     const d = p.getAttribute('d');
     if (id && d) defs.set(id, d);
   });
 
-  // Collect every renderable glyph in document order with its accumulated
-  // inner-SVG transform. The outer translate+scale is appended at emit time.
-  type RawGlyph = { d: string; innerTr: string; localLen: number };
-  const raws: RawGlyph[] = [];
-  const walk = (el: Element, parentTr: string): void => {
-    const tr = el.getAttribute('transform');
-    const combinedTr = tr ? (parentTr ? `${parentTr} ${tr}` : tr) : parentTr;
+  const chunks: MathChunk[] = [];
+  for (const inner of roots) {
+    // Size comes from the viewBox, NOT from the width/height attributes.
+    //
+    // MathJax states those in `ex`, and one ex is the chosen font's x-height —
+    // 0.442em for newcm, different for every other math font. Reading them as
+    // a flat 0.5em (as this did) renders every equation ~13% oversized for
+    // newcm, with the baseline offsets inflated to match, so math sat too big
+    // and too low against its own text. Worse, width and height are rounded to
+    // three decimals, so scaleX and scaleY came out unequal and each glyph was
+    // very slightly stretched.
+    //
+    // The viewBox is in MathJax's own unit of 1/1000 em, which needs no font
+    // metrics and no rounding: one uniform scale, exact at any font size.
+    const vb = (inner.getAttribute('viewBox') || '').split(/\s+/).map(parseFloat);
+    if (vb.length !== 4 || vb.some((v) => !Number.isFinite(v))) continue;
+    const [vbX, vbY, vbW, vbH] = vb;
+    if (!vbW || !vbH) continue;
+    const scale = fontPx / 1000;
+    const scaleX = scale, scaleY = scale;
+    const widthPx = vbW * scale;
+    const heightPx = vbH * scale;
+    // MathJax baseline is at vb y=0. vbY is typically negative (e.g. -792),
+    // so -vbY gives the distance from baseline up to the viewBox top; vbY+vbH
+    // gives the distance from baseline down to the viewBox bottom.
+    const aboveBaseline = -vbY * scaleY;
+    const belowBaseline = (vbY + vbH) * scaleY;
 
-    if (el.localName === 'use') {
-      const href = el.getAttribute('href') || el.getAttribute('xlink:href') || '';
-      const id = href.startsWith('#') ? href.slice(1) : href;
-      const d = defs.get(id);
-      if (d) raws.push({ d, innerTr: combinedTr, localLen: pathLengthFor(d) });
-      return;
+    // Collect every renderable glyph in document order with its accumulated
+    // inner-SVG transform. The outer translate+scale is appended at emit time.
+    type RawGlyph = { d: string; innerTr: string; localLen: number };
+    const raws: RawGlyph[] = [];
+    const walk = (el: Element, parentTr: string): void => {
+      const tr = el.getAttribute('transform');
+      const combinedTr = tr ? (parentTr ? `${parentTr} ${tr}` : tr) : parentTr;
+
+      if (el.localName === 'use') {
+        const href = el.getAttribute('href') || el.getAttribute('xlink:href') || '';
+        const id = href.startsWith('#') ? href.slice(1) : href;
+        const d = defs.get(id);
+        if (d) raws.push({ d, innerTr: combinedTr, localLen: pathLengthFor(d) });
+        return;
+      }
+      if (el.localName === 'path' && !el.closest('defs')) {
+        const d = el.getAttribute('d');
+        if (d) raws.push({ d, innerTr: combinedTr, localLen: pathLengthFor(d) });
+        return;
+      }
+      for (const child of Array.from(el.children)) walk(child, combinedTr);
+    };
+    for (const child of Array.from(inner.children)) {
+      if (child.localName === 'defs') continue;
+      walk(child, '');
     }
-    if (el.localName === 'path' && !el.closest('defs')) {
-      const d = el.getAttribute('d');
-      if (d) raws.push({ d, innerTr: combinedTr, localLen: pathLengthFor(d) });
-      return;
-    }
-    for (const child of Array.from(el.children)) walk(child, combinedTr);
-  };
-  for (const child of Array.from(inner.children)) {
-    if (child.localName === 'defs') continue;
-    walk(child, '');
+
+    const emitPaths = (xCursor: number, baselineY: number, color: string): SvgPath[] => {
+      const yOffset = baselineY + vbY * scaleY;
+      const outerTr = `translate(${xCursor.toFixed(3)},${yOffset.toFixed(3)}) scale(${scaleX.toFixed(4)},${scaleY.toFixed(4)}) translate(${(-vbX).toFixed(3)},${(-vbY).toFixed(3)})`;
+      return raws.map((g) => {
+        const transform = g.innerTr ? `${outerTr} ${g.innerTr}` : outerTr;
+        const [a,b,c,d] = parseTransformChain(transform);
+        // Include nested MathJax scales (subscripts, superscripts, stretchy
+        // glyphs). Compensate only glyph-local scale, never the slide viewport.
+        const glyphScale = Math.sqrt(Math.abs(a*d-b*c)) || 1;
+        return {
+          d: g.d, transform, length: g.localLen * glyphScale,
+          fillColor: color, nonScalingStroke: false, strokeScale: 1 / glyphScale,
+        };
+      });
+    };
+
+    chunks.push({ widthPx, heightPx, aboveBaseline, belowBaseline, emitPaths });
   }
-
-  const emitPaths = (xCursor: number, baselineY: number, color: string): SvgPath[] => {
-    const yOffset = baselineY + vbY * scaleY;
-    const outerTr = `translate(${xCursor.toFixed(3)},${yOffset.toFixed(3)}) scale(${scaleX.toFixed(4)},${scaleY.toFixed(4)}) translate(${(-vbX).toFixed(3)},${(-vbY).toFixed(3)})`;
-    return raws.map((g) => {
-      const transform = g.innerTr ? `${outerTr} ${g.innerTr}` : outerTr;
-      const [a,b,c,d] = parseTransformChain(transform);
-      // Include nested MathJax scales (subscripts, superscripts, stretchy
-      // glyphs). Compensate only glyph-local scale, never the slide viewport.
-      const glyphScale = Math.sqrt(Math.abs(a*d-b*c)) || 1;
-      return {
-        d: g.d, transform, length: g.localLen * glyphScale,
-        fillColor: color, nonScalingStroke: false, strokeScale: 1 / glyphScale,
-      };
-    });
-  };
-
-  return { widthPx, heightPx, aboveBaseline, belowBaseline, emitPaths };
+  return chunks;
 }
 
-/** Convert one `$…$` / `$$…$$` segment to drawable geometry, or null when it
- *  cannot be drawn (bad TeX, or no DOMParser in this environment). */
+/**
+ * Convert one `$…$` / `$$…$$` segment to drawable geometry, empty when it
+ * cannot be drawn (bad TeX, or no DOMParser in this environment).
+ *
+ * Renders at the formula's natural width first and only asks for line
+ * breaking when that does not fit, so an equation that fits is laid out
+ * exactly as it always was — no change in spacing, and one conversion.
+ * Too wide, and the two modes diverge: MathJax wraps DISPLAY math itself,
+ * properly aligned, and returns one chunk; for INLINE math it returns a chunk
+ * per break opportunity for the caller to flow.
+ */
 async function parseMathSegment(
   seg: InlineSegment,
   style: TextStyle,
   fontPx: number,
-): Promise<ReturnType<typeof parseMathSvg>> {
+  boxWidth: number,
+): Promise<MathChunk[]> {
+  const fontId = resolveMathFont(style.fontFamily, style.mathFont).id;
   try {
-    const svg = await texFragmentToSvg(
-      seg.displayContent,
-      seg.isBlock,
-      resolveMathFont(style.fontFamily, style.mathFont).id,
-    );
-    return parseMathSvg(svg, fontPx);
+    const natural = parseMathChunks(
+      await texFragmentToSvg(seg.displayContent, seg.isBlock, fontId), fontPx);
+    const naturalWidth = natural.reduce((sum, chunk) => sum + chunk.widthPx, 0);
+    if (natural.length === 0 || naturalWidth <= boxWidth || !Number.isFinite(boxWidth)) return natural;
+    const wrapped = parseMathChunks(
+      await texFragmentToSvg(seg.displayContent, seg.isBlock, fontId,
+        { widthEm: boxWidth / fontPx }), fontPx);
+    // Breaking can legitimately find nothing to break (a single wide glyph run,
+    // a `\text{}` with no spaces). Overflowing beats dropping the formula.
+    return wrapped.length > 0 ? wrapped : natural;
   } catch {
-    return null;
+    return [];
   }
+}
+
+/**
+ * Break a multi-line math span back into its source lines while the caret is
+ * inside it.
+ *
+ * A span renders as one formula on one row, which is right until you try to
+ * edit it: the overlay gives every SOURCE line its own contentEditable div and
+ * sizes it from `doc.lines`, so a three-line `$$…$$` collapsed to one row
+ * would leave two zero-height divs for the caret to fall into. Expanding the
+ * span while it is being edited is the same rule the renderer already applies
+ * per line — show the source you are typing — just promoted from a line to a
+ * whole formula, so every line of it keeps its natural height.
+ */
+function expandEditedSpans(blocks: ParsedBlock[], rawLineIndices?: Set<number>): ParsedBlock[] {
+  if (!rawLineIndices?.size || !blocks.some((b) => b.lineCount > 1)) return blocks;
+  const out: ParsedBlock[] = [];
+  for (const block of blocks) {
+    const lines = block.lineCount;
+    let edited = false;
+    for (let i = 0; i < lines && !edited; i++) edited = rawLineIndices.has(block.lineIndex + i);
+    if (!edited) { out.push(block); continue; }
+    let offset = block.sourceStart;
+    block.content.split('\n').forEach((line, i) => {
+      out.push({
+        type: 'paragraph', content: line, displayContent: line, prefixLength: 0,
+        sourceStart: offset, sourceEnd: offset + line.length,
+        lineIndex: block.lineIndex + i, lineCount: 1,
+      });
+      offset += line.length + 1;
+    });
+  }
+  return out;
 }
 
 function buildTextDecoration(underline: boolean, strikethrough: boolean): string {
@@ -375,7 +438,7 @@ export async function layoutSvgText(
       return fontRegular;
     };
 
-    const blocks = parseBlocks(text || '');
+    const blocks = expandEditedSpans(parseBlocks(text || ''), rawLineIndices);
     const baseFontSize = style.fontSize;
     const lineHeight = style.lineHeight || 1.2;
     const pathsOut: SvgPath[] = [];
@@ -384,7 +447,7 @@ export async function layoutSvgText(
 
     for (let blockIdx = 0; blockIdx < blocks.length; blockIdx++) {
       const block = blocks[blockIdx];
-      const sourceLineIdx = blockIdx; // parseBlocks → one block per source line
+      const sourceLineIdx = block.lineIndex;
       const lineYTop = yCursor;
       let lineBaseline = -1;
       const multiplier = getBlockFontMultiplier(block.type);
@@ -436,32 +499,33 @@ export async function layoutSvgText(
 
       for (const seg of segments) {
         // Math follows the element's own choice, else whatever its text font
-        // pairs with — so prose and equations match by default. Null means
-        // "could not be drawn": either the TeX did not convert or there is no
-        // DOMParser in this environment.
+        // pairs with — so prose and equations match by default. An empty list
+        // means "could not be drawn": either the TeX did not convert or there
+        // is no DOMParser in this environment.
         const parsed = seg.type === 'latex'
-          ? await parseMathSegment(seg, style, blockFontSize)
-          : null;
-        if (parsed) {
+          ? await parseMathSegment(seg, style, blockFontSize, boxWidth)
+          : [];
+        if (parsed.length > 0) {
           const mathColor = style.color;
-          const unit: PlacedUnit = {
-            kind: 'math',
-            widthPx: parsed.widthPx,
-            heightPx: parsed.heightPx,
-            aboveBaseline: parsed.aboveBaseline,
-            belowBaseline: parsed.belowBaseline,
-            emitPaths: (x, y) => parsed.emitPaths(x, y, mathColor),
-          };
-          if (seg.isBlock) {
-            if (curLineWidth > 0) startNewLine();
+          if (seg.isBlock && curLineWidth > 0) startNewLine();
+          for (const chunk of parsed) {
+            const unit: PlacedUnit = {
+              kind: 'math',
+              widthPx: chunk.widthPx,
+              heightPx: chunk.heightPx,
+              aboveBaseline: chunk.aboveBaseline,
+              belowBaseline: chunk.belowBaseline,
+              emitPaths: (x, y) => chunk.emitPaths(x, y, mathColor),
+            };
+            // Each chunk is a break opportunity MathJax vouched for, so one
+            // that does not fit starts the next row. A formula that needed no
+            // breaking is a single chunk and lands exactly where it used to.
+            if (curLineWidth > 0 && curLineWidth + chunk.widthPx > boxWidth) startNewLine();
             lines[lines.length - 1].push(unit);
-            curLineWidth = parsed.widthPx;
-            startNewLine();
-          } else {
-            if (curLineWidth + parsed.widthPx > boxWidth && curLineWidth > 0) startNewLine();
-            lines[lines.length - 1].push(unit);
-            curLineWidth += parsed.widthPx;
+            curLineWidth += chunk.widthPx;
           }
+          // Display math owns its rows: it never shares one with running text.
+          if (seg.isBlock) startNewLine();
           continue;
         }
 
@@ -598,6 +662,14 @@ export async function layoutSvgText(
         baseline: lineBaseline >= 0 ? lineBaseline : lineYTop + blockFontSize * 0.8,
         source: block.content,
       });
+      // `lines` is indexed BY SOURCE LINE — the edit overlay sizes one
+      // contentEditable div per line from it, so the array cannot be shorter
+      // than the text. A math span that covers several lines has already drawn
+      // all of them as one formula on the row above, so its remaining lines
+      // contribute empty rows that take up no height.
+      for (let k = 1; k < block.lineCount; k++) {
+        linesOut.push({ yTop: yCursor, yBottom: yCursor, baseline: yCursor, source: '' });
+      }
     }
 
     const totalHeight = yCursor;

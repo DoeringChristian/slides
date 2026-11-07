@@ -66,7 +66,7 @@ describe('font registry', () => {
   it('falls back to the text font pairing when no math font is set', () => {
     // The point of the pairing: picking Libertinus text must not leave
     // equations in a different face.
-    expect(resolveMathFont('Libertinus Serif', undefined).id).toBe('mathjax-termes');
+    expect(resolveMathFont('Libertinus Serif', undefined).id).toBe('mathjax-stix2');
     expect(resolveMathFont('Inter', undefined).id).toBe('mathjax-newcm');
     // A legacy family resolves through the default face's pairing.
     expect(resolveMathFont('Arial', undefined).id).toBe(textFont('Arial').defaultMathFont);
@@ -76,7 +76,7 @@ describe('font registry', () => {
     expect(resolveMathFont('Libertinus Serif', 'mathjax-stix2').id).toBe('mathjax-stix2');
     // An unknown id must not win — it falls back rather than breaking layout.
     expect(resolveMathFont('Libertinus Serif', 'mathjax-nonexistent').id)
-      .toBe('mathjax-termes');
+      .toBe('mathjax-stix2');
     expect(mathFont('mathjax-nonexistent').id).toBe(DEFAULT_MATH_FONT);
   });
 
@@ -96,10 +96,11 @@ describe('font registry', () => {
     expect(MATH_FONTS.map((f) => f.id)).not.toContain('mathjax-euler');
   });
 
-  it('pairs Libertinus with the closest published math face', () => {
+  it('pairs Libertinus with the published math face closest to newtxmath', () => {
     // MathJax publishes no Libertinus package yet, so the SIGGRAPH pairing
-    // falls to Termes (Times clone, closest to acmart's newtxmath). This
-    // assertion is the reminder to flip it once Libertinus data is generated.
-    expect(textFont('Libertinus Serif').defaultMathFont).toBe('mathjax-termes');
+    // is whichever published face measures closest to a real acmart render
+    // (STIX Two, at 3.8% mean width error against Termes' 12.4% — see the
+    // table in fontRegistry.ts). Flip it once Libertinus data is generated.
+    expect(textFont('Libertinus Serif').defaultMathFont).toBe('mathjax-stix2');
   });
 });

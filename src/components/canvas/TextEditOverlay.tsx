@@ -13,6 +13,7 @@ import { maxLabelWidthFor } from '../../utils/model/syncDependents';
 import { SVGTextPaths } from '../svg/SVGTextPaths';
 import { editFontFamily, injectFontFaces, nativeTextBaseline } from '../../utils/text/glyphPaths';
 import { beginTextEditSession, getTextEditInitialText } from '../../store/textEditSession';
+import { createTextEditHistory, type TextEditHistory } from '../../utils/text/textEditHistory';
 import { hasContentSizing, layoutUserText, measureUserText, textSizingWidth } from '../../utils/text/userTextSizing';
 import type { TextElement } from '../../types/presentation';
 
@@ -57,6 +58,13 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom, onPreview }) 
   // eslint-disable-next-line react-hooks/purity -- captures the mount timestamp once; the useRef initializer only runs on mount
   const mountTimeRef = useRef(Date.now());
   const sessionRef = useRef<ReturnType<typeof beginTextEditSession> | null>(null);
+  // Undo/redo WITHIN the session. The presentation's own stack cannot serve
+  // here: an edit reaches the store once, when editing ends, so until then
+  // Ctrl+Z would reach past the text being typed to whatever happened before.
+  const historyRef = useRef<TextEditHistory | null>(null);
+  // Set while an undo is being applied, so replaying a snapshot is not itself
+  // recorded as an edit — that would discard the redo stack on every undo.
+  const applyingHistoryRef = useRef(false);
   const rawLinesRef = useRef<Set<number>>(new Set());
   const [rawLines, setRawLinesState] = useState<Set<number>>(new Set());
   const setRawLines = (next: Set<number>) => {
@@ -234,6 +242,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom, onPreview }) 
       sessionRef.current = beginTextEditSession(activeSlideId, textElement);
       liveTextRef.current = sessionRef.current.initialText;
       setLiveText(sessionRef.current.initialText);
+      historyRef.current = createTextEditHistory({ text: sessionRef.current.initialText, caret: 0 });
     }
     const text = liveTextRef.current;
     mountTimeRef.current = Date.now();
@@ -342,7 +351,11 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom, onPreview }) 
     if (!editorRef.current || !textElement) return;
     liveTextRef.current = getTextFromEditor();
     setLiveText(liveTextRef.current);
-  }, [getTextFromEditor, textElement]);
+    historyRef.current?.record({
+      text: liveTextRef.current,
+      caret: getSelectionRange()?.[1] ?? liveTextRef.current.length,
+    });
+  }, [getTextFromEditor, getSelectionRange, textElement]);
 
   // Structural edits must commit their DOM and caret before the next native
   // event. A deferred frame can lose typing or steal a later user selection.
@@ -350,6 +363,10 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom, onPreview }) 
     liveTextRef.current = newText;
     flushSync(() => setLiveText(newText));
     setCursorPosition(newCursor);
+    // Structural edits (Enter, paste, line-crossing deletes) never reach
+    // `handleInput` — they are applied through state instead of letting the
+    // browser touch the DOM — so they record here.
+    if (!applyingHistoryRef.current) historyRef.current?.record({ text: newText, caret: newCursor });
   }, [setCursorPosition]);
 
   // Apply an Enter at [selStart, selEnd], with bullet / numbered list
@@ -515,6 +532,27 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom, onPreview }) 
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     initialCaretClaimedRef.current = true;
+    const key = e.key.toLowerCase();
+    if ((e.ctrlKey || e.metaKey) && (key === 'z' || key === 'y')) {
+      // Both are claimed here even when there is nothing left to undo. The
+      // alternative is letting Ctrl+Z fall through to the presentation's undo
+      // stack, which does not contain this edit and would revert whatever the
+      // user did BEFORE they started typing — while leaving the typing in
+      // place. preventDefault also stops the browser's own undo, which cannot
+      // work against a contentEditable whose DOM we rewrite.
+      e.preventDefault();
+      e.stopPropagation();
+      const history = historyRef.current;
+      if (!history) return;
+      const caret = getSelectionRange()?.[1] ?? liveTextRef.current.length;
+      const next = key === 'y' || e.shiftKey
+        ? history.redo()
+        : history.undo({ text: liveTextRef.current, caret });
+      if (!next) return;
+      applyingHistoryRef.current = true;
+      try { replaceText(next.text, next.caret); } finally { applyingHistoryRef.current = false; }
+      return;
+    }
     if (e.key === 'Escape') {
       e.preventDefault();
       e.stopPropagation();
@@ -525,7 +563,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom, onPreview }) 
     // Stop canvas-level hotkeys (e.g. Backspace deleting the selected
     // element) from firing while we're editing.
     e.stopPropagation();
-  }, [setEditingTextId]);
+  }, [setEditingTextId, getSelectionRange, replaceText]);
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items;

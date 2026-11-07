@@ -88,9 +88,21 @@ export const TEXT_FONTS = [
       boldItalic: libertinusBoldItalicUrl,
     },
     // The SIGGRAPH pairing: acmart sets Libertine text against newtxmath in
-    // its libertine mode. Termes is the closest published match; swap this to
-    // Libertinus Math once its font data is generated.
-    defaultMathFont: 'mathjax-termes',
+    // its libertine mode. Termes looked like the obvious stand-in — newtxmath
+    // is Times-based and Termes is a Times clone — but measuring against a
+    // real acmart render says otherwise. Widths in em, LaTeX reference first:
+    //
+    //              greek run   digits   L/g/R   mean error
+    //   acmart        3.667     4.633   1.976        —
+    //   STIX Two      3.717     4.950   1.914      3.8%
+    //   Termes        4.595     5.000   2.052     12.4%
+    //
+    // MathJax's Termes sets italic Greek 25% wider than newtxmath does, which
+    // is exactly where an equation visibly stops matching the paper it came
+    // from. STIX Two is the scientific-publishing face and tracks newtxmath's
+    // metrics far more closely, so it is the pairing until Libertinus Math
+    // font data is generated. Reproduce with scripts/compare-math-fonts.mjs.
+    defaultMathFont: 'mathjax-stix2',
     notice:
       'Libertinus Serif 7.051 — Copyright (c) 2012-2024 The Libertinus Project Authors. '
       + 'SIL Open Font License 1.1. Designed by Philipp H. Poll and Khaled Hosny.',
@@ -131,8 +143,8 @@ export interface MathFontDef {
  *
  * Libertinus is also absent for now — MathJax publishes no Libertinus package,
  * so its data has to be generated from LibertinusMath-Regular.otf before it
- * can be listed. Until then Libertinus Serif pairs with Termes, the Times
- * clone closest to the newtxmath that acmart actually sets.
+ * can be listed. Until then Libertinus Serif pairs with STIX Two, which
+ * measures closest to the newtxmath that acmart actually sets.
  */
 export const MATH_FONTS = [
   {
@@ -156,13 +168,13 @@ export const MATH_FONTS = [
   {
     id: 'mathjax-stix2',
     label: 'STIX Two',
-    blurb: 'Scientific-publishing standard; pairs with Times-like serifs.',
+    blurb: 'Scientific-publishing standard; the closest match to acmart/SIGGRAPH.',
     load: () => import('@mathjax/mathjax-stix2-font/js/svg.js'),
   },
   {
     id: 'mathjax-termes',
     label: 'TeX Gyre Termes',
-    blurb: 'Times clone; closest to the newtxmath acmart sets.',
+    blurb: 'Times clone; sets italic Greek wider than newtxmath does.',
     load: () => import('@mathjax/mathjax-termes-font/js/svg.js'),
   },
   {

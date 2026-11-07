@@ -159,3 +159,85 @@ describe('the whole expression actually reaches the slide', () => {
     expect(vb![2] / ex).toBeLessThan(470);
   }, 30_000);
 });
+
+describe('wrapping a formula that does not fit', () => {
+  beforeEach(() => { clearLatexCache(); });
+
+  const roots = (svg: string) => (svg.match(/<svg/g) ?? []).length;
+  const placements = (svg: string) => (svg.match(/<use/g) ?? []).length;
+  /** Outer viewBox, in MathJax's own unit of 1/1000 em. */
+  const box = (svg: string) => {
+    const vb = svg.match(/viewBox="([-\d.]+) ([-\d.]+) ([\d.]+) ([\d.]+)"/);
+    return { widthEm: Number(vb![3]) / 1000, heightEm: Number(vb![4]) / 1000 };
+  };
+
+  const LONG = String.raw`\mathcal{L}\,\mathfrak{g}\,\mathbb{R}^3\,\nabla\cdot\vec{E}\quad \sum_{i=1}^{N}\prod_k\oint\iint\quad \left\langle \frac{\partial^2 u}{\partial t^2}\right\rangle \le \sqrt[3]{\xi}\quad 0123456789`;
+
+  it('leaves an unwrapped render exactly as it was', async () => {
+    // The caller only asks for wrapping when the natural render overflows, so
+    // every formula that fits must be untouched by this feature.
+    const plain = await texFragmentToSvg(LONG, false, 'mathjax-stix2');
+    expect(roots(plain)).toBe(1);
+    expect(plain).not.toContain('mjx-break');
+  }, 30_000);
+
+  it('wraps DISPLAY math into one svg, at the width it was given', async () => {
+    // MathJax breaks display math itself, with the continuation lines aligned
+    // — the real TeX algorithm, better than anything we could do from outside
+    // — and hands back a single taller svg.
+    const natural = await texFragmentToSvg(LONG, true, 'mathjax-stix2');
+    const wrapped = await texFragmentToSvg(LONG, true, 'mathjax-stix2', { widthEm: 12 });
+    expect(roots(wrapped)).toBe(1);
+    expect(placements(wrapped)).toBe(placements(natural));
+    // Breaking happens at legal points only, so a subexpression that cannot
+    // be broken — a fraction inside stretchy delimiters, a long root — can
+    // still push a row past the asked-for width. Measured overshoot here is
+    // ~7%; what matters is that it tracks the request instead of ignoring it.
+    expect(box(wrapped).widthEm).toBeLessThan(12 * 1.15);
+    expect(box(wrapped).widthEm).toBeLessThan(box(natural).widthEm * 0.7);
+    expect(box(wrapped).heightEm).toBeGreaterThan(box(natural).heightEm);
+  }, 30_000);
+
+  it('narrower means taller', async () => {
+    const wide = await texFragmentToSvg(LONG, true, 'mathjax-stix2', { widthEm: 20 });
+    const narrow = await texFragmentToSvg(LONG, true, 'mathjax-stix2', { widthEm: 10 });
+    expect(box(narrow).widthEm).toBeLessThan(box(wide).widthEm);
+    expect(box(narrow).heightEm).toBeGreaterThan(box(wide).heightEm);
+  }, 30_000);
+
+  it('gives INLINE math back as break opportunities for the caller to flow', async () => {
+    // Inline breaking ignores the requested width and breaks at EVERY legal
+    // point, which is not a failure: MathJax is handing the host its break
+    // opportunities. The text layout engine packs them into rows, because it
+    // is the only thing that knows what else shares the line.
+    const chunks = await texFragmentToSvg(LONG, false, 'mathjax-stix2', { widthEm: 12 });
+    expect(roots(chunks)).toBeGreaterThan(1);
+    // Nothing may be lost in the split — that was the original bug.
+    const whole = await texFragmentToSvg(LONG, false, 'mathjax-stix2');
+    expect(placements(chunks)).toBe(placements(whole));
+  }, 30_000);
+
+  it('keeps the glyph defs, which only the first chunk carries', async () => {
+    // `fontCache: 'local'` emits each glyph once, in the first chunk, and
+    // every later chunk <use>s an id defined there. Parsing chunks apart
+    // would render everything after the first as empty.
+    const chunks = await texFragmentToSvg(LONG, false, 'mathjax-stix2', { widthEm: 12 });
+    expect(chunks.indexOf('<defs>')).toBeLessThan(chunks.indexOf('</svg>'));
+  }, 30_000);
+
+  it('caches wrapped and unwrapped renders apart', async () => {
+    const plain = await texFragmentToSvg(LONG, true, 'mathjax-stix2');
+    const wrapped = await texFragmentToSvg(LONG, true, 'mathjax-stix2', { widthEm: 10 });
+    expect(wrapped).not.toBe(plain);
+    // ...and a second width is not served the first one's result.
+    const other = await texFragmentToSvg(LONG, true, 'mathjax-stix2', { widthEm: 18 });
+    expect(other).not.toBe(wrapped);
+  }, 30_000);
+
+  it('restores the options afterwards, so the next formula is unwrapped', async () => {
+    await texFragmentToSvg(LONG, false, 'mathjax-stix2', { widthEm: 8 });
+    const after = await texFragmentToSvg(String.raw`a+b=c`, false, 'mathjax-stix2');
+    expect(roots(after)).toBe(1);
+    expect(after).not.toContain('mjx-break');
+  }, 30_000);
+});

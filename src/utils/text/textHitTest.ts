@@ -1,5 +1,5 @@
 import type { TextElement } from '../../types/presentation';
-import { parseBlocks, getBlockFontMultiplier, parseInlineSegments } from '../../components/canvas/CustomMarkdownRenderer';
+import { parseBlocks, blockForLine, getBlockFontMultiplier, parseInlineSegments } from '../../components/canvas/CustomMarkdownRenderer';
 import { editFontFamily, nativeTextBaseline } from './glyphPaths';
 import { textInsets } from './boundTextLayout';
 import { textRowMetrics, type SvgTextDoc } from './textLayout';
@@ -128,7 +128,9 @@ export async function calculateCursorFromClick(
   // the last line → snap to the last line.
   const lineIdx = findClickedLine(doc, yInContent);
   const blocks = parseBlocks(text);
-  const block = blocks[lineIdx];
+  // Blocks are no longer 1:1 with lines — a math span written across lines is
+  // one block — so look the line up rather than indexing by it.
+  const block = blockForLine(blocks, lineIdx);
   if (!block) return text.length;
 
   // X-within-line: find the character offset in displayContent under the
@@ -137,7 +139,7 @@ export async function calculateCursorFromClick(
   const isHeader = block.type === 'h1' || block.type === 'h2' || block.type === 'h3';
   const blockFontSize = style.fontSize * getBlockFontMultiplier(block.type);
   const blockFontWeight = isHeader ? 'bold' : (style.fontWeight || 'normal');
-  const yInBlock = yInContent - doc.lines[lineIdx].yTop;
+  const yInBlock = yInContent - doc.lines[block.lineIndex].yTop;
   const charIndex = findCharIndexAt({
     text: block.displayContent,
     fontSize: blockFontSize,

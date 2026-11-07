@@ -16,6 +16,14 @@ export interface ParsedBlock {
   sourceStart: number;
   sourceEnd: number;
   prefixLength: number;
+  /** First source line this block covers. */
+  lineIndex: number;
+  /**
+   * How many source lines it covers. One for every block except a math span
+   * written across lines — `$$`, body, `$$` — which is a single formula and
+   * therefore a single block.
+   */
+  lineCount: number;
 }
 
 // Represents a segment of inline content (text, latex, link, or formatted text)
@@ -37,17 +45,68 @@ export interface InlineSegment {
   innerSourceStart?: number; // Position in source where inner content starts (after opening delimiter)
 }
 
+/**
+ * The inline grammar, as one alternation.
+ *
+ * Order matters: longer patterns first, so `$$` wins over `$` and `**` over
+ * `*`. Both delimiters of a math span may be separated by newlines — `[^$]`
+ * and `[\s\S]` match them — which is what makes a `$$`-on-its-own-line
+ * display equation one segment rather than three broken lines.
+ *
+ * Match: $$ ... $$ (block latex) | $ ... $ (inline latex) | [text](url) (link)
+ *        | **...** (bold) | __...__ (bold) | *...* (italic) | _..._ (italic)
+ *        | ~~...~~ (strikethrough) | ++...++ (underline)
+ */
+const INLINE_PATTERN =
+  /(\$\$[\s\S]*?\$\$|\$[^$]+?\$|\[[^\]]+\]\([^)]+\)|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_|~~[^~]+~~|\+\+[^+]+\+\+)/
+    .source;
+
+/**
+ * Math spans that cross a line break, as `[start, end)` source offsets.
+ *
+ * `parseBlocks` splits on newlines and `parseInlineSegments` then runs per
+ * block, so a formula whose delimiters sit on different lines used to match
+ * nothing at all: the canonical display form
+ *
+ *     $$
+ *     E = mc^2
+ *     $$
+ *
+ * rendered as three lines of literal source, and so did an inline `$…$` that
+ * happened to have a newline before its closing `$`. Worse, with the math
+ * span gone the remaining markdown rules chew on the TeX — `_[^_]+_` matches
+ * the subscripts in `\sum_{i=1}^{N}\prod_k` and italicises them.
+ *
+ * Detection runs the WHOLE inline grammar over the WHOLE text rather than
+ * just a math pattern, so a `$` that `parseInlineSegments` would have swallowed
+ * as part of a link or a bold run is not mistaken for a formula here. Only
+ * spans that actually cross a newline are reported; single-line ones already
+ * parse correctly and need no block merging.
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- shared parsing/rendering helper exported beside the component; full reload on edit is fine
+export function multiLineMathSpans(text: string): Array<{ start: number; end: number }> {
+  const spans: Array<{ start: number; end: number }> = [];
+  for (const match of text.matchAll(new RegExp(INLINE_PATTERN, 'g'))) {
+    const value = match[0];
+    if (value.startsWith('$') && value.includes('\n')) {
+      spans.push({ start: match.index, end: match.index + value.length });
+    }
+  }
+  return spans;
+}
+
+/** The block covering a source line, for consumers that index by line. */
+// eslint-disable-next-line react-refresh/only-export-components -- shared parsing/rendering helper exported beside the component; full reload on edit is fine
+export function blockForLine(blocks: ParsedBlock[], line: number): ParsedBlock | undefined {
+  return blocks.find((b) => line >= b.lineIndex && line < b.lineIndex + b.lineCount);
+}
+
 // Parse inline content to extract LaTeX, links, and formatted text segments
 // eslint-disable-next-line react-refresh/only-export-components -- shared parsing/rendering helper exported beside the component; full reload on edit is fine
 export function parseInlineSegments(content: string, sourceOffset: number): InlineSegment[] {
   const segments: InlineSegment[] = [];
 
-  // Combined regex for LaTeX, links, and formatting
-  // Order matters: longer patterns first to avoid partial matches
-  // Match: $$ ... $$ (block latex) | $ ... $ (inline latex) | [text](url) (link)
-  //        | **...** (bold) | __...__ (bold) | *...* (italic) | _..._ (italic)
-  //        | ~~...~~ (strikethrough) | ++...++ (underline)
-  const combinedRegex = /(\$\$[\s\S]*?\$\$|\$[^$]+?\$|\[[^\]]+\]\([^)]+\)|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_|~~[^~]+~~|\+\+[^+]+\+\+)/g;
+  const combinedRegex = new RegExp(INLINE_PATTERN, 'g');
 
   let lastIndex = 0;
   let match;
@@ -197,29 +256,49 @@ export function parseInlineSegments(content: string, sourceOffset: number): Inli
 // eslint-disable-next-line react-refresh/only-export-components -- shared parsing/rendering helper exported beside the component; full reload on edit is fine
 export function parseBlocks(text: string): ParsedBlock[] {
   const lines = text.split('\n');
+  const spans = multiLineMathSpans(text);
   const blocks: ParsedBlock[] = [];
   let sourcePos = 0;
 
-  for (const line of lines) {
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    const line = lines[lineIndex];
     const sourceStart = sourcePos;
     const sourceEnd = sourcePos + line.length;
 
+    // A line that begins strictly inside a math span is the continuation of a
+    // formula, not a block of its own: fold it into the block that opened the
+    // span so the segment parser sees both delimiters at once. The newline is
+    // kept — MathJax treats it as ordinary TeX whitespace, and dropping it
+    // would shift every source offset after this point.
+    const continuation = blocks.length > 0
+      && spans.some((span) => span.start < sourceStart && sourceStart < span.end);
+    if (continuation) {
+      const open = blocks[blocks.length - 1];
+      open.content += `\n${line}`;
+      open.displayContent += `\n${line}`;
+      open.sourceEnd = sourceEnd;
+      open.lineCount++;
+      sourcePos = sourceEnd + 1;
+      continue;
+    }
+
     let block: ParsedBlock;
 
+    const span = { sourceStart, sourceEnd, lineIndex, lineCount: 1 };
     if (line.startsWith('### ')) {
-      block = { type: 'h3', content: line, displayContent: line.slice(4), sourceStart, sourceEnd, prefixLength: 4 };
+      block = { type: 'h3', content: line, displayContent: line.slice(4), prefixLength: 4, ...span };
     } else if (line.startsWith('## ')) {
-      block = { type: 'h2', content: line, displayContent: line.slice(3), sourceStart, sourceEnd, prefixLength: 3 };
+      block = { type: 'h2', content: line, displayContent: line.slice(3), prefixLength: 3, ...span };
     } else if (line.startsWith('# ')) {
-      block = { type: 'h1', content: line, displayContent: line.slice(2), sourceStart, sourceEnd, prefixLength: 2 };
+      block = { type: 'h1', content: line, displayContent: line.slice(2), prefixLength: 2, ...span };
     } else if (/^[-*]\s/.test(line)) {
       // Keep the full line as displayContent to match editor exactly
-      block = { type: 'bullet', content: line, displayContent: line, sourceStart, sourceEnd, prefixLength: 0 };
+      block = { type: 'bullet', content: line, displayContent: line, prefixLength: 0, ...span };
     } else if (/^\d+\.\s/.test(line)) {
       // Keep the full line as displayContent to match editor exactly
-      block = { type: 'numbered', content: line, displayContent: line, sourceStart, sourceEnd, prefixLength: 0 };
+      block = { type: 'numbered', content: line, displayContent: line, prefixLength: 0, ...span };
     } else {
-      block = { type: 'paragraph', content: line, displayContent: line, sourceStart, sourceEnd, prefixLength: 0 };
+      block = { type: 'paragraph', content: line, displayContent: line, prefixLength: 0, ...span };
     }
 
     blocks.push(block);

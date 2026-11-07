@@ -23,8 +23,22 @@ import { loadMathFontData, loadMathFontRange, mathFont } from '../utils/text/fon
 // MathJax's types are not exported in a usable form for our subset of imports;
 // the document type is treated as opaque here.
 type MJDocument = {
-  adaptor: { innerHTML: (node: unknown) => string };
+  adaptor: {
+    innerHTML: (node: unknown) => string;
+    outerHTML: (node: unknown) => string;
+    childNodes: (node: unknown) => unknown[];
+    kind: (node: unknown) => string;
+  };
   convert: (input: string, options: { display: boolean }) => unknown;
+};
+
+/** The output jax's mutable options, the only way to vary line breaking per
+ *  expression — they are constructor options, but read at conversion time. */
+type MJOutput = {
+  options: {
+    displayOverflow: string;
+    linebreaks: { inline: boolean; width: string };
+  };
 };
 
 /** A document plus the retry driver that belongs to it.
@@ -37,6 +51,7 @@ type MJDocument = {
  *  only one that can serve a range it does not already have. */
 type MathJaxInstance = {
   doc: MJDocument;
+  svg: MJOutput;
   retry: <T>(fn: () => T) => Promise<T>;
 };
 
@@ -118,6 +133,7 @@ async function buildDocument(fontId: string): Promise<MathJaxInstance> {
   });
   return {
     doc: mathjax.document('', { InputJax: tex, OutputJax: svg }) as unknown as MJDocument,
+    svg: svg as unknown as MJOutput,
     retry: (mathjax as unknown as { handleRetriesFor: <T>(fn: () => T) => Promise<T> }).handleRetriesFor,
   };
 }
@@ -145,8 +161,51 @@ function ensureMathJax(fontId?: string): Promise<MathJaxInstance> {
 // come back with the previous font's outlines when the font changes.
 const texCache = new Map<string, string>();
 
-const cacheKey = (fontId: string, texStr: string, displayMode: boolean) =>
-  `${fontId}:${displayMode ? 'D' : 'I'}:${texStr}`;
+/**
+ * How much room the formula has, when the caller knows.
+ *
+ * Omitted means "render it at its natural width" — the fast path, and
+ * byte-identical to what an unwrapped render has always produced. Supplied,
+ * it unlocks line breaking, which MathJax expresses in two quite different
+ * ways depending on the mode (see `convertOnce`).
+ */
+export interface MathWrap {
+  /** Available width in em of the surrounding text. */
+  widthEm: number;
+}
+
+const cacheKey = (fontId: string, texStr: string, displayMode: boolean, wrap?: MathWrap) =>
+  `${fontId}:${displayMode ? 'D' : 'I'}:${wrap ? wrap.widthEm.toFixed(2) : '-'}:${texStr}`;
+
+/** Run `fn` with line breaking configured, then put the options back.
+ *
+ *  The options belong to the output jax, which is shared by every expression
+ *  in a font, so this must wrap a SYNCHRONOUS conversion — anything that
+ *  awaits in between would let another formula render under them. */
+function withLinebreaks<T>(svg: MJOutput, wrap: MathWrap | undefined, displayMode: boolean, fn: () => T): T {
+  if (!wrap) return fn();
+  const { linebreaks, displayOverflow } = svg.options;
+  const saved = { inline: linebreaks.inline, width: linebreaks.width, displayOverflow };
+  // Display math breaks inside ONE svg, and MathJax honours the width given
+  // here — this is the real TeX algorithm, with the continuation lines
+  // aligned and indented, so it is strictly better than anything we could do
+  // from outside. Inline math ignores the width and instead breaks at EVERY
+  // opportunity, returning one svg per piece; that is not a failure, it is
+  // MathJax handing the host its legal break points and expecting the host's
+  // own line breaker to flow them. Which is exactly how this codebase is
+  // arranged: the text layout engine owns line breaking, because math sits in
+  // a line beside shaped text whose metrics MathJax cannot see.
+  linebreaks.inline = !displayMode;
+  linebreaks.width = `${wrap.widthEm}em`;
+  svg.options.displayOverflow = 'linebreak';
+  try {
+    return fn();
+  } finally {
+    linebreaks.inline = saved.inline;
+    linebreaks.width = saved.width;
+    svg.options.displayOverflow = saved.displayOverflow;
+  }
+}
 
 /** Serialise one conversion. Safe only when every glyph range the expression
  *  needs is already resident — otherwise it aborts partway through (the sync
@@ -154,10 +213,18 @@ const cacheKey = (fontId: string, texStr: string, displayMode: boolean) =>
  *  The greedy body match is correct for the single top-level <svg> this
  *  produces: MathJax nests further <svg> elements for stretchy delimiters,
  *  and they belong to the body. */
-function convertOnce(doc: MJDocument, texStr: string, displayMode: boolean): string {
-  const raw = doc.adaptor.innerHTML(doc.convert(texStr, { display: displayMode }));
-  const m = raw.match(/<svg([^>]*)>([\s\S]*)<\/svg>/);
-  return m ? `<svg${m[1]}>${m[2]}</svg>` : raw;
+function convertOnce(
+  instance: MathJaxInstance, texStr: string, displayMode: boolean, wrap?: MathWrap,
+): string {
+  const { doc, svg } = instance;
+  const node = withLinebreaks(svg, wrap, displayMode, () => doc.convert(texStr, { display: displayMode }));
+  // Take the top-level <svg> children of the container rather than matching
+  // markup. Breaking yields several of them separated by <mjx-break>, and a
+  // single formula nests further <svg> elements for stretchy delimiters, so
+  // no regex over the serialised output can tell the two apart.
+  const roots = doc.adaptor.childNodes(node).filter((child) => doc.adaptor.kind(child) === 'svg');
+  if (roots.length === 0) return doc.adaptor.innerHTML(node);
+  return roots.map((root) => doc.adaptor.outerHTML(root)).join('');
 }
 
 /**
@@ -169,12 +236,14 @@ export async function texFragmentToSvg(
   texStr: string,
   displayMode: boolean,
   fontId?: string,
+  wrap?: MathWrap,
 ): Promise<string> {
   const id = mathFont(fontId).id;
-  const key = cacheKey(id, texStr, displayMode);
+  const key = cacheKey(id, texStr, displayMode, wrap);
   const hit = texCache.get(key);
   if (hit) return hit;
-  const { doc, retry } = await ensureMathJax(fontId);
+  const instance = await ensureMathJax(fontId);
+  const { doc, retry } = instance;
   // Pass 1 — warm the glyph ranges, and throw the output away.
   //
   // A conversion that reaches a glyph whose range is not resident ABORTS by
@@ -188,10 +257,11 @@ export async function texFragmentToSvg(
   // that happened to render before the first abort.
   //
   // So only the side effect of this pass is wanted.
-  await retry(() => doc.convert(texStr, { display: displayMode }));
+  await retry(() => withLinebreaks(instance.svg, wrap, displayMode,
+    () => doc.convert(texStr, { display: displayMode })));
   // Pass 2 — every range this expression touches is now in memory, so the
   // conversion completes in one attempt and yields exactly one <svg>.
-  const result = convertOnce(doc, texStr, displayMode);
+  const result = convertOnce(instance, texStr, displayMode, wrap);
   texCache.set(key, result);
   return result;
 }
@@ -214,15 +284,16 @@ export function texFragmentToSvgSync(
   texStr: string,
   displayMode: boolean,
   fontId?: string,
+  wrap?: MathWrap,
 ): string | null {
   const id = mathFont(fontId).id;
-  const key = cacheKey(id, texStr, displayMode);
+  const key = cacheKey(id, texStr, displayMode, wrap);
   const hit = texCache.get(key);
   if (hit) return hit;
   const instance = docs.get(id);
   if (!instance) return null;
   try {
-    const result = convertOnce(instance.doc, texStr, displayMode);
+    const result = convertOnce(instance, texStr, displayMode, wrap);
     texCache.set(key, result);
     return result;
   } catch {
