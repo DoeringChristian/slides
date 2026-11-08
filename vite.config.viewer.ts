@@ -19,8 +19,27 @@ function injectPayloadSentinel() {
 // Single-file viewer build. Entry is viewer.html → src/viewer-main.tsx → ViewerApp,
 // which mounts PresenterView. The editor UI (AppLayout, Toolbar, ProjectPicker,
 // vaultStore, export utilities) is never imported, so tree-shaking drops it.
+//
+// Fonts and MathJax cannot be dropped that way, because the player genuinely
+// reaches the code that would load them — it just never needs the result. An
+// export bakes text: `bakeLayouts` resolves every text element on every slide
+// and embeds the glyph outlines, so the player draws paths it was handed
+// rather than parsing a font file or running TeX. The two aliases below
+// replace the only modules that hold those bytes with same-shaped empties,
+// which takes ~30 MB of MathJax glyph tables and ~5 MB of text faces out of
+// every exported deck. The EDITABLE standalone export (vite.config.standalone)
+// deliberately keeps both: it can be typed into, so it needs live layout.
 export default defineConfig({
   base: './',
+  resolve: {
+    alias: [
+      // The regex must match the WHOLE specifier: `find` replaces only the
+      // matched part, so a partial match leaves the importer's `./` in front
+      // of an absolute path.
+      { find: /^.*\/fontSources$/, replacement: path.resolve(__dirname, 'src/utils/text/fontSources.viewer.ts') },
+      { find: /^.*\/mathjaxEngine$/, replacement: path.resolve(__dirname, 'src/services/mathjaxEngine.viewer.ts') },
+    ],
+  },
   define: {
     __SLIDES_STANDALONE_BUILD__: 'true',
     __SLIDES_EDITOR_ORIGIN__: JSON.stringify(editorOrigin),

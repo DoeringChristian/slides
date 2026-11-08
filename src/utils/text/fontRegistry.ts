@@ -24,14 +24,13 @@
  * equations in different faces.
  */
 
-import interRegularUrl from '../../assets/fonts/Inter-Regular.ttf';
-import interBoldUrl from '../../assets/fonts/Inter-Bold.ttf';
-import interItalicUrl from '../../assets/fonts/Inter-Italic.ttf';
-import interBoldItalicUrl from '../../assets/fonts/Inter-BoldItalic.ttf';
-import libertinusRegularUrl from '../../assets/fonts/LibertinusSerif-Regular.otf';
-import libertinusBoldUrl from '../../assets/fonts/LibertinusSerif-Bold.otf';
-import libertinusItalicUrl from '../../assets/fonts/LibertinusSerif-Italic.otf';
-import libertinusBoldItalicUrl from '../../assets/fonts/LibertinusSerif-BoldItalic.otf';
+// The bytes live in `fontSources`, which the viewer build aliases away: an
+// export draws baked outlines, so it needs no font files and no MathJax. This
+// file stays the single description of WHICH faces exist and what pairs with
+// what, in every build.
+import { TEXT_FONT_FILES, MATH_FONT_MODULES } from './fontSources';
+
+export { loadMathFontRange } from './fontSources';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Text fonts
@@ -66,12 +65,7 @@ export const TEXT_FONTS = [
     id: 'Inter',
     label: 'Inter',
     cssStack: "'Inter', system-ui, sans-serif",
-    variants: {
-      regular: interRegularUrl,
-      bold: interBoldUrl,
-      italic: interItalicUrl,
-      boldItalic: interBoldItalicUrl,
-    },
+    variants: TEXT_FONT_FILES['Inter'],
     // Inter is a UI sans; New Computer Modern is MathJax 4's default and the
     // least surprising partner until a sans math font is registered.
     defaultMathFont: 'mathjax-newcm',
@@ -81,12 +75,7 @@ export const TEXT_FONTS = [
     id: 'Libertinus Serif',
     label: 'Libertinus Serif',
     cssStack: "'Libertinus Serif', 'Linux Libertine O', Georgia, serif",
-    variants: {
-      regular: libertinusRegularUrl,
-      bold: libertinusBoldUrl,
-      italic: libertinusItalicUrl,
-      boldItalic: libertinusBoldItalicUrl,
-    },
+    variants: TEXT_FONT_FILES['Libertinus Serif'],
     // The SIGGRAPH pairing: acmart sets Libertine text against newtxmath in
     // its libertine mode. Termes looked like the obvious stand-in — newtxmath
     // is Times-based and Termes is a Times clone — but measuring against a
@@ -151,67 +140,67 @@ export const MATH_FONTS = [
     id: 'mathjax-newcm',
     label: 'New Computer Modern',
     blurb: "MathJax 4's default; the classic TeX look.",
-    load: () => import('@mathjax/mathjax-newcm-font/js/svg.js'),
+    load: MATH_FONT_MODULES['mathjax-newcm'],
   },
   {
     id: 'mathjax-tex',
     label: 'TeX',
     blurb: 'The face MathJax 3 shipped — matches older exports.',
-    load: () => import('@mathjax/mathjax-tex-font/js/svg.js'),
+    load: MATH_FONT_MODULES['mathjax-tex'],
   },
   {
     id: 'mathjax-modern',
     label: 'MathJax Modern',
     blurb: 'Latin Modern lineage; lighter than New Computer Modern.',
-    load: () => import('@mathjax/mathjax-modern-font/js/svg.js'),
+    load: MATH_FONT_MODULES['mathjax-modern'],
   },
   {
     id: 'mathjax-stix2',
     label: 'STIX Two',
     blurb: 'Scientific-publishing standard; the closest match to acmart/SIGGRAPH.',
-    load: () => import('@mathjax/mathjax-stix2-font/js/svg.js'),
+    load: MATH_FONT_MODULES['mathjax-stix2'],
   },
   {
     id: 'mathjax-termes',
     label: 'TeX Gyre Termes',
     blurb: 'Times clone; sets italic Greek wider than newtxmath does.',
-    load: () => import('@mathjax/mathjax-termes-font/js/svg.js'),
+    load: MATH_FONT_MODULES['mathjax-termes'],
   },
   {
     id: 'mathjax-pagella',
     label: 'TeX Gyre Pagella',
     blurb: 'Palatino clone; wider, calligraphic.',
-    load: () => import('@mathjax/mathjax-pagella-font/js/svg.js'),
+    load: MATH_FONT_MODULES['mathjax-pagella'],
   },
   {
     id: 'mathjax-bonum',
     label: 'TeX Gyre Bonum',
     blurb: 'Bookman clone; heavy, high contrast.',
-    load: () => import('@mathjax/mathjax-bonum-font/js/svg.js'),
+    load: MATH_FONT_MODULES['mathjax-bonum'],
   },
   {
     id: 'mathjax-schola',
     label: 'TeX Gyre Schola',
     blurb: 'Century Schoolbook clone; large x-height.',
-    load: () => import('@mathjax/mathjax-schola-font/js/svg.js'),
+    load: MATH_FONT_MODULES['mathjax-schola'],
   },
   {
     id: 'mathjax-dejavu',
     label: 'DejaVu',
     blurb: 'Sans math; pairs with a sans body face.',
-    load: () => import('@mathjax/mathjax-dejavu-font/js/svg.js'),
+    load: MATH_FONT_MODULES['mathjax-dejavu'],
   },
   {
     id: 'mathjax-fira',
     label: 'Fira',
     blurb: 'Sans math with a humanist feel.',
-    load: () => import('@mathjax/mathjax-fira-font/js/svg.js'),
+    load: MATH_FONT_MODULES['mathjax-fira'],
   },
   {
     id: 'mathjax-asana',
     label: 'Asana Math',
     blurb: 'Palatino-compatible with very wide symbol coverage.',
-    load: () => import('@mathjax/mathjax-asana-font/js/svg.js'),
+    load: MATH_FONT_MODULES['mathjax-asana'],
   },
 ] as const satisfies readonly MathFontDef[];
 
@@ -278,46 +267,6 @@ export async function loadMathFontData(id: string | undefined): Promise<unknown>
 // ─────────────────────────────────────────────────────────────────────────────
 // Dynamic glyph ranges
 // ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * A MathJax 4 font is NOT one module. The package's `svg.js` carries the
- * common variants (roman, italic, bold, the operator sizes) and leaves ~40
- * further ranges — calligraphic, script, fraktur, double-struck, accents,
- * large delimiters, the alphabets — in `svg/dynamic/*.js`, to be fetched at
- * render time. MathJax asks for them BY MODULE SPECIFIER through
- * `mathjax.asyncLoad`, and if that hook is unset it throws
- * "MathJax retry -- an asynchronous action is required".
- *
- * So the base ranges rendered and everything else failed: `x^2`, `\frac` and
- * `\sum` worked while `\mathcal`, `\mathscr`, `\mathfrak`, `\mathbb`,
- * `\boldsymbol` and `\left\langle` fell back to red source text. A single
- * such token anywhere in an expression fails the whole expression.
- *
- * A bare specifier resolves in neither the browser nor a Vite build, so the
- * resolution is handed to the bundler: each range becomes its own lazy chunk,
- * and the range modules' own relative imports (`../../svg.js`) resolve
- * normally. This lives beside the font definitions because that is what it
- * is — the glob covers exactly the packages MATH_FONTS names.
- */
-const DYNAMIC_RANGES = import.meta.glob<Record<string, unknown>>(
-  '/node_modules/@mathjax/*/mjs/svg/dynamic/*.js',
-);
-
-/**
- * Resolve one dynamic range module for MathJax.
- *
- * The specifier looks like
- * `@mathjax/mathjax-newcm-font/js/svg/dynamic/calligraphic.js` — `js/` is the
- * package's own export alias for `mjs/`, which is what exists on disk and
- * therefore what the glob keys use.
- */
-export function loadMathFontRange(specifier: string): Promise<unknown> {
-  const parts = specifier.match(/(@mathjax\/[^/]+)\/(?:js|mjs)\/svg\/dynamic\/([^/]+?)(?:\.js)?$/);
-  const load = parts && DYNAMIC_RANGES[`/node_modules/${parts[1]}/mjs/svg/dynamic/${parts[2]}.js`];
-  return load
-    ? load()
-    : Promise.reject(new Error(`No such MathJax font range: ${specifier}`));
-}
 
 /**
  * Families offered in the pickers. Never hand-listed: only a bundled face can

@@ -104,3 +104,43 @@ describe('font registry', () => {
     expect(textFont('Libertinus Serif').defaultMathFont).toBe('mathjax-stix2');
   });
 });
+
+describe('the viewer build drops the bytes without changing the registry', () => {
+  // A presentation export draws outlines baked at export time, so it needs no
+  // font files and no MathJax — 35 MB of the old 39 MB export was data for
+  // characters the deck did not contain. vite.config.viewer.ts aliases
+  // `fontSources` and `mathjaxEngine` to same-shaped empties. These assertions
+  // are what keeps "same-shaped" true: a face or math font added to one module
+  // and not the other would fail silently, in exported decks only.
+  it('offers the same font ids in both source modules', async () => {
+    const real = await import('./fontSources');
+    const viewer = await import('./fontSources.viewer');
+    expect(Object.keys(viewer.TEXT_FONT_FILES).sort())
+      .toEqual(Object.keys(real.TEXT_FONT_FILES).sort());
+    expect(Object.keys(viewer.MATH_FONT_MODULES).sort())
+      .toEqual(Object.keys(real.MATH_FONT_MODULES).sort());
+  });
+
+  it('covers every registered face and math font', async () => {
+    const { TEXT_FONT_FILES, MATH_FONT_MODULES } = await import('./fontSources');
+    for (const font of TEXT_FONTS) {
+      expect(Object.keys(TEXT_FONT_FILES), `${font.id} has no files`).toContain(font.id);
+    }
+    for (const font of MATH_FONTS) {
+      expect(Object.keys(MATH_FONT_MODULES), `${font.id} has no module`).toContain(font.id);
+    }
+  });
+
+  it('exposes the same API surface from both MathJax engine modules', async () => {
+    const real = await import('../../services/mathjaxEngine');
+    const viewer = await import('../../services/mathjaxEngine.viewer');
+    expect(typeof viewer.buildMathJaxDocument).toBe(typeof real.buildMathJaxDocument);
+  });
+
+  it('fails loudly rather than rendering nothing when asked for a font it dropped', async () => {
+    const viewer = await import('./fontSources.viewer');
+    await expect(viewer.MATH_FONT_MODULES['mathjax-stix2']()).rejects.toThrow(/viewer build/);
+    await expect(viewer.loadMathFontRange('@mathjax/x/js/svg/dynamic/calligraphic.js'))
+      .rejects.toThrow(/viewer build/);
+  });
+});
