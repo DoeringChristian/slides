@@ -42,3 +42,6 @@ inkwell/
 # Regression fixture: real unpublished talk content; this repo is public.
 # tests/gpis-deck.test.ts skips when it is absent.
 tests/fixtures/gpis-53-slides.json
+
+# Output of scripts/mathfont/compare-render.mjs (LaTeX vs app renders)
+compare-out
