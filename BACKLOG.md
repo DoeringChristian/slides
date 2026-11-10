@@ -8,6 +8,31 @@ later session can confirm the item is still real before acting on it.
 
 ## Queued
 
+### LLM integration, with rich embedded displays
+Bring back LLM integration, and widen what it can author: beyond text and
+shapes, an element type that hosts a **rich display** — raw HTML, a Three.js /
+WebGL scene, a canvas sketch — so a generated slide can carry an interactive or
+3D figure rather than a picture of one.
+
+Open questions for whoever picks this up:
+- **Element model.** A new `SlideElement` variant (`html` / `scene`) in
+  `src/types/presentation.ts`, with its own `ySchema` field set and a
+  `presenterUtils` dispatch branch. Keyframe interpolation needs a story: these
+  have no outline to morph, so position/size/opacity lerp and the payload
+  snaps — decide where the snap happens (t=0.5, like `shapeType`).
+- **The shared-renderer rule cuts hard here.** The editor canvas, presenter,
+  previews and exports all draw through the same leaf renderers, and an
+  `<iframe>` or a WebGL canvas does not live inside an `<svg>` the way a path
+  does. Either it renders as a foreignObject the exporters can rasterise, or
+  exports get a baked still — that choice decides whether PDF/PPTX export stays
+  honest.
+- **Untrusted code.** LLM-authored HTML and JS is untrusted by construction, so
+  it needs a sandbox (sandboxed iframe, no same-origin, no network) in the
+  editor, the presenter AND the standalone export, where there is no server to
+  mediate. Decide this before any of it ships.
+- **Export size.** A Three.js scene means shipping a renderer into the
+  standalone template; the editable export is already ~42 MB.
+
 ### Fonts, including math text
 Implement selectable fonts that apply to **math text as well as body text** —
 today the LaTeX pipeline renders math in its own fixed face regardless of the
