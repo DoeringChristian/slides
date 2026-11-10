@@ -102,6 +102,40 @@ function withLinebreaks<T>(svg: MJOutput, wrap: MathWrap | undefined, displayMod
  *  The greedy body match is correct for the single top-level <svg> this
  *  produces: MathJax nests further <svg> elements for stretchy delimiters,
  *  and they belong to the body. */
+/**
+ * Drop the `data-*` annotations MathJax hangs on every node.
+ *
+ * `data-latex` carries the expression's own TeX source, and liteAdaptor writes
+ * attribute values without escaping `<` or `>`. So `$a < b$` serialises to
+ * `data-latex="a < b"` and the result is not well-formed XML — and
+ * `parseMathChunks` parses with `image/svg+xml`, which is strict. It saw a
+ * parsererror, returned no chunks, and the segment fell back to showing its
+ * own source. Every formula containing an inequality rendered as literal TeX,
+ * which looks like "math is broken" rather than like a parse failure.
+ *
+ * Escaping the values would fix it too, but nothing reads these attributes —
+ * the renderers walk `use`/`path`/`rect` and their transforms — and they are a
+ * large share of the markup, so dropping them also shrinks every baked export.
+ * A value cannot contain a literal `"` (liteAdaptor does escape that one), so
+ * `[^"]*` is exact rather than merely adequate.
+ */
+function stripDataAttrs(svg: string): string {
+  return svg.replace(/ data-[\w-]+="[^"]*"/g, '');
+}
+
+/**
+ * The x-height, in em, of a math font that has already been loaded.
+ *
+ * Undefined before the font loads, which is why callers ask only after an
+ * `await texFragmentToSvg(...)` has resolved for the same id — by then the
+ * document exists and so does its font data. Returning undefined rather than
+ * a stand-in keeps a caller from silently scaling by a guessed number.
+ */
+export function mathXHeightEm(fontId?: string): number | undefined {
+  const x = docs.get(mathFont(fontId).id)?.svg.font?.params?.x_height;
+  return typeof x === 'number' && x > 0 ? x : undefined;
+}
+
 function convertOnce(
   instance: MathJaxInstance, texStr: string, displayMode: boolean, wrap?: MathWrap,
 ): string {
@@ -112,8 +146,8 @@ function convertOnce(
   // single formula nests further <svg> elements for stretchy delimiters, so
   // no regex over the serialised output can tell the two apart.
   const roots = doc.adaptor.childNodes(node).filter((child) => doc.adaptor.kind(child) === 'svg');
-  if (roots.length === 0) return doc.adaptor.innerHTML(node);
-  return roots.map((root) => doc.adaptor.outerHTML(root)).join('');
+  if (roots.length === 0) return stripDataAttrs(doc.adaptor.innerHTML(node));
+  return stripDataAttrs(roots.map((root) => doc.adaptor.outerHTML(root)).join(''));
 }
 
 /**

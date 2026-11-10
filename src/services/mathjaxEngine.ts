@@ -34,6 +34,9 @@ export type MJOutput = {
     displayOverflow: string;
     linebreaks: { inline: boolean; width: string };
   };
+  /** The loaded font's own metrics. `params.x_height` is in em and is what
+   *  the layout scales math by so it matches the text font's x-height. */
+  font: { params: { x_height: number } };
 };
 
 /** A document plus the retry driver that belongs to it.

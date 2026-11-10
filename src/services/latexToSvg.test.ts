@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  clearLatexCache, isMathJaxReady, preloadMathJax, texFragmentToSvg, texFragmentToSvgSync,
+  clearLatexCache, isMathJaxReady, mathXHeightEm, preloadMathJax, texFragmentToSvg,
+  texFragmentToSvgSync,
 } from './latexToSvg';
 import { MATH_FONTS } from '../utils/text/fontRegistry';
 
@@ -84,7 +85,9 @@ describe('latexToSvg', () => {
 
   it('can load every registered math font', async () => {
     // Catches a renamed or unpublished package, which would otherwise surface
-    // only when a user picked that font.
+    // only when a user picked that font. A `tex` entry is excluded because it
+    // has no MathJax data at all — it is drawn by the local TeX installation,
+    // and fontRegistry.test.ts pins that it stays out of this path.
     for (const font of MATH_FONTS) {
       const svg = await texFragmentToSvg(String.raw`x^2`, false, font.id);
       expect(outlines(svg).length, `${font.id} produced no outlines`).toBeGreaterThan(0);
@@ -239,5 +242,91 @@ describe('wrapping a formula that does not fit', () => {
     const after = await texFragmentToSvg(String.raw`a+b=c`, false, 'mathjax-stix2');
     expect(roots(after)).toBe(1);
     expect(after).not.toContain('mjx-break');
+  }, 30_000);
+});
+
+describe('output is well-formed XML, which the layout parses strictly', () => {
+  beforeEach(() => {
+    clearLatexCache();
+  });
+
+  /**
+   * The condition that broke: an unescaped `<` or `>` inside an attribute
+   * value. `parseMathChunks` parses with `image/svg+xml`, so one of these
+   * anywhere in the markup produced a parsererror, no chunks, and a formula
+   * that silently showed its own TeX source instead of glyphs. Checked by
+   * pattern rather than by parsing because vitest runs in node here, where
+   * there is no DOMParser, and @xmldom is only a transitive dependency.
+   */
+  const unescapedInAttr = (svg: string) => svg.match(/="[^"]*[<>][^"]*"/g) ?? [];
+
+  it.each([
+    ['an inequality', 'a < b'],
+    ['the other inequality', 'x > 0'],
+    ['both, inside a set', String.raw`\{x : x<1\}`],
+    ['a chain', 'a < b < c'],
+    ['angle brackets around a macro', String.raw`\langle x \rangle < \epsilon`],
+  ])('escapes nothing into an attribute for %s', async (_what, tex) => {
+    const svg = await texFragmentToSvg(tex, false, 'mathjax-newcm');
+    expect(unescapedInAttr(svg)).toEqual([]);
+    // And it really rendered, rather than coming back empty and well-formed.
+    expect(outlines(svg).length).toBeGreaterThan(2);
+  }, 30_000);
+
+  it('still renders the comparison glyph itself', async () => {
+    // The fix drops attributes, so the proof it dropped only metadata is that
+    // `a < b` has one more glyph than `ab` — the relation sign.
+    const withRel = await texFragmentToSvg('a < b', false, 'mathjax-newcm');
+    const without = await texFragmentToSvg('ab', false, 'mathjax-newcm');
+    expect(outlines(withRel).length).toBe(outlines(without).length + 1);
+  }, 30_000);
+
+  it('keeps the attributes the renderers actually read', async () => {
+    const svg = await texFragmentToSvg(String.raw`\frac{a}{b} < c`, false, 'mathjax-newcm');
+    // Geometry and references survive; only the data-* annotations go.
+    expect(svg).toMatch(/<use[^>]*(xlink:)?href="#/);
+    expect(svg).toMatch(/viewBox="/);
+    expect(svg).toMatch(/transform="/);
+    expect(svg).toMatch(/<rect/); // the fraction bar
+    expect(svg).not.toMatch(/\sdata-[\w-]+=/);
+  }, 30_000);
+});
+
+describe('the x-height that sizes math against prose', () => {
+  /**
+   * `parseMathChunks` scales math by textXHeight / mathXHeight. If this ever
+   * returns undefined for a loaded font the scaling silently becomes 1 and
+   * every equation goes back to being sized by the em — the exact defect this
+   * replaced, and invisible to every other test in the suite.
+   */
+  it('is undefined before the font loads and a real number after', async () => {
+    // A fresh module instance, because `clearLatexCache` deliberately keeps
+    // the loaded documents — by this point in the file every font is loaded.
+    vi.resetModules();
+    const fresh = await import('./latexToSvg');
+    expect(fresh.mathXHeightEm('mathjax-termes')).toBeUndefined();
+    await fresh.texFragmentToSvg('x', false, 'mathjax-termes');
+    expect(fresh.mathXHeightEm('mathjax-termes')).toBeCloseTo(0.441, 3);
+  }, 30_000);
+
+  it('is per font, not one number for all of them', async () => {
+    await Promise.all([
+      texFragmentToSvg('x', false, 'mathjax-termes'),
+      texFragmentToSvg('x', false, 'mathjax-stix2'),
+    ]);
+    const termes = mathXHeightEm('mathjax-termes');
+    const stix2 = mathXHeightEm('mathjax-stix2');
+    expect(termes).toBeDefined();
+    expect(stix2).toBeDefined();
+    // 0.441 vs 0.479: an 8.6% size difference between two faces that share an
+    // em. Pairing one where the other was expected is visible at a glance.
+    expect(stix2! / termes!).toBeGreaterThan(1.05);
+  }, 30_000);
+
+  it('resolves an unknown id the same way rendering does', async () => {
+    await texFragmentToSvg('x', false, undefined);
+    // Falls through mathFont() to the default face, so the scale and the
+    // glyphs can never come from different fonts.
+    expect(mathXHeightEm('mathjax-nonexistent')).toBe(mathXHeightEm(undefined));
   }, 30_000);
 });

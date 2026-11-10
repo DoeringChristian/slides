@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { samplePathD, setPathSamplerForTests } from './glyphPaths';
+import { parse } from 'opentype.js';
+import { samplePathD, setPathSamplerForTests, xHeightEm } from './glyphPaths';
 
 // samplePathD normally measures via a hidden SVG <path> probe
 // (getTotalLength / getPointAtLength), which node has no implementation
@@ -46,5 +48,53 @@ describe('samplePathD', () => {
     // afterEach cleared the sampler; explicitly ensure none is set.
     setPathSamplerForTests(null);
     expect(samplePathD('M 0 0 L 5 5', 4)).toEqual([]);
+  });
+});
+
+describe('xHeightEm', () => {
+  const load = (file: string) => {
+    const bytes = readFileSync(new URL(`../../assets/fonts/${file}`, import.meta.url));
+    return parse(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+  };
+
+  /**
+   * These are the numbers that size every equation against its prose, so a
+   * font-file swap that moves them should be a deliberate, visible change
+   * rather than a silent reflow of every deck.
+   */
+  test.each([
+    ['Inter-Regular.ttf', 0.5459],
+    ['LibertinusSerif-Regular.otf', 0.4290],
+  ])('reads %s from the real metrics', (file, expected) => {
+    expect(xHeightEm(load(file))).toBeCloseTo(expected, 4);
+  });
+
+  test('the two bundled faces disagree enough for the scaling to matter', () => {
+    // 27% apart. A math font sized for one looks wrong against the other,
+    // which is the whole reason parseMathChunks rescales.
+    const inter = xHeightEm(load('Inter-Regular.ttf'));
+    const libertinus = xHeightEm(load('LibertinusSerif-Regular.otf'));
+    expect(inter / libertinus).toBeGreaterThan(1.2);
+  });
+
+  test('measures the x glyph when OS/2 omits sxHeight', () => {
+    const real = load('LibertinusSerif-Regular.otf');
+    const withoutTable = {
+      tables: { os2: {} },
+      unitsPerEm: real.unitsPerEm,
+      charToGlyph: (c: string) => real.charToGlyph(c),
+    } as unknown as Parameters<typeof xHeightEm>[0];
+    // The top of lowercase x IS the x-height, so the fallback must land close
+    // to the metric it replaces rather than on the 0.5 last resort.
+    expect(xHeightEm(withoutTable)).toBeCloseTo(xHeightEm(real), 2);
+  });
+
+  test('falls back to half an em when there is nothing to measure', () => {
+    const empty = {
+      tables: { os2: {} },
+      unitsPerEm: 1000,
+      charToGlyph: () => undefined,
+    } as unknown as Parameters<typeof xHeightEm>[0];
+    expect(xHeightEm(empty)).toBe(0.5);
   });
 });

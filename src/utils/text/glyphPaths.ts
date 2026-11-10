@@ -131,6 +131,27 @@ export function injectFontFaces(): void {
 // Browsers round CSS font struts at each zoom/font size. Measure their actual
 // baseline once, rather than assuming the ideal half-leading formula is exact.
 const nativeBaselineCache = new Map<string, number>();
+/**
+ * The font's x-height in em.
+ *
+ * This is the metric that decides whether math looks the right size next to
+ * prose. A math font and a text font can share an em and still disagree
+ * wildly about how big a lowercase letter is — Libertinus Serif puts its
+ * x-height at 0.429em, STIX Two Math at 0.479 — and the eye reads the
+ * x-height, not the em. LaTeX packages scale the math font to the text font
+ * for exactly this reason (`newtxmath`'s `libertine` option is that scaling);
+ * `parseMathChunks` does the same with this number.
+ */
+export function xHeightEm(font: Font): number {
+  const sx = font.tables.os2?.sxHeight;
+  if (sx && font.unitsPerEm) return sx / font.unitsPerEm;
+  // OS/2 sxHeight is optional, so fall back to measuring the glyph it
+  // describes: the top of lowercase x above the baseline IS the x-height.
+  const box = font.charToGlyph('x')?.getBoundingBox?.();
+  if (box && Number.isFinite(box.y2) && font.unitsPerEm) return box.y2 / font.unitsPerEm;
+  return 0.5;
+}
+
 export function nativeTextBaseline(fontSize: number, advance: number, weight: string, fontStyle: string): number {
   const key = `${fontSize}|${advance}|${weight}|${fontStyle}`;
   const cached = nativeBaselineCache.get(key);
