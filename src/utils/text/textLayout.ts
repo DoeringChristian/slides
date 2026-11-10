@@ -15,9 +15,9 @@ import { parseTransformChain } from '../animation/morphGeometry';
 import { parseBlocks, parseInlineSegments, getBlockFontMultiplier, type ParsedBlock } from '../../components/canvas/CustomMarkdownRenderer';
 import type { InlineSegment } from '../../components/canvas/CustomMarkdownRenderer';
 import type { TextStyle } from '../../types/presentation';
-import { texFragmentToSvg } from '../../services/latexToSvg';
-import { loadFont, textToGlyphPaths, pathLengthFor } from './glyphPaths';
-import { resolveMathFont } from './fontRegistry';
+import { texFragmentToSvg, mathXHeightEm } from '../../services/latexToSvg';
+import { loadFont, textToGlyphPaths, pathLengthFor, xHeightEm } from './glyphPaths';
+import { resolveMathFont, textFont } from './fontRegistry';
 import type { SvgPath } from '../../components/svg/RenderPaths';
 export type { SvgPath } from '../../components/svg/RenderPaths';
 
@@ -194,6 +194,86 @@ interface MathChunk {
   emitPaths: (xCursor: number, baselineY: number, color: string) => SvgPath[];
 }
 
+/** One glyph ready to place: its outline, and the transform it carries
+ *  inside the SVG it came from. The outer pen transform is appended at emit
+ *  time, so the same glyph list serves any pen position. */
+type RawGlyph = { d: string; innerTr: string; localLen: number };
+
+/** id → path data for every `<defs>` entry in the document. */
+function collectDefs(doc: Document): Map<string, string> {
+  const defs = new Map<string, string>();
+  doc.documentElement.querySelectorAll('defs path').forEach((p) => {
+    const id = p.getAttribute('id');
+    const d = p.getAttribute('d');
+    if (id && d) defs.set(id, d);
+  });
+  return defs;
+}
+
+/**
+ * Every renderable glyph under `inner`, in document order, with its
+ * accumulated transform.
+ *
+ * `fontCache: 'local'` makes MathJax emit each outline once into `<defs>` and
+ * place it with `<use>`, so a glyph's position is the chain of transforms
+ * above it rather than anything on the element itself. Rules — fraction bars,
+ * radical overbars — arrive as literal `<path>` elements instead, with no
+ * `<defs>` entry, which is why both are collected here.
+ */
+function collectGlyphs(inner: Element, defs: Map<string, string>): RawGlyph[] {
+  const raws: RawGlyph[] = [];
+  const walk = (el: Element, parentTr: string): void => {
+    const tr = el.getAttribute('transform');
+    const combinedTr = tr ? (parentTr ? `${parentTr} ${tr}` : tr) : parentTr;
+
+    if (el.localName === 'use') {
+      const href = el.getAttribute('href') || el.getAttribute('xlink:href') || '';
+      const id = href.startsWith('#') ? href.slice(1) : href;
+      const d = defs.get(id);
+      if (d) raws.push({ d, innerTr: combinedTr, localLen: pathLengthFor(d) });
+      return;
+    }
+    if (el.localName === 'path' && !el.closest('defs')) {
+      const d = el.getAttribute('d');
+      if (d) raws.push({ d, innerTr: combinedTr, localLen: pathLengthFor(d) });
+      return;
+    }
+    for (const child of Array.from(el.children)) walk(child, combinedTr);
+  };
+  for (const child of Array.from(inner.children)) {
+    if (child.localName === 'defs') continue;
+    walk(child, '');
+  }
+  return raws;
+}
+
+/**
+ * Turn a glyph list into an emitter, given the pen-to-glyph transform.
+ *
+ * The glyphs are walked once and placed many times — the layout pass asks for
+ * the chunk's size before it knows where the chunk goes, and wrapping can move
+ * it afterwards.
+ */
+function glyphEmitter(
+  raws: RawGlyph[],
+  outerTrFor: (xCursor: number, baselineY: number) => string,
+): (xCursor: number, baselineY: number, color: string) => SvgPath[] {
+  return (xCursor, baselineY, color) => {
+    const outerTr = outerTrFor(xCursor, baselineY);
+    return raws.map((g) => {
+      const transform = g.innerTr ? `${outerTr} ${g.innerTr}` : outerTr;
+      const [a, b, c, d] = parseTransformChain(transform);
+      // Include nested scales (subscripts, superscripts, stretchy glyphs).
+      // Compensate only glyph-local scale, never the slide viewport.
+      const glyphScale = Math.sqrt(Math.abs(a * d - b * c)) || 1;
+      return {
+        d: g.d, transform, length: g.localLen * glyphScale,
+        fillColor: color, nonScalingStroke: false, strokeScale: 1 / glyphScale,
+      };
+    });
+  };
+}
+
 // Parse a MathJax SVG fragment once. Returns the pixel dimensions used for
 // layout plus a closure that emits per-glyph paths at a given pen position.
 // The closure captures the DOM-walked glyph list and the viewBox-to-pixel
@@ -211,7 +291,7 @@ interface MathChunk {
 // typically negative). The emit closure computes
 // yOffset = baselineY + vbY * scaleY so the math baseline lands exactly on
 // the surrounding text baseline.
-function parseMathChunks(mathSvg: string, fontPx: number): MathChunk[] {
+function parseMathChunks(mathSvg: string, fontPx: number, mathScale: number): MathChunk[] {
   if (typeof DOMParser === 'undefined') return [];
 
   const parser = new DOMParser();
@@ -221,13 +301,9 @@ function parseMathChunks(mathSvg: string, fontPx: number): MathChunk[] {
   const roots = Array.from(doc.documentElement.children).filter((el) => el.localName === 'svg');
   if (roots.length === 0) return [];
 
-  // id → path data, gathered across every chunk before any of them is walked.
-  const defs = new Map<string, string>();
-  doc.documentElement.querySelectorAll('defs path').forEach((p) => {
-    const id = p.getAttribute('id');
-    const d = p.getAttribute('d');
-    if (id && d) defs.set(id, d);
-  });
+  // Gathered across every chunk before any of them is walked: `fontCache:
+  // 'local'` puts the <defs> in the first chunk only.
+  const defs = collectDefs(doc);
 
   const chunks: MathChunk[] = [];
   for (const inner of roots) {
@@ -247,7 +323,14 @@ function parseMathChunks(mathSvg: string, fontPx: number): MathChunk[] {
     if (vb.length !== 4 || vb.some((v) => !Number.isFinite(v))) continue;
     const [vbX, vbY, vbW, vbH] = vb;
     if (!vbW || !vbH) continue;
-    const scale = fontPx / 1000;
+    // `mathScale` matches the math font's x-height to the text font's. Both
+    // fonts share an em, but the eye reads the x-height, and the two disagree
+    // by up to 19% across our pairings: Libertinus Serif sits at 0.429em
+    // against STIX Two Math's 0.479 (math 12% too big), and Inter's 0.546
+    // against newcm's 0.442 (math 19% too small). That mismatch is what makes
+    // an equation look like it came from a different document. LaTeX solves it
+    // the same way — `newtxmath`'s `libertine` option IS this scaling.
+    const scale = (fontPx / 1000) * mathScale;
     const scaleX = scale, scaleY = scale;
     const widthPx = vbW * scale;
     const heightPx = vbH * scale;
@@ -257,48 +340,13 @@ function parseMathChunks(mathSvg: string, fontPx: number): MathChunk[] {
     const aboveBaseline = -vbY * scaleY;
     const belowBaseline = (vbY + vbH) * scaleY;
 
-    // Collect every renderable glyph in document order with its accumulated
-    // inner-SVG transform. The outer translate+scale is appended at emit time.
-    type RawGlyph = { d: string; innerTr: string; localLen: number };
-    const raws: RawGlyph[] = [];
-    const walk = (el: Element, parentTr: string): void => {
-      const tr = el.getAttribute('transform');
-      const combinedTr = tr ? (parentTr ? `${parentTr} ${tr}` : tr) : parentTr;
-
-      if (el.localName === 'use') {
-        const href = el.getAttribute('href') || el.getAttribute('xlink:href') || '';
-        const id = href.startsWith('#') ? href.slice(1) : href;
-        const d = defs.get(id);
-        if (d) raws.push({ d, innerTr: combinedTr, localLen: pathLengthFor(d) });
-        return;
-      }
-      if (el.localName === 'path' && !el.closest('defs')) {
-        const d = el.getAttribute('d');
-        if (d) raws.push({ d, innerTr: combinedTr, localLen: pathLengthFor(d) });
-        return;
-      }
-      for (const child of Array.from(el.children)) walk(child, combinedTr);
-    };
-    for (const child of Array.from(inner.children)) {
-      if (child.localName === 'defs') continue;
-      walk(child, '');
-    }
-
-    const emitPaths = (xCursor: number, baselineY: number, color: string): SvgPath[] => {
-      const yOffset = baselineY + vbY * scaleY;
-      const outerTr = `translate(${xCursor.toFixed(3)},${yOffset.toFixed(3)}) scale(${scaleX.toFixed(4)},${scaleY.toFixed(4)}) translate(${(-vbX).toFixed(3)},${(-vbY).toFixed(3)})`;
-      return raws.map((g) => {
-        const transform = g.innerTr ? `${outerTr} ${g.innerTr}` : outerTr;
-        const [a,b,c,d] = parseTransformChain(transform);
-        // Include nested MathJax scales (subscripts, superscripts, stretchy
-        // glyphs). Compensate only glyph-local scale, never the slide viewport.
-        const glyphScale = Math.sqrt(Math.abs(a*d-b*c)) || 1;
-        return {
-          d: g.d, transform, length: g.localLen * glyphScale,
-          fillColor: color, nonScalingStroke: false, strokeScale: 1 / glyphScale,
-        };
-      });
-    };
+    const emitPaths = glyphEmitter(
+      collectGlyphs(inner, defs),
+      (xCursor, baselineY) => {
+        const yOffset = baselineY + vbY * scaleY;
+        return `translate(${xCursor.toFixed(3)},${yOffset.toFixed(3)}) scale(${scaleX.toFixed(4)},${scaleY.toFixed(4)}) translate(${(-vbX).toFixed(3)},${(-vbY).toFixed(3)})`;
+      },
+    );
 
     chunks.push({ widthPx, heightPx, aboveBaseline, belowBaseline, emitPaths });
   }
@@ -321,16 +369,28 @@ async function parseMathSegment(
   style: TextStyle,
   fontPx: number,
   boxWidth: number,
+  textXHeight: number,
 ): Promise<MathChunk[]> {
-  const fontId = resolveMathFont(style.fontFamily, style.mathFont).id;
+  const font = resolveMathFont(style.fontFamily, style.mathFont);
+  const fontId = font.id;
+  // A face drawn against this very text font is already the right size; the
+  // x-height correction below is for pairings that were never drawn together.
+  const nativePairing = font.designedFor === textFont(style.fontFamily).id;
   try {
-    const natural = parseMathChunks(
-      await texFragmentToSvg(seg.displayContent, seg.isBlock, fontId), fontPx);
+    // Convert first: the x-height comes from the loaded font data, so it is
+    // only knowable once the font behind `fontId` has actually arrived.
+    const naturalSvg = await texFragmentToSvg(seg.displayContent, seg.isBlock, fontId);
+    const mathX = nativePairing ? undefined : mathXHeightEm(fontId);
+    // No metric, no guess — render at the em and leave the size alone.
+    const mathScale = mathX ? textXHeight / mathX : 1;
+    const natural = parseMathChunks(naturalSvg, fontPx, mathScale);
     const naturalWidth = natural.reduce((sum, chunk) => sum + chunk.widthPx, 0);
     if (natural.length === 0 || naturalWidth <= boxWidth || !Number.isFinite(boxWidth)) return natural;
     const wrapped = parseMathChunks(
       await texFragmentToSvg(seg.displayContent, seg.isBlock, fontId,
-        { widthEm: boxWidth / fontPx }), fontPx);
+        // The width MathJax breaks against is in ITS em, which `mathScale`
+        // has just resized; dividing by it asks for the right line length.
+        { widthEm: boxWidth / (fontPx * mathScale) }), fontPx, mathScale);
     // Breaking can legitimately find nothing to break (a single wide glyph run,
     // a `\text{}` with no spaces). Overflowing beats dropping the formula.
     return wrapped.length > 0 ? wrapped : natural;
@@ -503,7 +563,7 @@ export async function layoutSvgText(
         // means "could not be drawn": either the TeX did not convert or there
         // is no DOMParser in this environment.
         const parsed = seg.type === 'latex'
-          ? await parseMathSegment(seg, style, blockFontSize, boxWidth)
+          ? await parseMathSegment(seg, style, blockFontSize, boxWidth, xHeightEm(fontRegular))
           : [];
         if (parsed.length > 0) {
           const mathColor = style.color;

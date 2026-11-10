@@ -77,21 +77,38 @@ export const TEXT_FONTS = [
     cssStack: "'Libertinus Serif', 'Linux Libertine O', Georgia, serif",
     variants: TEXT_FONT_FILES['Libertinus Serif'],
     // The SIGGRAPH pairing: acmart sets Libertine text against newtxmath in
-    // its libertine mode. Termes looked like the obvious stand-in — newtxmath
-    // is Times-based and Termes is a Times clone — but measuring against a
-    // real acmart render says otherwise. Widths in em, LaTeX reference first:
+    // its libertine mode. This was briefly STIX Two, chosen because its
+    // ADVANCE WIDTHS came closest to an acmart render. That was the wrong
+    // measurement: widths agree to within a few percent across faces whose
+    // outlines share barely half their ink, so the table ranked by a quantity
+    // nobody looks at. Rasterising both sides and measuring the ink that
+    // actually coincides, per glyph class (`scripts/compare-math-fonts.mjs`):
     //
-    //              greek run   digits   L/g/R   mean error
-    //   acmart        3.667     4.633   1.976        —
-    //   STIX Two      3.717     4.950   1.914      3.8%
-    //   Termes        4.595     5.000   2.052     12.4%
+    //                math italic   operators   greek lower   weighted
+    //   Asana             36%          69%          30%        36.4%
+    //   Termes            37%          48%          20%        32.0%
+    //   STIX Two          26%          25%          50%        31.7%
     //
-    // MathJax's Termes sets italic Greek 25% wider than newtxmath does, which
-    // is exactly where an equation visibly stops matching the paper it came
-    // from. STIX Two is the scientific-publishing face and tracks newtxmath's
-    // metrics far more closely, so it is the pairing until Libertinus Math
-    // font data is generated. Reproduce with scripts/compare-math-fonts.mjs.
-    defaultMathFont: 'mathjax-stix2',
+    // Termes wins math italic — the variables, which an equation is mostly
+    // made of and which the eye reads first — where STIX Two trails it by
+    // half again. Asana takes the weighted total, but on the strength of
+    // operators and big operators: `+`, `=`, `\sum` are simple geometry that
+    // any face gets close on, so that column separates fonts least. Against
+    // it, Asana is a Palatino companion rather than a Times one, and its
+    // 0.482em x-height needs an 11% downscale to meet Libertinus Serif's
+    // 0.429 — which thins its strokes relative to the prose. Termes needs
+    // 2.8%, and is Times-derived exactly as newtxmath is. The two are within
+    // the noise of a comparison whose sides use different rasterisers, so the
+    // lineage and the x-height decide it.
+    //
+    // That whole comparison is now history: no PUBLISHED package is a close
+    // match, so the face is generated instead. `mathjax-newtx` carries
+    // newtxmath's own outlines and metrics (see `newtxFont.ts`), which is what
+    // acmart sets, so the pairing no longer has to pick a near neighbour. The
+    // table above is kept because it is the measurement that justifies going
+    // to that trouble: the best published face shares about a third of its ink
+    // with the real thing.
+    defaultMathFont: 'mathjax-newtx',
     notice:
       'Libertinus Serif 7.051 — Copyright (c) 2012-2024 The Libertinus Project Authors. '
       + 'SIL Open Font License 1.1. Designed by Philipp H. Poll and Khaled Hosny.',
@@ -121,6 +138,17 @@ export interface MathFontDef {
    * The specifiers must stay literal for the bundler to see them.
    */
   load: () => Promise<Record<string, unknown>>;
+  /**
+   * The text font this face was designed to sit beside, if any.
+   *
+   * Math is normally scaled so its x-height matches the text font's, because
+   * a MathJax package and a text face that were never drawn together agree on
+   * the em and on nothing else. A face named here was drawn against that text
+   * font, so the scaling is switched off: newtxmath's own x-height parameter
+   * is 0.441 against Libertinus Serif's 0.429, and "correcting" that 2.7%
+   * would shrink every formula below the size the paper sets it at.
+   */
+  designedFor?: string;
 }
 
 /**
@@ -130,12 +158,21 @@ export interface MathFontDef {
  * onto whichever font is selected via `fontExtensions`), not a complete font,
  * so it does not belong in a list of choices.
  *
- * Libertinus is also absent for now — MathJax publishes no Libertinus package,
- * so its data has to be generated from LibertinusMath-Regular.otf before it
- * can be listed. Until then Libertinus Serif pairs with STIX Two, which
- * measures closest to the newtxmath that acmart actually sets.
+ * Libertinus is also absent — MathJax publishes no Libertinus package, so its
+ * data would have to be generated from LibertinusMath-Regular.otf first. It
+ * would not close the gap anyway: measured against acmart, Libertinus gets the
+ * display integral's height right and its width 44% wrong.
  */
 export const MATH_FONTS = [
+  {
+    id: 'mathjax-newtx',
+    label: 'newtxmath (ACM / SIGGRAPH)',
+    blurb: "acmart's own math face, generated from newtxmath's outlines and metrics.",
+    load: MATH_FONT_MODULES['mathjax-newtx'],
+    // newtxmath in its libertine mode is drawn against Libertine, and
+    // Libertinus Serif is Libertine's maintained fork.
+    designedFor: 'Libertinus Serif',
+  },
   {
     id: 'mathjax-newcm',
     label: 'New Computer Modern',

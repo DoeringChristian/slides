@@ -51,6 +51,9 @@ export const TEXT_FONT_FILES = {
  * that neither list can drift ahead of the other.
  */
 export const MATH_FONT_MODULES: Record<string, () => Promise<Record<string, unknown>>> = {
+  // Generated from newtxmath by `npm run build:mathfont`, not published by
+  // MathJax — see `newtxFont.ts` for why it cannot be.
+  'mathjax-newtx': () => import('./newtxFont'),
   'mathjax-newcm': () => import('@mathjax/mathjax-newcm-font/js/svg.js'),
   'mathjax-tex': () => import('@mathjax/mathjax-tex-font/js/svg.js'),
   'mathjax-modern': () => import('@mathjax/mathjax-modern-font/js/svg.js'),

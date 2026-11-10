@@ -31,6 +31,7 @@ const unavailable = (what: string) => () => Promise.reject(
 );
 
 export const MATH_FONT_MODULES: Record<string, () => Promise<Record<string, unknown>>> = {
+  'mathjax-newtx': unavailable('MathJax font newtx'),
   'mathjax-newcm': unavailable('MathJax font newcm'),
   'mathjax-tex': unavailable('MathJax font tex'),
   'mathjax-modern': unavailable('MathJax font modern'),
