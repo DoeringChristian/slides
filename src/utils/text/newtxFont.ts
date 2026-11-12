@@ -125,6 +125,9 @@ export class MathJaxNewtxFont extends TermesClass {
   };
 
   /**
+   * Two repairs to what the base constructor leaves behind: the glyphs it
+   * overwrote with dynamic-range descriptors, and the glyph-id prefix.
+   *
    * Glyph ids in the rendered SVG are prefixed per font, and Termes hardcodes
    * `GT-` in its own constructor. Two fonts sharing the prefix is not
    * theoretical here: `fontCache: 'local'` puts the outlines in a `<defs>`
@@ -135,7 +138,36 @@ export class MathJaxNewtxFont extends TermesClass {
    */
   constructor(options: Record<string, unknown> = {}) {
     super(options);
-    const self = this as unknown as { variant: Record<string, { cacheID: string }> };
+    const self = this as unknown as {
+      variant: Record<string, { cacheID: string }>;
+      defineChars(name: string, chars: CharTable): void;
+      defineDelimiters(delims: Record<number, unknown>): void;
+    };
+
+    // Re-apply our tables, because the base constructor has just overwritten
+    // them. `FontData` installs `defaultChars` (FontData.js:128) and THEN
+    // `defineDynamicCharacters` (:132), which writes a load-descriptor object
+    // into `variant.chars[n]` for every codepoint a dynamic range declares —
+    // on top of whatever glyph was there. `getChar` (:360) treats any
+    // non-array entry as "not loaded yet": it deletes the entry, fetches the
+    // range, and the range installs Termes' glyph.
+    //
+    // So a statically supplied glyph inside a declared range is not merely
+    // overridden, it is destroyed on first use, and the static table above is
+    // silently pointless for it. That hit all 52 calligraphic glyphs —
+    // Termes declares `-tex-calligraphic` and `-tex-bold-calligraphic` 0x41-
+    // 0x5A dynamic, which is exactly the range we generate — so `\mathcal`
+    // drew Termes' swash (0.798 em wide) in place of newtxmath's (0.910),
+    // plus 13 scattered glyphs in `normal` and `bold-italic`.
+    //
+    // Re-applying restores the policy the overlay above states: ours win,
+    // Termes fills the gaps. A codepoint we do not supply keeps its
+    // descriptor and still loads on demand.
+    for (const [variant, table] of Object.entries(GENERATED)) {
+      if (self.variant[variant]) self.defineChars(variant, table);
+    }
+    self.defineDelimiters(delimiters);
+
     for (const variant of Object.keys(self.variant)) {
       self.variant[variant].cacheID = `NTX-${Termes.variantCacheIds[variant] || 'N'}`;
     }

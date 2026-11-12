@@ -7,6 +7,10 @@ import { bold } from './generated/newtx/bold';
 import { italic } from './generated/newtx/italic';
 import { boldItalic } from './generated/newtx/bold-italic';
 import { calligraphic } from './generated/newtx/calligraphic';
+import { boldCalligraphic } from './generated/newtx/bold-calligraphic';
+import { script } from './generated/newtx/script';
+import { size3 } from './generated/newtx/size3';
+import { size4 } from './generated/newtx/size4';
 import { delimiters } from './generated/newtx/delimiters';
 import { params } from './generated/newtx/params';
 
@@ -185,5 +189,52 @@ describe('the generated newtxmath font', () => {
     expect(delims[0x28], 'our paren chain').toBe(delimiters[0x28]);
     expect(delims[0x302], 'Termes\u2019 wide circumflex was dropped').toBeDefined();
     expect(delimiters[0x302], 'newtx declares no wide circumflex').toBeUndefined();
+  });
+
+  it('survives the base constructor’s dynamic-range pass', () => {
+    // The static table is not the last word on what a variant holds. `FontData`
+    // installs `defaultChars`, then `defineDynamicCharacters` writes a
+    // load-descriptor over every codepoint a dynamic range declares, and
+    // `getChar` deletes any non-array entry and fetches Termes' range instead.
+    // A glyph of ours inside a declared range is therefore destroyed on first
+    // use, with no error anywhere — `\mathcal` drew Termes' swash for exactly
+    // this reason while this file's other assertions stayed green, because
+    // they all read the static table.
+    //
+    // So this asserts on a CONSTRUCTED font: every codepoint we generate must
+    // still be glyph data (an array), not a descriptor.
+    const font = new MathJaxNewtxFont() as unknown as {
+      variant: Record<string, { chars: Record<number, unknown> }>;
+      delimiters: Record<number, unknown>;
+    };
+    const generated: Record<string, Record<number, unknown>> = {
+      'normal': normal, 'bold': bold, 'italic': italic, 'bold-italic': boldItalic,
+      'script': script, '-tex-calligraphic': calligraphic,
+      '-tex-bold-calligraphic': boldCalligraphic, '-smallop': smallop,
+      '-largeop': largeop, '-size3': size3, '-size4': size4,
+    };
+    const lost: string[] = [];
+    let checked = 0;
+    for (const [name, table] of Object.entries(generated)) {
+      const chars = font.variant[name]?.chars;
+      expect(chars, `variant ${name} does not exist`).toBeDefined();
+      for (const key of Object.keys(table)) {
+        const code = Number(key);
+        checked++;
+        if (!Array.isArray(chars[code])) lost.push(`${name} U+${code.toString(16)}`);
+      }
+    }
+    expect(checked).toBeGreaterThan(900);
+    expect(lost, 'glyphs a dynamic range would replace with Termes').toEqual([]);
+
+    // Same hazard for the stretchy chains: a dynamic range may declare
+    // delimiters too, and `getDelimiter` treats an entry without `dir` as a
+    // descriptor.
+    for (const key of Object.keys(delimiters)) {
+      const entry = font.delimiters[Number(key)] as { dir?: string } | undefined;
+      expect(entry, `delimiter U+${Number(key).toString(16)} vanished`).toBeDefined();
+      expect(entry, `delimiter U+${Number(key).toString(16)} is a load descriptor`)
+        .toHaveProperty('dir');
+    }
   });
 });

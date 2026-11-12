@@ -137,6 +137,20 @@ describe('the whole expression actually reaches the slide', () => {
     }
   }, 30_000);
 
+  it('draws \\mathcal from newtxmath rather than the font it falls back to', async () => {
+    // A dynamic range does not just fill gaps, it overwrites: the font
+    // constructor stamps a load-descriptor over every codepoint the range
+    // declares, and the first lookup swaps in the fallback font's glyph. The
+    // newtx font supplies all 26 calligraphic capitals statically and Termes
+    // declares exactly that range, so `\mathcal` came out in Termes' swash —
+    // the right shape from the wrong font, which no data-level assertion saw.
+    const svg = await texFragmentToSvg(String.raw`\mathcal{A}`, false, 'mathjax-newtx');
+    expect(placements(svg)).toBe(1);
+    const { calligraphic } = await import('../utils/text/generated/newtx/calligraphic');
+    const want = 'M' + (calligraphic[0x41][3] as { p: string }).p + 'Z';
+    expect(svg, 'calligraphic A is not newtxmath’s').toContain(want);
+  }, 30_000);
+
   it('renders \\boldsymbol as a glyph rather than spelling out the macro', async () => {
     // `noundefined` turns an unregistered macro into its own name in red, so a
     // missing TeX extension looks like a font problem. Nine glyphs spelling
