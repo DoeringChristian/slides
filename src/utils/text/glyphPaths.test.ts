@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { parse } from 'opentype.js';
-import { samplePathD, setPathSamplerForTests, xHeightEm } from './glyphPaths';
+import { samplePathD, setPathSamplerForTests, textToGlyphPaths, xHeightEm } from './glyphPaths';
 
 // samplePathD normally measures via a hidden SVG <path> probe
 // (getTotalLength / getPointAtLength), which node has no implementation
@@ -96,5 +96,27 @@ describe('xHeightEm', () => {
       charToGlyph: () => undefined,
     } as unknown as Parameters<typeof xHeightEm>[0];
     expect(xHeightEm(empty)).toBe(0.5);
+  });
+});
+
+describe('textToGlyphPaths glyph cache', () => {
+  const load = (file: string) => {
+    const b = readFileSync(new URL(`../../assets/fonts/${file}`, import.meta.url));
+    return parse(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
+  };
+
+  test('never hands one font a glyph cached from another', () => {
+    // Glyph indices are per font file: Libertinus' `h` and Inter's `C` are
+    // both glyph 73. The cache used to be keyed on a font name opentype.js 2
+    // no longer exposes, so every font read as 'font' and an `h` typed in
+    // Libertinus after Inter had drawn a `C` came out as that `C`.
+    const inter = load('Inter-Regular.ttf');
+    const libertinus = load('LibertinusSerif-Regular.otf');
+    expect(inter.charToGlyphIndex('C')).toBe(libertinus.charToGlyphIndex('h'));
+
+    const interC = textToGlyphPaths('C', inter, 24, 0, 0).glyphs[0].d;
+    const libertinusH = textToGlyphPaths('h', libertinus, 24, 0, 0).glyphs[0].d;
+    expect(libertinusH).not.toBe(interC);
+    expect(libertinusH).toBe(libertinus.charToGlyph('h').getPath(0, 0, 24).toPathData(2));
   });
 });

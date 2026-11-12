@@ -243,10 +243,17 @@ export function samplePathD(d: string, n: number): number[] {
   return out;
 }
 
-// Per-(glyphIndex, fontSize) path-data cache keyed by font name. opentype's
+// Per-(glyphIndex, fontSize) path-data cache, one per loaded Font. opentype's
 // getPath is fast but we re-render the same text on every frame during a Write
 // transition; an inner-loop hash beats recomputing.
-const glyphCache = new Map<string, { d: string; length: number }>();
+//
+// Keyed on the Font OBJECT, never its name. Glyph indices are private to a
+// font file — Libertinus' `h` is glyph 73, which is Inter's `C` — so two fonts
+// sharing a cache must never share a key. A name-based key did exactly that:
+// opentype.js 2 moved `names.fullName` under `names.windows`, every font read
+// as 'font', and whichever face drew a glyph index first owned it for all of
+// them (an `h` typed in Libertinus came out as Inter's `C`).
+const glyphCache = new WeakMap<Font, Map<string, { d: string; length: number }>>();
 
 /**
  * Convert a plain-text run into per-glyph SVG paths starting at (startX, y).
@@ -274,8 +281,11 @@ export function textToGlyphPaths(
   const glyphs: GlyphPath[] = [];
   let x = startX;
   const scale = fontSize / font.unitsPerEm;
-  const fontName =
-    (font as { names?: { fullName?: { en?: string } } }).names?.fullName?.en ?? 'font';
+  let fontGlyphs = glyphCache.get(font);
+  if (!fontGlyphs) {
+    fontGlyphs = new Map();
+    glyphCache.set(font, fontGlyphs);
+  }
 
   const codepoints = Array.from(text); // handles surrogate pairs
   let prevGlyph: ReturnType<typeof font.glyphs.get> | null = null;
@@ -296,13 +306,13 @@ export function textToGlyphPaths(
       continue;
     }
 
-    const cacheKey = `${fontName}|${idx}|${fontSize}`;
-    let entry = glyphCache.get(cacheKey);
+    const cacheKey = `${idx}|${fontSize}`;
+    let entry = fontGlyphs.get(cacheKey);
     if (!entry) {
       const path = g.getPath(0, 0, fontSize);
       const d = path.toPathData(2);
       entry = { d, length: pathLengthFor(d) };
-      glyphCache.set(cacheKey, entry);
+      fontGlyphs.set(cacheKey, entry);
     }
 
     const advance = (g.advanceWidth ?? font.unitsPerEm * 0.5) * scale;
