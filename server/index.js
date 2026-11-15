@@ -4,6 +4,7 @@ import http from 'http';
 import { createStorage } from './storage.js';
 import { createShareStore } from './shares.js';
 import { attachYWS } from './yws.js';
+import { createChatGPT, attachChatGPTRoutes } from './chatgpt.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -15,6 +16,10 @@ const shares = createShareStore('./data');
 // Middleware
 app.use(cors({ exposedHeaders: ['X-Slides-User'] }));
 app.use(express.json({ limit: '50mb' })); // Large limit for presentations with embedded images
+
+// Sign in with ChatGPT: plan usage for the editor's assistant. Loopback-only;
+// see chatgpt.js for why the server, not the browser, holds these tokens.
+attachChatGPTRoutes(app, createChatGPT({ dataDir: './data', port: PORT }));
 
 // Pulls the client's anonymous identity from the X-Slides-User header. Returns
 // null if absent (legacy/no-identity clients). This is presence-based, not

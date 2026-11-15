@@ -60,6 +60,31 @@ export interface Slide {
   /** Slide-group membership: maximal CONTIGUOUS runs (length ≥ 2) of equal
    *  groupId auto-play as a timed chain in the presenter. */
   groupId?: string;
+  /** Review comments on this keyframe, keyed by id. Shared with
+   *  collaborators; never drawn on the slide or shipped in viewer exports. */
+  comments?: Record<string, SlideComment>;
+}
+
+export interface CommentAuthor {
+  id: string;
+  name: string;
+  color: string;
+  /** Written by the editing assistant rather than a person. */
+  assistant?: boolean;
+}
+
+/** A review comment pinned to an element on one slide (keyframe). */
+export interface SlideComment {
+  id: string;
+  /** The element it is about; absent = the slide as a whole. Element ids
+   *  persist across keyframes, but a comment belongs to this slide. */
+  elementId?: string;
+  /** Set on replies: the comment this answers (same slide). */
+  parentId?: string;
+  text: string;
+  author: CommentAuthor;
+  createdAt: number;
+  resolved?: boolean;
 }
 
 export type SlideBackground = {

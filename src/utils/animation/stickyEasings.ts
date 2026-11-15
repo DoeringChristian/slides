@@ -26,7 +26,7 @@ import {
  * example; `write` shouldn't follow to a shape.
  */
 
-function applicable(element: SlideElement, group: TransitionGroup, easing: EasingType): boolean {
+export function applicable(element: SlideElement, group: TransitionGroup, easing: EasingType): boolean {
   const elementType = element.type;
   switch (group) {
     case 'visibility':

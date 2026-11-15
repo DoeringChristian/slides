@@ -6,7 +6,7 @@ function isDataUrl(src: string): boolean {
   return src.startsWith('data:');
 }
 
-async function urlToDataUrl(url: string): Promise<string> {
+export async function urlToDataUrl(url: string): Promise<string> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Failed to fetch resource: ${url} (${res.status})`);
   const blob = await res.blob();

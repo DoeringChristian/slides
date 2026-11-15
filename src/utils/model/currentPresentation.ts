@@ -74,6 +74,18 @@ export function assertPresentation(value: unknown): Presentation {
     const elements = orderedMap(slide.elements, slide.elementOrder, `elements of ${id}`);
     record(slide.background, `background of ${id}`);
     if (isSlide) record(slide.transition, `transition of ${id}`);
+    if (isSlide && slide.comments !== undefined) {
+      for (const [cid, raw] of Object.entries(record(slide.comments, `comments of ${id}`))) {
+        const comment = record(raw, `comment ${cid}`);
+        if (comment.id !== cid || typeof comment.text !== 'string' || typeof comment.createdAt !== 'number') {
+          throw new Error(`Invalid presentation: comment ${cid} on ${id} needs a matching id, text and createdAt.`);
+        }
+        const author = record(comment.author, `author of comment ${cid}`);
+        if (typeof author.id !== 'string' || typeof author.name !== 'string') {
+          throw new Error(`Invalid presentation: comment ${cid} on ${id} needs an author id and name.`);
+        }
+      }
+    }
     for (const [eid, raw] of Object.entries(elements)) {
       const el = record(raw, `element ${eid}`);
       if (!['text', 'shape', 'image', 'group'].includes(el.type as string)) throw new Error(`Invalid presentation: element ${eid} has an unsupported type.`);

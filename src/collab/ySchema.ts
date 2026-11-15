@@ -10,6 +10,7 @@ import { restoreProjectTimestamp } from '../utils/model/currentPresentation';
 import * as Y from 'yjs';
 import { assertCurrentPresentation } from '../utils/model/currentPresentation';
 import type {
+  SlideComment,
   Presentation,
   Slide,
   SlideElement,
@@ -170,7 +171,16 @@ export function slideToYMap(slide: Slide): Y.Map<unknown> {
   setIfDefined(s, 'hidden', slide.hidden);
   setIfDefined(s, 'autoAdvanceDelay', slide.autoAdvanceDelay);
   setIfDefined(s, 'groupId', slide.groupId);
+  if (slide.comments) s.set('comments', commentsToYMap(slide.comments));
   return s;
+}
+
+/** Comments: one flat scalar map each (the author rides along as a plain
+ *  value), keyed by id so concurrent adds from two peers both survive. */
+export function commentsToYMap(comments: Record<string, SlideComment>): Y.Map<unknown> {
+  const m = new Y.Map<unknown>();
+  for (const [id, comment] of Object.entries(comments)) m.set(id, mkScalarMap(comment));
+  return m;
 }
 
 /** Exported: action code that replaces a slide's background wholesale

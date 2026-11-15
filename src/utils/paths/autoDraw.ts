@@ -56,3 +56,15 @@ export function beforeMutation(slideId: string): string {
     autoDrawInProgress = false;
   }
 }
+
+/** Run programmatic writes that name their slide explicitly (the agent's
+ *  tools) without auto-draw redirecting them to a fresh keyframe. */
+export function withAutoDrawSuspended<T>(fn: () => T): T {
+  const prev = autoDrawInProgress;
+  autoDrawInProgress = true;
+  try {
+    return fn();
+  } finally {
+    autoDrawInProgress = prev;
+  }
+}

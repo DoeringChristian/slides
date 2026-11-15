@@ -8,7 +8,7 @@ import { create } from 'zustand';
 import { temporal } from 'zundo';
 import { guardLocalActions, beforeLocalMutation } from '../utils/editor/scrubMutation';
 import * as Y from 'yjs';
-import type { Presentation, Slide, SlideElement, TextElement, ObjectMeta, SlideTemplate, Resource } from '../types/presentation';
+import type { Presentation, Slide, SlideElement, TextElement, ObjectMeta, SlideTemplate, Resource, SlideComment } from '../types/presentation';
 import { generateId } from '../utils/idGenerator';
 import { createPresentation, createSlide, copySlideAsKeyframe, generateObjectName } from '../utils/model/slideFactory';
 import { assertPresentation } from '../utils/model/currentPresentation';
@@ -38,6 +38,7 @@ import {
   templateToYMap,
   backgroundToYMap,
   mkScalarMap,
+  commentsToYMap,
   getYRoot,
   getYSlide,
   getYElement,
@@ -163,6 +164,11 @@ interface PresentationStore {
   updateSlideBackground: (slideId: string, background: Slide['background']) => void;
   updateSlideTransition: (slideId: string, transition: Slide['transition']) => void;
   updateSlideNotes: (slideId: string, notes: string) => void;
+  /** Review comments. Not slide content: they bypass auto-draw and
+   *  multi-slide mirroring, and replies go with their parent on delete. */
+  addComment: (slideId: string, comment: SlideComment) => void;
+  updateComment: (slideId: string, commentId: string, changes: Partial<Pick<SlideComment, 'text' | 'resolved'>>) => void;
+  deleteComment: (slideId: string, commentId: string) => void;
   addSlideWithMode: (afterIndex: number, mode: 'previous' | 'next' | 'interpolate') => string;
   addEmptySlide: (index?: number) => string;
   toggleSlideHidden: (slideId: string) => void;
@@ -746,6 +752,96 @@ export const usePresentationStore = create<PresentationStore>()(
                 ...state.presentation.slides,
                 [slideId]: { ...slide, notes },
               },
+              updatedAt: Date.now(),
+            },
+          };
+        });
+      },
+
+      addComment: (slideId, comment) => {
+        const doc = getActiveDoc();
+        if (doc) {
+          runInTxn(() => {
+            const slide = getYSlide(doc, slideId);
+            if (!slide) return;
+            let comments = slide.get('comments') as Y.Map<unknown> | undefined;
+            if (!comments) {
+              comments = commentsToYMap({});
+              slide.set('comments', comments);
+            }
+            comments.set(comment.id, mkScalarMap(comment));
+            getYRoot(doc).set('updatedAt', Date.now());
+          });
+          return;
+        }
+        set((state) => {
+          const slide = state.presentation.slides[slideId];
+          if (!slide) return state;
+          return {
+            presentation: {
+              ...state.presentation,
+              slides: { ...state.presentation.slides, [slideId]: { ...slide, comments: { ...slide.comments, [comment.id]: comment } } },
+              updatedAt: Date.now(),
+            },
+          };
+        });
+      },
+
+      updateComment: (slideId, commentId, changes) => {
+        const doc = getActiveDoc();
+        if (doc) {
+          runInTxn(() => {
+            const comment = (getYSlide(doc, slideId)?.get('comments') as Y.Map<Y.Map<unknown>> | undefined)?.get(commentId);
+            if (!comment) return;
+            for (const [key, value] of Object.entries(changes)) {
+              if (value === undefined) continue;
+              comment.set(key, value);
+            }
+            getYRoot(doc).set('updatedAt', Date.now());
+          });
+          return;
+        }
+        set((state) => {
+          const slide = state.presentation.slides[slideId];
+          const comment = slide?.comments?.[commentId];
+          if (!slide || !comment) return state;
+          const next = { ...comment };
+          for (const [key, value] of Object.entries(changes)) if (value !== undefined) (next as Record<string, unknown>)[key] = value;
+          return {
+            presentation: {
+              ...state.presentation,
+              slides: { ...state.presentation.slides, [slideId]: { ...slide, comments: { ...slide.comments, [commentId]: next } } },
+              updatedAt: Date.now(),
+            },
+          };
+        });
+      },
+
+      deleteComment: (slideId, commentId) => {
+        const doomed = (comments: Record<string, SlideComment> | undefined) =>
+          Object.values(comments ?? {}).filter(c => c.id === commentId || c.parentId === commentId).map(c => c.id);
+        const doc = getActiveDoc();
+        if (doc) {
+          runInTxn(() => {
+            const comments = getYSlide(doc, slideId)?.get('comments') as Y.Map<Y.Map<unknown>> | undefined;
+            if (!comments) return;
+            const ids = doomed(comments.toJSON() as Record<string, SlideComment>);
+            if (!ids.length) return;
+            for (const id of ids) comments.delete(id);
+            getYRoot(doc).set('updatedAt', Date.now());
+          });
+          return;
+        }
+        set((state) => {
+          const slide = state.presentation.slides[slideId];
+          const ids = doomed(slide?.comments);
+          if (!slide || !ids.length) return state;
+          const comments = { ...slide.comments };
+          for (const id of ids) delete comments[id];
+          return {
+            presentation: {
+              ...state.presentation,
+              slides: { ...state.presentation.slides, [slideId]: { ...slide, comments } },
               updatedAt: Date.now(),
             },
           };

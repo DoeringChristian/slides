@@ -39,6 +39,7 @@ import { useSVGDrawing } from './useSVGDrawing';
 import { TextEditOverlay } from '../canvas/TextEditOverlay';
 import { CropOverlay } from '../canvas/CropOverlay';
 import { SelectionActionBar } from '../canvas/SelectionActionBar';
+import { CommentLayer } from '../canvas/CommentLayer';
 import { computeGuides } from '../../hooks/useAlignmentGuides';
 import { getMarginLayout, getMarginBounds } from '../../utils/geometry/marginLayouts';
 import { snapToGrid as snapToGridFn } from '../../utils/geometry/geometry';
@@ -1417,6 +1418,7 @@ export const SVGSlideCanvas: React.FC = () => {
       {/* HTML overlays */}
       <TextEditOverlay key={`${activeSlideId}:${editingTextId}`} stageRef={containerRef} zoom={zoom} onPreview={setTextPreview} />
       <CropOverlay stageRef={containerRef} zoom={zoom} />
+      {!gesturePreview && <CommentLayer zoom={zoom} />}
       {/* Unmount actions during manipulation: no stale native hit targets.
           Body previews start only after drag slop; extension uses its own draft. */}
       {!editingTextId && !gesturePreview && !polyDraft?.extension && [unlockedSelectedIds, lockedSelectedIds].map((ids, index) => {

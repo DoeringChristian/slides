@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { Suspense, lazy } from 'react';
 import { Header } from './Header';
 import { StatusBar } from './StatusBar';
 import { SlidePanel } from '../sidebar/SlidePanel';
@@ -7,8 +7,13 @@ import { Toolbar } from '../toolbar/Toolbar';
 import { PropertiesPanel } from '../properties/PropertiesPanel';
 import { NotesEditor } from '../notes/NotesEditor';
 import { ObjectListDrawer } from '../objectlist/ObjectListDrawer';
+import { useAgentSettings } from '../../agent/agentSettings';
+
+// The assistant pulls in the model SDK; load it only when opened.
+const AgentPanel = lazy(() => import('../agent/AgentPanel').then(m => ({ default: m.AgentPanel })));
 
 export const AppLayout: React.FC = () => {
+  const agentOpen = useAgentSettings(s => s.panelOpen);
   return (
     <div className="flex flex-col h-screen bg-gray-100 select-none">
       <Header />
@@ -23,6 +28,7 @@ export const AppLayout: React.FC = () => {
           <NotesEditor />
         </div>
         <PropertiesPanel />
+        {agentOpen && <Suspense fallback={null}><AgentPanel /></Suspense>}
       </div>
       <StatusBar />
     </div>

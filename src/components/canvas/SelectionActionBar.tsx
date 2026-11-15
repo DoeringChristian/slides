@@ -1,7 +1,8 @@
 import { selectionResizeBounds } from '../../utils/geometry/resizeGeometry';
 import { expandObjectGroups } from '../../utils/model/objectGroups';
 import React, { useState, useRef } from 'react';
-import { ImagePlus, Lock, Unlock, Crop, Trash2 } from 'lucide-react';
+import { ImagePlus, Lock, Unlock, Crop, Trash2, MessageSquarePlus } from 'lucide-react';
+import { useCommentUi } from './commentUi';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useEditorStore } from '../../store/editorStore';
 import { ResourcePicker } from '../properties/ResourcePicker';
@@ -145,6 +146,18 @@ export const SelectionActionBar: React.FC<Props> = ({ elements: selection, zoom,
                 title="Change image"
               >
                 <ImagePlus size={18} />
+              </button>
+            )}
+
+            {/* Comment on the element (single selection) */}
+            {single && (
+              <button
+                data-comment-ui=""
+                onClick={(e) => { e.stopPropagation(); useCommentUi.getState().openThread(activeSlideId, single.id); }}
+                className="p-1.5 rounded-full hover:bg-violet-100 text-gray-400 hover:text-violet-600 transition-colors"
+                title="Comment"
+              >
+                <MessageSquarePlus size={18} />
               </button>
             )}
 

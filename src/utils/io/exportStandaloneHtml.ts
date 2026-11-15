@@ -87,7 +87,19 @@ function safeFilename(title: string): string {
   return `${cleaned || 'presentation'}.html`;
 }
 
+/** Review comments are working notes for the people editing, not for an
+ *  audience: the viewer export leaves them out. */
+export function withoutComments(presentation: Presentation): Presentation {
+  const slides = Object.fromEntries(Object.entries(presentation.slides).map(([id, slide]) => {
+    if (!slide.comments) return [id, slide];
+    const { comments: _comments, ...rest } = slide;
+    return [id, rest];
+  }));
+  return { ...presentation, slides };
+}
+
 export async function exportStandaloneHtml(presentation: Presentation, opts: ExportOpts): Promise<void> {
+  if (opts.mode === 'viewer') presentation = withoutComments(presentation);
   const editorOrigin = opts.editorOrigin ?? __SLIDES_EDITOR_ORIGIN__;
   const [template, embedded, bakedText] = await Promise.all([
     loadTemplate(opts.mode),

@@ -26,7 +26,9 @@ component does not re-render for a decoration-only change.
 `src/components/svg/SVGTextPaths.tsx:87` (deps) vs the comparator below it.
 
 ### LLM integration, with rich embedded displays
-Bring back LLM integration, and widen what it can author: beyond text and
+The in-browser assistant (bring-your-own key, deck tools, one-step undo) is
+built — see `docs/agent-editing.md` for it and its next phases (annotations,
+OpenAI-compatible adapter, `write_slide`). What remains here is widening what it can author: beyond text and
 shapes, an element type that hosts a **rich display** — raw HTML, a Three.js /
 WebGL scene, a canvas sketch — so a generated slide can carry an interactive or
 3D figure rather than a picture of one.
