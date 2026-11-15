@@ -7,9 +7,7 @@ import type {
 } from '../../types/presentation';
 import { useEditorStore } from '../../store/editorStore';
 import {
-  TEXT_VISIBILITY_TYPES,
-  SHAPE_VISIBILITY_TYPES,
-  IMAGE_VISIBILITY_TYPES,
+  visibilityTypesFor,
   CONTENT_TYPES,
   RESOURCE_TYPES,
   CROP_TYPES,
@@ -28,14 +26,16 @@ import {
  * example; `write` shouldn't follow to a shape.
  */
 
-function applicable(elementType: SlideElement['type'], group: TransitionGroup, easing: EasingType): boolean {
+function applicable(element: SlideElement, group: TransitionGroup, easing: EasingType): boolean {
+  const elementType = element.type;
   switch (group) {
     case 'visibility':
       // Other element types (groups) only get plain numeric easings here —
-      // visual wrapper easings shouldn't stick to them.
-      return (elementType === 'text'  ? TEXT_VISIBILITY_TYPES
-            : elementType === 'shape' ? SHAPE_VISIBILITY_TYPES
-            : elementType === 'image' ? IMAGE_VISIBILITY_TYPES
+      // visual wrapper easings shouldn't stick to them. Shapes go through
+      // `visibilityTypesFor` so an `extend` remembered from an arrow does not
+      // follow onto a rect, where it has no route to grow along.
+      return (elementType === 'text' || elementType === 'shape' || elementType === 'image'
+            ? visibilityTypesFor(element)
             : NUMERIC).includes(easing);
     case 'content':
       return elementType === 'text' && CONTENT_TYPES.includes(easing);
@@ -68,7 +68,7 @@ export function stickyTransitionsFor(element: SlideElement): PropertyTransitions
   const options = editor.lastEasingOptions[element.type] ?? {};
   const out: PropertyTransitions = {};
   for (const [key, easing] of Object.entries(remembered) as Array<[TransitionGroup, EasingType]>) {
-    if (!applicable(element.type, key, easing)) continue;
+    if (!applicable(element, key, easing)) continue;
     out[key] = easing;
   }
   if (options.visibility) out.visibilityOptions = options.visibility as TransitionOptions;

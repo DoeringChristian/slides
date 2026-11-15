@@ -44,6 +44,7 @@ import {
   yDocToJsonSlideOnly,
   yArrayReplaceAll,
   applyChangesToYElement,
+  replaceYPresentation,
 } from '../collab/ySchema';
 import {
   collectBoundTextIdsInY,
@@ -2253,8 +2254,20 @@ export const usePresentationStore = create<PresentationStore>()(
         set({ presentation: repairPresentation(assertPresentation(presentation)) });
       },
 
+      // Clears the open deck to a blank one IN PLACE. It keeps the deck's id,
+      // because that id is the project's identity (vault, server and share
+      // links all key on it): a reset that minted a new id left the project
+      // open under one id while autosave wrote a different one. Starting a
+      // separate deck is the vault's `newDeck`, not this.
       resetPresentation: () => {
-        set({ presentation: createPresentation() });
+        const current = usePresentationStore.getState().presentation;
+        const blank = { ...createPresentation(), id: current.id, createdAt: current.createdAt };
+        const doc = getActiveDoc();
+        if (doc) {
+          runInTxn(() => replaceYPresentation(doc, blank));
+          return;
+        }
+        set({ presentation: blank });
       },
     }),
     {

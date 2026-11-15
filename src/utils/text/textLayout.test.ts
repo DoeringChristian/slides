@@ -13,13 +13,21 @@ vi.mock('./glyphPaths', async importOriginal => {
   return { ...actual, loadFont: async () => font };
 });
 const style = { ...createTextElement().style, fontSize: 24, align: 'left' as const, lineHeight: 1.2 };
+// First and second row baselines for 24px Inter at 1.2, as layout formats them.
+const ROW = textRowMetrics(24, 1.2, 'Inter');
+const B1 = ROW.baseline.toFixed(2);
+const B2 = (ROW.advance + ROW.baseline).toFixed(2);
 const baselines = (doc: Awaited<ReturnType<typeof layoutSvgText>>) => [...new Set(doc.paths.map(p => p.transform.split(',')[1]))];
 
 describe('shared native/SVG text rows', () => {
   it('uses the SVG baseline/advance, including heading-sized and empty struts', async () => {
-    expect(textRowMetrics(24, 1.2).baseline).toBeCloseTo(19.2);
-    expect(textRowMetrics(24, 1.2).advance).toBeCloseTo(30.72);
-    expect(textRowMetrics(48, 1.2).advance).toBeCloseTo(61.44);
+    // Row pitch is the long-standing strut; the baseline centres the face's
+    // ascent+descent box in it, the way a CSS line box does.
+    expect(textRowMetrics(24, 1.2, 'Inter').advance).toBeCloseTo(30.72);
+    expect(textRowMetrics(48, 1.2, 'Inter').advance).toBeCloseTo(61.44);
+    expect(textRowMetrics(24, 1.2, 'Inter').baseline).toBeCloseTo((30.72 - 24 * (0.96875 + 0.2412109375)) / 2 + 24 * 0.96875);
+    expect(textRowMetrics(24, 1.2, 'Libertinus Serif').baseline).toBeCloseTo((30.72 - 24 * (0.894 + 0.246)) / 2 + 24 * 0.894);
+    expect(style.fontFamily).toBe('Inter');
     const doc = await layoutSvgText('one\n\ntail', style, 100);
     for (const line of doc.lines) expect(line.yBottom - line.yTop).toBeCloseTo(30.72);
     expect(doc.height).toBeCloseTo(92.16);
@@ -54,8 +62,8 @@ describe('shared native/SVG text rows', () => {
       const doc = await layoutSvgText(text, style, 100, new Set([0]));
       const visible = doc.paths.filter(p => p.d);
       expect(visible).toHaveLength(5);
-      expect(visible.slice(0, 2).every(p => p.transform.endsWith(',19.20)'))).toBe(true);
-      expect(visible.slice(2).every(p => p.transform.endsWith(',49.92)'))).toBe(true);
+      expect(visible.slice(0, 2).every(p => p.transform.endsWith(`,${B1})`))).toBe(true);
+      expect(visible.slice(2).every(p => p.transform.endsWith(`,${B2})`))).toBe(true);
       expect(doc.lines[0].source).toBe(text);
     });
   }
@@ -64,7 +72,7 @@ describe('shared native/SVG text rows', () => {
       const text = `WW${space}WWW`;
       const doc = await layoutSvgText(text, style, 100, new Set([0]));
       const visible = doc.paths.filter(p => p.d);
-      expect(visible.filter(p => p.transform.endsWith(',19.20)'))).toHaveLength(firstRow);
+      expect(visible.filter(p => p.transform.endsWith(`,${B1})`))).toHaveLength(firstRow);
       expect(doc.lines[0].source).toBe(text);
     });
   }
@@ -72,8 +80,8 @@ describe('shared native/SVG text rows', () => {
     const centered = { ...style, align: 'center' as const };
     const ascii = await layoutSvgText('WW WWW', centered, 100);
     const em = await layoutSvgText('WW\u2003WWW', centered, 100);
-    expect(ascii.paths[0].transform).toBe('translate(26.35,19.20)');
-    expect(em.paths[0].transform).toBe('translate(14.35,19.20)');
+    expect(ascii.paths[0].transform).toBe(`translate(26.35,${B1})`);
+    expect(em.paths[0].transform).toBe(`translate(14.35,${B1})`);
   });
   const mixedSpaces = [
     { name: 'typographic then ASCII', text: 'WW\u2003 WWW', firstRow: 'WW\u2003 ', soft: true },
@@ -93,7 +101,7 @@ describe('shared native/SVG text rows', () => {
       const alignedText = fixture.soft ? fixture.firstRow.replace(/[ \t]+$/, '') : fixture.firstRow;
       const width = textToGlyphPaths(alignedText, font, 24, 0, 0).endX;
       const startX = (100 - width) * (align === 'center' ? 0.5 : align === 'right' ? 1 : 0);
-      const expected = textToGlyphPaths(fixture.firstRow, font, 24, startX, 19.2).glyphs;
+      const expected = textToGlyphPaths(fixture.firstRow, font, 24, startX, ROW.baseline).glyphs;
       expect(doc.paths.slice(0, expected.length).map(p => p.transform)).toEqual(
         expected.map(g => `translate(${g.x.toFixed(2)},${g.y.toFixed(2)})`),
       );
@@ -101,14 +109,14 @@ describe('shared native/SVG text rows', () => {
       // source lines retain their exact UTF-16 contents, including NBSP.
       expect(doc.paths).toHaveLength(fixture.text.replace(/\n/g, '').length);
       expect(doc.lines.map(line => line.source)).toEqual(fixture.text.split('\n'));
-      if (fixture.soft) expect(doc.paths[fixture.firstRow.length].transform).toMatch(/,49\.92\)$/);
+      if (fixture.soft) expect(doc.paths[fixture.firstRow.length].transform.endsWith(`,${B2})`)).toBe(true);
     });
   }
   it('keeps a trailing ASCII space/tab run separate without changing tab source', async () => {
     // This checks token policy/source preservation, not native tab-stop widths.
     const text = 'WW\u2003 \tWWW';
     const doc = await layoutSvgText(text, { ...style, align: 'center' }, 100, new Set([0]));
-    expect(doc.paths[0].transform).toBe('translate(14.35,19.20)');
+    expect(doc.paths[0].transform).toBe(`translate(14.35,${B1})`);
     expect(doc.lines.map(line => line.source)).toEqual([text]);
   });
   it('keeps combining clusters and surrogate pairs on the same row', async () => {

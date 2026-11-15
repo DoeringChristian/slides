@@ -8,6 +8,23 @@ later session can confirm the item is still real before acting on it.
 
 ## Queued
 
+### Browser tests import pre-restructure module paths
+The `src/utils` move into domain folders rewrote static imports, but the
+browser tests load modules through dynamic `import('/src/utils/<name>.ts')`
+inside template strings, which neither the restructure script nor
+`tests/module-resolution.test.ts` sees. Most still name the old flat paths, so
+those cases fail on import. Examples: `tests/arrow-junction.browser.mjs:104`
+(`/src/utils/shapeToPath.ts`), `tests/aim-binding.browser.mjs:90`
+(`/src/utils/connectorUtils.ts`), `tests/bound-text-fitting.browser.mjs:81`
+(`/src/utils/syncDependents.ts`). Fix the paths and extend the resolution test
+to template-string imports. (`tests/text-refinements.browser.mjs` is fixed.)
+
+### Underline alone does not redraw text
+`SVGTextPaths` re-lays out when `style.textDecoration` changes (it is in the
+layout `useMemo` deps), but its `memo` comparator never compares it, so the
+component does not re-render for a decoration-only change.
+`src/components/svg/SVGTextPaths.tsx:87` (deps) vs the comparator below it.
+
 ### LLM integration, with rich embedded displays
 Bring back LLM integration, and widen what it can author: beyond text and
 shapes, an element type that hosts a **rich display** — raw HTML, a Three.js /
@@ -33,22 +50,6 @@ Open questions for whoever picks this up:
 - **Export size.** A Three.js scene means shipping a renderer into the
   standalone template; the editable export is already ~42 MB.
 
-### Fonts, including math text
-Implement selectable fonts that apply to **math text as well as body text** —
-today the LaTeX pipeline renders math in its own fixed face regardless of the
-element's font. Include the font used by SIGGRAPH papers (Linux Libertine /
-Libertinus, the TeX `newtx`/`libertine` family) as one of the options.
-
-Scope notes for whoever picks this up:
-- Text style lives in `TextElement.style` (`src/types/presentation.ts`); layout
-  and glyph outlines come from `src/utils/text/textLayout.ts` and
-  `src/utils/text/glyphPaths.ts`, math from `src/utils/text/latexUtils.ts`. The
-  font has to reach all three or math and prose drift.
-- Fonts are embedded for export (`src/assets/fonts`), so each added face costs
-  bundle size in the standalone/viewer builds — subset if possible.
-- Shared-renderer rule applies: one font resolution path for canvas, presenter,
-  previews and exports.
-
 ### `GET /api/projects` ignores ownership when unidentified
 Every other project route derives the caller from `X-Slides-User` and refuses
 what it does not own (`/api/projects/:id` answers 403). The list route instead
@@ -64,27 +65,6 @@ sees 26. Local-only server with no auth model, so not urgent — but the
 inconsistency with the 403 on `:id` looks unintended. Options: return `[]` when
 unidentified, or require the header on the list route.
 `server/index.js:23` (`userIdOf`), `server/index.js:35-44`
-
-### Opacity transitions are never offered
-`transitionPropertiesDiffer` rounds every numeric before comparing, so opacity
-0.2 → 0.4 compares as `0 !== 0` and the transition row stays hidden. Also
-affects `lineHeight` and `cropX/Y/W/H`. Needs per-group epsilon comparison
-instead of a blanket `Math.round`.
-`src/utils/animation/transitionProperties.ts:104`
-
-### Bound-label mask ignores element opacity
-The `_labelMask` `<rect>` is emitted with `fill` but no `opacity`, as a sibling
-of the `opacity={opacity}` group — so a fading arrow's label mask stays fully
-opaque and punches a solid hole through whatever is behind it.
-`src/components/svg/ElementRenderer.tsx:226-232`
-
-### `resetPresentation` has no Yjs branch
-Violates the dual-path store rule: it is `set({ presentation: createPresentation() })`
-with no `getActiveDoc()` path, and neither caller clears the active doc. In a
-collab session "New" leaves the old Y.Doc attached, so the UI shows a blank deck
-while mutations keep landing in the previous one.
-`src/store/presentationStore.ts:2256`; callers `src/components/layout/Header.tsx:124`,
-`src/components/layout/AppLayoutMobile.tsx:242`
 
 ### Non-atomic index write can lose every deck at once
 `saveIndex` is a bare `fs.writeFile` over `_index.json`, which is ~800 KB
@@ -106,34 +86,12 @@ else. `tsc -b`, `vitest run` (1614 tests, under 2 s) and `eslint` are all green
 and all absent. The 38-case browser gate (`tests/BROWSER_GATE.md`) is
 self-contained but nothing invokes it either.
 
-### Dual-path tests missing for six mutating actions
+### Dual-path tests missing for five mutating actions
 `updateAcrossSlides`, `syncElementsToSlides`, `joinPaths`, `setGroupCrop`,
-`moveElements`, `resetPresentation` have no entry in any `*.dualpath.test.ts`
-table. `updateAcrossSlides` is the central write funnel (8 call sites) and
+`moveElements` have no entry in any `*.dualpath.test.ts` table. `updateAcrossSlides` is the central write funnel (8 call sites) and
 syncs `elementOrder` to Yjs only when its *length* changed
 (`src/store/presentationStore.ts:1233`), so a same-length reorder through that
 path would not reach collaborators.
-
-### `src/utils` is a flat 93-module directory
-No domain boundaries, so call graphs cross freely and nothing stops a new
-feature from reaching into geometry internals. A scripted move into domain
-subdirectories is prepared — see `scripts/restructure-utils.mjs`. Needs
-exclusive access to the working tree (no other agent mid-edit) because it
-rewrites every import in `src/`.
-
-### `extend` easing is offered for shapes it cannot animate
-`SHAPE_VISIBILITY_TYPES` includes `'extend'` for every shape type, but
-`buildExtendFx` returns null unless `shapeType === 'path'` with ≥4 points, so
-on a rect or ellipse the picker offers an effect that silently degrades to a
-plain opacity ramp. Either gate the picker on `shapeType` or implement extend
-for primitives.
-`src/utils/animation/easingCatalog.ts:24`, `src/utils/animation/interpolation.ts:839`
-
-### Text vertical alignment still uses the legacy strut
-`const baseline = fontSize * 0.8` with `advance = baseline + fontSize * 0.4 * lineHeight`
-predates real font metrics being available; it should use the loaded face's
-ascent/descent so vertical centring matches what the glyphs actually occupy.
-`src/utils/text/textLayout.ts:114`
 
 ## Never started (design only)
 

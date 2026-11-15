@@ -38,7 +38,7 @@ const formatElementSummary = (selected: ReturnType<typeof useSelectedElements>):
 export const AppLayoutMobile: React.FC = () => {
   const title = usePresentationStore((s) => s.presentation.title);
   const updateTitle = usePresentationStore((s) => s.updateTitle);
-  const resetPresentation = usePresentationStore((s) => s.resetPresentation);
+  const newDeck = useVaultStore((s) => s.newDeck);
   const setPresenting = useEditorStore((s) => s.setPresenting);
   const setPresentingSlideIndex = useEditorStore((s) => s.setPresentingSlideIndex);
   const slideOrder = usePresentationStore((s) => s.presentation.slideOrder);
@@ -239,10 +239,7 @@ export const AppLayoutMobile: React.FC = () => {
             <div className="flex-1 overflow-y-auto py-2">
               <button
                 onClick={() => {
-                  resetPresentation();
-                  useEditorStore.getState().setActiveSlide(
-                    usePresentationStore.getState().presentation.slideOrder[0]
-                  );
+                  void newDeck();
                   setShowMenu(false);
                 }}
                 className="w-full flex items-center gap-3 px-4 py-3 text-left text-sm hover:bg-gray-100"

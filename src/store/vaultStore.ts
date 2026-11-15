@@ -74,6 +74,8 @@ interface VaultStore {
   // Project management
   loadProjects: () => Promise<void>;
   createProject: (title?: string) => Promise<void>;
+  /** The "New" button: a new project when one is open, else a blank deck. */
+  newDeck: () => Promise<void>;
   importProject: (presentation: Presentation) => Promise<void>;
   openProject: (id: string) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
@@ -286,6 +288,23 @@ export const useVaultStore = create<VaultStore>()((set, get) => ({
     } finally {
       set({ isLoading: false });
     }
+  },
+
+  newDeck: async () => {
+    // With a project open, "New" must start a NEW project. Resetting the open
+    // deck instead swapped its contents (and id) under the still-open project,
+    // so autosave wrote the blank deck over it — over the very file, in
+    // filesystem mode — and a server project's collaborators were left on the
+    // old shared doc. `createProject` saves the new deck and opens it, which
+    // also detaches the old doc before the switch.
+    if (get().activeProjectId) {
+      await get().createProject();
+      return;
+    }
+    usePresentationStore.getState().resetPresentation();
+    useEditorStore.getState().setActiveSlide(
+      usePresentationStore.getState().presentation.slideOrder[0] ?? '',
+    );
   },
 
   importProject: async (source: Presentation) => {

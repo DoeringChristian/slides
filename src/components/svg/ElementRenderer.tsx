@@ -192,10 +192,14 @@ const ShapeBody: React.FC<ShapeProps & { fillPaint?: string }> = memo(({ element
         startHead: startAlpha > 0 ? startType : 'none', endHead: endAlpha > 0 ? endType : 'none',
       });
       const separateFill = !!strokePlan || shaftClipPaths.length > 0 || fillOpacity !== undefined;
+      // One opacity for the arrow AND its label mask, applied to the group
+      // that holds both. The mask used to sit outside it at full strength,
+      // so a fading arrow left a solid background-coloured hole behind; and
+      // fading the two separately would let the shaft show through the mask.
       return (
-        <>
+        <g opacity={opacity}>
           <g transform={transform}>
-            <g transform={`translate(${x}, ${y})`} opacity={opacity}>
+            <g transform={`translate(${x}, ${y})`}>
               {/* Head cuts affect only the shaft stroke, never the closed fill. */}
               {separateFill && fillCol !== 'none' && (
                 <path d={fillD} fill={fillCol} fillOpacity={fillOpacity} stroke="none" style={{ pointerEvents: 'none' }} />
@@ -233,7 +237,7 @@ const ShapeBody: React.FC<ShapeProps & { fillPaint?: string }> = memo(({ element
               style={{ pointerEvents: 'none' }}
             />
           )}
-        </>
+        </g>
       );
     }
 

@@ -6,7 +6,7 @@ import type { WriteEffect } from '../../utils/animation/interpolation';
 import { textInsets, textInkOverflow } from '../../utils/text/boundTextLayout';
 import { textVerticalOffset, type SvgTextDoc } from '../../utils/text/textLayout';
 import { prewarmFonts } from '../../utils/text/glyphPaths';
-import { layoutForElement } from '../../utils/text/userTextSizing';
+import { layoutForElement, layoutForElementSync } from '../../utils/text/userTextSizing';
 import { RenderPaths } from './RenderPaths';
 import { SVGTextContent } from './SVGTextContent';
 
@@ -17,6 +17,8 @@ prewarmFonts();
 interface Props {
   element: TextElement;
   isEditing?: boolean;
+  /** Overrides `element.opacity` — for callers drawing a faded copy (a
+   *  dissolve or morph side). Omit it to draw the element as it is. */
   opacity?: number;
   clipIdPrefix?: string;
   writeFx?: WriteEffect;
@@ -50,7 +52,7 @@ interface Props {
 export const SVGTextPaths: React.FC<Props> = memo(({
   element,
   isEditing = false,
-  opacity = 1,
+  opacity: opacityOverride,
   clipIdPrefix = 'text-clip',
   writeFx,
   rawLineIndices,
@@ -58,6 +60,10 @@ export const SVGTextPaths: React.FC<Props> = memo(({
   clipPadding,
 }) => {
   const { style, x: elementX, y: elementY, width, height, rotation } = element;
+  // Default to the element's own opacity. A literal default of 1 made every
+  // caller that did not think to pass it — the editor canvas, the edit
+  // overlay, the object-list preview — draw text fully opaque.
+  const opacity = opacityOverride ?? element.opacity ?? 1;
   const padding = textInsets(element);
   const clipPad = clipPadding ?? textInkOverflow(element);
   const bottomOverflow = 500;
@@ -72,22 +78,33 @@ export const SVGTextPaths: React.FC<Props> = memo(({
     ? Array.from(rawLineIndices).sort((a, b) => a - b).join(',')
     : '';
 
+  const layoutDeps = [element.text, style.fontSize, style.fontWeight, style.fontStyle,
+    style.color, style.fontFamily, style.textDecoration, style.lineHeight, style.align, width, padding, rawKey,
+    element.textSizing, element.containerId];
   const layoutPromise = useMemo(
     // One shared branch with the export baker, so a baked deck cannot miss
     // the very layouts this renderer asks for.
     () => layoutForElement(element, rawLineIndices),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [element.text, style.fontSize, style.fontWeight, style.fontStyle,
-     style.color, style.fontFamily, style.textDecoration, style.lineHeight, style.align, width, padding, rawKey, element.textSizing, element.containerId],
+    layoutDeps,
   );
+  // The same layout, if it has already settled — drawn on THIS render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const cachedDoc = useMemo(() => layoutForElementSync(element, rawLineIndices), layoutDeps);
 
-  const [doc, setDoc] = useState<SvgTextDoc | null>(null);
+  // The last layout that settled. It is deliberately NOT cleared when the
+  // inputs change: a resize or a size/font animation changes them every
+  // frame, and blanking until the new layout resolved drew nothing for a
+  // frame each time — for LaTeX, whose layout waits on MathJax, for several.
+  // Showing the previous layout until the next one lands is invisible by
+  // comparison, and a cache hit (`cachedDoc`) skips even that frame.
+  const [settledDoc, setDoc] = useState<SvgTextDoc | null>(null);
+  const doc = cachedDoc ?? settledDoc;
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setFailed(false);
-    setDoc(null);
     layoutPromise.then(
       (d) => { if (!cancelled) { setDoc(d); onLayout?.(d); } },
       (err) => {
@@ -115,9 +132,10 @@ export const SVGTextPaths: React.FC<Props> = memo(({
     );
   }
 
-  // While layout pending: render nothing. For a Write transition that matches
-  // t=0 anyway. For steady frame on first paint, a brief blank during font
-  // load — fonts are pre-warmed so this is usually one frame.
+  // Nothing has EVER settled for this instance: render nothing. For a Write
+  // transition that matches t=0 anyway; for a steady frame it is a brief
+  // blank on first paint while fonts load — they are pre-warmed, so usually
+  // one frame. Later input changes keep drawing the previous layout.
   if (!doc) return null;
 
   // Vertical alignment offset within the box (shared helper so RenderMorph
@@ -152,6 +170,7 @@ export const SVGTextPaths: React.FC<Props> = memo(({
   return (
     prev.isEditing === next.isEditing &&
     prev.opacity === next.opacity &&
+    a.opacity === b.opacity &&
     prev.clipIdPrefix === next.clipIdPrefix &&
     prev.clipPadding === next.clipPadding &&
     (a as GroupCropElement)._groupClips === (b as GroupCropElement)._groupClips &&

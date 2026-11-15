@@ -54,6 +54,13 @@ export interface TextFontDef {
   /** Asset URLs, resolved by Vite (hashed in the editor build, inlined in the
    *  standalone build, so no sibling `fonts/` directory is required). */
   variants: FontVariants;
+  /** Ascent and descent in em — the face's hhea metrics, which its OS/2
+   *  typo and win metrics agree with, so it is also what a browser lays a CSS
+   *  line box out with. `textRowMetrics` places the baseline by them, which is
+   *  what keeps the SVG text and the edit overlay's native text on one
+   *  baseline. `fontRegistry.test.ts` reads them back from the font files. */
+  ascent: number;
+  descent: number;
   /** Math font to use when the element does not name one. */
   defaultMathFont: MathFontId;
   /** Attribution — these are redistributed in a public repo. */
@@ -66,6 +73,8 @@ export const TEXT_FONTS = [
     label: 'Inter',
     cssStack: "'Inter', system-ui, sans-serif",
     variants: TEXT_FONT_FILES['Inter'],
+    ascent: 0.96875,
+    descent: 0.2412109375,
     // Inter is a UI sans; New Computer Modern is MathJax 4's default and the
     // least surprising partner until a sans math font is registered.
     defaultMathFont: 'mathjax-newcm',
@@ -76,6 +85,8 @@ export const TEXT_FONTS = [
     label: 'Libertinus Serif',
     cssStack: "'Libertinus Serif', 'Linux Libertine O', Georgia, serif",
     variants: TEXT_FONT_FILES['Libertinus Serif'],
+    ascent: 0.894,
+    descent: 0.246,
     // The SIGGRAPH pairing: acmart sets Libertine text against newtxmath in
     // its libertine mode. This was briefly STIX Two, chosen because its
     // ADVANCE WIDTHS came closest to an acmart render. That was the wrong

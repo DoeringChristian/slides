@@ -13,7 +13,6 @@ import { useActivePeers } from '../../collab/activeAwareness';
 export const Header: React.FC = () => {
   const title = usePresentationStore((s) => s.presentation.title);
   const updateTitle = usePresentationStore((s) => s.updateTitle);
-  const resetPresentation = usePresentationStore((s) => s.resetPresentation);
   const setPresenting = useEditorStore((s) => s.setPresenting);
   const setPresentingSlideIndex = useEditorStore((s) => s.setPresentingSlideIndex);
   const autoDrawMode = useEditorStore((s) => s.autoDrawMode);
@@ -25,6 +24,7 @@ export const Header: React.FC = () => {
 
   const activeProjectId = useVaultStore((s) => s.activeProjectId);
   const closeProject = useVaultStore((s) => s.closeProject);
+  const newDeck = useVaultStore((s) => s.newDeck);
   const storageMode = useVaultStore((s) => s.storageMode);
   const joinedProjects = useJoinedProjects();
 
@@ -121,7 +121,7 @@ export const Header: React.FC = () => {
       </div>
 
       <div className="flex items-center gap-1">
-        <button onClick={() => { resetPresentation(); useEditorStore.getState().setActiveSlide(usePresentationStore.getState().presentation.slideOrder[0]); }}
+        <button onClick={() => { void newDeck(); }}
           className="p-1.5 rounded hover:bg-gray-100 text-gray-600" title="New">
           <FilePlus size={18} />
         </button>

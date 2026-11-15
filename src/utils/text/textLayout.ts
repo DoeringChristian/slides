@@ -162,10 +162,24 @@ export function textVerticalOffset(
   return 0;
 }
 
-/** The plain-text strut shared by SVG rows and native editing line boxes. */
-export function textRowMetrics(fontSize: number, lineHeight: number) {
-  const baseline = fontSize * 0.8;
-  const advance = baseline + fontSize * 0.4 * (lineHeight || 1.2);
+/**
+ * The plain-text strut shared by SVG rows and native editing line boxes.
+ *
+ * `advance` is the row pitch, unchanged from the original strut so existing
+ * decks keep their line spacing. `baseline` is where the face's own ascent and
+ * descent put it inside that row, by the CSS line-box rule: the glyph box
+ * (ascent + descent) is centred in the row and the baseline sits `ascent`
+ * below its top. It used to be a flat `0.8 em` for every face, which left
+ * the glyphs high in their rows — Inter's caps sat 0.07 em below the row top
+ * and 0.48 em above its bottom, so vertically centred text read as high —
+ * and disagreed with the edit overlay, whose native text the browser places
+ * by exactly this rule.
+ */
+export function textRowMetrics(fontSize: number, lineHeight: number, fontFamily: string | undefined) {
+  const face = textFont(fontFamily);
+  const advance = fontSize * (0.8 + 0.4 * (lineHeight || 1.2));
+  const glyphBox = fontSize * (face.ascent + face.descent);
+  const baseline = (advance - glyphBox) / 2 + fontSize * face.ascent;
   return { baseline, advance };
 }
 
@@ -518,11 +532,12 @@ export async function layoutSvgText(
       // Empty paragraph → advance one line and continue (mirrors the HTML
       // renderer's `&nbsp;` placeholder behaviour).
       if (!block.displayContent && block.type === 'paragraph') {
-        yCursor += textRowMetrics(blockFontSize, lineHeight).advance;
+        const emptyRow = textRowMetrics(blockFontSize, lineHeight, style.fontFamily);
+        yCursor += emptyRow.advance;
         linesOut.push({
           yTop: lineYTop,
           yBottom: yCursor,
-          baseline: lineYTop + blockFontSize * 0.8,
+          baseline: lineYTop + emptyRow.baseline,
           source: block.content,
         });
         continue;
@@ -650,14 +665,14 @@ export async function layoutSvgText(
       // Render each line.
       for (const [rowIndex, line] of lines.entries()) {
         if (line.length === 0) {
-          yCursor += textRowMetrics(blockFontSize, lineHeight).advance;
+          yCursor += textRowMetrics(blockFontSize, lineHeight, style.fontFamily).advance;
           continue;
         }
         // Per-line baseline metrics. Math glyphs extend by `aboveBaseline`
         // px above the baseline (often ~0.8 * heightPx for MathJax) and by
         // `belowBaseline` below. If we only used `max(fontSize, mathHeight) *
         // lineHeight` for line spacing, the line baseline would sit
-        // `fontSize * 0.8` below yCursor and tall math would extend ABOVE
+        // the strut's baseline below yCursor and tall math would extend ABOVE
         // yCursor into the line above. Compute the baseline offset from the
         // actual ascender requirements of everything on this line.
         const mathUnits = line.filter(
@@ -665,7 +680,7 @@ export async function layoutSvgText(
         );
         const mathAbove = mathUnits.reduce((m, u) => Math.max(m, u.aboveBaseline), 0);
         const mathBelow = mathUnits.reduce((m, u) => Math.max(m, u.belowBaseline), 0);
-        const metrics = textRowMetrics(blockFontSize, lineHeight);
+        const metrics = textRowMetrics(blockFontSize, lineHeight, style.fontFamily);
         const textAbove = metrics.baseline;
         const textBelow = metrics.advance - metrics.baseline;
         const aboveBaseline = Math.max(textAbove, mathAbove);
@@ -719,7 +734,7 @@ export async function layoutSvgText(
       linesOut.push({
         yTop: lineYTop,
         yBottom: yCursor,
-        baseline: lineBaseline >= 0 ? lineBaseline : lineYTop + blockFontSize * 0.8,
+        baseline: lineBaseline >= 0 ? lineBaseline : lineYTop + textRowMetrics(blockFontSize, lineHeight, style.fontFamily).baseline,
         source: block.content,
       });
       // `lines` is indexed BY SOURCE LINE — the edit overlay sizes one

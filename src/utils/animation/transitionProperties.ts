@@ -85,6 +85,21 @@ export function transitionPropertyValues(element: SlideElement, group: Transitio
   }
 }
 
+/**
+ * How far apart two numbers must be to count as a change, per group.
+ *
+ * Pixel- and degree-valued groups ignore sub-half-unit drift, which a drag or
+ * a float round-trip leaves behind and which no viewer could see animate.
+ * Unit-scale groups cannot use that tolerance: opacity lives in [0, 1] and
+ * line height near 1.2, so half a unit swallowed every real change —
+ * 0.2 → 0.4 compared equal and the transition was never offered.
+ */
+const UNIT_SCALE_GROUPS: ReadonlySet<TransitionGroup> = new Set(['opacity', 'lineHeight']);
+
+function numberTolerance(group: TransitionGroup): number {
+  return UNIT_SCALE_GROUPS.has(group) ? 1e-3 : 0.5;
+}
+
 export function transitionPropertiesDiffer(
   a: SlideElement | undefined,
   b: SlideElement | undefined,
@@ -101,10 +116,11 @@ export function transitionPropertiesDiffer(
   const valsB = transitionPropertyValues(b, group);
   if (valsA.length !== valsB.length) return false;
 
+  const tolerance = numberTolerance(group);
   return valsA.some((valA, i) => {
     const valB = valsB[i];
     if (typeof valA === 'number' && typeof valB === 'number') {
-      return Math.round(valA) !== Math.round(valB);
+      return Math.abs(valA - valB) >= tolerance;
     }
     return valA !== valB;
   });

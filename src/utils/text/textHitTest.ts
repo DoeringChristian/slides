@@ -61,9 +61,8 @@ export function measureBlockHeight(
   lineHeight: number,
   maxWidth: number,
 ): number {
-  // Match the SVG renderer's per-line factor: a baseline at 0.8 * fontSize
-  // plus a descender of 0.4 * lineHeight * fontSize.
-  const row = textRowMetrics(fontSize, lineHeight);
+  // Match the SVG renderer's row pitch exactly (`textRowMetrics`).
+  const row = textRowMetrics(fontSize, lineHeight, fontFamily);
   const container = document.createElement('div');
   container.style.cssText = `
     position: absolute;
@@ -184,8 +183,8 @@ interface CharLookup {
  * so the browser's per-char advance widths match opentype.js's.
  */
 function findCharIndexAt(opts: CharLookup): number {
-  const row = textRowMetrics(opts.fontSize, opts.lineHeight);
-  const nativeTop = row.baseline - nativeTextBaseline(opts.fontSize, row.advance, opts.fontWeight, opts.fontStyle);
+  const row = textRowMetrics(opts.fontSize, opts.lineHeight, opts.fontFamily);
+  const nativeTop = row.baseline - nativeTextBaseline(opts.fontSize, row.advance, opts.fontWeight, opts.fontStyle, opts.fontFamily);
   const container = document.createElement('div');
   container.style.cssText = `
     position: absolute;

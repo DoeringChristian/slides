@@ -87,15 +87,16 @@ export const TransitionButton: React.FC<Props> = ({
   // Visibility options depend on the element type (shapes get Create, text
   // gets glyph effects, etc.). The element exists on at least one side of
   // the transition.
-  const elementType = (sourceElement ?? targetElement)?.type;
-  const typesFor = (elementType: SlideElement['type'] | undefined) =>
+  const element = sourceElement ?? targetElement;
+  const elementType = element?.type;
+  const typesFor = (el: SlideElement | undefined) =>
     group === 'content' ? CONTENT_TYPES :
     group === 'crop' ? CROP_TYPES :
     group === 'resource' ? RESOURCE_TYPES :
-    group === 'visibility' ? visibilityTypesFor(elementType) :
+    group === 'visibility' ? visibilityTypesFor(el) :
     group === 'morph' ? MORPH_TYPES :
     DEFAULT_TYPES;
-  const types = typesFor(elementType).filter(type => candidates.every(c => typesFor((c.source ?? c.target)?.type).includes(type)));
+  const types = typesFor(element).filter(type => candidates.every(c => typesFor(c.source ?? c.target).includes(type)));
 
   const differs = transitionPropertiesDiffer(sourceElement, targetElement, group);
 

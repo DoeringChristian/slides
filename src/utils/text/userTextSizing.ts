@@ -38,12 +38,12 @@ export async function measureUserText(element: TextElement, rawLines?: Set<numbe
 }
 
 /** Read the exact same two-pass auto layout as the shared SVG renderer. */
-export function getUserTextLayoutSync(element: TextElement): SvgTextDoc | null {
+export function getUserTextLayoutSync(element: TextElement, rawLines?: Set<number>): SvgTextDoc | null {
   const auto = element.textSizing === 'auto-content' && !element.containerId;
   const style = auto && element.style.align !== 'left' ? { ...element.style, align: 'left' as const } : element.style;
-  const doc = getLayoutSync(element.text, style, textSizingWidth(element));
+  const doc = getLayoutSync(element.text, style, textSizingWidth(element), rawLines);
   return auto && element.style.align !== 'left' && doc
-    ? getLayoutSync(element.text, element.style, doc.width + 0.001) : doc;
+    ? getLayoutSync(element.text, element.style, doc.width + 0.001, rawLines) : doc;
 }
 
 /**
@@ -58,4 +58,11 @@ export function layoutForElement(element: TextElement, rawLines?: Set<number>): 
   return element.textSizing === 'auto-content' && !element.containerId
     ? layoutUserText(element, rawLines)
     : layoutSvgText(element.text || '', element.style, textSizingWidth(element), rawLines);
+}
+
+/** `layoutForElement`, answered from the settled cache or not at all. */
+export function layoutForElementSync(element: TextElement, rawLines?: Set<number>): SvgTextDoc | null {
+  return element.textSizing === 'auto-content' && !element.containerId
+    ? getUserTextLayoutSync(element, rawLines)
+    : getLayoutSync(element.text || '', element.style, textSizingWidth(element), rawLines);
 }

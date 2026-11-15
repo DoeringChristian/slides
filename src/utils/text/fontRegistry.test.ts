@@ -1,4 +1,6 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { parse } from 'opentype.js';
 import {
   DEFAULT_MATH_FONT, DEFAULT_TEXT_FONT, FONT_FAMILIES, MATH_FONTS, TEXT_FONTS,
   isBundledTextFont, mathFont, resolveMathFont, textFont,
@@ -145,5 +147,35 @@ describe('the viewer build drops the bytes without changing the registry', () =>
     await expect(viewer.MATH_FONT_MODULES['mathjax-stix2']()).rejects.toThrow(/viewer build/);
     await expect(viewer.loadMathFontRange('@mathjax/x/js/svg/dynamic/calligraphic.js'))
       .rejects.toThrow(/viewer build/);
+  });
+});
+
+describe('text font line metrics', () => {
+  // `textRowMetrics` places every baseline by these, and the edit overlay's
+  // native text is placed by the browser from the font file's own metrics —
+  // so a registry value that drifted from the file would split the two.
+  const FILES: Record<string, string[]> = {
+    'Inter': ['Inter-Regular.ttf', 'Inter-Bold.ttf', 'Inter-Italic.ttf', 'Inter-BoldItalic.ttf'],
+    'Libertinus Serif': ['LibertinusSerif-Regular.otf', 'LibertinusSerif-Bold.otf',
+      'LibertinusSerif-Italic.otf', 'LibertinusSerif-BoldItalic.otf'],
+  };
+  it('match every variant file, in hhea, typo and win alike', () => {
+    expect(Object.keys(FILES).sort()).toEqual(TEXT_FONTS.map(f => f.id).sort());
+    for (const font of TEXT_FONTS) {
+      for (const file of FILES[font.id]) {
+        const bytes = readFileSync(new URL(`../../assets/fonts/${file}`, import.meta.url));
+        const parsed = parse(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+        const em = parsed.unitsPerEm;
+        const { hhea, os2 } = parsed.tables;
+        for (const [ascent, descent] of [
+          [hhea.ascender, -hhea.descender],
+          [os2.sTypoAscender, -os2.sTypoDescender],
+          [os2.usWinAscent, os2.usWinDescent],
+        ]) {
+          expect(ascent / em, `${file} ascent`).toBeCloseTo(font.ascent, 6);
+          expect(descent / em, `${file} descent`).toBeCloseTo(font.descent, 6);
+        }
+      }
+    }
   });
 });

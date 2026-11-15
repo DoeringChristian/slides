@@ -45,6 +45,20 @@ export function jsonToYDoc(presentation: Presentation, doc: Y.Doc = new Y.Doc())
 }
 
 /**
+ * Replace everything under an existing doc's root with `presentation`, in
+ * place: the doc, its providers and its undo manager stay attached, which is
+ * what an in-session reset needs (a fresh doc would orphan every collaborator
+ * still connected to this one). Run it inside the caller's transaction so the
+ * whole swap is one update and one undo step.
+ */
+export function replaceYPresentation(doc: Y.Doc, presentation: Presentation): void {
+  assertCurrentPresentation(presentation);
+  const root = doc.getMap(ROOT_KEY);
+  for (const key of Array.from(root.keys())) root.delete(key);
+  populateRoot(root, presentation);
+}
+
+/**
  * Read back a Presentation from a Y.Doc. Throws if the doc hasn't been
  * initialised (root map is empty).
  */

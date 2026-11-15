@@ -618,7 +618,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom, onPreview }) 
   // (updated synchronously on every keystroke). doc.lines is used for line
   // div heights; native soft rows use the same synchronous strut as SVG.
   const sourceLines = liveText.split('\n');
-  const defaultLineHeight = textRowMetrics(style.fontSize, style.lineHeight).advance;
+  const defaultLineHeight = textRowMetrics(style.fontSize, style.lineHeight, style.fontFamily).advance;
 
   // Element passed to SVGTextPaths uses (x:0, y:0) so its internal
   // translate(elementX+padding, elementY+padding+verticalOffset) places the
@@ -725,7 +725,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom, onPreview }) 
             src.startsWith('## ') ? 1.5 :
             src.startsWith('# ') ? 2 : 1;
           const lineFontSize = baseFontSize * m;
-          const row = textRowMetrics(lineFontSize, style.lineHeight);
+          const row = textRowMetrics(lineFontSize, style.lineHeight, style.fontFamily);
           // IMPORTANT: render the div CHILDLESS at the React level. When the
           // user types into a contentEditable, the browser mutates the DOM
           // (e.g. replaces a <br> with a text node). If React's vDOM had a
@@ -749,7 +749,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom, onPreview }) 
                 fontSize: lineFontSize,
                 lineHeight: `${row.advance}px`,
                 position: 'relative',
-                top: row.baseline - nativeTextBaseline(lineFontSize, row.advance, m > 1 ? 'bold' : style.fontWeight, style.fontStyle),
+                top: row.baseline - nativeTextBaseline(lineFontSize, row.advance, m > 1 ? 'bold' : style.fontWeight, style.fontStyle, style.fontFamily),
                 color: 'transparent',
                 fontWeight: m > 1 ? 'bold' : 'inherit',
               }}

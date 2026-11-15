@@ -51,6 +51,16 @@ describe('transitionProperties', () => {
     expect(transitionPropertiesDiffer(text, { ...text, x: 11 }, 'position')).toBe(true);
   });
 
+  test('unit-scale groups see changes that half-pixel tolerance would swallow', () => {
+    // Opacity is in [0, 1]: rounding made 0.2 → 0.4 compare as 0 → 0, so the
+    // opacity transition row never appeared.
+    const faint = { ...text, opacity: 0.2 };
+    expect(transitionPropertiesDiffer(faint, { ...text, opacity: 0.4 }, 'opacity')).toBe(true);
+    expect(transitionPropertiesDiffer(faint, { ...text, opacity: 0.2 }, 'opacity')).toBe(false);
+    const loose = { ...text, style: { ...text.style, lineHeight: 1.5 } };
+    expect(transitionPropertiesDiffer(text, loose, 'lineHeight')).toBe(true);
+  });
+
   test('visibility compares visible existence across missing elements', () => {
     expect(transitionPropertiesDiffer(undefined, text, 'visibility')).toBe(true);
     expect(transitionPropertiesDiffer(text, { ...text, visible: false }, 'visibility')).toBe(true);
