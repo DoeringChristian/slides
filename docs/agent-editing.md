@@ -134,6 +134,8 @@ slide makes it animate, a new id makes it enter.
 | `add_elements(slideId, elements)` | text / shape / image-placeholder from compact specs with defaults |
 | `update_elements(slideId, patches)` | partial changes by id; nested `style` merges |
 | `delete_elements(slideId, ids)` | |
+| `update_across_slides(elementId, changes?, offset?, slideIds?)` | change one object on every keyframe it appears on: set properties, or shift by an offset (keeps its motion) |
+| `group_elements` / `ungroup_elements(slideId, elementIds)` | group objects that belong together, as one group across their keyframes (planned with the editor's own grouping) |
 | `set_transitions(slideId, elementId, transitions)` | easing per transition group, plus options |
 | `set_slide(slideId, background?, notes?, duration?)` | |
 | `set_title` | |
@@ -248,19 +250,30 @@ see them. The 30 most recently used decks are kept.
 
 ## Review comments
 
-Comments are deck data: `Slide.comments`, keyed by id, each pinned to an
-element (`elementId`) or the slide, with replies (`parentId`) and a resolved
-flag. They sync to collaborators through Yjs like any slide field, are
+Comments are deck data: `Slide.comments`, keyed by id, each pinned to a set
+of elements (`elementIds`: one element, or a whole selection the comment is
+about together) or to the slide, with replies (`parentId`, following their
+thread) and a resolved flag. They sync to collaborators through Yjs like any slide field, are
 validated on load, are not copied into new keyframes, and are left out of
 viewer exports (editable exports keep them). The store actions
 (`addComment` / `updateComment` / `deleteComment`) are dual-path and bypass
 auto-draw and multi-slide mirroring, since a comment is not slide content.
 
-On the canvas (`CommentLayer.tsx`), an element with open threads gets a small
-badge at its top-right corner; comments on the slide itself, or on an element
-no longer on it, gather at the slide's corner. The selection bar has a
-Comment button. The thread popover shows replies, resolve/reopen, and delete
+On the canvas (`CommentLayer.tsx`), each commented element set gets a small
+badge at the top-right of its bounding box; comments on the slide itself, or
+whose elements are all gone, gather at the slide's corner. Elements that are
+gone drop out of a set. The selection bar's Comment button comments on the
+whole selection; an open thread outlines the elements it is about. The thread popover shows replies, resolve/reopen, and delete
 for your own comments.
+
+The **Comment tool** (toolbar, C) points at what a comment is about: click
+an object to comment on it, click empty space to pin the comment to that
+spot (`region` of zero size — "put a chart here"), or drag to comment on an
+area (`region`, with the objects wholly inside it as `elementIds`). With
+objects already selected, the tool comments on the selection directly. The
+comment box opens focused; nothing is stored until it is posted, and the tool
+returns to Select. Area and spot threads are their own targets: the badge
+sits at the area's corner (or the spot), and an open thread outlines it.
 
 Posting a comment with **Ask the assistant** (on by default) forwards it to
 the assistant (naming the comment's slide and element) and opens the panel. The assistant

@@ -218,10 +218,18 @@ export const useAgentStore = create<AgentState>((set, get) => {
 
     forwardComment: (slideId, comment) => {
       const p = readPresentation();
-      const element = comment.elementId ? p.slides[slideId]?.elements[comment.elementId] : undefined;
-      const name = comment.elementId ? p.objects[comment.elementId]?.name : undefined;
+      const ids = (comment.elementIds ?? []).filter(id => p.slides[slideId]?.elements[id]);
+      const label = (id: string) => (p.objects[id]?.name ? `${id} ("${p.objects[id].name}")` : id);
       const where = `slide ${p.slideOrder.indexOf(slideId) + 1} (id ${slideId})`;
-      const about = element ? `on element ${comment.elementId}${name ? ` ("${name}")` : ''} of ${where}` : `on ${where}`;
+      const r = comment.region;
+      const n = (v: number) => Math.round(v);
+      const about = r
+        ? (r.width || r.height
+          ? `on the area x=${n(r.x)}, y=${n(r.y)}, ${n(r.width)}×${n(r.height)} of ${where}${ids.length ? ` (it contains ${ids.map(label).join(', ')})` : ' (empty space)'}`
+          : `at the spot x=${n(r.x)}, y=${n(r.y)} of ${where}${ids.length ? '' : ' (empty space)'}`)
+        : ids.length === 1 ? `on element ${label(ids[0])} of ${where}`
+        : ids.length > 1 ? `on ${ids.length} elements together — ${ids.map(label).join(', ')} — of ${where}`
+        : `on ${where}`;
       const text = `${comment.author.name} left a comment ${about}: ${comment.text}\n\n(Comment id ${comment.id}. Do what it asks, then answer it with reply_to_comment and resolve it if done.)`;
       useAgentSettings.getState().update({ panelOpen: true });
       enqueue(text, [], true);

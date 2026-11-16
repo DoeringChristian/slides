@@ -149,17 +149,15 @@ export const SelectionActionBar: React.FC<Props> = ({ elements: selection, zoom,
               </button>
             )}
 
-            {/* Comment on the element (single selection) */}
-            {single && (
-              <button
-                data-comment-ui=""
-                onClick={(e) => { e.stopPropagation(); useCommentUi.getState().openThread(activeSlideId, single.id); }}
-                className="p-1.5 rounded-full hover:bg-violet-100 text-gray-400 hover:text-violet-600 transition-colors"
-                title="Comment"
-              >
-                <MessageSquarePlus size={18} />
-              </button>
-            )}
+            {/* Comment on the selection: one element, or all of them together */}
+            <button
+              data-comment-ui=""
+              onClick={(e) => { e.stopPropagation(); useCommentUi.getState().openThread(activeSlideId, selection.map(el => el.id)); }}
+              className="p-1.5 rounded-full hover:bg-violet-100 text-gray-400 hover:text-violet-600 transition-colors"
+              title={selection.length > 1 ? `Comment on these ${selection.length} elements` : 'Comment'}
+            >
+              <MessageSquarePlus size={18} />
+            </button>
 
             {/* Hide/Delete button - shown for all elements */}
             <button

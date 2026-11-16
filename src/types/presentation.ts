@@ -76,9 +76,14 @@ export interface CommentAuthor {
 /** A review comment pinned to an element on one slide (keyframe). */
 export interface SlideComment {
   id: string;
-  /** The element it is about; absent = the slide as a whole. Element ids
-   *  persist across keyframes, but a comment belongs to this slide. */
-  elementId?: string;
+  /** The elements it is about (one, or a whole selection); absent = the
+   *  slide as a whole. Element ids persist across keyframes, but a comment
+   *  belongs to this slide. */
+  elementIds?: string[];
+  /** An area of the slide the comment is about, in slide units: a point
+   *  (zero size, e.g. "insert a chart here" in empty space) or a rectangle.
+   *  `elementIds` then lists what was inside it when the comment was made. */
+  region?: { x: number; y: number; width: number; height: number };
   /** Set on replies: the comment this answers (same slide). */
   parentId?: string;
   text: string;
@@ -439,7 +444,7 @@ export interface Theme {
   };
 }
 
-export type Tool = 'select' | 'text' | 'rect' | 'ellipse' | 'triangle' | 'star' | 'line' | 'arrow' | 'polygon' | 'bspline' | 'icon' | 'image';
+export type Tool = 'select' | 'comment' | 'text' | 'rect' | 'ellipse' | 'triangle' | 'star' | 'line' | 'arrow' | 'polygon' | 'bspline' | 'icon' | 'image';
 
 export interface EditorState {
   activeSlideId: string;

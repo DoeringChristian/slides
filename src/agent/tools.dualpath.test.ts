@@ -163,6 +163,47 @@ describe.each([false, true])('agent tools collab=%s', collab => {
     expect(title.height).toBeGreaterThan(60);
   });
 
+  it('edits an object on every keyframe at once, keeping its motion', async () => {
+    const { s1, s2, read } = setup(collab);
+    // The box moves between the keyframes: that motion is the animation.
+    await runTool('update_elements', { slideId: s2, patches: [{ id: 'box', x: 400 }] });
+    const out = await runTool('update_across_slides', { elementId: 'box', changes: { fill: '#ff0000' }, offset: { dx: 10, dy: -5 } });
+    expect(out.isError, JSON.stringify(out.content)).toBeFalsy();
+    const p = read();
+    expect(p.slides[s1].elements.box).toMatchObject({ fill: '#ff0000', x: 110, y: 95 });
+    expect(p.slides[s2].elements.box).toMatchObject({ fill: '#ff0000', x: 410, y: 95 });
+    // Limited to the slides named.
+    await runTool('update_across_slides', { elementId: 'box', changes: { stroke: '#00ff00' }, slideIds: [s2] });
+    expect(read().slides[s1].elements.box).not.toMatchObject({ stroke: '#00ff00' });
+    expect(read().slides[s2].elements.box).toMatchObject({ stroke: '#00ff00' });
+    // Text edits are re-measured on each keyframe.
+    await runTool('update_across_slides', { elementId: 'title', changes: { text: 'A much longer title than before' } });
+    for (const sid of [s1, s2]) {
+      const t = read().slides[sid].elements.title as TextElement;
+      expect(t.text).toBe('A much longer title than before');
+      expect(t.width).toBeGreaterThan(200);
+    }
+  });
+
+  it('groups objects as one group across keyframes, and ungroups them again', async () => {
+    const { s1, s2, read } = setup(collab);
+    const out = await runTool('group_elements', { slideId: s1, elementIds: ['box', 'title'] });
+    expect(out.isError, JSON.stringify(out.content)).toBeFalsy();
+    const { groupId, slides } = JSON.parse((out.content[0] as { text: string }).text);
+    expect(slides).toBe(2);
+    for (const sid of [s1, s2]) {
+      expect(read().slides[sid].elements.box.objectGroupIds).toEqual([groupId]);
+      expect(read().slides[sid].elements.title.objectGroupIds).toEqual([groupId]);
+    }
+    // A single object is not a group.
+    expect((await runTool('group_elements', { slideId: s1, elementIds: ['box'] })).isError).toBe(true);
+    await runTool('ungroup_elements', { slideId: s1, elementIds: ['box'] });
+    for (const sid of [s1, s2]) {
+      expect(read().slides[sid].elements.box.objectGroupIds ?? []).toEqual([]);
+      expect(read().slides[sid].elements.title.objectGroupIds ?? []).toEqual([]);
+    }
+  });
+
   it('makes a whole turn one undo step', async () => {
     const { s1, s2, read, doc } = setup(collab);
     const finish = beginTurnHistory();

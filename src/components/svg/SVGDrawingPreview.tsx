@@ -44,6 +44,21 @@ export const SVGDrawingPreview: React.FC<Props> = ({ drawState, tool, zoom = 1 }
   const commonStyle: React.CSSProperties = { pointerEvents: 'none' };
 
   switch (tool) {
+    case 'comment':
+      // The area a comment will be about.
+      return (
+        <rect
+          x={x}
+          y={y}
+          width={width}
+          height={height}
+          fill="rgba(124, 58, 237, 0.06)"
+          stroke="#7c3aed"
+          strokeWidth={strokeW * 1.5}
+          strokeDasharray={dashArray}
+          style={commonStyle}
+        />
+      );
     case 'text':
       return (
         <rect

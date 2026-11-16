@@ -12,6 +12,8 @@ import { usePresentationStore } from '../../store/presentationStore';
 import { markTextCreation } from '../../store/textEditSession';
 import { createTextElement } from '../../utils/model/slideFactory';
 import { deckTextStyle } from '../../store/textDefaults';
+import { useCommentUi } from '../canvas/commentUi';
+import { commentTargetAt } from '../../utils/editor/commentTarget';
 import { computePointSnap, guideKey, type Guide } from '../../hooks/useAlignmentGuides';
 import { getMarginLayout, getMarginBounds } from '../../utils/geometry/marginLayouts';
 import { isMetaHeld, isShiftHeld } from '../../utils/editor/keyboard';
@@ -784,6 +786,21 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback,
 
     setGuides([]);
     onConnectorHighlight?.(null);
+
+    // Comment tool: what the press lands on becomes the comment's target, and
+    // the comment box opens ready to type. Nothing is written until the
+    // comment is posted.
+    if (tool === 'comment') {
+      setDrawState({
+        startX: 0, startY: 0, currentX: 0, currentY: 0, isDrawing: false,
+        snappedStartX: 0, snappedStartY: 0, snappedCurrentX: 0, snappedCurrentY: 0,
+      });
+      justFinishedDrawing.current = true;
+      const target = commentTargetAt(getSlideElements(), { x, y, width, height }, current.startX, current.startY);
+      setTool('select');
+      useCommentUi.getState().openThread(activeSlideId, target.elementIds, target.region);
+      return;
+    }
 
     if (tool !== 'text' && !isLineTool && width < 5 && height < 5) {
       // Click without a drag — too small to materialize anything. Stay

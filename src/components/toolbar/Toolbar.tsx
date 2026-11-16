@@ -10,9 +10,10 @@ import { ShapeMenu as _ShapeMenu } from './ShapeMenu';
 import { duplicateElements, loadImageFile, loadPdfFile } from '../../utils/model/slideFactory';
 import {
   MousePointer2, Type, Square, Circle, Triangle, Star, Minus, MoveRight,
-  Hexagon, Spline, Image, Trash2, Copy, Clipboard, Scissors,
+  Hexagon, Spline, Image, Trash2, Copy, Clipboard, Scissors, MessageSquarePlus,
 } from 'lucide-react';
 import type { Tool } from '../../types/presentation';
+import { startCommentTool } from '../canvas/commentUi';
 
 // Keep shortcut letters in sync with the switch in `useKeyboardShortcuts.ts`.
 const tools: { tool: Tool; icon: React.ReactNode; label: string }[] = [
@@ -27,6 +28,7 @@ const tools: { tool: Tool; icon: React.ReactNode; label: string }[] = [
   { tool: 'polygon', icon: <Hexagon size={16} />, label: 'Polygon (G)' },
   { tool: 'bspline', icon: <Spline size={16} />, label: 'Curve (P)' },
   { tool: 'image', icon: <Image size={16} />, label: 'Image (I)' },
+  { tool: 'comment', icon: <MessageSquarePlus size={16} />, label: 'Comment (C): click an object or empty space, or drag an area' },
 ];
 
 export const Toolbar: React.FC = () => {
@@ -126,7 +128,7 @@ export const Toolbar: React.FC = () => {
       {tools.map(({ tool, icon, label }) => (
         <button
           key={tool}
-          onClick={() => tool === 'image' ? handleImageTool() : setTool(tool)}
+          onClick={() => tool === 'image' ? handleImageTool() : tool === 'comment' ? startCommentTool() : setTool(tool)}
           className={`p-1.5 rounded text-gray-600 ${currentTool === tool ? 'bg-blue-100 text-blue-600' : 'hover:bg-gray-100'}`}
           title={label}
         >

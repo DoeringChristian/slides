@@ -142,7 +142,8 @@ export function openComments(slide: Slide): Array<Record<string, unknown>> {
     .filter(c => !c.parentId && !c.resolved)
     .map(c => {
       const thread: Record<string, unknown> = { id: c.id, author: c.author.name, text: c.text };
-      if (c.elementId) thread.elementId = c.elementId;
+      if (c.elementIds?.length) thread.elementIds = c.elementIds;
+      if (c.region) thread.region = { x: Math.round(c.region.x), y: Math.round(c.region.y), width: Math.round(c.region.width), height: Math.round(c.region.height) };
       const replies = all.filter(r => r.parentId === c.id).map(r => ({ author: r.author.name, text: r.text }));
       if (replies.length) thread.replies = replies;
       return thread;

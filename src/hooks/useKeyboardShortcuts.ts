@@ -7,6 +7,7 @@ import { usePresentationStore } from '../store/presentationStore';
 import { duplicateElements, loadImageFile } from '../utils/model/slideFactory';
 import { createBoundLabel, findBoundText } from '../utils/model/syncDependents';
 import { deckTextStyle } from '../store/textDefaults';
+import { startCommentTool } from '../components/canvas/commentUi';
 import { getActiveUndoManager } from '../collab/activeUndo';
 
 export function useKeyboardShortcuts() {
@@ -203,6 +204,7 @@ export function useKeyboardShortcuts() {
           case 'g': editor.getState().setTool('polygon'); break;
           case 'p': editor.getState().setTool('bspline'); break;
           case 'i': editor.getState().setTool('image'); break;
+          case 'c': startCommentTool(); break;
         }
       }
 

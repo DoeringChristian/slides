@@ -80,6 +80,15 @@ export function assertPresentation(value: unknown): Presentation {
         if (comment.id !== cid || typeof comment.text !== 'string' || typeof comment.createdAt !== 'number') {
           throw new Error(`Invalid presentation: comment ${cid} on ${id} needs a matching id, text and createdAt.`);
         }
+        if (comment.elementIds !== undefined && (!Array.isArray(comment.elementIds) || comment.elementIds.some(e => typeof e !== 'string'))) {
+          throw new Error(`Invalid presentation: elementIds of comment ${cid} on ${id} must be strings.`);
+        }
+        if (comment.region !== undefined) {
+          const region = record(comment.region, `region of comment ${cid}`);
+          if (['x', 'y', 'width', 'height'].some(k => typeof region[k] !== 'number' || !Number.isFinite(region[k] as number))) {
+            throw new Error(`Invalid presentation: region of comment ${cid} on ${id} needs numeric x, y, width and height.`);
+          }
+        }
         const author = record(comment.author, `author of comment ${cid}`);
         if (typeof author.id !== 'string' || typeof author.name !== 'string') {
           throw new Error(`Invalid presentation: comment ${cid} on ${id} needs an author id and name.`);

@@ -15,6 +15,8 @@ import { withMirroring } from '../utils/model/multiSlide';
 import { withAutoDrawSuspended } from '../utils/paths/autoDraw';
 import { createImageElement, createShapeElement, createTextElement } from '../utils/model/slideFactory';
 import { deckTextStyle } from '../store/textDefaults';
+import { planObjectGrouping } from '../utils/model/objectGroups';
+import { generateId } from '../utils/idGenerator';
 import { hasContentSizing, measureUserText } from '../utils/text/userTextSizing';
 import { FONT_FAMILIES, MATH_FONTS } from '../utils/text/fontRegistry';
 import { applicable } from '../utils/animation/stickyEasings';
@@ -600,6 +602,116 @@ const setTitle: DeckTool = {
   },
 };
 
+const updateAcrossSlides: DeckTool = {
+  name: 'update_across_slides',
+  description: 'Change one object on EVERY keyframe it appears on (or on the slides listed), in one step. Use it when something is wrong for the object as a whole — a typo in a title that persists, a font or color that should be the same everywhere, a label consistently a bit off — rather than on one slide. "changes" sets fields to the same value on each keyframe (style merges); "offset" shifts x/y by the same amount on each keyframe, which keeps the object\'s animation (its motion between keyframes) intact. Do not use it to set a property the animation changes between keyframes (e.g. absolute x of something that moves) unless the user wants that animation gone.',
+  inputSchema: {
+    type: 'object', additionalProperties: false, required: ['elementId'],
+    properties: {
+      elementId: str(),
+      changes: { ...patchSchema, required: [], properties: Object.fromEntries(Object.entries(patchSchema.properties!).filter(([k]) => k !== 'id')) },
+      offset: { type: 'object', additionalProperties: false, properties: { dx: num(), dy: num() } },
+      slideIds: { type: 'array', items: str(), description: 'Limit to these slides; default every slide with the object' },
+    },
+  },
+  async run(input, ctx) {
+    const p = readPresentation();
+    const id = input.elementId as string;
+    const changes = (input.changes as Spec | undefined) ?? {};
+    const offset = (input.offset as { dx?: number; dy?: number } | undefined) ?? {};
+    if (!Object.keys(changes).length && !offset.dx && !offset.dy) throw new ToolError('Give changes or an offset');
+    const wanted = input.slideIds as string[] | undefined;
+    for (const sid of wanted ?? []) requireSlide(p, sid);
+    const slides = p.slideOrder.filter(sid => p.slides[sid]?.elements[id] && (!wanted || wanted.includes(sid)));
+    if (!slides.length) throw new ToolError(`No element ${id} on ${wanted ? 'those slides' : 'any slide'}`);
+    const updates: Array<{ slideId: string; elementId: string; changes: Partial<SlideElement> }> = [];
+    for (const slideId of slides) {
+      const current = p.slides[slideId].elements[id];
+      let next = applyFields(current, changes);
+      if (offset.dx || offset.dy) next = { ...next, x: next.x + (offset.dx ?? 0), y: next.y + (offset.dy ?? 0) };
+      checkElement(p, slideId, next);
+      if (next.type === 'text' && ['text', 'style', 'width', 'textSizing'].some(k => k in changes)) next = await measured(next);
+      const diff = Object.fromEntries(Object.entries(next)
+        .filter(([key, value]) => JSON.stringify(value) !== JSON.stringify((current as unknown as Record<string, unknown>)[key]))) as Partial<SlideElement>;
+      if (Object.keys(diff).length) updates.push({ slideId, elementId: id, changes: diff });
+    }
+    if (updates.length) {
+      ctx.onSlide?.(updates[0].slideId);
+      agentWrite(() => store().updateAcrossSlides(updates));
+    }
+    const labels = updates.map(u => p.slideOrder.indexOf(u.slideId) + 1);
+    return {
+      content: [json({ updatedOnSlides: labels })],
+      summary: `Edited ${p.objects[id]?.name ?? id} on ${labels.length} slide${labels.length === 1 ? '' : 's'}`,
+    };
+  },
+};
+
+/** Apply a grouping plan made on one slide to the same objects on every
+ *  keyframe where they are grouped the same way, so a group is one group
+ *  across the animation (same id), not a different one per slide. */
+function groupingUpdates(p: Presentation, sourceSlideId: string, plan: Map<string, string[]>, acrossSlides: boolean) {
+  const source = p.slides[sourceSlideId];
+  const updates: Array<{ slideId: string; elementId: string; changes: Partial<SlideElement> }> = [];
+  for (const slideId of acrossSlides ? p.slideOrder : [sourceSlideId]) {
+    const slide = p.slides[slideId];
+    if (!slide) continue;
+    const consistent = [...plan.keys()].every(id => !slide.elements[id]
+      || JSON.stringify(slide.elements[id].objectGroupIds ?? []) === JSON.stringify(source.elements[id].objectGroupIds ?? []));
+    if (slideId !== sourceSlideId && !consistent) continue;
+    for (const [elementId, path] of plan) {
+      if (!slide.elements[elementId]) continue;
+      // An empty list (not undefined) clears the groups: undefined is skipped
+      // on the Yjs path, so a full ungroup would not reach collaborators.
+      updates.push({ slideId, elementId, changes: { objectGroupIds: path } });
+    }
+  }
+  return updates;
+}
+
+const groupElements: DeckTool = {
+  name: 'group_elements',
+  description: 'Group objects that belong together and should move, scale and be selected as one: an icon with its caption, the parts of one diagram, a box with its decorations. Do NOT group things merely because they sit near each other or are on the same slide, and do not wrap single objects or whole slides in groups. By default the group is made on every keyframe where these objects appear (same group, so it animates as one).',
+  inputSchema: {
+    type: 'object', additionalProperties: false, required: ['slideId', 'elementIds'],
+    properties: { slideId: str(), elementIds: { type: 'array', items: str() }, acrossSlides: { type: 'boolean', description: 'Default true' } },
+  },
+  async run(input, ctx) {
+    const p = readPresentation();
+    const slideId = input.slideId as string;
+    const slide = requireSlide(p, slideId);
+    const plan = planObjectGrouping(slide.elements, input.elementIds as string[], 'group', generateId);
+    if (!plan.size) throw new ToolError('Nothing to group: give at least two visible, unlocked objects (or groups) on this slide');
+    const updates = groupingUpdates(p, slideId, plan, input.acrossSlides !== false);
+    ctx.onSlide?.(slideId);
+    agentWrite(() => store().updateAcrossSlides(updates));
+    const group = [...plan.values()][0][0];
+    const slides = new Set(updates.map(u => u.slideId)).size;
+    return { content: [json({ groupId: group, members: [...plan.keys()], slides })], summary: `Grouped ${plan.size} objects on ${slides} slide${slides === 1 ? '' : 's'}` };
+  },
+};
+
+const ungroupElements: DeckTool = {
+  name: 'ungroup_elements',
+  description: 'Dissolve the outermost group of these objects (on every keyframe where they are grouped the same way, unless acrossSlides is false). Use when a group gets in the way of what the user asked, or was a poor grouping.',
+  inputSchema: {
+    type: 'object', additionalProperties: false, required: ['slideId', 'elementIds'],
+    properties: { slideId: str(), elementIds: { type: 'array', items: str() }, acrossSlides: { type: 'boolean', description: 'Default true' } },
+  },
+  async run(input, ctx) {
+    const p = readPresentation();
+    const slideId = input.slideId as string;
+    const slide = requireSlide(p, slideId);
+    const plan = planObjectGrouping(slide.elements, input.elementIds as string[], 'ungroup', generateId);
+    if (!plan.size) throw new ToolError('Those objects are not grouped');
+    const updates = groupingUpdates(p, slideId, plan, input.acrossSlides !== false);
+    ctx.onSlide?.(slideId);
+    agentWrite(() => store().updateAcrossSlides(updates));
+    const slides = new Set(updates.map(u => u.slideId)).size;
+    return { content: [json({ ungrouped: [...plan.keys()], slides })], summary: `Ungrouped ${plan.size} objects on ${slides} slide${slides === 1 ? '' : 's'}` };
+  },
+};
+
 const replyToComment: DeckTool = {
   name: 'reply_to_comment',
   description: 'Answer a review comment on a slide (shown to everyone in the comment thread), and resolve it when the request is done. Reply briefly: what you changed, or what you need from the author.',
@@ -617,7 +729,7 @@ const replyToComment: DeckTool = {
     store().addComment(slideId, {
       id: `c-${crypto.randomUUID().slice(0, 8)}`,
       parentId: rootId,
-      ...(comment.elementId ? { elementId: comment.elementId } : {}),
+      ...(comment.elementIds?.length ? { elementIds: comment.elementIds } : {}),
       text: input.text as string,
       author: { ...ASSISTANT_AUTHOR },
       createdAt: Date.now(),
@@ -668,7 +780,8 @@ const insertAttachment: DeckTool = {
 export const DECK_TOOLS: DeckTool[] = [
   getDeck, getSlide, renderSlide, explainTransitionTool,
   addSlide, deleteSlide, moveSlide,
-  addElements, updateElements, deleteElements,
+  addElements, updateElements, updateAcrossSlides, deleteElements,
+  groupElements, ungroupElements,
   setTransitions, setSlide, setTitle,
   replyToComment, insertAttachment,
 ];

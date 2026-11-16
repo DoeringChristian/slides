@@ -113,7 +113,7 @@ describe('one conversation per project', () => {
 
 describe('comments and attachments', () => {
   it('forwards a comment to its slide\'s conversation, and the assistant answers in the thread', async () => {
-    const comment = { id: 'cm1', elementId: 'box', text: 'Make this red', author: { id: 'u1', name: 'Ada', color: '#000' }, createdAt: 1 };
+    const comment = { id: 'cm1', elementIds: ['box'], text: 'Make this red', author: { id: 'u1', name: 'Ada', color: '#000' }, createdAt: 1 };
     store.getState().addComment(s2, comment);
     const fake = scripted(messages => (messages.length === 1
       ? { message: { role: 'assistant', content: [{ type: 'tool_call', id: 't', name: 'reply_to_comment', input: { slideId: s2, commentId: 'cm1', text: 'Done — it is red now.', resolve: true } }] }, stopReason: 'tool_use' }
@@ -129,6 +129,29 @@ describe('comments and attachments', () => {
     const reply = Object.values(comments).find(c => c.parentId === 'cm1')!;
     expect(reply).toMatchObject({ text: 'Done — it is red now.', author: { name: 'Assistant', assistant: true } });
     expect(useAgentStore.getState().thread.items[0]).toMatchObject({ fromComment: true });
+  });
+
+  it('forwards a comment on a selection as being about those elements together', async () => {
+    store.getState().addElement(s1, createShapeElement('ellipse', { id: 'dot' }));
+    store.getState().renameObject('dot', 'Marker');
+    const comment = { id: 'cm2', elementIds: ['box', 'dot'], text: 'Align these', author: { id: 'u1', name: 'Ada', color: '#000' }, createdAt: 1 };
+    store.getState().addComment(s1, comment);
+    const fake = scripted(() => say('ok'));
+    setProviderFactory(async () => fake.provider);
+    useAgentStore.getState().forwardComment(s1, comment);
+    await idle();
+    expect(JSON.stringify(fake.seen[0])).toContain('on 2 elements together — box, dot (\\"Marker\\") — of slide 1');
+  });
+
+  it('forwards a comment on empty space as a spot to put something', async () => {
+    const comment = { id: 'cm3', region: { x: 640, y: 120, width: 0, height: 0 }, text: 'Put a bar chart here', author: { id: 'u1', name: 'Ada', color: '#000' }, createdAt: 1 };
+    store.getState().addComment(s1, comment);
+    const fake = scripted(() => say('ok'));
+    setProviderFactory(async () => fake.provider);
+    useAgentStore.getState().forwardComment(s1, comment);
+    await idle();
+    expect(JSON.stringify(fake.seen[0])).toContain('at the spot x=640, y=120 of slide 1');
+    expect(JSON.stringify(fake.seen[0])).toContain('(empty space): Put a bar chart here');
   });
 
   it('sends attachments to the model and lets it place an image on the slide', async () => {
@@ -154,10 +177,10 @@ describe('comments and attachments', () => {
   });
 
   it('lists open comments in get_slide', async () => {
-    store.getState().addComment(s1, { id: 'x', elementId: 'box', text: 'bigger', author: { id: 'u', name: 'Bo', color: '#000' }, createdAt: 1 });
+    store.getState().addComment(s1, { id: 'x', elementIds: ['box'], text: 'bigger', author: { id: 'u', name: 'Bo', color: '#000' }, createdAt: 1 });
     store.getState().addComment(s1, { id: 'y', text: 'done one', author: { id: 'u', name: 'Bo', color: '#000' }, createdAt: 2, resolved: true });
     const out = await runTool('get_slide', { slideId: s1 });
     const view = JSON.parse((out.content[0] as { text: string }).text);
-    expect(view.comments).toEqual([{ id: 'x', author: 'Bo', text: 'bigger', elementId: 'box' }]);
+    expect(view.comments).toEqual([{ id: 'x', author: 'Bo', text: 'bigger', elementIds: ['box'] }]);
   });
 });

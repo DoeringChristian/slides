@@ -15,7 +15,7 @@ afterEach(() => {
 
 const author = { id: 'u1', name: 'Ada', color: '#2563eb' };
 const comment = (id: string, extra: Partial<SlideComment> = {}): SlideComment =>
-  ({ id, elementId: 'box', text: `text ${id}`, author, createdAt: 1, ...extra });
+  ({ id, elementIds: ['box'], text: `text ${id}`, author, createdAt: 1, ...extra });
 
 function setup(collab: boolean) {
   const p = createPresentation();
@@ -58,7 +58,7 @@ describe.each([false, true])('comments collab=%s', collab => {
 describe('comment persistence', () => {
   it('round-trips through the Yjs encoding', () => {
     const { p, sid } = setup(false);
-    p.slides[sid].comments = { a: comment('a'), b: comment('b', { parentId: 'a', elementId: undefined }) };
+    p.slides[sid].comments = { a: comment('a'), b: comment('b', { parentId: 'a', elementIds: undefined }), c: comment('c', { elementIds: ['box', 'other'] }) };
     expect(yDocToJson(jsonToYDoc(p)).slides[sid].comments).toEqual(JSON.parse(JSON.stringify(p.slides[sid].comments)));
   });
 
@@ -72,6 +72,12 @@ describe('comment persistence', () => {
     const { p, sid } = setup(false);
     p.slides[sid].comments = { a: { ...comment('a'), id: 'other' } };
     expect(() => assertPresentation(p)).toThrow(/comment a/);
+    p.slides[sid].comments = { a: { ...comment('a'), elementIds: [3 as unknown as string] } };
+    expect(() => assertPresentation(p)).toThrow(/elementIds of comment a/);
+    p.slides[sid].comments = { a: { ...comment('a'), region: { x: 1, y: 2, width: 'wide' as unknown as number, height: 0 } } };
+    expect(() => assertPresentation(p)).toThrow(/region of comment a/);
+    p.slides[sid].comments = { a: { ...comment('a'), region: { x: 1, y: 2, width: 0, height: 0 } } };
+    expect(() => assertPresentation(p)).not.toThrow();
   });
 
   it('leaves viewer exports', () => {

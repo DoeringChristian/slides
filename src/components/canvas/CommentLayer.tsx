@@ -5,22 +5,24 @@ import { useEditorStore } from '../../store/editorStore';
 import { useIdentity } from '../../hooks/useIdentity';
 import { getElementBounds } from '../../utils/geometry/geometry';
 import { CANVAS_PADDING, SLIDE_WIDTH } from '../../utils/constants';
-import { useCommentUi, groupComments, openCount } from './commentUi';
-import type { SlideComment } from '../../types/presentation';
+import { useCommentUi, groupComments, openCount, targetKey, type CommentRegion, type CommentTarget } from './commentUi';
+import type { Slide, SlideComment } from '../../types/presentation';
 
 /**
  * Review comments on the canvas: a small badge ("bug") at the top-right of
- * every element with open comments, one at the slide's corner for comments
- * on the slide itself (or on elements no longer on it), and a popover with
- * the thread. Posting a comment can hand it straight to the assistant, which
+ * every element — or multi-element selection — with open comments, one at
+ * the slide's corner for comments on the slide itself (or on elements no
+ * longer on it), and a popover with the thread; while it is open, the
+ * elements it is about are outlined. Posting a comment can hand it straight to the assistant, which
  * does what it asks and answers in the thread.
  */
 
 /** A fresh comment, stamped now. */
-function makeComment(fields: Pick<SlideComment, 'text' | 'author'> & Partial<Pick<SlideComment, 'elementId' | 'parentId'>>): SlideComment {
+function makeComment(fields: Pick<SlideComment, 'text' | 'author'> & Partial<Pick<SlideComment, 'elementIds' | 'parentId' | 'region'>>): SlideComment {
   return {
     id: `c-${crypto.randomUUID().slice(0, 8)}`,
-    ...(fields.elementId ? { elementId: fields.elementId } : {}),
+    ...(fields.elementIds?.length ? { elementIds: fields.elementIds } : {}),
+    ...(fields.region ? { region: fields.region } : {}),
     ...(fields.parentId ? { parentId: fields.parentId } : {}),
     text: fields.text,
     author: fields.author,
@@ -34,6 +36,27 @@ function timeAgo(ms: number): string {
   if (s < 3600) return `${Math.floor(s / 60)} min ago`;
   if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
   return new Date(ms).toLocaleDateString();
+}
+
+/** Union box of the given elements in canvas pixels, or null when none are
+ *  on the slide. */
+function boxOf(slide: Slide, elementIds: string[] | null, zoom: number) {
+  const boxes = (elementIds ?? []).map(id => slide.elements[id]).filter(Boolean).map(el => getElementBounds(el));
+  if (!boxes.length) return null;
+  const x0 = Math.min(...boxes.map(b => b.x)), y0 = Math.min(...boxes.map(b => b.y));
+  const x1 = Math.max(...boxes.map(b => b.x + b.width)), y1 = Math.max(...boxes.map(b => b.y + b.height));
+  return { left: (x0 + CANVAS_PADDING) * zoom, top: (y0 + CANVAS_PADDING) * zoom, width: (x1 - x0) * zoom, height: (y1 - y0) * zoom };
+}
+
+/** A region in canvas pixels. */
+function regionBox(region: CommentRegion, zoom: number) {
+  return { left: (region.x + CANVAS_PADDING) * zoom, top: (region.y + CANVAS_PADDING) * zoom, width: region.width * zoom, height: region.height * zoom };
+}
+
+function targetLabel(names: Array<string | undefined>): string {
+  if (names.length === 1) return names[0] ?? 'this element';
+  const named = names.filter(Boolean) as string[];
+  return named.length === names.length && names.length <= 3 ? named.join(', ') : `${names.length} elements`;
 }
 
 async function forwardToAssistant(slideId: string, comment: SlideComment) {
@@ -114,14 +137,18 @@ const CommentEntry: React.FC<{
 
 const ThreadPopover: React.FC<{
   slideId: string;
-  elementId: string | null;
+  target: CommentTarget;
   comments: SlideComment[];
   left: number;
   top: number;
-}> = ({ slideId, elementId, comments, left, top }) => {
+}> = ({ slideId, target, comments, left, top }) => {
+  const { elementIds, region } = target;
   const me = useIdentity();
   const close = useCommentUi(s => s.close);
-  const elementName = usePresentationStore(s => (elementId ? s.presentation.objects[elementId]?.name : undefined));
+  const objects = usePresentationStore(s => s.presentation.objects);
+  const point = !!region && region.width === 0 && region.height === 0;
+  const what = region ? (point ? 'this spot' : 'this area') : elementIds ? targetLabel(elementIds.map(id => objects[id]?.name)) : null;
+  const plural = (elementIds?.length ?? 0) > 1;
   const [text, setText] = useState('');
   const [ask, setAsk] = useState(true);
   const [showResolved, setShowResolved] = useState(false);
@@ -147,7 +174,7 @@ const ThreadPopover: React.FC<{
   const post = () => {
     const body = text.trim();
     if (!body) return;
-    const comment = makeComment({ text: body, author, elementId: elementId ?? undefined });
+    const comment = makeComment({ text: body, author, elementIds: elementIds ?? undefined, region: region ?? undefined });
     store().addComment(slideId, comment);
     setText('');
     if (ask) void forwardToAssistant(slideId, comment);
@@ -165,7 +192,7 @@ const ThreadPopover: React.FC<{
       <div className="flex items-center gap-1.5 px-3 h-9 border-b border-gray-100 shrink-0">
         <MessageSquare size={13} className="text-gray-500" />
         <span className="text-xs font-medium text-gray-700 flex-1 truncate">
-          {elementId ? `Comments on ${elementName ?? 'this element'}` : 'Comments on this slide'}
+          {what ? `Comments on ${what}` : 'Comments on this slide'}
         </span>
         <button onClick={close} className="text-gray-400 hover:text-gray-700" title="Close (Esc)"><X size={14} /></button>
       </div>
@@ -176,7 +203,7 @@ const ThreadPopover: React.FC<{
             comment={root}
             replies={comments.filter(c => c.parentId === root.id)}
             meId={me.userId}
-            onReply={reply => store().addComment(slideId, makeComment({ text: reply, author, parentId: root.id, elementId: root.elementId }))}
+            onReply={reply => store().addComment(slideId, makeComment({ text: reply, author, parentId: root.id }))}
             onResolve={resolved => store().updateComment(slideId, root.id, { resolved })}
             onDelete={id => store().deleteComment(slideId, id)}
           />
@@ -196,7 +223,7 @@ const ThreadPopover: React.FC<{
             if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); post(); }
           }}
           rows={2}
-          placeholder={elementId ? 'Comment on this element…' : 'Comment on this slide…'}
+          placeholder={region ? (point ? 'What should go here?' : 'Comment on this area…') : !elementIds ? 'Comment on this slide…' : plural ? 'Comment on these elements…' : 'Comment on this element…'}
           className="w-full resize-none border border-gray-300 rounded px-2 py-1 text-sm outline-none focus:border-blue-400"
         />
         <div className="flex items-center gap-2">
@@ -234,48 +261,74 @@ export const CommentLayer: React.FC<{ zoom: number }> = ({ zoom }) => {
 
   if (!slide || editingTextId) return null;
 
-  const anchorFor = (elementId: string | null) => {
-    const el = elementId ? slide.elements[elementId] : undefined;
-    if (!el) return { left: (SLIDE_WIDTH + CANVAS_PADDING) * zoom, top: CANVAS_PADDING * zoom };
-    const b = getElementBounds(el);
-    return { left: (b.x + b.width + CANVAS_PADDING) * zoom, top: (b.y + CANVAS_PADDING) * zoom };
+  const anchorFor = (target: CommentTarget) => {
+    const box = target.region ? regionBox(target.region, zoom) : boxOf(slide, target.elementIds, zoom);
+    if (!box) return { left: (SLIDE_WIDTH + CANVAS_PADDING) * zoom, top: CANVAS_PADDING * zoom };
+    return { left: box.left + box.width, top: box.top };
   };
 
+  const openKey = open?.slideId === slideId ? targetKey(open) : null;
   const badges: React.ReactNode[] = [];
-  for (const [target, comments] of groups) {
+  for (const [key, group] of groups) {
+    const { comments } = group;
+    const target: CommentTarget = { elementIds: group.elementIds, region: group.region };
     const count = openCount(comments);
-    const isOpen = open?.slideId === slideId && open.elementId === target;
+    const isOpen = openKey === key;
     if (!count && !isOpen) continue;
     const firstOpen = comments.find(c => !c.parentId && !c.resolved) ?? comments[0];
     const { left, top } = anchorFor(target);
+    const scope = target.region ? (target.region.width || target.region.height ? ' on an area' : ' at a spot')
+      : !target.elementIds ? ' on this slide' : target.elementIds.length > 1 ? ` on ${target.elementIds.length} elements` : '';
     badges.push(
       <Badge
-        key={target ?? '__slide'}
+        key={key || '__slide'}
         count={count}
         color={firstOpen.author.assistant ? '#7c3aed' : firstOpen.author.color}
         left={left}
         top={top}
         active={isOpen}
-        onClick={() => (isOpen ? close() : openThread(slideId, target))}
-        title={`${count} open comment${count === 1 ? '' : 's'}${target ? '' : ' on this slide'}`}
+        onClick={() => (isOpen ? close() : openThread(slideId, target.elementIds, target.region))}
+        title={`${count} open comment${count === 1 ? '' : 's'}${scope}`}
       />,
     );
   }
 
   let popover: React.ReactNode = null;
+  let outlines: React.ReactNode = null;
   if (open && open.slideId === slideId) {
-    const { left, top } = anchorFor(open.elementId);
+    const target: CommentTarget = { elementIds: open.elementIds, region: open.region };
+    const { left, top } = anchorFor(target);
     popover = (
       <ThreadPopover
-        key={`${open.slideId}:${open.elementId ?? ''}`}
+        key={`${open.slideId}:${openKey}`}
         slideId={slideId}
-        elementId={open.elementId}
-        comments={groups.get(open.elementId) ?? []}
+        target={target}
+        comments={groups.get(openKey ?? '')?.comments ?? []}
         left={left + 12}
         top={Math.max(0, top - 8)}
       />
     );
+    // Show what the thread is about: the area (or spot), else each element.
+    if (open.region) {
+      const box = regionBox(open.region, zoom);
+      outlines = box.width || box.height
+        ? <div className="absolute z-10 pointer-events-none rounded-sm border-2 border-dashed border-violet-500/80 bg-violet-500/5"
+            style={{ left: box.left, top: box.top, width: box.width, height: box.height }} />
+        : <div className="absolute z-10 pointer-events-none w-3 h-3 -ml-1.5 -mt-1.5 rounded-full border-2 border-white bg-violet-500 shadow"
+            style={{ left: box.left, top: box.top }} />;
+    } else {
+      outlines = (open.elementIds ?? []).map(id => {
+        const box = boxOf(slide, [id], zoom);
+        return box && (
+          <div
+            key={id}
+            className="absolute z-10 pointer-events-none rounded-sm border-2 border-dashed border-violet-500/70"
+            style={{ left: box.left - 4, top: box.top - 4, width: box.width + 8, height: box.height + 8 }}
+          />
+        );
+      });
+    }
   }
 
-  return <>{badges}{popover}</>;
+  return <>{outlines}{badges}{popover}</>;
 };
