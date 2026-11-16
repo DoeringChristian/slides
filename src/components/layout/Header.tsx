@@ -4,7 +4,7 @@ import { useEditorStore } from '../../store/editorStore';
 import { useVaultStore } from '../../store/vaultStore';
 import { usePresenterMode } from '../../hooks/usePresenterMode';
 import { Play, Download, FilePlus, Undo2, Redo2, Monitor, ChevronDown, FileDown, Smartphone, Link as LinkIcon, Film, Sparkles } from 'lucide-react';
-import { useAgentSettings } from '../../agent/agentSettings';
+import { useLayout } from '../../store/layoutStore';
 import { ExportDialog } from '../dialogs/ExportDialog';
 import { ShareDialog } from '../dialogs/ShareDialog';
 import { usePwaInstall } from '../../hooks/usePwaInstall';
@@ -35,7 +35,7 @@ export const Header: React.FC = () => {
   const canShare = storageMode === 'server' && !!activeProjectId && !isJoined;
 
   const { canInstall, promptInstall } = usePwaInstall();
-  const agentOpen = useAgentSettings((s) => s.panelOpen);
+  const agentOpen = useLayout((s) => s.sideOpen && s.sideTab === 'assistant');
 
   const [isEditing, setIsEditing] = useState(false);
   const [showPresentMenu, setShowPresentMenu] = useState(false);
@@ -171,7 +171,7 @@ export const Header: React.FC = () => {
       <PeerAvatars />
 
       <button
-        onClick={() => useAgentSettings.getState().update({ panelOpen: !agentOpen })}
+        onClick={() => (agentOpen ? useLayout.getState().showSideTab('properties') : useLayout.getState().showSideTab('assistant'))}
         className={`flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-md mr-1 ${agentOpen ? 'bg-blue-50 text-blue-700' : 'text-gray-700 hover:bg-gray-100'}`}
         title="Assistant: edit this deck by asking"
       >

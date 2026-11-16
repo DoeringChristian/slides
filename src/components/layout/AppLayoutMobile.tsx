@@ -13,6 +13,7 @@ import { SlidePanel } from '../sidebar/SlidePanel';
 import { PropertiesPanel } from '../properties/PropertiesPanel';
 import { NotesEditor } from '../notes/NotesEditor';
 import { ObjectListDrawer } from '../objectlist/ObjectListDrawer';
+import { useLayout } from '../../store/layoutStore';
 import { ExportDialog } from '../dialogs/ExportDialog';
 import { MobileToolPalette } from '../toolbar/MobileToolPalette';
 
@@ -46,8 +47,8 @@ export const AppLayoutMobile: React.FC = () => {
   const setActiveSlide = useEditorStore((s) => s.setActiveSlide);
   const closeProject = useVaultStore((s) => s.closeProject);
   const activeProjectId = useVaultStore((s) => s.activeProjectId);
-  const objectDrawerOpen = useEditorStore((s) => s.objectDrawerOpen);
-  const setObjectDrawerOpen = useEditorStore((s) => s.setObjectDrawerOpen);
+  const objectDrawerOpen = useLayout((s) => s.objectsOpen);
+  const setObjectDrawerOpen = useLayout((s) => s.setObjectsOpen);
 
   const selected = useSelectedElements();
   const slides = useOrderedSlides();

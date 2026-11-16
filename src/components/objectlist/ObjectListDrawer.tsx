@@ -5,16 +5,20 @@ import { expandObjectGroups, planObjectGrouping } from '../../utils/model/object
 import React, { useMemo, useCallback, useState, useRef, useEffect } from 'react';
 import { ChevronDown, ChevronUp, Layers, Group, Ungroup } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
+import { useLayout } from '../../store/layoutStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useAllObjects, useActiveSlide, useObjectElements } from '../../store/selectors';
 import { ObjectListItem } from './ObjectListItem';
 import { selectObjectRange } from '../../utils/model/objectSelection';
 
-export const ObjectListDrawer: React.FC = () => {
+/** `panel` (desktop): fills a fixed-height container — the selection bar,
+ *  notices and list all scroll inside it, so nothing here ever changes the
+ *  canvas's size. `drawer` (mobile): the slide-up drawer, sized by content. */
+export const ObjectListDrawer: React.FC<{ variant?: 'panel' | 'drawer' }> = ({ variant = 'drawer' }) => {
   const activeGroup = useEditorStore(s => s.activeObjectGroupId);
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
-  const objectDrawerOpen = useEditorStore((s) => s.objectDrawerOpen);
-  const setObjectDrawerOpen = useEditorStore((s) => s.setObjectDrawerOpen);
+  const objectDrawerOpen = useLayout((s) => s.objectsOpen);
+  const setObjectDrawerOpen = useLayout((s) => s.setObjectsOpen);
   const selectedElementIds = useEditorStore((s) => s.selectedElementIds);
   const previousGroup = useRef(activeGroup);
   useEffect(() => {
@@ -226,11 +230,11 @@ export const ObjectListDrawer: React.FC = () => {
   };
 
   return (
-    <div className="border-t border-gray-200 bg-white shrink-0">
+    <div className={variant === 'panel' ? 'h-full flex flex-col bg-white' : 'border-t border-gray-200 bg-white shrink-0'}>
       {/* Header bar */}
       <button
         onClick={() => setObjectDrawerOpen(!objectDrawerOpen)}
-        className="w-full flex items-center gap-2 px-3 h-7 text-xs font-medium text-gray-500 uppercase hover:bg-gray-50"
+        className="w-full flex items-center gap-2 px-3 h-7 shrink-0 text-xs font-medium text-gray-500 uppercase hover:bg-gray-50"
       >
         <Layers size={12} />
         <span>Objects ({listedObjects.length})</span>
@@ -239,8 +243,10 @@ export const ObjectListDrawer: React.FC = () => {
         </span>
       </button>
 
-      {objectDrawerOpen && selectedElementIds.length > 0 && (
-        <div className="flex items-center gap-2 px-3 py-1 text-xs text-gray-600 border-t border-gray-100">
+      {objectDrawerOpen && (
+      <div className={variant === 'panel' ? 'flex-1 min-h-0 overflow-y-auto border-t border-gray-100' : ''}>
+      {selectedElementIds.length > 0 && (
+        <div className={`flex items-center gap-2 px-3 py-1 text-xs text-gray-600 border-t border-gray-100 ${variant === 'panel' ? 'sticky top-0 z-10 bg-white' : ''}`}>
           <span>{selectedElementIds.length} selected</span>
           <button title="Group objects (Ctrl/Cmd+G)" aria-label="Group objects"
             className="flex items-center gap-1 rounded px-2 py-1 hover:bg-gray-100 disabled:opacity-40"
@@ -261,8 +267,8 @@ export const ObjectListDrawer: React.FC = () => {
       )}
 
       {/* Collapsible content */}
-      {objectDrawerOpen && (
-        <div className="max-h-[220px] overflow-y-auto border-t border-gray-100">
+      {(
+        <div className={variant === 'panel' ? '' : 'max-h-[220px] overflow-y-auto border-t border-gray-100'}>
           <div data-ungrouped-drop="" {...dropProps(null)} className={`m-2 rounded border border-dashed px-3 py-2 text-xs ${dropTarget === '__loose' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 text-gray-500'}`}>
             Drop here to remove from a group. Drop onto a group to move objects or merge groups.
           </div>
@@ -274,6 +280,8 @@ export const ObjectListDrawer: React.FC = () => {
             </div>
           )}
         </div>
+      )}
+      </div>
       )}
     </div>
   );

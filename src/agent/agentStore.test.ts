@@ -6,6 +6,7 @@ import { useEditorStore } from '../store/editorStore';
 import { createPresentation, createShapeElement, copySlideAsKeyframe } from '../utils/model/slideFactory';
 import { useAgentStore, setProviderFactory, emptyThread } from './agentStore';
 import { useAgentSettings } from './agentSettings';
+import { useLayout } from '../store/layoutStore';
 import { runTool } from './tools';
 import type { AgentMessage, ModelProvider, ProviderResult } from './providers/types';
 import type { ChatAttachment } from './attachments';
@@ -120,7 +121,7 @@ describe('comments and attachments', () => {
       : say('Resolved.')));
     setProviderFactory(async () => fake.provider);
     useAgentStore.getState().forwardComment(s2, comment);
-    expect(useAgentSettings.getState().panelOpen).toBe(true);
+    expect(useLayout.getState()).toMatchObject({ sideOpen: true, sideTab: 'assistant' });
     await idle();
 
     expect(JSON.stringify(fake.seen[0])).toContain(`Ada left a comment on element box of slide 2 (id ${s2})`);

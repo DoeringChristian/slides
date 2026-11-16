@@ -325,7 +325,7 @@ export const SlidePanel: React.FC = () => {
   }, [activeSlideId, setSelectedSlides]);
 
   return (
-    <div className="w-60 bg-white border-r border-gray-200 flex flex-col shrink-0">
+    <div className="w-full h-full bg-white flex flex-col">
       <div className="p-2 border-b border-gray-200 flex items-center justify-between">
         <span className="text-xs font-medium text-gray-500 uppercase">Slides</span>
         <div className="flex items-center gap-0.5">

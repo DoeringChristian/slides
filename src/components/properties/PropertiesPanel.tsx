@@ -50,7 +50,7 @@ export const PropertiesPanel: React.FC = () => {
   const showHeader = !element || (element.type !== 'image' && element.type !== 'text');
 
   if (creationKey) {
-    return <div className="w-64 bg-white border-l border-gray-200 flex flex-col shrink-0 overflow-y-auto">
+    return <div className="w-full h-full bg-white flex flex-col overflow-y-auto">
       <h2 className="p-3 text-sm font-medium border-b">Create {creationKey === 'icon' ? 'icon' : creationKey}</h2>
       <div className="p-3"><CreationProperties key={`${activeSlideId}:${tool}:${iconId}`} tool={tool} creationKey={creationKey} /></div>
       <p className="p-3 text-xs text-gray-500">Drag on the slide to create. Styles are remembered on this browser.</p>
@@ -58,7 +58,7 @@ export const PropertiesPanel: React.FC = () => {
   }
 
   return (
-    <div className="w-64 bg-white border-l border-gray-200 flex flex-col shrink-0 overflow-y-auto">
+    <div className="w-full h-full bg-white flex flex-col overflow-y-auto">
       {showHeader && selected.length < 2 && (
         <div className="p-3 border-b border-gray-200">
           {/* Which transition pickers appear here is derived from what

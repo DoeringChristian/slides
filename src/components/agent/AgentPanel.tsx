@@ -282,11 +282,10 @@ export const AgentPanel: React.FC = () => {
   const { send, stop, undoLastTurn, clear } = useAgentStore.getState();
   const items = thread.items;
   const settings = useAgentSettings();
-  const chatgpt = useChatGPT(settings.panelOpen && settings.provider === 'chatgpt');
+  const chatgpt = useChatGPT(settings.provider === 'chatgpt');
   const chatgptReady = chatgpt.state.kind === 'ok' && chatgpt.state.status.signedIn && chatgpt.state.status.planUsage;
   const ready = hasCredentials(settings) && !!settings.models[settings.provider]
     && (settings.provider !== 'chatgpt' || chatgptReady);
-  const close = () => useAgentSettings.getState().update({ panelOpen: false });
   const slideOrder = usePresentationStore(s => s.presentation.slideOrder);
   // Re-evaluate "Undo turn" whenever the deck changes (an edit or Cmd+Z
   // after the turn makes it no longer the newest undo step).
@@ -333,7 +332,7 @@ export const AgentPanel: React.FC = () => {
 
   return (
     <div
-      className={`w-80 bg-white border-l border-gray-200 flex flex-col shrink-0 select-text relative ${dragging ? 'ring-2 ring-inset ring-blue-400' : ''}`}
+      className={`w-full h-full bg-white flex flex-col select-text relative ${dragging ? 'ring-2 ring-inset ring-blue-400' : ''}`}
       data-testid="agent-panel"
       onDragOver={e => { if (ready && e.dataTransfer.types.includes('Files')) { e.preventDefault(); setDragging(true); } }}
       onDragLeave={e => { if (e.currentTarget === e.target) setDragging(false); }}
@@ -353,9 +352,6 @@ export const AgentPanel: React.FC = () => {
         </button>
         <button onClick={() => setShowSettings(v => !v)} className={`p-1 rounded hover:bg-gray-100 ${showSettings ? 'text-blue-600' : 'text-gray-500'}`} title="Assistant settings">
           <Settings size={15} />
-        </button>
-        <button onClick={close} className="p-1 rounded hover:bg-gray-100 text-gray-500" title="Close">
-          <X size={15} />
         </button>
       </div>
 

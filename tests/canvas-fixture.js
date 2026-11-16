@@ -13,6 +13,8 @@ import { createRoot } from 'react-dom/client';
 import '/src/index.css';
 import { usePresentationStore as store } from '/src/store/presentationStore.ts';
 import { useEditorStore as editor } from '/src/store/editorStore.ts';
+import { useLayout } from '/src/store/layoutStore.ts';
+import { AppLayout } from '/src/components/layout/AppLayout.tsx';
 import { createPresentation, createShapeElement, createTextElement } from '/src/utils/model/slideFactory.ts';
 import { SVGSlideCanvas } from '/src/components/svg/SVGSlideCanvas.tsx';
 import { SVGShapeNode } from '/src/components/svg/SVGShapeNode.tsx';
@@ -93,7 +95,7 @@ function Fixture() {
   return h('div', { style: { position: 'relative', width: 1100, height: 850, overflow: 'hidden' } },
     config.mode === 'icons' && h('div', { style: { position: 'absolute', left: 0, top: 0, width: 800, zIndex: 10 } }, h(config.mobile ? MobileToolPalette : Toolbar)),
     config.mode === 'icons' && h('div', { id: 'creation-properties', style: { position: 'absolute', left: 820, top: 0, width: 260, height: 850, overflow: 'auto', zIndex: 10 } }, h(PropertiesPanel)),
-    config.mode === 'slides' && h('div', { style: { position: 'absolute', left: 820, width: 240, height: 650, zIndex: 10 } }, h(SlidePanel)),
+    config.mode === 'slides' && h('div', { style: { position: 'absolute', left: 820, width: 240, minHeight: 650, zIndex: 10 } }, h(SlidePanel)),
     config.mode === 'merge' && h('div', { style: { position: 'absolute', left: 450, top: 300, width: 500, zIndex: 10 } }, h(ObjectListDrawer)),
     h('svg', { ref: svgRef, width: 2880 * zoom, height: 2460 * zoom, viewBox: '0 0 2880 2460',
       style: { position: 'absolute', left: -960 * zoom, top: -960 * zoom, touchAction: 'none' },
@@ -186,12 +188,13 @@ window.canvasTest = {
       if (next.nextStyle) presentation.slides.other.elements.subject.style = { ...subject.style, ...next.nextStyle };
     }
     store.setState({ presentation });
+    useLayout.setState(next.mode === 'layout' ? { slides: 'full', sideOpen: true, sideTab: 'properties', objectsOpen: false } : { objectsOpen: true });
     if (next.collab) { doc = jsonToYDoc(presentation); setActiveDoc(doc); setActiveUndoManager(createUndoManagerFor(doc)); }
     store.temporal.getState().clear();
     editor.setState({ activeSlideId: sid, tool: next.tool ?? 'select', zoom: next.zoom ?? 1, snapToGrid: !!next.snap,
-      objectDrawerOpen: true, selectedElementIds: next.empty ? [] : ['subject'], editingTextId: null, selectedSlideIds: [], pathExtension: null });
+      selectedElementIds: next.empty ? [] : ['subject'], editingTextId: null, selectedSlideIds: [], pathExtension: null });
     root = createRoot(document.getElementById('fixture'));
-    root.render(h(React.StrictMode, null, h(next.mode === 'production' ? ProductionFixture : Fixture)));
+    root.render(h(React.StrictMode, null, h(next.mode === 'layout' ? AppLayout : next.mode === 'production' ? ProductionFixture : Fixture)));
   },
   snapshot() { return { slide: store.getState().presentation.slides[editor.getState().activeSlideId], editor: { tool: editor.getState().tool,
     selected: editor.getState().selectedElementIds, editing: editor.getState().editingTextId },

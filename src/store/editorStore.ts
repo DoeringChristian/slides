@@ -24,7 +24,6 @@ interface EditorStore extends EditorState {
   hoverPreviewHidden: boolean;
   enterObjectGroup: (id: string, groupId?: string) => boolean;
   exitObjectGroup: () => void;
-  objectDrawerOpen: boolean;
   standaloneMode: StandaloneMode;
   standaloneEditorOrigin: string | null;
   setStandaloneMode: (mode: StandaloneMode, editorOrigin: string | null) => void;
@@ -57,7 +56,6 @@ interface EditorStore extends EditorState {
     easing: EasingType,
     options?: TransitionOptions,
   ) => void;
-  setObjectDrawerOpen: (open: boolean) => void;
   setHoveredObjectId: (id: string | null, source?: 'canvas' | 'object-list') => void;
   setActiveSlide: (slideId: string) => void;
   setSelectedElements: (ids: string[]) => void;
@@ -103,7 +101,6 @@ export const useEditorStore = create<EditorStore>()((set) => ({
   hoverPreviewHidden: false,
   editingTextId: null,
   isPanning: false,
-  objectDrawerOpen: true,
   hoveredObjectId: null,
   croppingElementId: null,
   marginLayoutId: null,
@@ -151,7 +148,6 @@ export const useEditorStore = create<EditorStore>()((set) => ({
     return { lastEasings: byType, lastEasingOptions: nextOptions };
   }),
   setStandaloneMode: (mode, editorOrigin) => set({ standaloneMode: mode, standaloneEditorOrigin: editorOrigin }),
-  setObjectDrawerOpen: (open) => set({ objectDrawerOpen: open }),
   setHoveredObjectId: (id, source = 'canvas') => set(s => {
     const doc = getActiveDoc();
     const slide = doc ? yDocToJsonSlideOnly(doc, s.activeSlideId) : usePresentationStore.getState().presentation.slides[s.activeSlideId];
