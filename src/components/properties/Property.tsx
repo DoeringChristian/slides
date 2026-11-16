@@ -291,6 +291,9 @@ interface SelectOpts<T extends object, V extends string | number> extends BaseOp
   /** Coerce the select's raw string value back to V on change. Required
    *  when V is `number`; defaults to identity when V is `string`. */
   parse?: (s: string) => V;
+  /** Called after the user picks a value (e.g. to remember it as a deck
+   *  default). Not called for programmatic writes. */
+  onPick?: (value: V) => void;
 }
 
 export class SelectProperty<T extends object = SlideElement, V extends string | number = string> extends BaseProperty<T, V> {
@@ -303,7 +306,7 @@ export class SelectProperty<T extends object = SlideElement, V extends string | 
       <SelectControl
         value={String(v)}
         options={this.opts.options.map((o) => ({ value: String(o.value), label: o.label }))}
-        onChange={(s) => update(current => this.set(current, parse(s)))}
+        onChange={(s) => { const value = parse(s); update(current => this.set(current, value)); this.opts.onPick?.(value); }}
         disabled={this.disabledFor(element)}
       />
     );
@@ -319,6 +322,9 @@ interface PreviewSelectOpts<T extends object, V extends string | number> extends
   defaultValue?: V;
   /** Grid width of the tile grid. Default 3; use 2 for long labels. */
   columns?: number;
+  /** Called after the user picks a value (e.g. to remember it as a deck
+   *  default). Not called for programmatic writes. */
+  onPick?: (value: V) => void;
 }
 
 /** Exclusive choice rendered as a PreviewSelect tile grid instead of a
@@ -339,7 +345,7 @@ export class PreviewSelectProperty<T extends object = SlideElement, V extends st
           value: o.value, label: o.label, preview: o.preview(element),
         }))}
         value={v}
-        onChange={(nv) => update(current => this.set(current, nv))}
+        onChange={(nv) => { update(current => this.set(current, nv)); this.opts.onPick?.(nv); }}
         columns={this.opts.columns}
         disabled={this.disabledFor(element)}
       />

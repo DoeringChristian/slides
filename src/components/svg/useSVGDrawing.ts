@@ -10,8 +10,8 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { markTextCreation } from '../../store/textEditSession';
-import { DEFAULT_TEXT_STYLE } from '../../utils/constants';
 import { createTextElement } from '../../utils/model/slideFactory';
+import { deckTextStyle } from '../../store/textDefaults';
 import { computePointSnap, guideKey, type Guide } from '../../hooks/useAlignmentGuides';
 import { getMarginLayout, getMarginBounds } from '../../utils/geometry/marginLayouts';
 import { isMetaHeld, isShiftHeld } from '../../utils/editor/keyboard';
@@ -801,10 +801,12 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback,
 
     if (tool === 'text') {
       const click = width < 5 && height < 5;
+      const style = deckTextStyle();
       const el = createTextElement({
         x, y, text: '', textSizing: click ? 'auto-content' : 'user-width',
         width: click ? 1 : Math.max(width, 1),
-        height: DEFAULT_TEXT_STYLE.fontSize * DEFAULT_TEXT_STYLE.lineHeight,
+        height: style.fontSize * style.lineHeight,
+        style,
       });
       markTextCreation(activeSlideId, el.id);
       addElement(activeSlideId, el);

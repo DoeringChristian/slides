@@ -23,7 +23,7 @@ import { attachGroupCrops } from './groupCrop';
  * through their own path (object spread vs applyChangesToYElement), which is
  * what keeps the two collab paths semantically equivalent.
  */
-import type { Slide, SlideElement, ShapeElement, TextElement } from '../../types/presentation';
+import type { Slide, SlideElement, ShapeElement, TextElement, TextStyle } from '../../types/presentation';
 import { rebindAfterElementsMoved } from '../paths/connectorUtils';
 import { pathArcLength, pointAtArcLength } from '../paths/pathShapes';
 import { pathPointToSlide } from '../paths/pathEditing';
@@ -267,10 +267,10 @@ export function boundLabelChangesFor(
 /** Fresh empty bound label for a container: a SMALL box (the text hugs into
  *  it as it's typed — the refit pass grows it), centered per the placement
  *  rules above (bbox center for shapes, arc midpoint for paths). */
-export function createBoundLabel(container: SlideElement): TextElement {
+export function createBoundLabel(container: SlideElement, baseStyle: TextStyle = DEFAULT_TEXT_STYLE): TextElement {
   const measured = supportsMeasuredBoundText(container);
   const height =
-    DEFAULT_TEXT_STYLE.fontSize * DEFAULT_TEXT_STYLE.lineHeight + (measured ? 0 : 2 * TEXT_BOX_PADDING);
+    baseStyle.fontSize * baseStyle.lineHeight + (measured ? 0 : 2 * TEXT_BOX_PADDING);
   const width = Math.min(MIN_LABEL_WIDTH, maxLabelWidthFor(container));
   const center = labelAnchorFor(container);
   return createTextElement({
@@ -281,7 +281,7 @@ export function createBoundLabel(container: SlideElement): TextElement {
     text: '',
     containerId: container.id,
     ...(measured ? { boundTextLayout: 'measured' as const, boundTextBaselineHeight: Math.max(1, container.height), rotation: container.rotation } : {}),
-    style: { ...DEFAULT_TEXT_STYLE, align: 'center', verticalAlign: 'middle' },
+    style: { ...baseStyle, align: 'center', verticalAlign: 'middle' },
   });
 }
 

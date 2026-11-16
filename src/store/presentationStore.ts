@@ -55,6 +55,10 @@ import {
   resourceReferencedInY,
 } from '../collab/yCleanup';
 
+/** Transaction origin for deck preferences (e.g. default fonts): synced to
+ *  peers, but not tracked by the local undo manager. */
+const PREFERENCE_ORIGIN = Symbol('deck-preference');
+
 // Collab helpers — small adapters over the Y schema so the actions below can
 // stay close to their original shape. All `getYxxx` returns either a Y type
 // or undefined if the doc hasn't been populated yet (cold-start in flight).
@@ -235,6 +239,11 @@ interface PresentationStore {
 
   // Presentation actions
   updateTitle: (title: string) => void;
+  /** Remember the fonts new text starts with in this deck (the theme's
+   *  body/math fonts). A preference, not an edit: it is synced and saved
+   *  with the deck but takes no undo step of its own. `mathFont: ''` goes
+   *  back to matching the text font. */
+  setDefaultTextFonts: (fonts: { fontFamily?: string; mathFont?: string }) => void;
   loadPresentation: (presentation: Presentation) => void;
   resetPresentation: () => void;
 }
@@ -2323,6 +2332,37 @@ export const usePresentationStore = create<PresentationStore>()(
             },
           };
         });
+      },
+
+      setDefaultTextFonts: ({ fontFamily, mathFont }) => {
+        const current = usePresentationStore.getState().presentation.theme.fonts;
+        const next = { ...current };
+        if (fontFamily !== undefined) next.body = fontFamily;
+        if (mathFont !== undefined) {
+          if (mathFont) next.math = mathFont;
+          else delete next.math;
+        }
+        if (next.body === current.body && next.math === current.math) return;
+        const doc = getActiveDoc();
+        if (doc) {
+          // Not LOCAL_ORIGIN: the undo manager tracks only that origin, so the
+          // preference syncs to peers without becoming an undo step.
+          doc.transact(() => {
+            const theme = getYRoot(doc).get('theme') as Y.Map<unknown> | undefined;
+            if (!theme) return;
+            theme.set('fonts', mkScalarMap(next));
+          }, PREFERENCE_ORIGIN);
+          return;
+        }
+        // Outside zundo's history for the same reason.
+        const temporal = usePresentationStore.temporal.getState();
+        const tracking = temporal.isTracking;
+        if (tracking) temporal.pause();
+        try {
+          set((state) => ({ presentation: { ...state.presentation, theme: { ...state.presentation.theme, fonts: next } } }));
+        } finally {
+          if (tracking) temporal.resume();
+        }
       },
 
       updateTitle: (title) => {

@@ -12,6 +12,7 @@ import {
 import { FONT_FAMILIES, MATH_FONTS, fontStack } from '../../utils/text/fontRegistry';
 import { injectFontFaces } from '../../utils/text/glyphPaths';
 import type { TextElement } from '../../types/presentation';
+import { usePresentationStore } from '../../store/presentationStore';
 
 // The font specimens below must render in the bundled bytes, not a system copy
 // of the same family name. Idempotent, and cheap enough to do at module load.
@@ -40,6 +41,8 @@ const TEXT_PROPERTIES: Property<TextElement>[] = [
     // is the real CSS font-family, nothing re-derived. Two columns: the
     // family names are long.
     columns: 2,
+    // The pick also becomes this deck's font for new text.
+    onPick: (fontFamily) => usePresentationStore.getState().setDefaultTextFonts({ fontFamily }),
     options: FONT_FAMILIES.map((f) => ({
       value: f, label: f,
       preview: () => (
@@ -53,6 +56,7 @@ const TEXT_PROPERTIES: Property<TextElement>[] = [
     // choice is by name. Left unset, it follows the text font's pairing.
     key: 'style.mathFont', label: 'Math font',
     visibleFor: (el) => (el.text ?? '').includes('$'),
+    onPick: (mathFont) => usePresentationStore.getState().setDefaultTextFonts({ mathFont }),
     options: [
       { value: '', label: 'Match text font' },
       ...MATH_FONTS.map((f) => ({ value: f.id, label: f.label })),

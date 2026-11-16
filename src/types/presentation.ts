@@ -431,7 +431,11 @@ export interface Theme {
   };
   fonts: {
     heading: string;
+    /** Font new text starts with: the last one picked in this deck. A face
+     *  that is not bundled (older decks say 'Arial') means the default. */
     body: string;
+    /** Math font new text starts with; absent = match the text font. */
+    math?: string;
   };
 }
 

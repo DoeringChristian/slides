@@ -14,6 +14,7 @@ import { yDocToJson } from '../collab/ySchema';
 import { withMirroring } from '../utils/model/multiSlide';
 import { withAutoDrawSuspended } from '../utils/paths/autoDraw';
 import { createImageElement, createShapeElement, createTextElement } from '../utils/model/slideFactory';
+import { deckTextStyle } from '../store/textDefaults';
 import { hasContentSizing, measureUserText } from '../utils/text/userTextSizing';
 import { FONT_FAMILIES, MATH_FONTS } from '../utils/text/fontRegistry';
 import { applicable } from '../utils/animation/stickyEasings';
@@ -246,7 +247,7 @@ async function buildElement(p: Presentation, slideId: string, spec: Spec): Promi
     if (spec.type && spec.type !== source.type) throw new ToolError(`${id} is a ${source.type} on other slides; keep the type (or use a new id)`);
     base = structuredClone(source);
   } else if (spec.type === 'text') {
-    base = createTextElement({ text: '', textSizing: spec.width !== undefined ? 'user-width' : 'auto-content' });
+    base = createTextElement({ text: '', textSizing: spec.width !== undefined ? 'user-width' : 'auto-content', style: deckTextStyle() });
   } else if (spec.type === 'shape') {
     const shapeType = (spec.shapeType as ShapeElement['shapeType'] | undefined) ?? 'rect';
     base = createShapeElement(shapeType);

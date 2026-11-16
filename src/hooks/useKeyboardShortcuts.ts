@@ -6,6 +6,7 @@ import { useEditorStore } from '../store/editorStore';
 import { usePresentationStore } from '../store/presentationStore';
 import { duplicateElements, loadImageFile } from '../utils/model/slideFactory';
 import { createBoundLabel, findBoundText } from '../utils/model/syncDependents';
+import { deckTextStyle } from '../store/textDefaults';
 import { getActiveUndoManager } from '../collab/activeUndo';
 
 export function useKeyboardShortcuts() {
@@ -124,7 +125,7 @@ export function useKeyboardShortcuts() {
             if (existing) {
               editor.getState().setEditingTextId(existing.id);
             } else {
-              const label = createBoundLabel(el);
+              const label = createBoundLabel(el, deckTextStyle());
               store.getState().addElement(activeSlideId, label);
               editor.getState().setEditingTextId(label.id);
             }

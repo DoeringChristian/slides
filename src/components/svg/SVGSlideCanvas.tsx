@@ -40,6 +40,7 @@ import { TextEditOverlay } from '../canvas/TextEditOverlay';
 import { CropOverlay } from '../canvas/CropOverlay';
 import { SelectionActionBar } from '../canvas/SelectionActionBar';
 import { CommentLayer } from '../canvas/CommentLayer';
+import { deckTextStyle } from '../../store/textDefaults';
 import { computeGuides } from '../../hooks/useAlignmentGuides';
 import { getMarginLayout, getMarginBounds } from '../../utils/geometry/marginLayouts';
 import { snapToGrid as snapToGridFn } from '../../utils/geometry/geometry';
@@ -685,7 +686,7 @@ export const SVGSlideCanvas: React.FC = () => {
         setEditingTextId(existing.id);
         return;
       }
-      const label = createBoundLabel(el);
+      const label = createBoundLabel(el, deckTextStyle());
       addElement(activeSlideId, label);
       setEditingTextId(label.id);
     }
