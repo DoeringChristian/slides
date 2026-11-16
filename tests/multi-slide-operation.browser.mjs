@@ -67,5 +67,19 @@ try {
     assert.deepEqual(await other(),original);
     console.log('PASS native multi-slide move/resize retains topology, hidden state, style; atomic undo collab='+collab+' multi='+multi);
   }
+  // Creating with several slides selected puts the new object on all of them:
+  // the same object (same id) on each, from one gesture and one undo step.
+  for(const collab of [false,true]){
+    await setup({mode:'production',collab,secondSlide:true,tool:'ellipse'});
+    await evaluate(`canvasTest.editor.setState({selectedSlideIds:[canvasTest.editor.getState().activeSlideId,'other'],selectedElementIds:[]});canvasTest.getActiveUndoManager()?.clear();canvasTest.store.temporal.getState().clear()`);await wait(100);
+    await drag(await screen(400,250),await screen(520,330));
+    const result=await evaluate(`(()=>{const p=canvasTest.store.getState().presentation;const a=p.slides[p.slideOrder[0]],b=p.slides.other;const added=a.elementOrder.filter(id=>id!=='subject');return {added,onOther:added.map(id=>b.elements[id]&&{shapeType:b.elements[id].shapeType,x:Math.round(b.elements[id].x),w:Math.round(b.elements[id].width)}),onActive:added.map(id=>({x:Math.round(a.elements[id].x),w:Math.round(a.elements[id].width)}))}})()`);
+    assert.equal(result.added.length,1,'one new object on the active slide');
+    assert.deepEqual(result.onOther,[{shapeType:'ellipse',...result.onActive[0]}],'the same object on the other selected slide');
+    await evaluate("if(canvasTest.getActiveUndoManager())canvasTest.getActiveUndoManager().undo();else canvasTest.store.temporal.getState().undo()");await wait(100);
+    const after=await evaluate(`(()=>{const p=canvasTest.store.getState().presentation;return [p.slides[p.slideOrder[0]].elementOrder,p.slides.other.elementOrder]})()`);
+    assert.deepEqual(after,[['subject'],['subject']],'one undo removes it from both');
+    console.log('PASS drawing with several slides selected creates the object on all of them, one undo collab='+collab);
+  }
   assert.deepEqual(runtimeErrors,[]);
 } finally {ws.close();}

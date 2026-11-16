@@ -123,6 +123,26 @@ function propagateToSubsequentSlides(
   return updated;
 }
 
+/** The copies of newly created elements that go onto another selected slide.
+ *  References must resolve on that slide: a label whose container is not
+ *  there is left out, a connector end bound to an absent element is unbound,
+ *  and an id the slide already has is skipped. */
+function elementsForMirror(elements: SlideElement[], present: Set<string>): SlideElement[] {
+  const ids = new Set([...present, ...elements.map(el => el.id)]);
+  const out: SlideElement[] = [];
+  for (const el of elements) {
+    if (present.has(el.id)) continue;
+    if (el.type === 'text' && el.containerId && !ids.has(el.containerId)) continue;
+    const copy = structuredClone(el) as SlideElement;
+    if (copy.type === 'shape') {
+      if (copy.startBinding && !ids.has(copy.startBinding.elementId)) copy.startBinding = null;
+      if (copy.endBinding && !ids.has(copy.endBinding.elementId)) copy.endBinding = null;
+    }
+    out.push(copy);
+  }
+  return out;
+}
+
 /** Build the slide inserted by addSlideWithMode from its neighbours. Shared
  *  by the Y and Zustand branches — the Y side passes plain-JSON snapshots. */
 function buildSlideWithMode(
@@ -1081,100 +1101,50 @@ export const usePresentationStore = create<PresentationStore>()(
         });
       },
 
-      addElement: (slideId, element) => {
-        slideId = beforeMutation(slideId);
-        // Inherit the user's last-picked easings (applicable ones only).
-        // Anything explicitly set on `element` wins.
-        element = applyStickyDefaults(element);
-        const doc = getActiveDoc();
-        if (doc) {
-          runInTxn(() => {
-            const slideMap = getYSlide(doc, slideId);
-            if (!slideMap) return;
-            const elements = slideMap.get('elements') as Y.Map<unknown> | undefined;
-            const elementOrder = slideMap.get('elementOrder') as Y.Array<string> | undefined;
-            if (!elements || !elementOrder) return;
-            elements.set(element.id, elementToYMap(element));
-            elementOrder.push([element.id]);
-
-            // Register in global objects map (same logic as the Zustand path).
-            const objects = getYRoot(doc).get('objects') as Y.Map<unknown> | undefined;
-            if (objects && !objects.has(element.id)) {
-              const objSnapshot = Object.fromEntries(
-                [...objects.entries()].map(([k, v]) => [k, (v as Y.Map<unknown>).toJSON()]),
-              ) as Record<string, ObjectMeta>;
-              const meta: ObjectMeta = {
-                id: element.id,
-                name: generateObjectName(objectSubtypeForElement(element), objSnapshot),
-                type: objectTypeForElement(element),
-              };
-              objects.set(element.id, mkScalarMap(meta));
-            }
-            getYRoot(doc).set('updatedAt', Date.now());
-          });
-          return;
-        }
-        set((state) => {
-          const slide = state.presentation.slides[slideId];
-          if (!slide) return state;
-
-          // Register in global objects if not already present
-          const objects = { ...state.presentation.objects };
-          if (!objects[element.id]) {
-            objects[element.id] = {
-              id: element.id,
-              name: generateObjectName(objectSubtypeForElement(element), objects),
-              type: objectTypeForElement(element),
-            };
-          }
-
-          return {
-            presentation: {
-              ...state.presentation,
-              objects,
-              slides: {
-                ...state.presentation.slides,
-                [slideId]: {
-                  ...slide,
-                  elements: { ...slide.elements, [element.id]: element },
-                  elementOrder: [...slide.elementOrder, element.id],
-                },
-              },
-              updatedAt: Date.now(),
-            },
-          };
-        });
-      },
+      // One element; the same path as several, so multi-slide creation and
+      // object registration cannot drift between the two.
+      addElement: (slideId, element) => usePresentationStore.getState().addElements(slideId, [element]),
 
       addElements: (slideId, elements) => {
         slideId = beforeMutation(slideId);
+        // Inherit the user's last-picked easings (applicable ones only).
+        // Anything explicitly set on an element wins.
         elements = elements.map(applyStickyDefaults);
+        if (elements.length === 0) return;
+        // Multi-slide creation: with several slides selected, an object created
+        // on the active one appears on every selected slide — the same object
+        // (same id), so it is one object across those keyframes. Written in one
+        // transaction / one history step, like mirrored edits.
+        const targets = [slideId, ...mirrorTargets(slideId)];
         const doc = getActiveDoc();
         if (doc) {
-          if (elements.length === 0) return;
           runInTxn(() => {
-            const slideMap = getYSlide(doc, slideId);
-            if (!slideMap) return;
-            const elMap = slideMap.get('elements') as Y.Map<unknown> | undefined;
-            const order = slideMap.get('elementOrder') as Y.Array<string> | undefined;
-            if (!elMap || !order) return;
             const objects = getYRoot(doc).get('objects') as Y.Map<unknown> | undefined;
             const objSnapshot = objects
               ? Object.fromEntries(
                   [...objects.entries()].map(([k, v]) => [k, (v as Y.Map<unknown>).toJSON()]),
                 ) as Record<string, ObjectMeta>
               : {};
-            for (const el of elements) {
-              elMap.set(el.id, elementToYMap(el));
-              order.push([el.id]);
-              if (objects && !objects.has(el.id)) {
-                const meta: ObjectMeta = {
-                  id: el.id,
-                  name: generateObjectName(objectSubtypeForElement(el), objSnapshot),
-                  type: objectTypeForElement(el),
-                };
-                objSnapshot[el.id] = meta;
-                objects.set(el.id, mkScalarMap(meta));
+            for (const target of targets) {
+              const slideMap = getYSlide(doc, target);
+              const elMap = slideMap?.get('elements') as Y.Map<unknown> | undefined;
+              const order = slideMap?.get('elementOrder') as Y.Array<string> | undefined;
+              if (!elMap || !order) continue;
+              const existing = new Set(order.toArray());
+              const placed = target === slideId ? elements : elementsForMirror(elements, existing);
+              for (const el of placed) {
+                elMap.set(el.id, elementToYMap(el));
+                order.push([el.id]);
+                existing.add(el.id);
+                if (objects && !objects.has(el.id)) {
+                  const meta: ObjectMeta = {
+                    id: el.id,
+                    name: generateObjectName(objectSubtypeForElement(el), objSnapshot),
+                    type: objectTypeForElement(el),
+                  };
+                  objSnapshot[el.id] = meta;
+                  objects.set(el.id, mkScalarMap(meta));
+                }
               }
             }
             getYRoot(doc).set('updatedAt', Date.now());
@@ -1182,41 +1152,29 @@ export const usePresentationStore = create<PresentationStore>()(
           return;
         }
         set((state) => {
-          const slide = state.presentation.slides[slideId];
-          if (!slide || elements.length === 0) return state;
-
-          // Register all elements in global objects
+          if (!state.presentation.slides[slideId]) return state;
           const objects = { ...state.presentation.objects };
-          const newElements: Record<string, SlideElement> = { ...slide.elements };
-          const newOrder = [...slide.elementOrder];
-
-          for (const element of elements) {
-            if (!objects[element.id]) {
-              objects[element.id] = {
-                id: element.id,
-                name: generateObjectName(objectSubtypeForElement(element), objects),
-                type: objectTypeForElement(element),
-              };
+          const slides = { ...state.presentation.slides };
+          for (const target of targets) {
+            const slide = slides[target];
+            if (!slide) continue;
+            const placed = target === slideId ? elements : elementsForMirror(elements, new Set(slide.elementOrder));
+            const newElements: Record<string, SlideElement> = { ...slide.elements };
+            const newOrder = [...slide.elementOrder];
+            for (const element of placed) {
+              if (!objects[element.id]) {
+                objects[element.id] = {
+                  id: element.id,
+                  name: generateObjectName(objectSubtypeForElement(element), objects),
+                  type: objectTypeForElement(element),
+                };
+              }
+              newElements[element.id] = element;
+              newOrder.push(element.id);
             }
-            newElements[element.id] = element;
-            newOrder.push(element.id);
+            slides[target] = { ...slide, elements: newElements, elementOrder: newOrder };
           }
-
-          return {
-            presentation: {
-              ...state.presentation,
-              objects,
-              slides: {
-                ...state.presentation.slides,
-                [slideId]: {
-                  ...slide,
-                  elements: newElements,
-                  elementOrder: newOrder,
-                },
-              },
-              updatedAt: Date.now(),
-            },
-          };
+          return { presentation: { ...state.presentation, objects, slides, updatedAt: Date.now() } };
         });
       },
 
