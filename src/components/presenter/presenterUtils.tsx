@@ -1,5 +1,5 @@
 import { GroupCrop } from '../svg/GroupCrop';
-import { groupCropPaint, type GroupCropElement } from '../../utils/model/groupCrop';
+import { followCropMedia, groupCropPaint, type GroupCropElement } from '../../utils/model/groupCrop';
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { Play, Pause } from 'lucide-react';
 import { RenderShape, RenderImage } from '../svg/ElementRenderer';
@@ -10,7 +10,7 @@ import { RenderPaths } from '../svg/RenderPaths';
 import { shapeToSvgPaths } from '../../utils/paths/shapeToPath';
 import { sampledPath, pathArcLength, pointAtArcLength } from '../../utils/paths/pathShapes';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
-import { interpolateWithVisibility, lerpColor } from '../../utils/animation/interpolation';
+import { applyEasing, defaultEasingFor, interpolateWithVisibility, lerpColor } from '../../utils/animation/interpolation';
 import { attachLabelMasks } from '../../utils/model/syncDependents';
 import type { SlideElement, TextElement, ShapeElement, ImageElement, Slide, Resource } from '../../types/presentation';
 import type { CrossfadeSource, TextDissolveSource, WriteEffect } from '../../utils/animation/interpolation';
@@ -171,12 +171,17 @@ export function composeSlideFrame(args: {
   const bgColor = lerpColor(bgA, bgB, animProgress);
 
   const orderedIds = mergeElementOrders(slideA, slideB, isForward);
-  const renderedElements: SlideElement[] = [];
+  let renderedElements: SlideElement[] = [];
   for (const id of orderedIds) {
     const elA = slideA.elements[id];
     const elB = slideB?.elements[id];
     const interpolated = interpolateWithVisibility(elA, elB, animProgress, isForward);
     if (interpolated) renderedElements.push(interpolated);
+  }
+  // A crop group is one object: its crop moves with the media it crops.
+  if (slideB) {
+    renderedElements = followCropMedia(renderedElements, slideA, slideB, animProgress,
+      (media, t) => applyEasing(t, media.transitions?.position ?? defaultEasingFor('position', media)));
   }
   return { renderedElements: attachLabelMasks(renderedElements, bgColor), bgColor };
 }
@@ -296,7 +301,10 @@ export function renderPresenterElement(
   const plain: GroupCropElement = { ...groupCropPaint(element), _groupClips: undefined };
   const inner = renderElementInner(plain, resources, innerFx);
   const visual = useWrapper && fx ? wrapVisualFx(inner, element, fx) : inner;
-  return (element as GroupCropElement)._groupClips?.length ? <GroupCrop element={element}>{visual}</GroupCrop> : visual;
+  // Keyed like every other element: an unkeyed wrapper is matched by
+  // position, so when elements enter or leave mid-transition the clipped
+  // image or video remounts and reloads — a visible flash.
+  return (element as GroupCropElement)._groupClips?.length ? <GroupCrop key={element.id} element={element}>{visual}</GroupCrop> : visual;
 }
 
 function renderElementInner(

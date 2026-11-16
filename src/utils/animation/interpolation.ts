@@ -18,7 +18,7 @@ function easeInOutCubic(t: number): number {
 }
 
 // Apply easing based on type
-function applyEasing(t: number, easing: EasingType | undefined): number {
+export function applyEasing(t: number, easing: EasingType | undefined): number {
   switch (easing) {
     case 'const': return t < 0.5 ? 0 : 1;  // Snap at midpoint
     case 'cropliftease':

@@ -29,7 +29,8 @@ import { useSVGDrawing } from '/src/components/svg/useSVGDrawing.ts';
 import { useSVGDrag } from '/src/components/svg/useSVGDrag.ts';
 import { useKeyboardShortcuts } from '/src/hooks/useKeyboardShortcuts.ts';
 import { RenderShape } from '/src/components/svg/ElementRenderer.tsx';
-import { renderPresenterElement } from '/src/components/presenter/presenterUtils.tsx';
+import { renderPresenterElement, composeSlideFrame } from '/src/components/presenter/presenterUtils.tsx';
+import { flushSync } from 'react-dom';
 
 import { SlidePanel } from '/src/components/sidebar/SlidePanel.tsx';
 import { ObjectListDrawer } from '/src/components/objectlist/ObjectListDrawer.tsx';
@@ -128,6 +129,41 @@ window.canvasTest = {
     return renderToStaticMarkup(h('svg', { xmlns: 'http://www.w3.org/2000/svg', width: 400, height: 400 }, node));
   },
   drawShapeElement,
+  /** Render one presenter frame of a transition into a fixed, persistent
+   *  host at the page's top-left (960×540), as playback does frame by frame. */
+  renderPresenterFrame(slideA, slideB, resources, t) {
+    let host = document.getElementById('presenter-frame-host');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'presenter-frame-host';
+      host.style.cssText = 'position:fixed;left:0;top:0;width:960px;height:540px;background:#fff;z-index:100000';
+      document.body.appendChild(host);
+      window.__presenterFrameRoot = createRoot(host);
+    }
+    const frame = composeSlideFrame({ slideA, slideB, isForward: true, animProgress: t, isAnimating: t < 1 });
+    flushSync(() => window.__presenterFrameRoot.render(h('svg', { width: 960, height: 540, viewBox: '0 0 960 540', style: { display: 'block', background: '#fff' } },
+      frame.renderedElements.map(el => renderPresenterElement(el, resources)))));
+    return frame.renderedElements.map(el => ({ id: el.id, opacity: el.opacity }));
+  },
+  /** Render the presenter's frames for a transition into a live React root,
+   *  one after another as playback does, and report the identity of the
+   *  media DOM node in each frame (same number = same node, never remounted). */
+  presenterMediaIdentity(slideA, slideB, resources, ts) {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const r = createRoot(host);
+    const seen = [], ids = [];
+    for (const t of ts) {
+      const frame = composeSlideFrame({ slideA, slideB, isForward: true, animProgress: t, isAnimating: t < 1 });
+      flushSync(() => r.render(h('svg', { width: 960, height: 540 }, frame.renderedElements.map(el => renderPresenterElement(el, resources)))));
+      const node = host.querySelector('img, video');
+      if (!node) { ids.push(null); continue; }
+      if (!seen.includes(node)) seen.push(node);
+      ids.push(seen.indexOf(node));
+    }
+    r.unmount(); host.remove();
+    return ids;
+  },
 
   store, editor, get doc() { return doc; }, getActiveUndoManager, drawing: null, pathArrowGeometry, interpolateElement, pathPointsInSlide, pathExtensionUpdate,
   setup(next = {}) {

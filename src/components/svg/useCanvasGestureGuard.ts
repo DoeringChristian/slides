@@ -13,6 +13,15 @@ export function readGestureSlide() {
   return doc ? yDocToJsonSlideOnly(doc, id) ?? undefined : usePresentationStore.getState().presentation.slides[id];
 }
 
+/** The stored element behind a rendered one. Render passes attach synthetic
+ *  `_`-prefixed hints (`_labelMask` for arrow labels, `_groupClips` /
+ *  `_groupCropBoundary` for crop groups, …) that are never persisted; a
+ *  baseline check must ignore all of them, or a gesture on such an element
+ *  never starts (crop groups could not be resized or rotated). */
+export function withoutRenderHints<T extends SlideElement>(el: T): T {
+  return Object.fromEntries(Object.entries(el).filter(([key]) => !key.startsWith('_'))) as T;
+}
+
 /** Synchronous invalidation also catches away-and-back switches with identical
  * keyframe IDs. Keep these baselines separate from display-only geometry. */
 export function useCanvasGestureGuard() {
@@ -23,11 +32,7 @@ export function useCanvasGestureGuard() {
     finish();
     const editor = useEditorStore.getState();
     const slide = readGestureSlide();
-    if (!slide || rendered?.some(el => {
-      const plain = { ...el } as SlideElement & { _labelMask?: unknown };
-      delete plain._labelMask;
-      return JSON.stringify(slide.elements[el.id]) !== JSON.stringify(plain);
-    })) return false;
+    if (!slide || rendered?.some(el => JSON.stringify(slide.elements[el.id]) !== JSON.stringify(withoutRenderHints(el)))) return false;
     const doc = getActiveDoc();
     const signature = JSON.stringify(slide);
     const selection = JSON.stringify(editor.selectedElementIds);

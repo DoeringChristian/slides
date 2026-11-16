@@ -29,13 +29,32 @@ export function resizeElementBounds(el: SlideElement): BoundingBox {
   return { x: el.x + el.width / 2 + offset.x - b.width / 2, y: el.y + el.height / 2 + offset.y - b.height / 2, width: b.width, height: b.height };
 }
 
+/** Axis-aligned box around an element, rotation included. */
+function rotatedBox(el: SlideElement): BoundingBox {
+  const b = resizeElementBounds(el), r = el.rotation * Math.PI / 180;
+  const width = Math.abs(b.width * Math.cos(r)) + Math.abs(b.height * Math.sin(r));
+  const height = Math.abs(b.width * Math.sin(r)) + Math.abs(b.height * Math.cos(r));
+  return { x: b.x + (b.width - width) / 2, y: b.y + (b.height - height) / 2, width, height };
+}
+
+function intersect(a: BoundingBox, b: BoundingBox): BoundingBox | null {
+  const x0 = Math.max(a.x, b.x), y0 = Math.max(a.y, b.y);
+  const x1 = Math.min(a.x + a.width, b.x + b.width), y1 = Math.min(a.y + a.height, b.y + b.height);
+  return x1 > x0 && y1 > y0 ? { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } : null;
+}
+
+/** Selection box. A crop group selected as a whole acts as one object, so its
+ *  box is what is visible: each clipped member counts only where its crop
+ *  shapes (the render hint `_groupClips`) let it show. Resizing scales every
+ *  member relative to this box, so image and crop still scale together. */
 export function selectionResizeBounds(elements: SlideElement[]): BoundingBox {
   if (elements.length === 1) return resizeElementBounds(elements[0]);
+  const selected = new Set(elements.map(el => el.id));
   return getBoundingBox(elements.map(el => {
-    const b = resizeElementBounds(el), r = el.rotation * Math.PI / 180;
-    const width = Math.abs(b.width * Math.cos(r)) + Math.abs(b.height * Math.sin(r));
-    const height = Math.abs(b.width * Math.sin(r)) + Math.abs(b.height * Math.cos(r));
-    return { x: b.x + (b.width - width) / 2, y: b.y + (b.height - height) / 2, width, height };
+    const box = rotatedBox(el);
+    const clips = (el as SlideElement & { _groupClips?: SlideElement[] })._groupClips ?? [];
+    if (!clips.length || !clips.every(clip => selected.has(clip.id))) return box;
+    return clips.reduce<BoundingBox | null>((visible, clip) => visible && intersect(visible, rotatedBox(clip)), box) ?? box;
   }));
 }
 
