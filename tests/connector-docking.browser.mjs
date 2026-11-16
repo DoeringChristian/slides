@@ -51,7 +51,7 @@ async function setup({ collab = false, zoom = 1, shapeType = 'rect', rotation = 
   await evaluate(`(async()=>{const {useCreationPreferences}=await import('/src/store/creationPreferences.ts');useCreationPreferences.getState().remember('${tool}',{stroke:'#a02555',strokeWidth:5});})()`);
   await evaluate(`canvasTest.setup(${JSON.stringify({ mode: 'production', snap: true, collab, zoom, tool, empty: !subject, subject, secondSlide, targets: [{ id: 'box', shapeType, x: 400, y: 250, width: 180, height: 120, rotation, fill: '#d8efec' }] })})`);
   await wait(180);
-  const dock = await evaluate(`(async()=>{const {bindingAimPoint}=await import('/src/utils/connectorUtils.ts');const box=canvasTest.snapshot().slide.elements.box;const p=bindingAimPoint({elementId:box.id,mode:'pinned',fixedPoint:[1,.5]},box);return [p.x,p.y]})()`);
+  const dock = await evaluate(`(async()=>{const {bindingAimPoint}=await import('/src/utils/paths/connectorUtils.ts');const box=canvasTest.snapshot().slide.elements.box;const p=bindingAimPoint({elementId:box.id,mode:'pinned',fixedPoint:[1,.5]},box);return [p.x,p.y]})()`);
   await evaluate(`(()=>{const p=document.querySelector('.canvas-scroll-parent'),svg=p.querySelector('svg'),m=svg.getScreenCTM(),r=new DOMPoint(${dock[0]},${dock[1]}).matrixTransform(m);p.scrollLeft+=r.x-460;p.scrollTop+=r.y-380;})()`); await wait(40);
   return dock;
 }
@@ -90,7 +90,7 @@ try {
     assert.equal(await evaluate(`document.querySelector('.content-layer').innerHTML`),targetLive,'native target drag projection equals commit');
     assert.deepEqual((await snap()).slide.elements[id].startBinding,arrow.startBinding);
     await evaluate(`canvasTest.store.getState().updateElement(canvasTest.snapshot().slide.id,'box',{x:420,y:280,width:230,height:85,rotation:63})`); await wait(60);
-    const transformed = await evaluate(`(async()=>{const {bindingAimPoint}=await import('/src/utils/connectorUtils.ts');const s=canvasTest.snapshot().slide,a=s.elements['${id}'],p=bindingAimPoint(a.startBinding,s.elements.box);return {actual:canvasTest.pathPointsInSlide(a).slice(0,2),expected:[p.x,p.y]}})()`); close(transformed.actual, transformed.expected, 'target transform keeps pin');
+    const transformed = await evaluate(`(async()=>{const {bindingAimPoint}=await import('/src/utils/paths/connectorUtils.ts');const s=canvasTest.snapshot().slide,a=s.elements['${id}'],p=bindingAimPoint(a.startBinding,s.elements.box);return {actual:canvasTest.pathPointsInSlide(a).slice(0,2),expected:[p.x,p.y]}})()`); close(transformed.actual, transformed.expected, 'target transform keeps pin');
     await key('z', 'KeyZ', 2); await key('z', 'KeyZ', 2); await key('z', 'KeyZ', 2); assert.deepEqual((await snap()).slide.elements, before.slide.elements);
     matrix.push({ collab, zoom, shapeType, rotation, tool, start: 'cue=live=commit', cmdShift: 'stationary clear/reacquire with physical bypass', undo: true, transform: true }); console.log('PASS dock creation', collab, zoom, shapeType);
   }

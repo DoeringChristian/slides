@@ -49,7 +49,7 @@ try {
   await navigate(base);
   if (!files.length) {
     const legacy=await ev(`(async()=>{
-      const f=await import('/src/utils/slideFactory.ts');
+      const f=await import('/src/utils/model/slideFactory.ts');
       const p=f.createPresentation();const s=p.slides[p.slideOrder[0]];
       const shape=f.createShapeElement('rect',{id:'old-shape',x:100,y:100});
       delete shape.creationPreset;
@@ -66,7 +66,7 @@ try {
     await until(`!!document.querySelector('input[type=file][accept*=pptx]')`);
     for(const file of files) {
       const content=await readFile(file,'utf8');
-      const expected=await ev(`(async()=>{const {importPresentationFile}=await import('/src/utils/importPresentation.ts');return importPresentationFile(new File([${JSON.stringify(content)}],${JSON.stringify(file.split('/').at(-1))}));})()`);
+      const expected=await ev(`(async()=>{const {importPresentationFile}=await import('/src/utils/io/importPresentation.ts');return importPresentationFile(new File([${JSON.stringify(content)}],${JSON.stringify(file.split('/').at(-1))}));})()`);
       await importFile(file);
       await wait(mode==='server'?6500:400);
       const imported=await current();

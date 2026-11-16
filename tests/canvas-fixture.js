@@ -7,13 +7,13 @@ import { useCreationPreferences } from '/src/store/creationPreferences.ts';
 // Browser-only regression fixture: actual React controls, stores and pointer hooks.
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { drawShapeElement } from '/src/utils/exportPdf.ts';
-import { renderSlideToSVG } from '/src/utils/svgRenderer.ts';
+import { drawShapeElement } from '/src/utils/io/exportPdf.ts';
+import { renderSlideToSVG } from '/src/utils/io/svgRenderer.ts';
 import { createRoot } from 'react-dom/client';
 import '/src/index.css';
 import { usePresentationStore as store } from '/src/store/presentationStore.ts';
 import { useEditorStore as editor } from '/src/store/editorStore.ts';
-import { createPresentation, createShapeElement, createTextElement } from '/src/utils/slideFactory.ts';
+import { createPresentation, createShapeElement, createTextElement } from '/src/utils/model/slideFactory.ts';
 import { SVGSlideCanvas } from '/src/components/svg/SVGSlideCanvas.tsx';
 import { SVGShapeNode } from '/src/components/svg/SVGShapeNode.tsx';
 import { SVGPathHandles } from '/src/components/svg/SVGPathHandles.tsx';
@@ -37,9 +37,9 @@ import { createUndoManagerFor, setActiveUndoManager, getActiveUndoManager } from
 import { setActiveDoc } from '/src/collab/yDocAdapter.ts';
 import { jsonToYDoc } from '/src/collab/ySchema.ts';
 import { useYToStoreSync } from '/src/collab/yToStoreSync.ts';
-import { pathArrowGeometry } from '/src/utils/pathShapes.ts';
-import { interpolateElement } from '/src/utils/interpolation.ts';
-import { pathPointsInSlide, pathExtensionUpdate } from '/src/utils/pathEditing.ts';
+import { pathArrowGeometry } from '/src/utils/paths/pathShapes.ts';
+import { interpolateElement } from '/src/utils/animation/interpolation.ts';
+import { pathPointsInSlide, pathExtensionUpdate } from '/src/utils/paths/pathEditing.ts';
 
 const h = React.createElement;
 let root;

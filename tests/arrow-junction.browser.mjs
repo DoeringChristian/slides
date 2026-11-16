@@ -101,8 +101,8 @@ try {
     }
     // PDF's Canvas fill helper + shared path geometry provide a frame reference
     // for the two-path Create trace. PDF itself exports steady slides, not frames.
-    const {shapeToSvgPaths}=await import('/src/utils/shapeToPath.ts');
-    const {drawShapeFill}=await import('/src/utils/shapeFill.ts');
+    const {shapeToSvgPaths}=await import('/src/utils/paths/shapeToPath.ts');
+    const {drawShapeFill}=await import('/src/utils/paint/shapeFill.ts');
     async function canvasCreate(el,t) {
       if(t===1) return raster(el,'pdf');
       const layer=document.createElement('canvas');layer.width=layer.height=400;

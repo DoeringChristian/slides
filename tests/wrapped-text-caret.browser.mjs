@@ -61,8 +61,8 @@ async function type(text){for(const char of text){await send('Input.dispatchKeyE
 const source=()=>evaluate(`Array.from(document.querySelectorAll('[contenteditable] [data-line]'),n=>n.textContent).join('\\n')`);
 async function measure(){return evaluate(`(async()=>{
  const e=document.querySelector('[contenteditable]'),s=getSelection();
- const {textEditorSourceOffset}=await import('/src/utils/textEditorSelection.ts');
- const {loadFont}=await import('/src/utils/glyphPaths.ts');const font=await loadFont('normal','normal');
+ const {textEditorSourceOffset}=await import('/src/utils/text/textEditorSelection.ts');
+ const {loadFont}=await import('/src/utils/text/glyphPaths.ts');const font=await loadFont('normal','normal');
  const clone=e.cloneNode(true);clone.removeAttribute('contenteditable');Object.assign(clone.style,{left:'0',top:'0',visibility:'hidden'});document.body.append(clone);
  const cb=clone.getBoundingClientRect();const chars=[];let offset=0;
  for(let j=0;j<clone.children.length;j++){
@@ -116,7 +116,7 @@ try{
  for(const collab of [false,true])for(const kind of ['rect','ellipse','free','auto'])for(const rotated of [false,true]){
  const name=`${collab?'yjs':'json'}-${kind}-${rotated?'rotate-zoom':'normal'}`;const zoom=rotated?1.25:1,rotation=rotated?30:0;const bound=!['free','auto'].includes(kind);let id=bound?'label':'subject';
  await check(name,async()=>{
- if(bound){await setup({mode:'production',collab,zoom,subject:{shapeType:kind==='ellipse'?'ellipse':'rect',x:200,y:180,width:kind==='ellipse'?156:110,height:40,rotation}});await evaluate(`(async()=>{const {createBoundLabel}=await import('/src/utils/syncDependents.ts');const s=canvasTest.snapshot().slide;const label={...createBoundLabel(s.elements.subject),id:'label',text:'',style:${JSON.stringify(style)}};canvasTest.store.getState().addElement(s.id,label);})()`);await wait(150);}
+ if(bound){await setup({mode:'production',collab,zoom,subject:{shapeType:kind==='ellipse'?'ellipse':'rect',x:200,y:180,width:kind==='ellipse'?156:110,height:40,rotation}});await evaluate(`(async()=>{const {createBoundLabel}=await import('/src/utils/model/syncDependents.ts');const s=canvasTest.snapshot().slide;const label={...createBoundLabel(s.elements.subject),id:'label',text:'',style:${JSON.stringify(style)}};canvasTest.store.getState().addElement(s.id,label);})()`);await wait(150);}
  else await setup({mode:'production',collab,zoom,subject:{type:'text',x:205,y:185,width:100,height:30.72,rotation,text:'',textSizing:kind==='auto'?'auto-content':'user-width',style}});
  await evaluate(`canvasTest.editor.getState().setEditingTextId('${id}')`);await wait(250);await evaluate('document.fonts.ready');const before=await snapshot();
  let expected='';for(const chunk of ['one',' two',' three',' four',' five']){await type(chunk);expected+=chunk;assert.equal(await source(),expected);const m=await aligned(name+'-'+chunk.trim());assert.equal(m.offset,expected.length);}
@@ -141,7 +141,7 @@ try{
  await key('Escape');await wait(250);const done=await snapshot();assert.equal(done.slide.elements[id].text,'  one two  three');assert.equal(done.undo,before.undo+1);
  // The entry hit-test mirror must resolve every committed visible glyph to
  // its UTF-16 source offset, not just have the right aggregate height.
- const hits=await evaluate(`(async()=>{const e=canvasTest.snapshot().slide.elements['${id}'];const {layoutUserText}=await import('/src/utils/userTextSizing.ts');const {calculateCursorFromClick}=await import('/src/utils/textHitTest.ts');const {textInsets}=await import('/src/utils/boundTextLayout.ts');const {textVerticalOffset}=await import('/src/utils/textLayout.ts');const d=await layoutUserText(e);const pad=textInsets(e),dy=textVerticalOffset(e.style.verticalAlign,e.height,pad,d.height);const hits=[];for(const p of d.paths.filter(p=>p.d)){const [x,y]=p.transform.match(/[-\\d.]+/g).map(Number);hits.push(await calculateCursorFromClick(e,{x:pad+x+1,y:pad+dy+y-5}));}return hits;})()`);
+ const hits=await evaluate(`(async()=>{const e=canvasTest.snapshot().slide.elements['${id}'];const {layoutUserText}=await import('/src/utils/text/userTextSizing.ts');const {calculateCursorFromClick}=await import('/src/utils/text/textHitTest.ts');const {textInsets}=await import('/src/utils/text/boundTextLayout.ts');const {textVerticalOffset}=await import('/src/utils/text/textLayout.ts');const d=await layoutUserText(e);const pad=textInsets(e),dy=textVerticalOffset(e.style.verticalAlign,e.height,pad,d.height);const hits=[];for(const p of d.paths.filter(p=>p.d)){const [x,y]=p.transform.match(/[-\\d.]+/g).map(Number);hits.push(await calculateCursorFromClick(e,{x:pad+x+1,y:pad+dy+y-5}));}return hits;})()`);
  assert.deepEqual(hits,[2,3,4,6,7,8,11,12,13,14,15],name+' entry hit mirror');
  await evaluate(`canvasTest.editor.getState().setEditingTextId('${id}')`);await wait(250);await key('Escape');await wait(150);assert.equal((await snapshot()).undo,done.undo,name+' no-op cancellation');
 
@@ -152,7 +152,7 @@ try{
   const name=`trailing-${collab}-${kind}-${align}`,font={...style,align},id=kind==='rect'?'label':'subject';
   if(kind==='rect'){
    await setup({mode:'production',collab,subject:{x:200,y:180,width:110,height:40}});
-   await evaluate(`(async()=>{const {createBoundLabel}=await import('/src/utils/syncDependents.ts');const s=canvasTest.snapshot().slide;canvasTest.store.getState().addElement(s.id,{...createBoundLabel(s.elements.subject),id:'label',text:'',style:${JSON.stringify(font)}});})()`);await wait(150);
+   await evaluate(`(async()=>{const {createBoundLabel}=await import('/src/utils/model/syncDependents.ts');const s=canvasTest.snapshot().slide;canvasTest.store.getState().addElement(s.id,{...createBoundLabel(s.elements.subject),id:'label',text:'',style:${JSON.stringify(font)}});})()`);await wait(150);
   }else await setup({mode:'production',collab,subject:{type:'text',x:205,y:185,width:100,height:30.72,text:'',textSizing:kind==='auto'?'auto-content':'user-width',style:font}});
   await evaluate(`canvasTest.editor.getState().setEditingTextId('${id}')`);await wait(250);
   await type('one');await aligned(name+'-control');await type(' ');await aligned(name+'-one-space');await type(' ');await aligned(name+'-two-spaces');
@@ -167,7 +167,7 @@ try{
   const font={...style,align:'center'};
   if(kind==='rect'){
    await setup({mode:'production',collab,zoom,subject:{x:200,y:180,width:110,height:40,rotation}});
-   await evaluate(`(async()=>{const {createBoundLabel}=await import('/src/utils/syncDependents.ts');const s=canvasTest.snapshot().slide;canvasTest.store.getState().addElement(s.id,{...createBoundLabel(s.elements.subject),id:'label',text:'',style:${JSON.stringify(font)}});})()`);await wait(150);
+   await evaluate(`(async()=>{const {createBoundLabel}=await import('/src/utils/model/syncDependents.ts');const s=canvasTest.snapshot().slide;canvasTest.store.getState().addElement(s.id,{...createBoundLabel(s.elements.subject),id:'label',text:'',style:${JSON.stringify(font)}});})()`);await wait(150);
   }else await setup({mode:'production',collab,zoom,subject:{type:'text',x:205,y:185,width:100,height:30.72,rotation,text:'',textSizing:'user-width',style:font}});
   await evaluate(`canvasTest.editor.getState().setEditingTextId('${id}')`);await wait(250);const before=await snapshot();
   for(const [cp,firstRow] of [[0x2002,2],[0x2003,2],[0x2009,2],[0xa0,3],[0x202f,4],[0x2007,3]])await check(`unicode-${collab}-${kind}-${rotated}-${cp.toString(16)}`,async()=>{
@@ -184,7 +184,7 @@ try{
   // Native edit ENTRY: finish first, then click the steady SVG glyph. This
   // is not a direct invocation of the entry-hit mirror helper.
   await key('a','KeyA',4);await type('WW\u2003WWW');await key('Escape');await wait(250);
-  const hits=await evaluate(`(async()=>{const e=canvasTest.snapshot().slide.elements['${id}'];const {layoutUserText}=await import('/src/utils/userTextSizing.ts');const {calculateCursorFromClick}=await import('/src/utils/textHitTest.ts');const d=await layoutUserText(e);const hits=[];for(const p of d.paths.filter(p=>p.d)){const [x,y]=p.transform.match(/[-\\d.]+/g).map(Number);hits.push(await calculateCursorFromClick(e,{x:x+1,y:y-5}));}return hits;})()`);
+  const hits=await evaluate(`(async()=>{const e=canvasTest.snapshot().slide.elements['${id}'];const {layoutUserText}=await import('/src/utils/text/userTextSizing.ts');const {calculateCursorFromClick}=await import('/src/utils/text/textHitTest.ts');const d=await layoutUserText(e);const hits=[];for(const p of d.paths.filter(p=>p.d)){const [x,y]=p.transform.match(/[-\\d.]+/g).map(Number);hits.push(await calculateCursorFromClick(e,{x:x+1,y:y-5}));}return hits;})()`);
   assert.deepEqual(hits,[0,1,3,4,5],'committed Unicode entry mirror source offsets');
   // Bound-label taps intentionally forward to container selection. Preserve
   // that policy; native single-click entry is exercised by free user-width.
@@ -211,7 +211,7 @@ try{
   const zoom=rotated?1.25:1,rotation=rotated?30:0,id=kind==='rect'?'label':'subject',font={...style,align};
   if(kind==='rect'){
    await setup({mode:'production',collab,zoom,subject:{x:200,y:180,width:110,height:40,rotation}});
-   await evaluate(`(async()=>{const {createBoundLabel}=await import('/src/utils/syncDependents.ts');const s=canvasTest.snapshot().slide;canvasTest.store.getState().addElement(s.id,{...createBoundLabel(s.elements.subject),id:'label',text:'',style:${JSON.stringify(font)}});})()`);await wait(150);
+   await evaluate(`(async()=>{const {createBoundLabel}=await import('/src/utils/model/syncDependents.ts');const s=canvasTest.snapshot().slide;canvasTest.store.getState().addElement(s.id,{...createBoundLabel(s.elements.subject),id:'label',text:'',style:${JSON.stringify(font)}});})()`);await wait(150);
   }else await setup({mode:'production',collab,zoom,subject:{type:'text',x:205,y:185,width:100,height:30.72,rotation,text:'',textSizing:'user-width',style:font}});
   await evaluate(`canvasTest.editor.getState().setEditingTextId('${id}')`);await wait(250);const before=await snapshot();
   for(const [caseName,text,firstRow] of mixedCases)await check(`mixed-${collab}-${kind}-${rotated}-${align}-${caseName}`,async()=>{

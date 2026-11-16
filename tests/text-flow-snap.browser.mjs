@@ -47,8 +47,8 @@ try {
   for(const collab of [false,true]) for(const text of ['First line\nSecond line','A long sentence that wraps over several lines in this narrow text box','$x_i^2 + y$']) {
     await setup({mode:'production',collab,snap:true,subject:{type:'text',x:120,y:400,width:180,text:'Next line'},targets:[{id:'target',type:'text',x:100,y:120,width:180,text}]});
     const metrics=await evaluate(`(async()=>{
-      const {layoutUserText}=await import('/src/utils/userTextSizing.ts');
-      const {textFlowSnapBounds}=await import('/src/utils/textFlowSnap.ts');
+      const {layoutUserText}=await import('/src/utils/text/userTextSizing.ts');
+      const {textFlowSnapBounds}=await import('/src/utils/snapping/textFlowSnap.ts');
       const s=canvasTest.snapshot().slide;await Promise.all([layoutUserText(s.elements.subject),layoutUserText(s.elements.target)]);
       return {a:textFlowSnapBounds(s.elements.target),b:textFlowSnapBounds(s.elements.subject)};
     })()`);await wait(150);
@@ -64,7 +64,7 @@ try {
   }
   // Extra box height and vertical alignment must not become extra line spacing.
   const layout=await evaluate(`(async()=>{
-    const {createTextElement}=await import('/src/utils/slideFactory.ts');const {layoutUserText}=await import('/src/utils/userTextSizing.ts');const {textFlowSnapBounds}=await import('/src/utils/textFlowSnap.ts');
+    const {createTextElement}=await import('/src/utils/model/slideFactory.ts');const {layoutUserText}=await import('/src/utils/text/userTextSizing.ts');const {textFlowSnapBounds}=await import('/src/utils/snapping/textFlowSnap.ts');
     const a=createTextElement({text:'Hello',height:200});const doc=await layoutUserText(a);const flow=textFlowSnapBounds(a);
     return {flow,docHeight:doc.height,rotated:textFlowSnapBounds({...a,rotation:30}),bound:textFlowSnapBounds({...a,containerId:'shape'})};
   })()`);

@@ -114,8 +114,8 @@ try {
     for(const collab of [false,true]) for(const targets of ['both','one','locked']) for(const driver of ['subject','left']) {
       // Explicit normalized aim payload.
       const fixture=await evaluate(`(async()=>{
-        const {bindingFor,resolveBinding}=await import('/src/utils/connectorUtils.ts');
-        const {createShapeElement}=await import('/src/utils/slideFactory.ts');
+        const {bindingFor,resolveBinding}=await import('/src/utils/paths/connectorUtils.ts');
+        const {createShapeElement}=await import('/src/utils/model/slideFactory.ts');
         const targets=[createShapeElement('rect',{id:'left',x:0,y:0,width:100,height:100,cornerRadius:0}),createShapeElement('rect',{id:'right',x:200,y:0,width:100,height:100,cornerRadius:0})];
         const startBinding=bindingFor({x:95,y:20},targets[0],'aim');
         const endBinding=bindingFor({x:205,y:80},targets[1],'aim');

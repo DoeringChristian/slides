@@ -52,7 +52,7 @@ async function setup({ collab = false, zoom = 1, shapeType = 'rect', rotation = 
   await evaluate(`(async()=>{const {useCreationPreferences}=await import('/src/store/creationPreferences.ts');useCreationPreferences.getState().remember('${tool}',{stroke:'#a02555',strokeWidth:5});})()`);
   await evaluate(`canvasTest.setup(${JSON.stringify({ mode: 'production', snap: true, collab, zoom, tool, empty: !subject, subject, secondSlide, targets: [{ id: 'box', shapeType, x: 400, y: 250, width: 180, height: 120, rotation, fill: '#d8efec', ...target }] })})`);
   await wait(180);
-  const dock = await evaluate(`(async()=>{const {bindingAimPoint}=await import('/src/utils/connectorUtils.ts');const box=canvasTest.snapshot().slide.elements.box;const p=bindingAimPoint({elementId:box.id,mode:'pinned',fixedPoint:[1,.5]},box);return [p.x,p.y]})()`);
+  const dock = await evaluate(`(async()=>{const {bindingAimPoint}=await import('/src/utils/paths/connectorUtils.ts');const box=canvasTest.snapshot().slide.elements.box;const p=bindingAimPoint({elementId:box.id,mode:'pinned',fixedPoint:[1,.5]},box);return [p.x,p.y]})()`);
   await evaluate(`(()=>{const p=document.querySelector('.canvas-scroll-parent'),svg=p.querySelector('svg'),m=svg.getScreenCTM(),r=new DOMPoint(${dock[0]},${dock[1]}).matrixTransform(m);p.scrollLeft+=r.x-460;p.scrollTop+=r.y-380;})()`); await wait(40);
   return dock;
 }
@@ -89,7 +89,7 @@ try {
       await key('z','KeyZ',2);assert.equal(await authoritative(),before);matrix.push({collab,origin,end,compatible});
     }
     for(const kind of ['text','image']) {
-      const target=kind==='text'?await evaluate(`(async()=>{const {createTextElement}=await import('/src/utils/slideFactory.ts');return createTextElement({id:'box',x:400,y:250,width:180,height:120,text:'Free text'})})()`):{type:'image',cropX:0,cropY:0,cropWidth:1,cropHeight:1,resourceId:null};
+      const target=kind==='text'?await evaluate(`(async()=>{const {createTextElement}=await import('/src/utils/model/slideFactory.ts');return createTextElement({id:'box',x:400,y:250,width:180,height:120,text:'Free text'})})()`):{type:'image',cropX:0,cropY:0,cropWidth:1,cropHeight:1,resourceId:null};
       const dock=await setup({collab,tool:'line',target}),a=await screen([dock[0]+5,dock[1]]),b=await screen([dock[0]+140,dock[1]+70]);
       await mouse('mouseMoved',a);assert.equal((await cue())?.state,'active');await mouse('mousePressed',a);await mouse('mouseMoved',b);const live=await shaft();await mouse('mouseReleased',b);close(await shaft(),live,'text/image commit');
       const ss=await snap();assert.equal(ss.slide.elements[ss.slide.elementOrder.at(-1)].startBinding.mode,'pinned');matrix.push({collab,kind});
@@ -111,7 +111,7 @@ try {
       const draft=await evaluate(`({previewX:+document.querySelector('.alignment-guides line').getAttribute('x2')})`);assert(Math.abs(draft.previewX-400)<.002,'extension guide');const live=await shaft();await key('Enter','Enter',8);await modifier('Shift',false,0);close(await shaft(),live,'extension preview commit');assert.equal((await snap()).undo,1);await key('z','KeyZ',2);assert.equal(await authoritative(),before);matrix.push({collab,end,extension:true});
     }
   }
-  const label=await evaluate(`(async()=>{const {createTextElement}=await import('/src/utils/slideFactory.ts');return createTextElement({id:'box',x:400,y:250,width:180,height:120,text:'Label',containerId:'subject'})})()`);
+  const label=await evaluate(`(async()=>{const {createTextElement}=await import('/src/utils/model/slideFactory.ts');return createTextElement({id:'box',x:400,y:250,width:180,height:120,text:'Label',containerId:'subject'})})()`);
   await setup({target:label,subject:{x:400,y:250,width:180,height:120,visible:false}});await mouse('mouseMoved',await screen([585,310]));assert.equal(await cue(),null,'bound labels excluded');
   assert.deepEqual(errors,[]);await writeFile(`${evidence}/matrix.json`,JSON.stringify(matrix,null,2));console.log(`PASS ${matrix.length} combined scenarios and bound-label exclusion`);
 } catch(error) {await writeFile(`${evidence}/failure.json`,JSON.stringify({error:String(error),matrix,errors},null,2));throw error;} finally { ws.close(); }

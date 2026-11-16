@@ -144,7 +144,7 @@ try {
     await evaluate(`canvasTest.editor.getState().setEditingTextId('subject')`);await wait(250);
     await type('$x$');await key('Enter');await type('longer raw _line_');await wait(300);
     assert.equal(await source(),'$x$\nlonger raw _line_');
-    const metrics=await evaluate(`(async()=>{const {layoutUserText}=await import('/src/utils/userTextSizing.ts');const e=document.querySelector('[contenteditable]');const text=[...e.querySelectorAll('[data-line]')].map(n=>n.textContent).join('\\n');const doc=await layoutUserText({...canvasTest.snapshot().slide.elements.subject,text},new Set([1]));return {count:e.parentElement.querySelectorAll('svg path').length,expected:doc.paths.length,mathCount:doc.paths.filter(p=>p.lineIndex===0).length,transforms:doc.paths.map(p=>p.transform)};})()`);
+    const metrics=await evaluate(`(async()=>{const {layoutUserText}=await import('/src/utils/text/userTextSizing.ts');const e=document.querySelector('[contenteditable]');const text=[...e.querySelectorAll('[data-line]')].map(n=>n.textContent).join('\\n');const doc=await layoutUserText({...canvasTest.snapshot().slide.elements.subject,text},new Set([1]));return {count:e.parentElement.querySelectorAll('svg path').length,expected:doc.paths.length,mathCount:doc.paths.filter(p=>p.lineIndex===0).length,transforms:doc.paths.map(p=>p.transform)};})()`);
     assert.equal(metrics.count,metrics.expected);assert(metrics.mathCount>0);
     assert(metrics.transforms.every(t=>!t.includes('Infinity')&&!t.includes('NaN')));
     await capture('alignment-'+align);await key('Escape');await wait(200);

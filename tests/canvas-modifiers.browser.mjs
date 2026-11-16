@@ -132,7 +132,7 @@ try {
   await check('compact geometry bounds/1px lines/8px corners/whole-side hits and action isolation at zoom/rotation',async()=>{
     for(const shapeType of ['rect','triangle','vector']) for(const zoom of [.5,1,2]) for(const rotation of [0,37]) {
       await setup({mode:'production',zoom,subject:{shapeType:shapeType==='vector'?'rect':shapeType,x:420,y:200,width:160,height:120,rotation}});
-      if(shapeType==='vector') { await evaluate(`(async()=>{const {CURATED_ICONS}=await import('/src/utils/curatedIcons.ts');const p=canvasTest.store.getState().presentation,sid=p.slideOrder[0];canvasTest.store.getState().updateElement(sid,'subject',{shapeType:'vector',geometry:CURATED_ICONS.find(i=>i.id==='house').geometry});})()`); await wait(80); }
+      if(shapeType==='vector') { await evaluate(`(async()=>{const {CURATED_ICONS}=await import('/src/utils/editor/curatedIcons.ts');const p=canvasTest.store.getState().presentation,sid=p.slideOrder[0];canvasTest.store.getState().updateElement(sid,'subject',{shapeType:'vector',geometry:CURATED_ICONS.find(i=>i.id==='house').geometry});})()`); await wait(80); }
       const metrics=await evaluate(`(()=>{const selection=document.querySelector('.selection-transformer'), box=selection.querySelector('rect'), node=document.querySelector('[data-element-id="subject"] > g'), b=node.getBBox(),r=box.getBBox();return {b:{x:b.x,y:b.y,width:b.width,height:b.height},r:{x:r.x,y:r.y,width:r.width,height:r.height},stroke:+box.getAttribute('stroke-width'),corners:selection.querySelectorAll('g[data-resize-handle] rect[fill="white"]').length,corner:+selection.querySelector('g[data-resize-handle] rect[fill="white"]').getAttribute('width'),sideVisible:selection.querySelectorAll('rect[data-resize-handle][stroke]').length};})()`);
       const pad=4/zoom;
       near(metrics.r.x,metrics.b.x-pad,'left geometry gap'); near(metrics.r.y,metrics.b.y-pad,'top geometry gap');near(metrics.r.width,metrics.b.width+2*pad);near(metrics.r.height,metrics.b.height+2*pad);
@@ -175,7 +175,7 @@ try {
       await mouse('mousePressed',...p);await mouse('mouseMoved',p[0]+150,p[1]);
       const preview=await evaluate(`document.querySelector('.content-layer [data-element-id="subject"] > g').outerHTML`);
       await mouse('mouseReleased',p[0]+150,p[1]);const after=await snapshot(),points=await world();
-      const expected=await evaluate(`(async()=>{const {resolveBinding}=await import('/src/utils/connectorUtils.ts');const s=canvasTest.snapshot().slide;return resolveBinding(s.elements.subject.startBinding,s.elements.target,{x:${points[2]},y:${points[3]}})})()`);
+      const expected=await evaluate(`(async()=>{const {resolveBinding}=await import('/src/utils/paths/connectorUtils.ts');const s=canvasTest.snapshot().slide;return resolveBinding(s.elements.subject.startBinding,s.elements.target,{x:${points[2]},y:${points[3]}})})()`);
       near(points[0],expected.x);near(points[1],expected.y);
       assert.equal(await evaluate(`document.querySelector('[data-element-id="subject"] > g').outerHTML`),preview,'shared solved preview equals committed renderer');
       assert.equal(after.undo,1);await key('z','KeyZ',2);assert.deepEqual((await snapshot()).slide.elements,before.slide.elements);await key('y','KeyY',2);assert.deepEqual((await snapshot()).slide.elements,after.slide.elements);

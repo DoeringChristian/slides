@@ -51,7 +51,7 @@ async function setup({ collab = false, zoom = 1, shapeType = 'rect', rotation = 
   await evaluate(`(async()=>{const {useCreationPreferences}=await import('/src/store/creationPreferences.ts');useCreationPreferences.getState().remember('${tool}',{stroke:'#a02555',strokeWidth:5});})()`);
   await evaluate(`canvasTest.setup(${JSON.stringify({ mode: 'production', collab, zoom, tool, empty: !subject, subject, secondSlide, targets: [{ id: 'box', shapeType, x: 400, y: 250, width: 180, height: 120, rotation, fill: '#d8efec' }] })})`);
   await wait(180);
-  const dock = await evaluate(`(async()=>{const {bindingAimPoint}=await import('/src/utils/connectorUtils.ts');const box=canvasTest.snapshot().slide.elements.box;const p=bindingAimPoint({elementId:box.id,mode:'pinned',fixedPoint:[1,.5]},box);return [p.x,p.y]})()`);
+  const dock = await evaluate(`(async()=>{const {bindingAimPoint}=await import('/src/utils/paths/connectorUtils.ts');const box=canvasTest.snapshot().slide.elements.box;const p=bindingAimPoint({elementId:box.id,mode:'pinned',fixedPoint:[1,.5]},box);return [p.x,p.y]})()`);
   await evaluate(`(()=>{const p=document.querySelector('.canvas-scroll-parent'),svg=p.querySelector('svg'),m=svg.getScreenCTM(),r=new DOMPoint(${dock[0]},${dock[1]}).matrixTransform(m);p.scrollLeft+=r.x-460;p.scrollTop+=r.y-380;})()`); await wait(40);
   return dock;
 }
@@ -96,7 +96,7 @@ try {
       if(kind==='text') Object.assign(target,{type:'text',text:'Free target',style:{fontFamily:'Arial',fontSize:24,fontWeight:'normal',fontStyle:'normal',textDecoration:'none',color:'#000000',align:'left',verticalAlign:'top',lineHeight:1.2}});
       if(kind==='image') Object.assign(target,{type:'image',resourceId:null,cropX:0,cropY:0,cropWidth:1,cropHeight:1});
       await evaluate(`canvasTest.store.getState().addElement(canvasTest.snapshot().slide.id,${JSON.stringify({...target,rotation:0,opacity:1,locked:false,visible:true,type:target.type??'shape',shapeType:target.shapeType??'rect',stroke:'#000000',strokeWidth:2,cornerRadius:0})})`);
-      if(kind==='label') await evaluate(`(async()=>{const {createTextElement}=await import('/src/utils/slideFactory.ts');canvasTest.store.getState().addElement(canvasTest.snapshot().slide.id,createTextElement({id:'label',text:'Bound target',containerId:'destination'}));})()`);
+      if(kind==='label') await evaluate(`(async()=>{const {createTextElement}=await import('/src/utils/model/slideFactory.ts');canvasTest.store.getState().addElement(canvasTest.snapshot().slide.id,createTextElement({id:'label',text:'Bound target',containerId:'destination'}));})()`);
       await evaluate(`canvasTest.getActiveUndoManager()?.clear();canvasTest.store.temporal.getState().clear()`);await wait(100);
       const from=await screen([585,310]),to=await screen([748,403]); const before=await authoritative();
       await mouse('mouseMoved',from);assert.equal((await cue())?.state,'active');

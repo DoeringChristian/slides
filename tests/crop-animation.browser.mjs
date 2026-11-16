@@ -40,8 +40,8 @@ try {
   await evaluate(`(async()=>{
     const ReactModule=await import('/node_modules/.vite/deps/react.js'); const React=ReactModule.default??ReactModule;
     const Client=await import('/node_modules/.vite/deps/react-dom_client.js'); const {createRoot}=Client.default??Client;
-    const {createImageElement}=await import('/src/utils/slideFactory.ts');
-    const {interpolateElement}=await import('/src/utils/interpolation.ts');
+    const {createImageElement}=await import('/src/utils/model/slideFactory.ts');
+    const {interpolateElement}=await import('/src/utils/animation/interpolation.ts');
     const {renderPresenterElement}=await import('/src/components/presenter/presenterUtils.tsx');
     const host=document.createElement('div');Object.assign(host.style,{position:'fixed',inset:'0',background:'white',zIndex:99999});document.body.append(host);
     const root=createRoot(host);

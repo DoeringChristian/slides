@@ -87,7 +87,7 @@ try {
   assert.equal(await content(),live,'shared live scene exactly equals committed render');
   const after=await snapshot(),binding=after.slide.elements.subject[end];
   assert(Math.abs(binding.fixedPoint[0]-.5)<1e-6);assert(Math.abs(binding.fixedPoint[1]-.5)<1e-6);
-  const geometry=await evaluate(`(async()=>{const {silhouetteDistance}=await import('/src/utils/connectorUtils.ts');const s=canvasTest.snapshot().slide,a=s.elements.subject,pts=canvasTest.pathPointsInSlide(a),i=${end==='startBinding'?0:2};return silhouetteDistance(s.elements.box,{x:pts[i],y:pts[i+1]})})()`);assert(Math.abs(geometry)<1e-7,'visible endpoint is on actual boundary');
+  const geometry=await evaluate(`(async()=>{const {silhouetteDistance}=await import('/src/utils/paths/connectorUtils.ts');const s=canvasTest.snapshot().slide,a=s.elements.subject,pts=canvasTest.pathPointsInSlide(a),i=${end==='startBinding'?0:2};return silhouetteDistance(s.elements.box,{x:pts[i],y:pts[i+1]})})()`);assert(Math.abs(geometry)<1e-7,'visible endpoint is on actual boundary');
   assert.equal(after.undo,1);await key('z','KeyZ',2);await wait(80);assert.deepEqual((await snapshot()).slide.elements,before.slide.elements);
   const [cx,cy]=await center(selector);await mouse('mousePressed',cx,cy);await mouse('mouseMoved',cx+10,cy+10);await key('Escape');await mouse('mouseReleased',cx+10,cy+10);assert.deepEqual((await snapshot()).slide.elements,before.slide.elements);
   // Switching slide with same IDs invalidates the pointer ownership synchronously.

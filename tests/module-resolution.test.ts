@@ -103,4 +103,29 @@ describe('module resolution', () => {
     expect(checked).toBeGreaterThan(500);
     expect(broken, `unresolvable specifiers:\n${broken.join('\n')}`).toEqual([]);
   });
+
+  it('resolves every root-absolute /src path the browser tests load', () => {
+    // Browser tests and their fixture load modules the way the dev server
+    // serves them — `import('/src/utils/<domain>/x.ts')`, often inside
+    // template strings evaluated in the page — which no import scan above
+    // sees. A stale one fails only when the page runs it (the canvas fixture
+    // once broke every canvas suite this way).
+    const broken: string[] = [];
+    let checked = 0;
+    const browserFiles = [
+      ...files.filter((f) => f.startsWith(join(ROOT, 'tests') + '/')),
+      ...readdirSync(join(ROOT, 'tests')).filter((n) => n.endsWith('.html')).map((n) => join(ROOT, 'tests', n)),
+    ];
+    for (const file of browserFiles) {
+      const src = readFileSync(file, 'utf8');
+      for (const match of src.matchAll(/(?<![\w.])\/src\/[\w./-]+\.(?:tsx?|jsx?|mjs|css)/g)) {
+        checked++;
+        if (isFile(join(ROOT, match[0]))) continue;
+        const line = src.slice(0, match.index).split('\n').length;
+        broken.push(`${relative(ROOT, file)}:${line} -> ${match[0]}`);
+      }
+    }
+    expect(checked).toBeGreaterThan(50);
+    expect(broken, `unresolvable /src paths:\n${broken.join('\n')}`).toEqual([]);
+  });
 });

@@ -185,7 +185,7 @@ try {
     }));
     const evidence=await evaluate(`(async()=>{
       const original=${JSON.stringify(originals)};
-      const {CURATED_ICONS}=await import('/src/utils/curatedIcons.ts');const {createShapeElement}=await import('/src/utils/slideFactory.ts');
+      const {CURATED_ICONS}=await import('/src/utils/editor/curatedIcons.ts');const {createShapeElement}=await import('/src/utils/model/slideFactory.ts');
       async function raster(markup){const canvas=document.createElement('canvas');canvas.width=300;canvas.height=300;const ctx=canvas.getContext('2d');const image=new Image();const url=URL.createObjectURL(new Blob([markup],{type:'image/svg+xml'}));image.src=url;await image.decode();ctx.drawImage(image,0,0);URL.revokeObjectURL(url);return ctx.getImageData(0,0,300,300).data;}
       const results=[];
       for(const icon of CURATED_ICONS) for(const [w,h] of [[240,240],[240,120]]){
@@ -200,9 +200,9 @@ try {
   });
   await check('all24 static/presenter/Create/SVG/PNG/PDF/Office geometry and alpha parity, holes stay empty',async()=>{
     const evidence=await evaluate(`(async()=>{
-      const {CURATED_ICONS}=await import('/src/utils/curatedIcons.ts');
-      const {createShapeElement}=await import('/src/utils/slideFactory.ts');
-      const {officeShapeSvg}=await import('/src/utils/officeShape.ts');
+      const {CURATED_ICONS}=await import('/src/utils/editor/curatedIcons.ts');
+      const {createShapeElement}=await import('/src/utils/model/slideFactory.ts');
+      const {officeShapeSvg}=await import('/src/utils/io/officeShape.ts');
       async function raster(el,mode) {
         const canvas=document.createElement('canvas');canvas.width=960;canvas.height=540;const ctx=canvas.getContext('2d');
         if(mode==='pdf') canvasTest.drawShapeElement(ctx,el);
@@ -232,7 +232,7 @@ try {
   });
   await check('vector Create intermediate Chrome frames trace before fill with no alpha-zero delay',async()=>{
     const evidence=await evaluate(`(async()=>{
-      const {CURATED_ICONS}=await import('/src/utils/curatedIcons.ts');const {createShapeElement}=await import('/src/utils/slideFactory.ts');
+      const {CURATED_ICONS}=await import('/src/utils/editor/curatedIcons.ts');const {createShapeElement}=await import('/src/utils/model/slideFactory.ts');
       const rows=[];
       for(const name of ['settings','sun','heart'])for(const fill of ['#ff0000','#ff000000'])for(const t of [.05,.2,.4,.69,.85]){
         const el=createShapeElement('vector',{id:'intermediate',x:10,y:10,width:240,height:240,geometry:CURATED_ICONS.find(i=>i.id===name).geometry,fill,stroke:'#0000ff',strokeWidth:4});
@@ -250,7 +250,7 @@ try {
     await setup({empty:true,tool:'icon'});await click(220,230);
     const evidence=await evaluate(`(async()=>{
       const {default:JSZip}=await import('/node_modules/.vite/deps/jszip.js');
-      const {exportPptx}=await import('/src/utils/exportPptx.ts');const {exportOdp}=await import('/src/utils/exportOdp.ts');
+      const {exportPptx}=await import('/src/utils/io/exportPptx.ts');const {exportOdp}=await import('/src/utils/io/exportOdp.ts');
       const originalURL=URL.createObjectURL,originalClick=HTMLAnchorElement.prototype.click;const results={};
       try {for(const [name,fn] of [['pptx',exportPptx],['odp',exportOdp]]){
         const blobs=[];URL.createObjectURL=function(blob){blobs.push(blob);return originalURL.call(this,blob)};HTMLAnchorElement.prototype.click=function(){};

@@ -48,7 +48,7 @@ async function until(expression) {for(let i=0;i<100;i++){try{if(await evaluate(e
 try {
  await evaluate("localStorage.setItem('slides-storage-config',JSON.stringify({mode:'local'}))");
  await send('Page.navigate',{url:base});await until(`(async()=>!${vault}.getState().isLoading && !!document.querySelector('button'))()`);
- const saved=await evaluate(`(async()=>{const {createPresentation,createSlide}=await import('/src/utils/slideFactory.ts');const p=createPresentation();const slide=createSlide();p.slides[slide.id]=slide;p.slideOrder.push(slide.id);await ${vault}.getState().importProject(p);${editor}.getState().setActiveSlide(slide.id);return {project:${vault}.getState().activeProjectId,slide:slide.id}})()`);
+ const saved=await evaluate(`(async()=>{const {createPresentation,createSlide}=await import('/src/utils/model/slideFactory.ts');const p=createPresentation();const slide=createSlide();p.slides[slide.id]=slide;p.slideOrder.push(slide.id);await ${vault}.getState().importProject(p);${editor}.getState().setActiveSlide(slide.id);return {project:${vault}.getState().activeProjectId,slide:slide.id}})()`);
  await until(`JSON.parse(sessionStorage.getItem('slides.editor-location.v1')??'null')?.slideId===${JSON.stringify(saved.slide)}`);
  await send('Page.reload');await wait(300);
  await until(`(async()=>${vault}.getState().activeProjectId===${JSON.stringify(saved.project)}&&${editor}.getState().activeSlideId===${JSON.stringify(saved.slide)})()`);

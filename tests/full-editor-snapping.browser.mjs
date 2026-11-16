@@ -49,7 +49,7 @@ try {
  await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
  await evaluate("localStorage.setItem('slides-storage-config',JSON.stringify({mode:'local'}))");
  await send('Page.navigate',{url:base});await until(`(async()=>!${vault}.getState().isLoading && !!document.querySelector('button'))()`);
- await evaluate(`(async()=>{const {createPresentation,createShapeElement}=await import('/src/utils/slideFactory.ts');const p=createPresentation();const s=p.slides[p.slideOrder[0]];s.elements={subject:{...createShapeElement('rect'),x:250,y:180,width:100,height:80,id:'subject'},target:{...createShapeElement('rect'),x:353,y:350,width:50,height:40,id:'target'}};s.elementOrder=['subject','target'];await ${vault}.getState().importProject(p);${editor}.getState().setZoom(1);${editor}.getState().setSelectedElements(['subject']);})()`);
+ await evaluate(`(async()=>{const {createPresentation,createShapeElement}=await import('/src/utils/model/slideFactory.ts');const p=createPresentation();const s=p.slides[p.slideOrder[0]];s.elements={subject:{...createShapeElement('rect'),x:250,y:180,width:100,height:80,id:'subject'},target:{...createShapeElement('rect'),x:353,y:350,width:50,height:40,id:'target'}};s.elementOrder=['subject','target'];await ${vault}.getState().importProject(p);${editor}.getState().setZoom(1);${editor}.getState().setSelectedElements(['subject']);})()`);
  await wait(700);
  await drag(await screen(300,220),await screen(401,220));
  const x=await evaluate(`(async()=>{const p=(await import('/src/store/presentationStore.ts')).usePresentationStore.getState().presentation;return p.slides[p.slideOrder[0]].elements.subject.x})()`);

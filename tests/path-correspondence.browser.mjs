@@ -75,9 +75,9 @@ try {
  await send('Page.navigate',{url:`${base}/tests/canvas-fixture.html`});await waitForCanvasFixture(evaluate);await wait(1000);
  for(const collab of [false,true]) for(const end of ['start','end']) for(const rotation of [0,37]) for(const curve of ['linear','smooth','bezier']) {
   const fixture=await evaluate(`(async()=>{
-   const {bindingFor,resolveBinding}=await import('/src/utils/connectorUtils.ts');
-   const {createShapeElement}=await import('/src/utils/slideFactory.ts');
-   const {pathGeometryUpdate,slidePointToPath}=await import('/src/utils/pathEditing.ts');
+   const {bindingFor,resolveBinding}=await import('/src/utils/paths/connectorUtils.ts');
+   const {createShapeElement}=await import('/src/utils/model/slideFactory.ts');
+   const {pathGeometryUpdate,slidePointToPath}=await import('/src/utils/paths/pathEditing.ts');
    const targets=[createShapeElement('rect',{id:'left',x:200,y:200,width:100,height:100}),createShapeElement('rect',{id:'right',x:400,y:200,width:100,height:100})];
    const p={x:295,y:220},q={x:405,y:280};
    const startBinding=bindingFor(p,targets[0],'aim'),endBinding=bindingFor(q,targets[1],'aim');
@@ -102,7 +102,7 @@ try {
   const retained=end==='start'?next.slice(2):next.slice(0,-2);retained.forEach((v,i)=>near(v,old[i],'retained world vertex'));
   assert.deepEqual(after.slide.elements.subject[end==='start'?'endBinding':'startBinding'],before.slide.elements.subject[end==='start'?'endBinding':'startBinding']);
   const frames=await evaluate(`(async()=>{
-   const {composeSlideFrame}=await import('/src/components/presenter/presenterUtils.tsx');const {stationaryPathPair}=await import('/src/utils/pathInterpolation.ts');
+   const {composeSlideFrame}=await import('/src/components/presenter/presenterUtils.tsx');const {stationaryPathPair}=await import('/src/utils/animation/pathInterpolation.ts');
    const a=canvasTest.store.getState().presentation.slides[sourceID],b=canvasTest.snapshot().slide;
    if(!stationaryPathPair(a.elements.subject,b.elements.subject))throw Error('stationary correspondence rejected');
    return {a,b,frames:[true,false].flatMap(forward=>[0,.001,.25,.5,.999,1].map(t=>{const el=composeSlideFrame({slideA:forward?a:b,slideB:forward?b:a,isForward:forward,animProgress:t,isAnimating:true}).renderedElements.find(el=>el.id==='subject');return {forward,t,el,world:canvasTest.pathPointsInSlide(el),markup:canvasTest.arrowMarkup(el,'presenter')};}))};

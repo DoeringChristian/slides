@@ -62,7 +62,7 @@ const style={fontFamily:'Arial',fontSize:20,fontWeight:'normal',fontStyle:'norma
 const anchors=['top-left','top-center','top-right','middle-left','middle-right','bottom-left','bottom-center','bottom-right'];
 const near=(a,b)=>assert(Math.abs(a-b)<.015,`${a} != ${b}`);
 async function center(anchor){return evaluate(`(()=>{const n=document.querySelector('[data-resize-handle="${anchor}"] [data-resize-visual]')??document.querySelector('[data-resize-handle="${anchor}"]');const r=n.getBoundingClientRect();return [r.x+r.width/2,r.y+r.height/2]})()`);}
-async function normalize(config){await setup(config);await evaluate(`(async()=>{const {measureUserText}=await import('/src/utils/userTextSizing.ts');const s=canvasTest.snapshot().slide,e=s.elements.subject;canvasTest.store.getState().updateElements(s.id,[{elementId:e.id,changes:await measureUserText(e)}]);canvasTest.getActiveUndoManager()?.clear();canvasTest.store.temporal.getState().clear();})()`);await wait(45);await evaluate(`(()=>{const p=document.querySelector('.canvas-scroll-parent'),r=document.querySelector('.selection-transformer').getBoundingClientRect(),b=p.getBoundingClientRect();p.scrollLeft+=r.x+r.width/2-b.x-b.width/2;p.scrollTop+=r.y+r.height/2-b.y-b.height/2;})()`);await wait(30);}
+async function normalize(config){await setup(config);await evaluate(`(async()=>{const {measureUserText}=await import('/src/utils/text/userTextSizing.ts');const s=canvasTest.snapshot().slide,e=s.elements.subject;canvasTest.store.getState().updateElements(s.id,[{elementId:e.id,changes:await measureUserText(e)}]);canvasTest.getActiveUndoManager()?.clear();canvasTest.store.temporal.getState().clear();})()`);await wait(45);await evaluate(`(()=>{const p=document.querySelector('.canvas-scroll-parent'),r=document.querySelector('.selection-transformer').getBoundingClientRect(),b=p.getBoundingClientRect();p.scrollLeft+=r.x+r.width/2-b.x-b.width/2;p.scrollTop+=r.y+r.height/2-b.y-b.height/2;})()`);await wait(30);}
 function fixed(e,a,centered){const hx=centered?0:a.includes('left')?1:a.includes('right')?-1:0,hy=centered?0:a.includes('top')?1:a.includes('bottom')?-1:0,r=e.rotation*Math.PI/180;return [e.x+e.width/2+hx*e.width/2*Math.cos(r)-hy*e.height/2*Math.sin(r),e.y+e.height/2+hx*e.width/2*Math.sin(r)+hy*e.height/2*Math.cos(r)];}
 try{
  await mkdir(evidence,{recursive:true});await send('Page.enable');await send('Runtime.enable');await send('Page.bringToFront');
@@ -74,7 +74,7 @@ try{
   const mode=staleKind==='user-height'?'user-width':'auto-content';
   const subject={type:'text',text:'hello **bold** world\nshort $x^2$',textSizing:mode,x:400,y:280,width:220,height:60,rotation,style};
   // Measure the source only. NEVER write a normalized fixture or clear its history.
-  const baseline=await evaluate(`(async()=>{const {measureUserText}=await import('/src/utils/userTextSizing.ts');return measureUserText(${JSON.stringify(subject)})})()`);
+  const baseline=await evaluate(`(async()=>{const {measureUserText}=await import('/src/utils/text/userTextSizing.ts');return measureUserText(${JSON.stringify(subject)})})()`);
   subject.width=baseline.width+(staleKind==='auto-padding'?28:0);subject.height=baseline.height+(staleKind==='auto-padding'?28:80);
   await setup({mode:'production',collab,zoom,subject});
   await evaluate(`(()=>{const p=document.querySelector('.canvas-scroll-parent'),r=document.querySelector('.selection-transformer').getBoundingClientRect(),b=p.getBoundingClientRect();p.scrollLeft+=r.x+r.width/2-b.x-b.width/2;p.scrollTop+=r.y+r.height/2-b.y-b.height/2;})()`);await wait(30);
@@ -92,7 +92,7 @@ try{
     await send('Input.dispatchKeyEvent',{type:eventType,key:keyName,code:keyCode,modifiers:mods});await wait(80);
     const scalingNow=!!(mods&8),centeredNow=!!(mods&2),scaleNow=1+(centeredNow?.4:.2);
     const candidate={...a,width:baseline.width*scaleNow,textSizing:scalingNow?a.textSizing:'user-width',style:{...a.style,fontSize:a.style.fontSize*(scalingNow?scaleNow:1)}};
-    const measured=await evaluate(`(async()=>{const {measureUserText}=await import('/src/utils/userTextSizing.ts');return measureUserText(${JSON.stringify(candidate)})})()`);
+    const measured=await evaluate(`(async()=>{const {measureUserText}=await import('/src/utils/text/userTextSizing.ts');return measureUserText(${JSON.stringify(candidate)})})()`);
     const oldFixed=fixed(a,anchor,centeredNow),cxNew=oldFixed[0]+(centeredNow?0:measured.width/2*Math.cos(r)),cyNew=oldFixed[1]+(centeredNow?0:measured.width/2*Math.sin(r));
     const expected=[cxNew-measured.width/2-4/zoom,cyNew-measured.height/2-4/zoom,measured.width+8/zoom,measured.height+8/zoom];
     const actual=await evaluate(`(()=>{const n=document.querySelector('.selection-transformer > rect');return ['x','y','width','height'].map(k=>+n.getAttribute(k))})()`);actual.forEach((v,i)=>near(v,expected[i]));
@@ -110,7 +110,7 @@ try{
   if(zoom===1&&rotation===30&&anchor==='bottom-right'){
    const png=await send('Page.captureScreenshot');await writeFile(`${evidence}/${collab?'yjs':'json'}-stale-${staleKind}.png`,Buffer.from(png.data,'base64'));
   }
-  const size=await evaluate(`(async()=>{const {measureUserText}=await import('/src/utils/userTextSizing.ts');return measureUserText(canvasTest.snapshot().slide.elements.subject)})()`);assert.deepEqual(size,{width:b.width,height:b.height});
+  const size=await evaluate(`(async()=>{const {measureUserText}=await import('/src/utils/text/userTextSizing.ts');return measureUserText(canvasTest.snapshot().slide.elements.subject)})()`);assert.deepEqual(size,{width:b.width,height:b.height});
   const finalBox=await evaluate(`(()=>{const n=document.querySelector('.selection-transformer > rect');return ['x','y','width','height'].map(k=>+n.getAttribute(k))})()`);liveBox.forEach((v,i)=>near(v,finalBox[i]));
   await evaluate(`(()=>{const u=canvasTest.getActiveUndoManager();if(u)u.undo();else canvasTest.store.temporal.getState().undo();})()`);await wait(35);assert.deepEqual((await snapshot()).slide.elements,before.slide.elements);
   await evaluate(`(()=>{const u=canvasTest.getActiveUndoManager();if(u)u.redo();else canvasTest.store.temporal.getState().redo();})()`);await wait(35);assert.deepEqual((await snapshot()).slide.elements,after.slide.elements);
@@ -132,7 +132,7 @@ try{
   assert.equal(after.undo,before.undo+1,JSON.stringify({collab,zoom,rotation,anchor,modifiers}));assert.equal(a.text,b.text);
   const scaling=shift||!anchor.startsWith('middle-');if(scaling){assert(b.style.fontSize>a.style.fontSize);near(b.width/a.width,b.style.fontSize/a.style.fontSize);near(b.height/a.height,b.style.fontSize/a.style.fontSize);assert.equal(b.textSizing,a.textSizing);}else{assert.equal(b.style.fontSize,a.style.fontSize);assert.equal(b.textSizing,'user-width');}
   fixed(a,anchor,centered).forEach((v,i)=>near(v,fixed(b,anchor,centered)[i]));
-  const size=await evaluate(`(async()=>{const {measureUserText}=await import('/src/utils/userTextSizing.ts');return measureUserText(canvasTest.snapshot().slide.elements.subject)})()`);assert.deepEqual(size,{width:b.width,height:b.height});
+  const size=await evaluate(`(async()=>{const {measureUserText}=await import('/src/utils/text/userTextSizing.ts');return measureUserText(canvasTest.snapshot().slide.elements.subject)})()`);assert.deepEqual(size,{width:b.width,height:b.height});
   const finalBox=await evaluate(`(()=>{const n=document.querySelector('.selection-transformer > rect');return ['x','y','width','height'].map(k=>+n.getAttribute(k))})()`);liveBox.forEach((v,i)=>near(v,finalBox[i]));
   await evaluate(`(()=>{const u=canvasTest.getActiveUndoManager();if(u)u.undo();else canvasTest.store.temporal.getState().undo();})()`);await wait(35);assert.deepEqual((await snapshot()).slide.elements,before.slide.elements);
   await evaluate(`(()=>{const u=canvasTest.getActiveUndoManager();if(u)u.redo();else canvasTest.store.temporal.getState().redo();})()`);await wait(35);assert.deepEqual((await snapshot()).slide.elements,after.slide.elements);
@@ -184,7 +184,7 @@ try{
   for(const requestId of pausedRequests)await send('Fetch.continueRequest',{requestId});pausedRequests.clear();await send('Fetch.disable');await wait(750);
   const after=await snapshot();
   if(outcome==='corner-finish'){
-   const original=before.slide.elements.subject,baseline=await evaluate(`(async()=>{const {measureUserText}=await import('/src/utils/userTextSizing.ts');return measureUserText(${JSON.stringify(before.slide.elements.subject)})})()`),scale=1+Math.max(40/baseline.width,20/baseline.height),out=after.slide.elements.subject;
+   const original=before.slide.elements.subject,baseline=await evaluate(`(async()=>{const {measureUserText}=await import('/src/utils/text/userTextSizing.ts');return measureUserText(${JSON.stringify(before.slide.elements.subject)})})()`),scale=1+Math.max(40/baseline.width,20/baseline.height),out=after.slide.elements.subject;
    near(out.style.fontSize,original.style.fontSize*scale);near(out.width,baseline.width*scale);near(out.height,baseline.height*scale);assert.equal(out.text,original.text);assert.equal(after.undo,before.undo+1);
   }else if(outcome==='finish'){assert.equal(after.slide.elements.subject.width,140);assert.equal(after.undo,before.undo+1);assert.equal(after.slide.elements.subject.text,before.slide.elements.subject.text);}
   else {assert.deepEqual(after.slide,cancelled.slide);assert.equal(after.undo,cancelled.undo);}

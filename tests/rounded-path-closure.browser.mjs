@@ -83,7 +83,7 @@ try {
   assert.equal((await snapshot()).slide.elements.subject.closed,!closed);
   const record=await evaluate(`(async()=>{
    const {composeSlideFrame}=await import('/src/components/presenter/presenterUtils.tsx');
-   const {pathArrowGeometry,pathD}=await import('/src/utils/pathShapes.ts');
+   const {pathArrowGeometry,pathD}=await import('/src/utils/paths/pathShapes.ts');
    const a=canvasTest.store.getState().presentation.slides[sourceID],b=canvasTest.snapshot().slide;
    return {a,b,frames:[true,false].flatMap(forward=>[0,.000001,.001,.25,.5,.999,.999999,1].map(t=>{
     const el=composeSlideFrame({slideA:forward?a:b,slideB:forward?b:a,isForward:forward,animProgress:t,isAnimating:true}).renderedElements.find(el=>el.id==='subject');
@@ -117,8 +117,8 @@ try {
  }
  // Near-endpoint raster continuity, both authored heads/all silhouettes/short legs.
  const rasters=await evaluate(`(async()=>{
-  const {interpolateElement}=await import('/src/utils/interpolation.ts');
-  const {pathArrowGeometry}=await import('/src/utils/pathShapes.ts');
+  const {interpolateElement}=await import('/src/utils/animation/interpolation.ts');
+  const {pathArrowGeometry}=await import('/src/utils/paths/pathShapes.ts');
   const source=${JSON.stringify(records[0].a.elements.subject)};
   async function raster(el){const canvas=document.createElement('canvas');canvas.width=canvas.height=400;const ctx=canvas.getContext('2d');const image=new Image();const url=URL.createObjectURL(new Blob([canvasTest.arrowMarkup(el,'presenter')],{type:'image/svg+xml'}));image.src=url;await image.decode();ctx.drawImage(image,0,0);URL.revokeObjectURL(url);return {data:ctx.getImageData(0,0,400,400).data,png:canvas.toDataURL()};}
   const result=[];
@@ -139,7 +139,7 @@ try {
  // This asserts only collapsed-prefix normalization, not continuity at the
  // first nonzero closing stroke (whose round-cap birth is a separate policy).
  const collapsedPrefixes=await evaluate(`(async()=>{
-  const {interpolateElement}=await import('/src/utils/interpolation.ts');
+  const {interpolateElement}=await import('/src/utils/animation/interpolation.ts');
   const source=${JSON.stringify(records[0].a.elements.subject)};
   async function raster(el,mode){
    const c=document.createElement('canvas');c.width=c.height=400;const ctx=c.getContext('2d');
@@ -179,7 +179,7 @@ try {
  }
  const live=await liveFrames('#closure-presenter svg');assert.deepEqual(live,expected,'actual PresenterView equals compose/shared leaf');
  // Use the production exporter, intercept only its download Blob.
- const html=await evaluate(`(async()=>{const {exportStandaloneHtml}=await import('/src/utils/exportStandaloneHtml.ts');const old=HTMLAnchorElement.prototype.click;let output;HTMLAnchorElement.prototype.click=function(){output=fetch(this.href).then(r=>r.text())};try{await exportStandaloneHtml(${JSON.stringify(deck)},{mode:'viewer'});return await output}finally{HTMLAnchorElement.prototype.click=old}})()`);
+ const html=await evaluate(`(async()=>{const {exportStandaloneHtml}=await import('/src/utils/io/exportStandaloneHtml.ts');const old=HTMLAnchorElement.prototype.click;let output;HTMLAnchorElement.prototype.click=function(){output=fetch(this.href).then(r=>r.text())};try{await exportStandaloneHtml(${JSON.stringify(deck)},{mode:'viewer'});return await output}finally{HTMLAnchorElement.prototype.click=old}})()`);
  await writeFile(`${process.env.BROWSER_GATE_EVIDENCE}/artifacts/slides-import-export-repair/rounded-path-closure.html`,html);
  await send('Page.navigate',{url:base+'/__import-export-fixture/rounded-path-closure.html'});await wait(1000);
  for(let i=0;i<80&&!await evaluate(`!!document.querySelector('svg')`);i++)await wait(100);

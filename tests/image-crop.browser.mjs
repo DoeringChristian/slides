@@ -62,8 +62,8 @@ try {
   console.log('PASS media resize defaults and Shift override, corner/side handles, JSON/Yjs');
   for (const fontSize of [24,120]) {
     const result=await evaluate(`(async()=>{
-      const {layoutUserText,measureUserText}=await import('/src/utils/userTextSizing.ts');
-      const {createTextElement}=await import('/src/utils/slideFactory.ts');
+      const {layoutUserText,measureUserText}=await import('/src/utils/text/userTextSizing.ts');
+      const {createTextElement}=await import('/src/utils/model/slideFactory.ts');
       const e=createTextElement({text:'$x^2$',textSizing:'auto-content'});e.style.fontSize=${fontSize};
       const d=await layoutUserText(e),size=await measureUserText(e);
       const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');document.body.append(svg);

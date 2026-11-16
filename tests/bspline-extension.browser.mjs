@@ -76,9 +76,9 @@ try {
  for(const collab of [false,true]) for(const end of ['start','end']) for(const variant of ['flat','curved2','curved3']) for(const binding of ['none','pinned','aim']) {
   const rotation=binding==='pinned'?37:0,curve=variant==='curved3'?'bspline3':'bspline2';
   const fixture=await evaluate(`(async()=>{
-   const {bindingFor,resolveBinding}=await import('/src/utils/connectorUtils.ts');
-   const {createShapeElement}=await import('/src/utils/slideFactory.ts');
-   const {pathGeometryUpdate,slidePointToPath}=await import('/src/utils/pathEditing.ts');
+   const {bindingFor,resolveBinding}=await import('/src/utils/paths/connectorUtils.ts');
+   const {createShapeElement}=await import('/src/utils/model/slideFactory.ts');
+   const {pathGeometryUpdate,slidePointToPath}=await import('/src/utils/paths/pathEditing.ts');
    const targets=${binding==='none'?'[]':`[createShapeElement('rect',{id:'left',x:180,y:220,width:100,height:100}),createShapeElement('rect',{id:'right',x:700,y:220,width:100,height:100})]`};
    const points=${variant==='flat'?'[300,300,500,300,680,300]':'[300,300,370,370,440,250,520,340,600,260,680,300]'};
    let startBinding,endBinding;
@@ -98,8 +98,8 @@ try {
   (end==='start'?next.slice(2):next.slice(0,-2)).forEach((v,i)=>near(v,old[i],'entire retained world chain'));
   const record=await evaluate(`(async()=>{
    const {composeSlideFrame}=await import('/src/components/presenter/presenterUtils.tsx');
-   const {bsplineExtensionPair}=await import('/src/utils/bsplineExtension.ts');
-   const {pathArrowGeometry}=await import('/src/utils/pathShapes.ts');
+   const {bsplineExtensionPair}=await import('/src/utils/paths/bsplineExtension.ts');
+   const {pathArrowGeometry}=await import('/src/utils/paths/pathShapes.ts');
    const a=canvasTest.store.getState().presentation.slides[sourceID],b=canvasTest.snapshot().slide;
    const pair=bsplineExtensionPair(a.elements.subject,b.elements.subject);if(!pair)throw Error('native pair rejected');
    return {a,b,pair,frames:[true,false].flatMap(forward=>[0,.000001,.001,.25,.5,.75,.999,.999999,1].map(t=>{const el=composeSlideFrame({slideA:forward?a:b,slideB:forward?b:a,isForward:forward,animProgress:t,isAnimating:true}).renderedElements.find(el=>el.id==='subject');return {forward,t,el,geo:pathArrowGeometry(el),world:canvasTest.pathPointsInSlide(el),markup:canvasTest.arrowMarkup(el,'presenter')};}))};
@@ -152,7 +152,7 @@ try {
  }
  const live=await liveFrames('#bspline-presenter svg');assert.deepEqual(live,expected,'actual PresenterView equals compose/shared leaf');
  // Use the production exporter, intercept only its download Blob.
- const html=await evaluate(`(async()=>{const {exportStandaloneHtml}=await import('/src/utils/exportStandaloneHtml.ts');const old=HTMLAnchorElement.prototype.click;let output;HTMLAnchorElement.prototype.click=function(){output=fetch(this.href).then(r=>r.text())};try{await exportStandaloneHtml(${JSON.stringify(deck)},{mode:'viewer'});return await output}finally{HTMLAnchorElement.prototype.click=old}})()`);
+ const html=await evaluate(`(async()=>{const {exportStandaloneHtml}=await import('/src/utils/io/exportStandaloneHtml.ts');const old=HTMLAnchorElement.prototype.click;let output;HTMLAnchorElement.prototype.click=function(){output=fetch(this.href).then(r=>r.text())};try{await exportStandaloneHtml(${JSON.stringify(deck)},{mode:'viewer'});return await output}finally{HTMLAnchorElement.prototype.click=old}})()`);
  await writeFile(`${process.env.BROWSER_GATE_EVIDENCE}/artifacts/slides-import-export-repair/bspline-extension.html`,html);
  await send('Page.navigate',{url:base+'/__import-export-fixture/bspline-extension.html'});await wait(1000);
  for(let i=0;i<80&&!await evaluate(`!!document.querySelector('svg')`);i++)await wait(100);

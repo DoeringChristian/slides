@@ -43,7 +43,7 @@ try {
       const {default:React}=await import('/node_modules/.vite/deps/react.js');
       const {default:{createRoot}}=await import('/node_modules/.vite/deps/react-dom_client.js');
       const {renderPresenterElement}=await import('/src/components/presenter/presenterUtils.tsx');
-      const {createTextElement}=await import('/src/utils/slideFactory.ts');
+      const {createTextElement}=await import('/src/utils/model/slideFactory.ts');
       window.__penRoot?.unmount();document.getElementById('pen-probe')?.remove();
       const host=document.createElement('div');host.id='pen-probe';document.body.append(host);window.__penRoot=createRoot(host);
       const e=createTextElement({text:${JSON.stringify(text)},x:0,y:0,width:600,height:350});e.style.fontSize=${fontSize};
@@ -62,8 +62,8 @@ try {
   for(const mobile of [false,true]) for(const dpr of [1,3]) {
     await send('Emulation.setDeviceMetricsOverride',{width:mobile?390:1200,height:900,deviceScaleFactor:dpr,mobile});
     const results=await evaluate(`(async()=>{
-      const {layoutUserText}=await import('/src/utils/userTextSizing.ts');
-      const {createTextElement}=await import('/src/utils/slideFactory.ts');
+      const {layoutUserText}=await import('/src/utils/text/userTextSizing.ts');
+      const {createTextElement}=await import('/src/utils/model/slideFactory.ts');
       const element=createTextElement({text:'$x_i^2 + y$',textSizing:'auto-content'});element.style.fontSize=160;
       const doc=await layoutUserText(element);
       const raster=async(svg,width)=>{const image=new Image();image.src='data:image/svg+xml,'+encodeURIComponent(svg);await image.decode();const c=document.createElement('canvas');c.width=width;c.height=width*2/3;const ctx=c.getContext('2d');ctx.drawImage(image,0,0);const data=ctx.getImageData(0,0,c.width,c.height).data;let alpha=0;for(let i=3;i<data.length;i+=4)alpha+=data[i]/255;return alpha;};

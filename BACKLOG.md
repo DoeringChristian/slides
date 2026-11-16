@@ -8,16 +8,19 @@ later session can confirm the item is still real before acting on it.
 
 ## Queued
 
-### Browser tests import pre-restructure module paths
-The `src/utils` move into domain folders rewrote static imports, but the
-browser tests load modules through dynamic `import('/src/utils/<name>.ts')`
-inside template strings, which neither the restructure script nor
-`tests/module-resolution.test.ts` sees. Most still name the old flat paths, so
-those cases fail on import. Examples: `tests/arrow-junction.browser.mjs:104`
-(`/src/utils/shapeToPath.ts`), `tests/aim-binding.browser.mjs:90`
-(`/src/utils/connectorUtils.ts`), `tests/bound-text-fitting.browser.mjs:81`
-(`/src/utils/syncDependents.ts`). Fix the paths and extend the resolution test
-to template-string imports. (`tests/text-refinements.browser.mjs` is fixed.)
+### 20 browser suites fail on the released code
+The canvas fixture loaded `src/utils` modules by pre-restructure paths, so every
+canvas browser suite failed on import and nothing noticed they had drifted. With
+the paths fixed (and `tests/module-resolution.test.ts` now checking them), 20 of
+56 suites still fail — identically on v0.4.0, so they predate it: aim-binding,
+arrow-junction, arrow-pinning-corrections, arrow-pinning-regression, canvas,
+canvas-modifiers, color-swatches, gesture-action-bar, icon-click-placement,
+icons-creation, import-export, path-closure, path-move-marker, radius-finite-leg,
+radius-guide-corrections, rounded-path-closure, shape-style, stabilization,
+terminal-stroke-consumers, ui-reference. Most fail on a missing DOM element (a UI
+the test expected has changed); a few on geometry/pixel tolerances. Triage each:
+fix the test where the UI legitimately changed, the code where it regressed.
+Run: `BROWSER_GATE_EVIDENCE=/abs/dir node tests/browser-gate.mjs <suite>`.
 
 ### Underline alone does not redraw text
 `SVGTextPaths` re-lays out when `style.textDecoration` changes (it is in the

@@ -105,7 +105,7 @@ try {
     assert.equal((await snapshot()).slide.elements.subject.text,'original');
     assert.equal(await evaluate(`canvasTest.store.getState().presentation.slides[${JSON.stringify(sid)}].elements.subject.text`),'original edited');
     await setup({mode:'production',collab,subject:{x:100,y:100,width:200,height:70}});
-    await evaluate(`(() => { const s=canvasTest.snapshot().slide; import('/src/utils/syncDependents.ts').then(({createBoundLabel})=> {const e=createBoundLabel(s.elements.subject);canvasTest.store.getState().addElement(s.id,e);canvasTest.editor.getState().setEditingTextId(e.id);}); })()`); await wait(400);
+    await evaluate(`(() => { const s=canvasTest.snapshot().slide; import('/src/utils/model/syncDependents.ts').then(({createBoundLabel})=> {const e=createBoundLabel(s.elements.subject);canvasTest.store.getState().addElement(s.id,e);canvasTest.editor.getState().setEditingTextId(e.id);}); })()`); await wait(400);
     const before=(await snapshot()).undo;
     await send('Input.insertText',{text:'a long bound label that grows when the content is accepted'}); await wait(150);
     await key('Escape'); await wait(400);
@@ -129,7 +129,7 @@ try {
   const final=await snapshot(); await writeFile(`${process.env.BROWSER_GATE_EVIDENCE}/artifacts/slides-text-milestone1/final.json`,JSON.stringify(final,null,2));
   const png=await send('Page.captureScreenshot'); await writeFile(`${process.env.BROWSER_GATE_EVIDENCE}/artifacts/slides-text-milestone1/final.png`,Buffer.from(png.data,'base64'));
   await check('LaTeX glyphs survive the shared layout and canvas renderer',async()=>{
-    const math=await evaluate(`(async()=>{const {layoutSvgText}=await import('/src/utils/textLayout.ts');const s=canvasTest.snapshot().slide;const el=s.elements[s.elementOrder.at(-1)];const doc=await layoutSvgText(el.text,el.style,el.width-28);return {mathPaths:doc.paths.filter(p=>p.lineIndex===1).length,paintedPaths:document.querySelectorAll('.canvas-scroll-parent svg path').length};})()`);
+    const math=await evaluate(`(async()=>{const {layoutSvgText}=await import('/src/utils/text/textLayout.ts');const s=canvasTest.snapshot().slide;const el=s.elements[s.elementOrder.at(-1)];const doc=await layoutSvgText(el.text,el.style,el.width-28);return {mathPaths:doc.paths.filter(p=>p.lineIndex===1).length,paintedPaths:document.querySelectorAll('.canvas-scroll-parent svg path').length};})()`);
     await writeFile(`${process.env.BROWSER_GATE_EVIDENCE}/artifacts/slides-text-milestone1/math-glyph-smoke.json`,JSON.stringify({base,...math},null,2));
     assert(math.mathPaths>=2,'expected SVG math glyphs, not only preserved LaTeX source');
     assert(math.paintedPaths>=7);

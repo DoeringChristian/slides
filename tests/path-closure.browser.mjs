@@ -82,7 +82,7 @@ try {
   assert.equal((await snapshot()).slide.elements.subject.closed,!closed);
   const record=await evaluate(`(async()=>{
    const {composeSlideFrame}=await import('/src/components/presenter/presenterUtils.tsx');
-   const {pathArrowGeometry,pathD}=await import('/src/utils/pathShapes.ts');
+   const {pathArrowGeometry,pathD}=await import('/src/utils/paths/pathShapes.ts');
    const a=canvasTest.store.getState().presentation.slides[sourceID],b=canvasTest.snapshot().slide;
    return {a,b,frames:[true,false].flatMap(forward=>[0,.001,.25,.5,.999,1].map(t=>{
     const el=composeSlideFrame({slideA:forward?a:b,slideB:forward?b:a,isForward:forward,animProgress:t,isAnimating:true}).renderedElements.find(el=>el.id==='subject');
@@ -131,7 +131,7 @@ try {
  }
  const live=await liveFrames('#closure-presenter svg');assert.deepEqual(live,expected,'actual PresenterView equals compose/shared leaf');
  // Use the production exporter, intercept only its download Blob.
- const html=await evaluate(`(async()=>{const {exportStandaloneHtml}=await import('/src/utils/exportStandaloneHtml.ts');const old=HTMLAnchorElement.prototype.click;let output;HTMLAnchorElement.prototype.click=function(){output=fetch(this.href).then(r=>r.text())};try{await exportStandaloneHtml(${JSON.stringify(deck)},{mode:'viewer'});return await output}finally{HTMLAnchorElement.prototype.click=old}})()`);
+ const html=await evaluate(`(async()=>{const {exportStandaloneHtml}=await import('/src/utils/io/exportStandaloneHtml.ts');const old=HTMLAnchorElement.prototype.click;let output;HTMLAnchorElement.prototype.click=function(){output=fetch(this.href).then(r=>r.text())};try{await exportStandaloneHtml(${JSON.stringify(deck)},{mode:'viewer'});return await output}finally{HTMLAnchorElement.prototype.click=old}})()`);
  await writeFile(`${process.env.BROWSER_GATE_EVIDENCE}/artifacts/slides-import-export-repair/path-closure.html`,html);
  await send('Page.navigate',{url:base+'/__import-export-fixture/path-closure.html'});await wait(1000);
  for(let i=0;i<80&&!await evaluate(`!!document.querySelector('svg')`);i++)await wait(100);

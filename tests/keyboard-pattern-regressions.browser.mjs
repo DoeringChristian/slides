@@ -70,7 +70,7 @@ try {
   }
   // A patterned shaft must retain its gaps throughout Create, including out frames.
   const paints=await evaluate(`(async()=>{
-    const {createShapeElement}=await import('/src/utils/slideFactory.ts');
+    const {createShapeElement}=await import('/src/utils/model/slideFactory.ts');
     const result=[];
     for(const strokeStyle of ['dashed','dotted']) for(const endHead of ['none','triangle']) {
       const el=createShapeElement('path',{x:30,y:100,width:300,height:0,points:[0,0,300,0],fill:'none',stroke:'#000000',strokeWidth:6,strokeStyle,endHead});

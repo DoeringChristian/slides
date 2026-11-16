@@ -58,7 +58,7 @@ try {
     assert.notEqual(drawn.id,'target');assert(Math.abs(drawn.width-(visible?203:201))<.001,'drawing only sees visible target');
     console.log('PASS viewport drag/resize/draw collab='+collab+' visible='+visible);
   }
-  const scrolling=await evaluate(`(async()=>{const {snapViewport}=await import('/src/utils/snapViewport.ts');const svg=document.querySelector('.canvas-scroll-parent svg'),p=document.querySelector('.canvas-scroll-parent');const before=snapViewport(svg);p.scrollTop+=120;const after=snapViewport(svg);return {before,after}})()`);
+  const scrolling=await evaluate(`(async()=>{const {snapViewport}=await import('/src/utils/snapping/snapViewport.ts');const svg=document.querySelector('.canvas-scroll-parent svg'),p=document.querySelector('.canvas-scroll-parent');const before=snapViewport(svg);p.scrollTop+=120;const after=snapViewport(svg);return {before,after}})()`);
   assert(Math.abs(scrolling.after.y-scrolling.before.y-120)<.01);
   console.log('PASS snap viewport follows scrollport rather than oversized SVG');
   assert.deepEqual(runtimeErrors,[]);

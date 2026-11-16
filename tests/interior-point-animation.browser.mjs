@@ -84,7 +84,7 @@ try {
   assert.deepEqual(persisted,c,'JSON/Yjs serialization preserves current geometry');
   const frames=await evaluate(`(async()=>{
    const {composeSlideFrame}=await import('/src/components/presenter/presenterUtils.tsx');
-   const {stationaryPathPair}=await import('/src/utils/pathInterpolation.ts');
+   const {stationaryPathPair}=await import('/src/utils/animation/pathInterpolation.ts');
    const slides=${JSON.stringify([a,b,c])};
    return [0,1].map(i=>({eligible:!!stationaryPathPair(slides[i].elements.subject,slides[i+1].elements.subject),frames:[true,false].flatMap(forward=>[0,.000001,.25,.499999,.5,.500001,.75,.999999,1].map(t=>{
     const el=composeSlideFrame({slideA:slides[forward?i:i+1],slideB:slides[forward?i+1:i],isForward:forward,animProgress:t,isAnimating:true}).renderedElements.find(el=>el.id==='subject');

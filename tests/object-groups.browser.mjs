@@ -251,7 +251,7 @@ for(const collab of [false,true]) {
   console.log('PASS object group shortcuts, undo/redo, canvas selection/move/resize/rotate, nested ungroup collab='+collab);
 }
 const exportedOrigins = await evaluate(`(async()=>{
-  const {exportStandaloneHtml}=await import('/src/utils/exportStandaloneHtml.ts');
+  const {exportStandaloneHtml}=await import('/src/utils/io/exportStandaloneHtml.ts');
   const originalUrl=URL.createObjectURL,originalClick=HTMLAnchorElement.prototype.click;
   let blob;const origins=[];
   URL.createObjectURL=function(value){blob=value;return originalUrl.call(this,value)};

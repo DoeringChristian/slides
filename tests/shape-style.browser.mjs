@@ -111,7 +111,7 @@ try {
       async function raster(el,mode){
         const canvas=document.createElement('canvas');canvas.width=960;canvas.height=540;const ctx=canvas.getContext('2d');
         if(mode==='pdf') canvasTest.drawShapeElement(ctx,el);
-        else {const img=new Image(); const markup=mode==='office' ? (await import('/src/utils/officeShape.ts')).officeShapeSvg(el) : canvasTest.arrowMarkup(el,mode);
+        else {const img=new Image(); const markup=mode==='office' ? (await import('/src/utils/io/officeShape.ts')).officeShapeSvg(el) : canvasTest.arrowMarkup(el,mode);
           const url=URL.createObjectURL(new Blob([markup],{type:'image/svg+xml'})); img.src=url;await img.decode();ctx.drawImage(img,0,0);URL.revokeObjectURL(url);}
         return {canvas,ctx,pixel:(x,y)=>Array.from(ctx.getImageData(x,y,1,1).data)};
       }
@@ -146,7 +146,7 @@ try {
     ]});
     const evidence=await evaluate(`(async()=>{
       const {default:JSZip}=await import('/node_modules/.vite/deps/jszip.js');
-      const {exportPptx}=await import('/src/utils/exportPptx.ts');const {exportOdp}=await import('/src/utils/exportOdp.ts');
+      const {exportPptx}=await import('/src/utils/io/exportPptx.ts');const {exportOdp}=await import('/src/utils/io/exportOdp.ts');
       const p=canvasTest.store.getState().presentation;
       const originalURL=URL.createObjectURL,originalClick=HTMLAnchorElement.prototype.click;
       const results={};
@@ -159,7 +159,7 @@ try {
           const xml=await zip.file(name==='pptx'?'ppt/slides/slide1.xml':'content.xml').async('string');
           const assets=[];for(const path of Object.keys(zip.files).filter(p=>p.endsWith('.svg'))){assets.push({path,svg:await zip.file(path).async('string')})}
           const pngs=Object.keys(zip.files).filter(p=>p.endsWith('.png'));
-          const imported= name==='pptx' ? await (await import('/src/utils/importPptx.ts')).importPptx(new File([blob],'styles.pptx')) : await (await import('/src/utils/importOdp.ts')).importOdp(new File([blob],'styles.odp'));
+          const imported= name==='pptx' ? await (await import('/src/utils/io/importPptx.ts')).importPptx(new File([blob],'styles.pptx')) : await (await import('/src/utils/io/importOdp.ts')).importOdp(new File([blob],'styles.odp'));
           results[name]={xml,assets,pngs,imported};
         }
       }finally{URL.createObjectURL=originalURL;HTMLAnchorElement.prototype.click=originalClick}

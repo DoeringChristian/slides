@@ -121,7 +121,7 @@ try {
   for (const style of ['hachure', 'crosshatch', 'solid']) {
     await storage('local');
     const source = await evaluate(`(async()=>{
-      const f=await import('/src/utils/slideFactory.ts');const p=f.createPresentation();
+      const f=await import('/src/utils/model/slideFactory.ts');const p=f.createPresentation();
       p.id=crypto.randomUUID();p.title='HTML style regression '+p.id;
       const s=p.slides[p.slideOrder[0]];
       const e=f.createShapeElement('rect',{id:'rectangle',x:260,y:180,width:600,height:380,

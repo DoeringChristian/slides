@@ -78,7 +78,7 @@ try {
   const name=`${collab?'yjs':'json'}-${shapeType}-${rotation}`;
   await check(name+' live fit and one undo',async()=>{
    await setup({mode:'production',collab,subject:{shapeType,x:200,y:180,width:200,height:190,rotation}});
-   await evaluate(`(async()=>{const {createBoundLabel}=await import('/src/utils/syncDependents.ts');const s=canvasTest.snapshot().slide;
+   await evaluate(`(async()=>{const {createBoundLabel}=await import('/src/utils/model/syncDependents.ts');const s=canvasTest.snapshot().slide;
      const e={...createBoundLabel(s.elements.subject),id:'label',text:'Hi',style:${JSON.stringify(style)}};
      canvasTest.store.getState().addElement(s.id,e);})()`);await wait(300);
    await evaluate(`canvasTest.editor.getState().setEditingTextId('label')`);await wait(300);
@@ -104,7 +104,7 @@ try {
  }
  for(const collab of [false,true])await check(`${collab?'Yjs':'JSON'} native manual baseline and width, labeled connector follows live fit`,async()=>{
   await setup({mode:'production',collab,subject:{x:200,y:180,width:200,height:40},targets:[{id:'arrow',shapeType:'path',x:400,y:200,width:150,height:0,points:[0,0,150,0],startBinding:{elementId:'subject',mode:'pinned',fixedPoint:[1,.5]}}]});
-  await evaluate(`(async()=>{const {createBoundLabel}=await import('/src/utils/syncDependents.ts');const s=canvasTest.snapshot().slide;canvasTest.store.getState().addElements(s.id,[{...createBoundLabel(s.elements.subject),id:'label',text:'Hi',style:${JSON.stringify(style)}},{...createBoundLabel(s.elements.arrow),id:'arrowLabel',text:'Arrow',style:${JSON.stringify(style)}}]);})()`);await until(()=>evaluate(`!!document.querySelector('[data-resize-handle="bottom-center"]')`),'resize handles');await wait(300);
+  await evaluate(`(async()=>{const {createBoundLabel}=await import('/src/utils/model/syncDependents.ts');const s=canvasTest.snapshot().slide;canvasTest.store.getState().addElements(s.id,[{...createBoundLabel(s.elements.subject),id:'label',text:'Hi',style:${JSON.stringify(style)}},{...createBoundLabel(s.elements.arrow),id:'arrowLabel',text:'Arrow',style:${JSON.stringify(style)}}]);})()`);await until(()=>evaluate(`!!document.querySelector('[data-resize-handle="bottom-center"]')`),'resize handles');await wait(300);
   let p=await center('[data-resize-handle="bottom-center"]');
   const beforeResize=await snapshot();await mouse('mousePressed',...p);await mouse('mouseMoved',p[0],p[1]+150);
   assert.deepEqual((await snapshot()).slide,beforeResize.slide);await mouse('mouseReleased',p[0],p[1]+150);await wait(200);
@@ -124,7 +124,7 @@ try {
  for(const collab of [false,true])await check(`${collab?'Yjs':'JSON'} pending A MathJax allows unrelated B native resize fit`,async()=>{
   await send('Page.navigate',{url:`${base}/tests/canvas-fixture.html`});await waitForCanvasFixture(evaluate);
   await setup({mode:'production',collab,subject:{x:200,y:180,width:200,height:100},targets:[{id:'boxB',x:550,y:180,width:230,height:190}]});
-  await evaluate(`(async()=>{const {createBoundLabel}=await import('/src/utils/syncDependents.ts');const s=canvasTest.snapshot().slide;canvasTest.store.getState().addElements(s.id,[
+  await evaluate(`(async()=>{const {createBoundLabel}=await import('/src/utils/model/syncDependents.ts');const s=canvasTest.snapshot().slide;canvasTest.store.getState().addElements(s.id,[
     {...createBoundLabel(s.elements.subject),id:'labelA',text:'Hi',style:${JSON.stringify(style)}},
     {...createBoundLabel(s.elements.boxB),id:'labelB',text:'unrelated label wraps independently '.repeat(3),style:${JSON.stringify(style)}}]);})()`);
   await wait(400);
