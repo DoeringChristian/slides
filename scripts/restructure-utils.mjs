@@ -82,7 +82,7 @@ const DOMAINS = {
   editor: [
     'scrub', 'scrubMutation', 'gestureProjection', 'keyboard',
     'selectionProperties', 'propertyFields', 'userShapeCreation',
-    'curatedIcons', 'imageUtils',
+    'curatedIcons', 'imageUtils', 'marqueeSelection',
   ],
 };
 

@@ -41,6 +41,10 @@ import { CropOverlay } from '../canvas/CropOverlay';
 import { SelectionActionBar } from '../canvas/SelectionActionBar';
 import { CommentLayer } from '../canvas/CommentLayer';
 import { deckTextStyle } from '../../store/textDefaults';
+import { marqueeSelection } from '../../utils/editor/marqueeSelection';
+
+const marqueeRect = (x0: number, y0: number, x1: number, y1: number) =>
+  ({ x: Math.min(x0, x1), y: Math.min(y0, y1), width: Math.abs(x1 - x0), height: Math.abs(y1 - y0) });
 import { computeGuides } from '../../hooks/useAlignmentGuides';
 import { getMarginLayout, getMarginBounds } from '../../utils/geometry/marginLayouts';
 import { snapToGrid as snapToGridFn } from '../../utils/geometry/geometry';
@@ -784,7 +788,15 @@ export const SVGSlideCanvas: React.FC = () => {
     if (!selectionDrag?.isSelecting) return;
     const pos = screenToSVG(e.clientX, e.clientY);
     setSelectionDrag((prev) => prev ? { ...prev, currentX: pos.x, currentY: pos.y } : null);
-  }, [tool, handleDrawPointerMove, screenToSVG, selectionDrag?.isSelecting]);
+    // Select live, so what the rectangle has captured is visible while
+    // dragging (and drops out again when the rectangle shrinks).
+    const rect = marqueeRect(selectionDrag.startX, selectionDrag.startY, pos.x, pos.y);
+    if (slide && (rect.width > 5 || rect.height > 5)) {
+      const ids = marqueeSelection(slide.elements, slide.elementOrder, rect, useEditorStore.getState().activeObjectGroupId);
+      const current = useEditorStore.getState().selectedElementIds;
+      if (ids.length !== current.length || ids.some(id => !current.includes(id))) setSelectedElements(ids);
+    }
+  }, [tool, handleDrawPointerMove, screenToSVG, selectionDrag, slide, setSelectedElements]);
 
   const handleCanvasPointerUp = useCallback((e: React.PointerEvent) => {
     if (tool !== 'select') {
@@ -794,36 +806,16 @@ export const SVGSlideCanvas: React.FC = () => {
 
     if (!selectionDrag?.isSelecting) return;
 
-    const x = Math.min(selectionDrag.startX, selectionDrag.currentX);
-    const y = Math.min(selectionDrag.startY, selectionDrag.currentY);
-    const width = Math.abs(selectionDrag.currentX - selectionDrag.startX);
-    const height = Math.abs(selectionDrag.currentY - selectionDrag.startY);
-
-    if (width > 5 || height > 5) {
-      const selectedIds = elements
-        .filter((el) => {
-          if (!el.visible) return false;
-          const elRight = el.x + el.width;
-          const elBottom = el.y + el.height;
-          const selRight = x + width;
-          const selBottom = y + height;
-          return !(el.x > selRight || elRight < x || el.y > selBottom || elBottom < y);
-        })
-        .map((el) => {
-          // Bound labels never enter the selection on their own — the
-          // marquee picks their container instead (dedup below).
-          if (el.type === 'text') {
-            const cid = (el as TextElement).containerId;
-            if (cid && slide?.elements[cid]) return cid;
-          }
-          return el.id;
-        });
-      setSelectedElements([...new Set(selectedIds)]);
+    const pos = screenToSVG(e.clientX, e.clientY);
+    const rect = marqueeRect(selectionDrag.startX, selectionDrag.startY, pos.x, pos.y);
+    if (slide && (rect.width > 5 || rect.height > 5)) {
+      // Only what the rectangle wholly contains is selected.
+      setSelectedElements(marqueeSelection(slide.elements, slide.elementOrder, rect, useEditorStore.getState().activeObjectGroupId));
       justFinishedSelectionDrag.current = true;
     }
 
     setSelectionDrag(null);
-  }, [tool, handleDrawPointerUp, screenToSVG, selectionDrag, elements, setSelectedElements, slide]);
+  }, [tool, handleDrawPointerUp, screenToSVG, selectionDrag, setSelectedElements, slide]);
 
   // Two-finger pan/zoom via pointer events. Composes with the existing single-
   // pointer drag handlers above — the gesture hook only fires once a second
@@ -1422,7 +1414,7 @@ export const SVGSlideCanvas: React.FC = () => {
       {!gesturePreview && <CommentLayer zoom={zoom} />}
       {/* Unmount actions during manipulation: no stale native hit targets.
           Body previews start only after drag slop; extension uses its own draft. */}
-      {!editingTextId && !gesturePreview && !polyDraft?.extension && [unlockedSelectedIds, lockedSelectedIds].map((ids, index) => {
+      {!editingTextId && !gesturePreview && !selectionDrag?.isSelecting && !polyDraft?.extension && [unlockedSelectedIds, lockedSelectedIds].map((ids, index) => {
         const selection = visibleElements.filter(el => ids.includes(el.id));
         if (!selection.length || selection.some(el => visibleElements.some(label =>
           label.type === 'text' && (label.id === el.id || label.containerId === el.id)

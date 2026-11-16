@@ -6,7 +6,8 @@ import { CONTROL_THEME } from './controlTheme';
 import { SNAP_DISTANCE_PX, screenPixelsToSlide } from '../../utils/geometry/screenSpace';
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useElementVisualBounds, selectionControlMetrics } from '../../utils/geometry/shapeVisualBounds';
-import { getRotationCenter } from '../../utils/geometry/geometry';
+import { getElementBounds, getRotationCenter } from '../../utils/geometry/geometry';
+import { selectionUnit, visualExtent } from '../../utils/editor/marqueeSelection';
 import type { SlideElement } from '../../types/presentation';
 import { getActiveDoc } from '../../collab/yDocAdapter';
 import { usePresentationStore } from '../../store/presentationStore';
@@ -79,6 +80,7 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
   const displaySingle = displayedSelection.length === 1 ? displayedSelection[0] : null;
   const displayRotation = displaySingle?.rotation || 0;
   const visualBounds = useElementVisualBounds(displaySingle);
+  const activeObjectGroupId = useEditorStore(s => s.activeObjectGroupId);
 
   const handleResizeStart = useCallback((anchor: string, e: React.PointerEvent | PointerEvent) => {
     if (locked || (e.pointerType === 'mouse' && e.button !== 0)) return;
@@ -316,10 +318,43 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
   const sides = anchors.filter(a => a.name.includes('center') || a.name.startsWith('middle'));
 
 
+  // Several objects selected: the control box is dashed, and each selected
+  // object (a group counts as one) gets a plain solid outline, so it is clear
+  // exactly what is selected. One object keeps the solid control box only.
+  const units = new Map<string, SlideElement[]>();
+  for (const el of displayedSelection) {
+    if (el.type === 'text' && el.containerId && displayedSelection.some(c => c.id === el.containerId)) continue;
+    const key = selectionUnit(el, activeObjectGroupId);
+    units.set(key, [...(units.get(key) ?? []), el]);
+  }
+  const several = units.size > 1;
+  const outlinePad = 2 / zoom;
+
   return (
+    <>
+    {several && (
+      <g className="selection-outlines" style={{ pointerEvents: 'none' }}>
+        {[...units.entries()].map(([key, members]) => {
+          if (members.length === 1) {
+            const el = members[0], b = getElementBounds(el), c = getRotationCenter(el);
+            return <rect key={key} data-selection-outline={el.id}
+              x={b.x - outlinePad} y={b.y - outlinePad} width={b.width + 2 * outlinePad} height={b.height + 2 * outlinePad}
+              transform={el.rotation ? `rotate(${el.rotation}, ${c.x}, ${c.y})` : undefined}
+              fill="none" stroke={color} strokeWidth={strokeW} />;
+          }
+          const boxes = members.map(visualExtent);
+          const x0 = Math.min(...boxes.map(b => b.x)), y0 = Math.min(...boxes.map(b => b.y));
+          const x1 = Math.max(...boxes.map(b => b.x + b.width)), y1 = Math.max(...boxes.map(b => b.y + b.height));
+          return <rect key={key} data-selection-outline={key}
+            x={x0 - outlinePad} y={y0 - outlinePad} width={x1 - x0 + 2 * outlinePad} height={y1 - y0 + 2 * outlinePad}
+            fill="none" stroke={color} strokeWidth={strokeW} />;
+        })}
+      </g>
+    )}
     <g ref={transformerRef} className="selection-transformer" transform={transform}>
-      {/* Selection border */}
+      {/* Selection border: dashed around several objects, solid around one. */}
       <rect
+        data-selection-box={several ? 'dashed' : 'solid'}
         x={overlay.x}
         y={overlay.y}
         width={overlay.width}
@@ -327,6 +362,7 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
         fill="none"
         stroke={color}
         strokeWidth={strokeW}
+        strokeDasharray={several ? `${4 / zoom} ${3 / zoom}` : undefined}
         style={{ pointerEvents: 'none' }}
       />
 
@@ -409,5 +445,6 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
         </>
       )}
     </g>
+    </>
   );
 };
