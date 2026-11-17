@@ -43,6 +43,24 @@ const COLOR_LOCKED = CONTROL_THEME.lockedColor;
 const ANCHOR_SIZE = 8;
 const ROTATION_ANCHOR_OFFSET = 16;
 
+/** The handle delta that lands a snapped edge exactly. Free resizing moves
+ *  just that edge. With the aspect ratio kept, the box's scale comes from
+ *  whichever axis the pointer moved more — so correcting one axis alone is
+ *  lost whenever the other dominates. Instead the snapped size becomes the
+ *  scale, applied to both axes, so the aspect-kept box lands on the snap. */
+function aspectSnapDelta(start: { width: number; height: number }, anchor: string,
+  candidate: { axis: 'x' | 'y'; size: number; delta: { x: number; y: number } }, aspect: boolean, centered: boolean): { x: number; y: number } {
+  if (!aspect || !start.width || !start.height) return candidate.delta;
+  const hx = anchor.includes('left') ? -1 : anchor.includes('right') ? 1 : 0;
+  const hy = anchor.includes('top') ? -1 : anchor.includes('bottom') ? 1 : 0;
+  const scale = candidate.size / (candidate.axis === 'x' ? start.width : start.height);
+  const m = centered ? 2 : 1;
+  return {
+    x: hx ? hx * (start.width * scale - start.width) / m : candidate.delta.x,
+    y: hy ? hy * (start.height * scale - start.height) / m : candidate.delta.y,
+  };
+}
+
 /** One image, or one cropped image (its image and its crop shapes, nothing
  *  else): resized like a picture — aspect locked unless Shift. */
 function isMediaSelection(elements: SlideElement[]): boolean {
@@ -220,13 +238,15 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
             const snap = computeResizeSnap(next, others, tolerance, layout ? getMarginBounds(layout) : null, viewport);
             // Snap a driven handle coordinate, then rerun the SAME constrained
             // geometry. Never independently snap a passive/opposite edge.
-            const candidates: { delta: typeof delta; distance: number }[] = [];
-            if (anchor.includes('left') && snap.leftSnap !== null) candidates.push({ delta: { ...delta, x: delta.x + (snap.leftSnap - next.x) }, distance: Math.abs(snap.leftSnap - next.x) });
-            if (anchor.includes('right') && snap.rightSnap !== null) candidates.push({ delta: { ...delta, x: delta.x + snap.rightSnap - next.x - next.width }, distance: Math.abs(snap.rightSnap - next.x - next.width) });
-            if (anchor.includes('top') && snap.topSnap !== null) candidates.push({ delta: { ...delta, y: delta.y + snap.topSnap - next.y }, distance: Math.abs(snap.topSnap - next.y) });
-            if (anchor.includes('bottom') && snap.bottomSnap !== null) candidates.push({ delta: { ...delta, y: delta.y + snap.bottomSnap - next.y - next.height }, distance: Math.abs(snap.bottomSnap - next.y - next.height) });
+            const candidates: { axis: 'x' | 'y'; size: number; delta: typeof delta; distance: number }[] = [];
+            // Each candidate moves the driven edge from where it is in `next`
+            // (the constrained box) onto the snap target.
+            if (anchor.includes('left') && snap.leftSnap !== null) candidates.push({ axis: 'x', size: next.width - (snap.leftSnap - next.x) * (e.ctrlKey ? 2 : 1), delta: { ...delta, x: delta.x + (snap.leftSnap - next.x) }, distance: Math.abs(snap.leftSnap - next.x) });
+            if (anchor.includes('right') && snap.rightSnap !== null) candidates.push({ axis: 'x', size: next.width + (snap.rightSnap - next.x - next.width) * (e.ctrlKey ? 2 : 1), delta: { ...delta, x: delta.x + snap.rightSnap - next.x - next.width }, distance: Math.abs(snap.rightSnap - next.x - next.width) });
+            if (anchor.includes('top') && snap.topSnap !== null) candidates.push({ axis: 'y', size: next.height - (snap.topSnap - next.y) * (e.ctrlKey ? 2 : 1), delta: { ...delta, y: delta.y + snap.topSnap - next.y }, distance: Math.abs(snap.topSnap - next.y) });
+            if (anchor.includes('bottom') && snap.bottomSnap !== null) candidates.push({ axis: 'y', size: next.height + (snap.bottomSnap - next.y - next.height) * (e.ctrlKey ? 2 : 1), delta: { ...delta, y: delta.y + snap.bottomSnap - next.y - next.height }, distance: Math.abs(snap.bottomSnap - next.y - next.height) });
             candidates.sort((a,b) => a.distance - b.distance);
-            if (candidates[0]) next = resizeBounds(baseline, anchor, candidates[0].delta, aspect, e.ctrlKey, rot);
+            if (candidates[0]) next = resizeBounds(baseline, anchor, aspectSnapDelta(baseline, anchor, candidates[0], aspect, e.ctrlKey), aspect, e.ctrlKey, rot);
             onGuidesChange?.(computeResizeSnap(next, others, 1e-6, layout ? getMarginBounds(layout) : null, viewport).guides);
           }
           return next;
