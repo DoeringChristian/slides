@@ -45,7 +45,7 @@ try {
   // A frame of: image on A; image + full-cover crop on
   // B, the crop appearing with `easing`. Rendered by the presenter's own
   // composition and element renderer, then rasterised.
-  const mount = (easing, t, imageOnA = false, imageEasing = 'const') => evaluate(`(async () => {
+  const mount = (easing, t, imageOnA = false, imageEasing = 'const', intersect = false) => evaluate(`(async () => {
     const { composeSlideFrame, renderPresenterElement } = await import('/src/components/presenter/presenterUtils.tsx');
     const ServerMod = await import('/@id/react-dom/server'); const renderToStaticMarkup = ServerMod.renderToStaticMarkup ?? ServerMod.default.renderToStaticMarkup;
     const ReactMod = await import('/@id/react'); const React = ReactMod.default ?? ReactMod;
@@ -57,8 +57,14 @@ try {
     // Covering the image; for an image already on screen, its left half.
     const crop = { ...base, id: 'c', type: 'shape', shapeType: 'rect', creationPreset: 'rect', x: 100, y: 100, width: ${imageOnA} ? 200 : 400, height: 200,
       fill: '#000000', stroke: '', strokeWidth: 0, cornerRadius: 0, objectGroupIds: ['g'], cropGroupId: 'g', transitions: { visibility: ${JSON.stringify(easing)} } };
+    // The user's case: a rect crop (the whole image) on both keyframes, and on
+    // the second an intersecting trapezoid (left half) appearing.
+    const rectCrop = { ...base, id: 'r', type: 'shape', shapeType: 'rect', creationPreset: 'rect', x: 100, y: 100, width: 400, height: 200,
+      fill: '#000000', stroke: '', strokeWidth: 0, cornerRadius: 0, objectGroupIds: ['g'], cropGroupId: 'g' };
+    const trapezoid = { ...crop, width: 200, cropOp: 'intersect' };
     const slide = (id, els) => ({ id, elements: Object.fromEntries(els.map(e => [e.id, e])), elementOrder: els.map(e => e.id), background: { type: 'solid', color: '#ffffff' } });
-    const { renderedElements } = composeSlideFrame({ slideA: slide('A', ${imageOnA} ? [{ ...image, objectGroupIds: [] }] : []), slideB: slide('B', [image, crop]), isForward: true, animProgress: ${t}, isAnimating: true });
+    const { renderedElements } = composeSlideFrame({ slideA: ${intersect} ? slide('A', [image, rectCrop]) : slide('A', ${imageOnA} ? [{ ...image, objectGroupIds: [] }] : []),
+      slideB: ${intersect} ? slide('B', [image, rectCrop, trapezoid]) : slide('B', [image, crop]), isForward: true, animProgress: ${t}, isAnimating: true });
     const body = renderToStaticMarkup(React.createElement(React.Fragment, null, renderedElements.map(el => renderPresenterElement(el, resources))));
     // Mounted live (the presenter draws media as HTML in foreignObject,
     // which an SVG rasterised through <img> does not load).
@@ -73,8 +79,8 @@ try {
   })()`);
   // Pixels from a screenshot of the mounted frame (green channel: 255 white, 0 red).
   // Entrances play in the transition's second half: t = 0.75 is halfway.
-  const frameAt = async (easing, t = 0.75, imageOnA = false, imageEasing = 'const') => {
-    await mount(easing, t, imageOnA, imageEasing);
+  const frameAt = async (easing, t = 0.75, imageOnA = false, imageEasing = 'const', intersect = false) => {
+    await mount(easing, t, imageOnA, imageEasing, intersect);
     const shot = (await send('Page.captureScreenshot', { format: 'png', clip: { x: 0, y: 0, width: 960, height: 540, scale: 1 } })).data;
     return evaluate(`(async()=>{const img=new Image();img.src='data:image/png;base64,${shot}';await img.decode();const c=document.createElement('canvas');c.width=960;c.height=540;const ctx=c.getContext('2d');ctx.drawImage(img,0,0);
       const at=(x,y)=>ctx.getImageData(x,y,1,1).data[1];document.getElementById('crop-appear-frame')?.remove();
@@ -109,6 +115,14 @@ try {
   assert(shown(half.left) && half.right > 60 && half.right < 200, `the outside (right half) half faded: ${JSON.stringify(half)}`);
   const end = await frameAt('linear', 1, true);
   assert(shown(end.left) && hidden(end.right), `cropped at the end — the outside gone: ${JSON.stringify(end)}`);
+  // An intersecting crop shape appearing on an already-cropped image: what
+  // it crops away (the right half) fades out linearly; the inside stays.
+  const ix = t => frameAt('linear', t, false, 'const', true);
+  const [i0, i1, i2] = [await ix(0.5), await ix(0.75), await ix(1)];
+  assert(shown(i0.left) && shown(i0.right), `intersect, start: all shown: ${JSON.stringify(i0)}`);
+  assert(shown(i1.left) && i1.right > 100 && i1.right < 160, `intersect, midway: the cut half faded: ${JSON.stringify(i1)}`);
+  assert(shown(i2.left) && hidden(i2.right), `intersect, end: the cut half gone: ${JSON.stringify(i2)}`);
+
   // The easing picker's previews, through the real UI: a crop drawn on the
   // second keyframe (its image already on the first). Every preview must
   // move, and different easings must look different.

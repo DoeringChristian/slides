@@ -88,9 +88,15 @@ export function GroupCrop({ element, children, scope }: { element: SlideElement;
       if (op === 'add') mask = <g key={`s${k}`}>{mask}{contribution(shape, 'white', fxPrefix, 'c', reveal)}</g>;
       else if (op === 'subtract') mask = <g key={`s${k}`}>{mask}{contribution(shape, 'black', fxPrefix, 'c')}</g>;
       else {
-        // An intersecting shape mid-effect keeps only what it covers so far.
+        // Intersect at strength s: inside the shape everything so far stays,
+        // outside it fades out by s — what the intersect crops away
+        // disappears with the shape's easing instead of all at once.
         const sub = `${id}-k${k}`;
-        masks.push(<mask key={sub} id={sub} maskUnits="userSpaceOnUse" {...REGION} style={{ maskType: 'luminance' }}>{contribution(shape, 'white', fxPrefix, 'c')}</mask>);
+        const cut = strengthOf(shape);
+        masks.push(<mask key={sub} id={sub} maskUnits="userSpaceOnUse" {...REGION} style={{ maskType: 'luminance' }}>
+          {cut < 1 && <rect {...REGION} fill="white" opacity={1 - cut} />}
+          {regionPaths(shape, 'white')}
+        </mask>);
         mask = <g key={`s${k}`} mask={`url(#${sub})`}>{mask}</g>;
       }
     });
