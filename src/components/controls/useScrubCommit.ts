@@ -200,7 +200,10 @@ export function useScrubCommit<T extends object>(
         (writer.commit ?? writer)(changes);
       },
       snapshot: () => {
-        const source = elementRef.current, fields = syncFieldsRef.current;
+        const source = elementRef.current;
+        // A font-size change also resizes a text box (withTextBox): restore it too.
+        const fields = (source as { type?: string }).type === 'text' && syncFieldsRef.current.includes('style.fontSize')
+          ? [...syncFieldsRef.current, 'x', 'y', 'width', 'height'] : syncFieldsRef.current;
         if (updateRef.current.snapshot) {
           snapshotWriterRef.current = updateRef.current;
           return updateRef.current.snapshot(fields);

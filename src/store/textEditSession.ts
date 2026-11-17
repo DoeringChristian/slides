@@ -192,6 +192,10 @@ export function beginTextEditSession(slideId: string, element: TextElement) {
         }
         if (autoFit && size && 'width' in size && 'height' in size) {
           size = { ...autoFitTextGeometry(el, size as { width: number; height: number }), textSizing: 'auto-content' };
+        } else if (size && 'width' in size && 'height' in size && !el.containerId) {
+          // The box grows and shrinks around where its alignment pins it:
+          // centred text about its centre, right-aligned from its right edge.
+          size = autoFitTextGeometry(el, size as { width: number; height: number });
         }
         // Preserve the existing bound-label fit policy, but include its finish
         // geometry in the content transaction rather than a second undo entry.

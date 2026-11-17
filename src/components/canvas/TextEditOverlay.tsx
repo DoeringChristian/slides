@@ -15,6 +15,7 @@ import { editFontFamily, injectFontFaces, nativeTextBaseline } from '../../utils
 import { beginTextEditSession, getTextEditInitialText } from '../../store/textEditSession';
 import { createTextEditHistory, type TextEditHistory } from '../../utils/text/textEditHistory';
 import { hasContentSizing, layoutUserText, measureUserText, textSizingWidth } from '../../utils/text/userTextSizing';
+import { autoFitTextGeometry } from '../../utils/text/textAutoFit';
 import type { TextElement } from '../../types/presentation';
 
 // Inject the bundled @font-face rules so the contentEditable uses the SAME font
@@ -112,7 +113,7 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom, onPreview }) 
   const labelContainer = textElement?.containerId
     ? slide?.elements[textElement.containerId] ?? null
     : null;
-  const [liveSize, setLiveSize] = useState<{ width: number; height: number } | null>(null);
+  const [liveSize, setLiveSize] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [boundPreview, setBoundPreview] = useState<TextElement | null>(null);
   const previewElement = boundPreview && textElement?.containerId ? { ...textElement, ...boundPreview } : textElement && liveSize ? { ...textElement, ...liveSize } : textElement;
   const editWidth = previewElement
@@ -153,8 +154,10 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom, onPreview }) 
   useEffect(() => {
     if (!textElement || !hasContentSizing(textElement)) return;
     let cancelled = false;
-    measureUserText({ ...textElement, text: liveText }, rawLines).then(size => {
+    measureUserText({ ...textElement, text: liveText }, rawLines).then(measured => {
       if (cancelled) return;
+      // Pinned by the alignment, as the commit will place it (textEditSession).
+      const size = autoFitTextGeometry(textElement, measured);
       setLiveSize(size);
       const label = { ...textElement, text: liveText, ...size };
       onPreview({ slideId: activeSlideId, label, patches: [{ elementId: label.id, changes: label }] });

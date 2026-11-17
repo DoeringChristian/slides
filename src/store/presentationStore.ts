@@ -31,6 +31,7 @@ import {
   purgeObjectFromSlides,
   repairPresentation,
 } from '../utils/model/presentationCleanup';
+import { withTextBox } from '../utils/text/textAutoFit';
 import { getActiveDoc, runInTxn } from '../collab/yDocAdapter';
 import {
   elementToYMap,
@@ -2154,7 +2155,11 @@ export const usePresentationStore = create<PresentationStore>()(
         if (!source) return;
         const updates = [...new Set(targetSlideIds)].filter(id => id !== sourceSlideId).flatMap(id => {
           const target = read(id);
-          return target ? planSlideTransfer(source, target, elementIds, fields) : [];
+          // A synced font size resizes each keyframe's text box with it.
+          return target ? planSlideTransfer(source, target, elementIds, fields).map(update => {
+            const el = target.elements[update.elementId];
+            return el ? { ...update, changes: withTextBox(el, update.changes) } : update;
+          }) : [];
         });
         const undo = getActiveUndoManager(); undo?.stopCapturing();
         usePresentationStore.getState().updateAcrossSlides(updates);

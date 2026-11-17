@@ -4,6 +4,7 @@ import { getActiveDoc } from '../collab/yDocAdapter';
 import { yDocToJsonSlideOnly, getYRoot } from '../collab/ySchema';
 import { beforeLocalMutation } from '../utils/editor/scrubMutation';
 import { usePresentationStore } from './presentationStore';
+import { withTextBox } from '../utils/text/textAutoFit';
 
 /** Sibling-bearing partials must be assembled AFTER scrub cancellation, not
  * from render props or the asynchronously updated Yjs→Zustand projection. */
@@ -24,8 +25,9 @@ export function updateElementFromCurrent<T extends SlideElement>(slideId: string
   const current = readElementForMutation(slideId, rendered.id);
   // A delayed control callback must not recreate a deleted/retyped element.
   if (!current || current.type !== rendered.type) return;
+  // A font-size change resizes a free text box with it (withTextBox).
   usePresentationStore.getState().updateElement(slideId, current.id,
-    typeof changes === 'function' ? changes(current as T) : changes);
+    withTextBox(current as T, typeof changes === 'function' ? changes(current as T) : changes));
 }
 
 /** Resolve the reset source after cancellation too: selected keyframes may
