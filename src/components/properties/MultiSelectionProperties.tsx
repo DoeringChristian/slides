@@ -4,7 +4,8 @@ import { IconButtonRow } from '../controls/IconButtonRow';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useEditorStore } from '../../store/editorStore';
 import { CropRow } from './CropRow';
-import type { SlideElement } from '../../types/presentation';
+import { VideoTimeline } from './VideoTimeline';
+import type { ImageElement, SlideElement } from '../../types/presentation';
 import { SelectionPropertiesContext } from './SelectionPropertiesContext';
 import { PanelHeader } from './PanelHeader';
 import { ShapeProperties } from './ShapeProperties';
@@ -14,6 +15,8 @@ import { ArrangePanel } from './ArrangePanel';
 
 export function MultiSelectionProperties({ elements }: { elements: SlideElement[] }) {
   const ids = elements.map(el => el.id);
+  const resources = usePresentationStore(s => s.presentation.resources);
+  const videos = elements.filter((el): el is ImageElement => el.type === 'image' && !!el.resourceId && resources[el.resourceId]?.type === 'video');
   const slideId = useEditorStore(s => s.activeSlideId);
   const joinPaths = usePresentationStore(s => s.joinPaths);
   return <SelectionPropertiesContext.Provider value={ids}>
@@ -26,6 +29,8 @@ export function MultiSelectionProperties({ elements }: { elements: SlideElement[
           if (id) useEditorStore.getState().setSelectedElements([id]);
         } }]} />}
       <CropRow />
+      {/* A cropped video (or any group around one video): its timeline. */}
+      {videos.length === 1 && <VideoTimeline element={videos[0]} />}
       {(['shape', 'text', 'image'] as const).map(type => {
         const members = elements.filter(el => el.type === type);
         const first = members[0];

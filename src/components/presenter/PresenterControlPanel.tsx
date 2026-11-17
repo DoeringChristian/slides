@@ -37,9 +37,8 @@ const SlidePreview: React.FC<SlidePreviewProps> = ({ slide, scale, label, resour
   // controller); the next-slide preview stays still. Manual play / pause /
   // seek on a player go to the controller too, so it does not undo them.
   const frameRef = useRef<HTMLDivElement>(null);
-  const objects = usePresentationStore(s => s.presentation.objects);
   const [command, setCommand] = useState<{ action: 'play' | 'pause' | 'seek'; currentTime?: number } | null>(null);
-  useMediaController(frameRef, autoPlayVideos ? slide : null, resources, objects, command);
+  useMediaController(frameRef, autoPlayVideos ? slide : null, resources, command);
   if (!slide) {
     return (
       <div className="flex flex-col">

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import type { ObjectMeta, Resource, Slide } from '../../types/presentation';
+import type { Resource, Slide } from '../../types/presentation';
 import { arriveAtSlide, clockTime, type MediaClock } from '../../utils/animation/mediaPlayback';
 
 // The presenter's media controller: drives the mounted <video> elements by
@@ -19,16 +19,15 @@ export function useMediaController(
   container: React.RefObject<HTMLElement | null>,
   slide: Slide | null,
   resources: Record<string, Resource>,
-  objects: Record<string, ObjectMeta>,
   command?: { action: 'play' | 'pause' | 'seek'; currentTime?: number } | null,
 ): void {
   const clocks = useRef(new Map<string, MediaClock>());
-  const live = useRef({ resources, objects });
-  useEffect(() => { live.current = { resources, objects }; }, [resources, objects]);
+  const live = useRef(resources);
+  useEffect(() => { live.current = resources; }, [resources]);
 
   // A new keyframe: each video's clock moves on by that keyframe's playback.
   useEffect(() => {
-    clocks.current = arriveAtSlide(slide, live.current.resources, live.current.objects, clocks.current, performance.now());
+    clocks.current = arriveAtSlide(slide, live.current, clocks.current, performance.now());
   }, [slide]);
 
   // Manual controls apply to every video on screen.

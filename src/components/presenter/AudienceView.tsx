@@ -38,9 +38,8 @@ export const AudienceView: React.FC = () => {
 
   // Videos play by keyframe (mediaController) — the keyframe being moved to
   // decides — and the presenter's manual play / pause / seek reach them.
-  const objects = usePresentationStore((s) => s.presentation.objects);
   const mediaIndex = isAnimating ? targetIndex : slideIndex;
-  useMediaController(containerRef, slides[slideOrder[mediaIndex]] ?? null, resources, objects, videoCommand);
+  useMediaController(containerRef, slides[slideOrder[mediaIndex]] ?? null, resources, videoCommand);
 
   const totalSlides = slideOrder.length;
   const currentSlide = slides[slideOrder[slideIndex]] || null;

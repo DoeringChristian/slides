@@ -2,7 +2,7 @@ import { GroupCrop } from './GroupCrop';
 import React, { useRef, useCallback, useState } from 'react';
 import { usePresentationStore } from '../../store/presentationStore';
 import { RenderImage, RenderShape } from './ElementRenderer';
-import { trimRange } from '../../utils/animation/mediaPlayback';
+import { segmentOf } from '../../utils/animation/mediaPlayback';
 import { imageTintShape } from '../../utils/paint/imageTint';
 import { useEditorStore } from '../../store/editorStore';
 import type { ImageElement } from '../../types/presentation';
@@ -38,12 +38,11 @@ export const SVGImageNode: React.FC<Props> = React.memo(({
   // The editor's video player is HTML; its tint is the shared shape fill.
   const tint = isVideo ? imageTintShape(element) : null;
 
-  // The editor preview opens on the frame this keyframe starts from (the
-  // range / still start, else the trim start) and plays within the trim.
-  const meta = usePresentationStore((s) => s.presentation.objects[element.id]);
-  const trim = trimRange(meta, resource?.duration);
-  const startFrame = element.playback === 'range' || element.playback === 'still'
-    ? Math.min(trim.end, Math.max(trim.start, element.playFrom ?? trim.start)) : trim.start;
+  // The editor preview opens on this keyframe's start frame (From) and
+  // plays to its end (To).
+  const segment = segmentOf(element, resource?.duration);
+  const startFrame = segment.from;
+  const trim = { end: segment.to };
   const setVideoRef = useCallback((video: HTMLVideoElement | null) => {
     if (video) {
       videoRef.current = video;

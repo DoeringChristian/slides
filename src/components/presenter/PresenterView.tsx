@@ -197,10 +197,9 @@ export const PresenterView: React.FC = () => {
 
   // Videos play by keyframe (mediaController): the keyframe being moved to
   // decides, from the moment its transition starts.
-  const objects = usePresentationStore((s) => s.presentation.objects);
   // eslint-disable-next-line react-hooks/refs -- targetIndexRef is set before the animation state that triggers this render
   const mediaIndex = isAnimating ? targetIndexRef.current : currentIndex;
-  useMediaController(containerRef, isPresenting && !isPresenterMode ? slides[slideOrder[mediaIndex]] ?? null : null, resources, objects);
+  useMediaController(containerRef, isPresenting && !isPresenterMode ? slides[slideOrder[mediaIndex]] ?? null : null, resources);
 
   // Don't render when in presenter mode (PresenterControlPanel handles that)
   // This view is only for simple fullscreen presentation

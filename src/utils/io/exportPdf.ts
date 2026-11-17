@@ -7,7 +7,7 @@ import { resolveShapeGeometry } from '../geometry/vectorGeometry';
 import jsPDF from 'jspdf';
 import { drawShapeFill } from '../paint/shapeFill';
 import { imageTintShape } from '../paint/imageTint';
-import type { Presentation, Slide, TextElement, ShapeElement, ImageElement, Resource, ObjectMeta } from '../../types/presentation';
+import type { Presentation, Slide, TextElement, ShapeElement, ImageElement, Resource } from '../../types/presentation';
 import { arriveAtSlide, type MediaClock } from '../animation/mediaPlayback';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../constants';
 import { parseBlocks, parseInlineSegments, getBlockFontMultiplier } from '../../components/canvas/CustomMarkdownRenderer';
@@ -79,7 +79,6 @@ export function loadVideoFrame(src: string, time = 0, timeoutMs = 10000): Promis
 export async function preloadResources(
   slides: Slide[],
   resources: Record<string, Resource>,
-  objects: Record<string, ObjectMeta> = {},
 ): Promise<Map<string, CanvasImageSource>> {
   const usedIds = new Set<string>();
   const map = new Map<string, CanvasImageSource>();
@@ -87,11 +86,11 @@ export async function preloadResources(
   // A video's still on each slide: the frame it is at on arriving there —
   // the playback rules applied keyframe by keyframe with no time passing (a
   // still shows its frame, a range its start, a continuing video where the
-  // previous keyframe left it, a new one its trim start).
+  // previous keyframe left it, a new one its From).
   const frames = new Map<string, Promise<CanvasImageSource | null>>();
   let clocks = new Map<string, MediaClock>();
   for (const slide of slides) {
-    clocks = arriveAtSlide(slide, resources, objects, clocks, 0);
+    clocks = arriveAtSlide(slide, resources, clocks, 0);
     for (const [id, clock] of clocks) {
       const resource = resources[(slide.elements[id] as ImageElement).resourceId!];
       const time = clock.anchor;
@@ -626,7 +625,7 @@ export async function exportPdf(presentation: Presentation): Promise<void> {
     .filter(slide => slide && !slide.hidden);
 
   // Pre-load all images in parallel
-  const images = await preloadResources(visibleSlides, presentation.resources, presentation.objects);
+  const images = await preloadResources(visibleSlides, presentation.resources);
   await ensureCropLayouts(visibleSlides);
 
   const scale = 2;

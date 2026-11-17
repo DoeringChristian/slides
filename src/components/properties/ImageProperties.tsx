@@ -1,8 +1,8 @@
 import { SelectionPropertiesContext } from './SelectionPropertiesContext';
 import { commitSelectionProperties } from '../../store/selectionPropertyMutation';
 import React, { useState, useRef, useContext } from 'react';
-import { Play, Pause, Repeat, VolumeX, Volume2, StepForward, Square } from 'lucide-react';
-import { trimRange } from '../../utils/animation/mediaPlayback';
+import { VolumeX, Volume2 } from 'lucide-react';
+import { VideoTimeline } from './VideoTimeline';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useMultiSlideUpdate } from '../../store/selectors';
@@ -16,7 +16,7 @@ import { RenderShape } from '../svg/ElementRenderer';
 import { createShapeElement } from '../../utils/model/slideFactory';
 import { noPaint, withPaintAlpha } from '../../utils/paint/paintColor';
 import { computeResourceUpdate } from '../../utils/editor/imageUtils';
-import type { ImageElement, VideoPlayback } from '../../types/presentation';
+import type { ImageElement } from '../../types/presentation';
 
 /**
  * Property for the image/video resource. Custom subclass because copying a
@@ -49,31 +49,6 @@ class TintStyleProperty extends PreviewSelectProperty<ImageElement, NonNullable<
   }
 }
 
-/** Whether an image element shows a video. */
-function isVideoElement(el: ImageElement): boolean {
-  const resources = usePresentationStore.getState().presentation.resources;
-  return !!el.resourceId && resources[el.resourceId]?.type === 'video';
-}
-
-/** A playback time (s) on a video; when unset it reads as the trim's
- *  start or end, which is what playback uses. */
-class VideoTimeProperty extends NumberProperty<ImageElement> {
-  private readonly bound: 'start' | 'end';
-  constructor(key: 'playFrom' | 'playTo', label: string, when: (el: ImageElement) => boolean, bound: 'start' | 'end', groupWithPrevious = false) {
-    super({ key, label, min: 0, step: 0.5, scrubStep: 0.05, precision: 2, unit: 's', groupWithPrevious,
-      visibleFor: el => isVideoElement(el) && when(el) });
-    this.bound = bound;
-  }
-  protected override get(el: ImageElement): number {
-    const value = el[this.key as 'playFrom' | 'playTo'];
-    if (value !== undefined) return value;
-    const { presentation } = usePresentationStore.getState();
-    const trim = trimRange(presentation.objects[el.id], el.resourceId ? presentation.resources[el.resourceId]?.duration : undefined);
-    const bound = this.bound === 'start' ? trim.start : trim.end;
-    return Number.isFinite(bound) ? bound : 0;
-  }
-}
-
 const IMAGE_PROPERTIES: Property<ImageElement>[] = [
   new NumberProperty<ImageElement>({
     key: 'opacity', label: 'Opacity',
@@ -81,27 +56,6 @@ const IMAGE_PROPERTIES: Property<ImageElement>[] = [
     step: 1, scrubStep: 0.5, precision: 1,
   }),
   new ResourceProperty(),
-  // Video playback on this keyframe (see ImageElement.playback): continue
-  // where it is, play a range, or show a still — then hold or loop.
-  new PreviewSelectProperty<ImageElement, VideoPlayback>({
-    key: 'playback', label: 'Playback', iconOnly: true, defaultValue: 'continue', columns: 3,
-    visibleFor: isVideoElement,
-    options: [
-      { value: 'continue', label: 'Continue — keep playing from where it is', preview: () => <Play size={18} aria-hidden="true" /> },
-      { value: 'range', label: 'Range — play From → To', preview: () => <StepForward size={18} aria-hidden="true" /> },
-      { value: 'still', label: 'Still — show the From frame', preview: () => <Pause size={18} aria-hidden="true" /> },
-    ],
-  }),
-  new VideoTimeProperty('playFrom', 'From', el => el.playback === 'range' || el.playback === 'still', 'start'),
-  new VideoTimeProperty('playTo', 'To', el => el.playback === 'range', 'end', true),
-  new PreviewSelectProperty<ImageElement, 'hold' | 'loop'>({
-    key: 'atEnd', label: 'At End', iconOnly: true, defaultValue: 'hold', columns: 2,
-    visibleFor: el => isVideoElement(el) && el.playback !== 'still',
-    options: [
-      { value: 'hold', label: 'Hold the last frame', preview: () => <Square size={16} aria-hidden="true" /> },
-      { value: 'loop', label: 'Loop', preview: () => <Repeat size={16} aria-hidden="true" /> },
-    ],
-  }),
   // Tint: a solid or gradient fill over the picture, part of the image (a
   // crop clips it too). Animates with the fill group, like a shape's fill.
   new ColorProperty<ImageElement>({ key: 'tint', label: 'Tint', transitionGroup: 'fill', alpha: true }),
@@ -178,8 +132,11 @@ export const ImageProperties: React.FC<Props> = ({ element }) => {
         </div>
       )}
 
+      {/* This keyframe's part of the video, and how it plays. */}
+      {isVideo && <VideoTimeline element={element} />}
+
       {/* Sound — a verb, not an animatable value, so kept outside the
-          PropertyRow flow (playback itself is the Playback rows above). */}
+          PropertyRow flow. */}
       {isVideo && (
         <IconButtonRow
           items={[{
