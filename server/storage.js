@@ -1,4 +1,5 @@
 import fs from 'fs/promises';
+import { writeFileAtomic } from './atomicWrite.js';
 import path from 'path';
 import { nanoid } from 'nanoid';
 
@@ -35,7 +36,7 @@ export function createStorage(dataDir) {
 
   // Save the index file
   async function saveIndex(index) {
-    await fs.writeFile(indexPath, JSON.stringify(index, null, 2));
+    await writeFileAtomic(indexPath, JSON.stringify(index, null, 2));
   }
 
   // Serialize read-modify-write cycles on _index.json. Without this, two
@@ -127,7 +128,7 @@ export function createStorage(dataDir) {
           presentation,
           thumbnailDataUrl: resolvedThumb,
         };
-        await fs.writeFile(projectPath, JSON.stringify(projectData, null, 2));
+        await writeFileAtomic(projectPath, JSON.stringify(projectData, null, 2));
 
         index.projects[id] = {
           id,

@@ -217,8 +217,25 @@ function errorFrom(status: number, body: unknown, transport: OpenAITransport['ki
       : message || 'Your ChatGPT sign-in is no longer valid. Sign in again.', { needsAuth: true });
   }
   if (status === 404) return new ProviderError(message || 'Unknown model. Pick another in the assistant settings.');
-  if (status === 429) return new ProviderError(message || 'Rate limited. Wait a moment and try again.');
-  return new ProviderError(`OpenAI error ${status || ''}: ${message || 'request failed'}`.trim());
+  const transient = status === 429 || status >= 500 || TRANSIENT_CODE.test(code ?? '');
+  if (status === 429) return new ProviderError(message || 'Rate limited. Wait a moment and try again.', { transient });
+  const what = [code, message].filter(Boolean).join(' — ') || 'the request failed without a reason';
+  return new ProviderError(`OpenAI error${status ? ` ${status}` : ''}: ${what}`, { transient });
+}
+
+/** Error codes of failures that a retry may get past. */
+const TRANSIENT_CODE = /server_error|internal|overload|unavailable|timeout|rate_limit|try_again|stream/i;
+
+/** A streamed `error` event, whichever way it is shaped: its fields at the
+ *  top level (Responses API) or nested under `error` (ChatGPT backend). The
+ *  raw event stands in for a missing message, so the reason is never lost. */
+function streamError(event: Record<string, unknown>): { code?: string; message?: string } {
+  const nested = (typeof event.error === 'object' && event.error ? event.error : {}) as { code?: unknown; type?: unknown; message?: unknown };
+  const pick = (...values: unknown[]) => values.find((v): v is string => typeof v === 'string' && !!v);
+  const code = pick(event.code, nested.code, nested.type);
+  const message = pick(event.message, nested.message, typeof event.error === 'string' ? event.error : undefined)
+    ?? (code ? undefined : JSON.stringify(event).slice(0, 300));
+  return { code, message };
 }
 
 function endpoint(transport: OpenAITransport): { url: string; headers: Record<string, string> } {
@@ -231,7 +248,24 @@ export function createOpenAIProvider(opts: { transport: OpenAITransport; model: 
   const doFetch = opts.fetchImpl ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
   return {
     id: OPENAI_PROVIDER_ID,
-    async stream({ system, messages, tools, signal, onText }) {
+    async stream(request) {
+      // A transient failure before anything has streamed is retried (twice,
+      // with a short back-off); once text has reached the user, it is not.
+      let streamed = false;
+      const onText = (delta: string) => { streamed = true; request.onText(delta); };
+      for (let attempt = 0; ; attempt++) {
+        try {
+          return await streamOnce({ ...request, onText });
+        } catch (err) {
+          if (!(err instanceof ProviderError) || !err.transient || streamed || attempt >= 2 || request.signal.aborted) throw err;
+          await new Promise(resolve => setTimeout(resolve, 800 * 2 ** attempt));
+          if (request.signal.aborted) throw err;
+        }
+      }
+    },
+  };
+
+  async function streamOnce({ system, messages, tools, signal, onText }: Parameters<ModelProvider['stream']>[0]) {
       if (!opts.model) throw new ProviderError('Pick a model in the assistant settings.');
       const { url, headers } = endpoint(opts.transport);
       let res: Response;
@@ -260,14 +294,13 @@ export function createOpenAIProvider(opts: { transport: OpenAITransport; model: 
           const response = event.response as ResponseObject;
           throw errorFrom(0, { error: response?.error ?? { message: 'The response failed' } }, opts.transport.kind);
         } else if (type === 'error') {
-          throw errorFrom(0, { error: { code: event.code as string, message: event.message as string } }, opts.transport.kind);
+          throw errorFrom(0, { error: streamError(event) }, opts.transport.kind);
         }
       }
       if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
-      if (!final) throw new ProviderError('The response ended before it finished. Try again.');
+      if (!final) throw new ProviderError('The response ended before it finished. Try again.', { transient: true });
       return fromResponse(final);
-    },
-  };
+  }
 }
 
 // ── ChatGPT sign-in, through the local server ─────────────────────────────

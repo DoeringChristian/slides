@@ -128,3 +128,37 @@ describe('PDF attachments', () => {
     ]);
   });
 });
+
+describe('stream failures', () => {
+  const relay = (fetchImpl: typeof fetch) => createOpenAIProvider({ transport: { kind: 'chatgptRelay', serverUrl: 'http://localhost:3001' }, model: 'gpt-x', fetchImpl });
+  const run = (provider: ReturnType<typeof relay>, onText: (d: string) => void = () => {}) =>
+    provider.stream({ system: 's', messages: [], tools: [], signal: new AbortController().signal, onText });
+  const done = { type: 'response.completed', response: { status: 'completed', output: [] } };
+
+  it('says why, whichever way the error event is shaped', async () => {
+    const nested = await run(relay(async () => sse([{ type: 'error', error: { type: 'invalid_request_error', code: 'context_length_exceeded', message: 'Too long.' } }]))).catch(e => e);
+    expect(nested.message).toBe('OpenAI error: context_length_exceeded — Too long.');
+    const flat = await run(relay(async () => sse([{ type: 'error', code: 'bad', message: 'Nope.' }]))).catch(e => e);
+    expect(flat.message).toBe('OpenAI error: bad — Nope.');
+    const bare = await run(relay(async () => sse([{ type: 'error', sequence_number: 3 }]))).catch(e => e);
+    expect(bare.message).toContain('"sequence_number":3');
+  });
+
+  it('retries a transient failure before anything has streamed', async () => {
+    let calls = 0;
+    const result = await run(relay(async () => (++calls < 3
+      ? sse([{ type: 'error', error: { code: 'server_error', message: 'Oops' } }])
+      : sse([done]))));
+    expect(calls).toBe(3);
+    expect(result.stopReason).toBe('end_turn');
+  }, 10_000);
+
+  it('does not retry once text has reached the user, nor a non-transient failure', async () => {
+    let calls = 0;
+    const midway = await run(relay(async () => { calls++; return sse([{ type: 'response.output_text.delta', delta: 'Hi' }, { type: 'error', error: { code: 'server_error', message: 'Oops' } }]); })).catch(e => e);
+    expect([calls, midway.message]).toEqual([1, 'OpenAI error: server_error — Oops']);
+    calls = 0;
+    await run(relay(async () => { calls++; return sse([{ type: 'error', error: { code: 'invalid_prompt', message: 'No' } }]); })).catch(() => {});
+    expect(calls).toBe(1);
+  });
+});

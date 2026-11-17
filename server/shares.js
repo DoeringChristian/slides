@@ -4,6 +4,7 @@
 // and join its Y.Doc room until revoked. No expiry yet; can be added later.
 
 import fs from 'fs/promises';
+import { writeFileAtomic } from './atomicWrite.js';
 import path from 'path';
 import crypto from 'crypto';
 
@@ -28,7 +29,7 @@ export function createShareStore(dataDir) {
       await ensureDir();
       const token = crypto.randomBytes(18).toString('base64url');
       const entry = { token, projectId, ownerId, createdAt: Date.now(), revoked: false };
-      await fs.writeFile(shareFile(token), JSON.stringify(entry, null, 2));
+      await writeFileAtomic(shareFile(token), JSON.stringify(entry, null, 2));
       return entry;
     },
 
@@ -67,7 +68,7 @@ export function createShareStore(dataDir) {
       if (!entry) return false;
       entry.revoked = true;
       entry.revokedAt = Date.now();
-      await fs.writeFile(shareFile(token), JSON.stringify(entry, null, 2));
+      await writeFileAtomic(shareFile(token), JSON.stringify(entry, null, 2));
       return true;
     },
 

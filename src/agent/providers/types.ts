@@ -77,9 +77,12 @@ export class ToolInputParseError extends Error {}
 export class ProviderError extends Error {
   /** The credentials need the user's attention (bad key, sign-in expired). */
   readonly needsAuth: boolean;
-  constructor(message: string, opts: { needsAuth?: boolean } = {}) {
+  /** Worth retrying unchanged (server error, overload, rate limit). */
+  readonly transient: boolean;
+  constructor(message: string, opts: { needsAuth?: boolean; transient?: boolean } = {}) {
     super(message);
     this.needsAuth = !!opts.needsAuth;
+    this.transient = !!opts.transient;
   }
 }
 

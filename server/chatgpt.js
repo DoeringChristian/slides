@@ -401,15 +401,31 @@ export function attachChatGPTRoutes(app, chatgpt) {
       res.setHeader('Content-Type', upstreamRes.headers.get('content-type') || 'application/json');
       res.setHeader('Cache-Control', 'no-cache');
       res.flushHeaders();
+      if (!upstreamRes.ok) console.warn(`[chatgpt] responses ${upstreamRes.status}`);
       if (upstreamRes.body) {
+        // Watch the stream for failures (an error event, a failed response)
+        // and log them: the reason otherwise only reaches the browser.
+        const decoder = new TextDecoder();
+        let pending = '';
         for await (const chunk of upstreamRes.body) {
           if (controller.signal.aborted) break;
           res.write(chunk);
+          pending += decoder.decode(chunk, { stream: true });
+          let end;
+          while ((end = pending.search(/\r?\n\r?\n/)) !== -1) {
+            const event = pending.slice(0, end);
+            pending = pending.slice(end).replace(/^\r?\n\r?\n/, '');
+            if (/"type"\s*:\s*"(error|response\.failed)"/.test(event)) {
+              console.warn(`[chatgpt] stream failure: ${event.replace(/^data:\s*/gm, '').slice(0, 800)}`);
+            }
+          }
+          if (pending.length > 1 << 20) pending = pending.slice(-4096);
         }
       }
       res.end();
     } catch (err) {
       if (controller.signal.aborted) return;
+      console.warn(`[chatgpt] relay failed: ${err.message}`);
       if (!res.headersSent) res.status(err.reauth ? 401 : 502).json({ error: err.message, reauth: !!err.reauth });
       else res.end();
     }
