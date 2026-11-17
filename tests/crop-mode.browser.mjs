@@ -83,6 +83,22 @@ try {
     const snappedCrop = Object.values((await state()).elements).filter(el => el.type === 'shape' && el.cropGroupId === group).find(el => el.id !== rect.id);
     assert.equal(snappedCrop.x + snappedCrop.width, 650, `a crop edge snaps to another object's edge: ${snappedCrop.x + snappedCrop.width}`);
     await undo(); await wait(100);
+    // ...and to the image being cropped, and to the group's other crop shapes.
+    const drawCrop = async (from, to) => {
+      const before = new Set(Object.keys((await state()).elements));
+      await evaluate("canvasTest.editor.getState().setTool('rect')");
+      await mouse('mousePressed', await screen(...from)); await mouse('mouseMoved', await screen((from[0] + to[0]) / 2, (from[1] + to[1]) / 2)); await mouse('mouseMoved', await screen(...to)); await mouse('mouseReleased', await screen(...to)); await wait(150);
+      const els = (await state()).elements;
+      return Object.values(els).find(el => !before.has(el.id));
+    };
+    const toImage = await drawCrop([480, 300], [548, 347]);
+    assert.equal(toImage.x + toImage.width, 550, `crop edge snaps to the image's right edge: ${toImage.x + toImage.width}`);
+    assert.equal(toImage.y + toImage.height, 350, `and bottom edge: ${toImage.y + toImage.height}`);
+    await undo(); await wait(100);
+    // Started 5 below the first crop shape's top (170 — not an image edge).
+    const toSibling = await drawCrop([380, 175], [402, 210]);
+    assert.equal(toSibling.y, rect.y, `crop edge snaps to a fellow crop shape's edge: ${toSibling.y} vs ${rect.y}`);
+    await undo(); await wait(100);
     await evaluate("canvasTest.editor.setState({snapToGrid:false})");
     assert.deepEqual(await pixel(320, 210), RED_PX, 'inside the crop shows');
     assert.deepEqual(await pixel(480, 300), WHITE_PX, 'outside the crop is cut');
