@@ -28,7 +28,7 @@ async function click(p,count=1){await mouse('mousePressed',p,count);await mouse(
 async function drag(a,b){await mouse('mousePressed',a);for(let i=1;i<=5;i++)await mouse('mouseMoved',{x:a.x+(b.x-a.x)*i/5,y:a.y+(b.y-a.y)*i/5});await mouse('mouseReleased',b);await wait(150);}
 async function button(label){const point=await evaluate(`(()=>{const b=[...document.querySelectorAll('#creation-properties button')].find(b=>b.textContent.trim()===${JSON.stringify(label)});if(!b)throw Error('missing '+${JSON.stringify(label)});b.scrollIntoView();const r=b.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);await click(point);await wait(100);}
 const handle = name => evaluate(`(()=>{const h=document.querySelector('.selection-transformer [data-resize-handle=${name}]');if(!h)return null;const r=(h.querySelector('[data-resize-visual]')??h).getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
-const key = async (text, modifiers = 0) => { await send('Input.dispatchKeyEvent', { type: 'keyDown', key: text, text: text.length === 1 ? text : undefined, modifiers }); await send('Input.dispatchKeyEvent', { type: 'keyUp', key: text, modifiers }); await wait(20); };
+const key = async (text, modifiers = 0) => { await send('Input.dispatchKeyEvent', { type: 'keyDown', key: text, code: text === 'Enter' ? 'Enter' : undefined, windowsVirtualKeyCode: text === 'Enter' ? 13 : text === 'Escape' ? 27 : undefined, text: text === 'Enter' ? '\r' : text.length === 1 ? text : undefined, modifiers }); await send('Input.dispatchKeyEvent', { type: 'keyUp', key: text, modifiers }); await wait(20); };
 const typeText = async text => { await send('Input.insertText', { text }); await wait(50); };
 const focused = () => evaluate(`(()=>{const a=document.activeElement;return a?a.tagName+':'+(a.getAttribute('placeholder')??''):null})()`);
 try {
@@ -45,12 +45,16 @@ try {
     assert.equal(await evaluate('canvasTest.editor.getState().tool'), 'select', 'tool resets to select');
     assert.equal(await focused(), 'TEXTAREA:Comment on this area…', 'typing goes straight into the comment box');
     assert.equal((await comments()).length, 0, 'nothing is written before posting');
-    await typeText('Put a bar chart of the results here');
-    await key('Enter', process.platform === 'darwin' ? 4 : 2);
+    await typeText('Put a bar chart');
+    // Shift+Enter is a new line, not a send.
+    await key('Enter', 8);
+    assert.equal((await comments()).length, 0, 'Shift+Enter does not post');
+    await typeText('of the results here');
+    await key('Enter');
     await wait(150);
     let all = await comments();
     assert.equal(all.length, 1);
-    assert.equal(all[0].text, 'Put a bar chart of the results here');
+    assert.equal(all[0].text, 'Put a bar chart\nof the results here');
     assert.deepEqual(all[0].region, { x: 500, y: 200, width: 200, height: 130 });
     assert.equal(all[0].elementIds, undefined, 'empty area: no elements inside');
     await key('Escape'); await wait(80);
@@ -59,7 +63,7 @@ try {
     await evaluate(`canvasTest.editor.getState().setTool('comment')`); await wait(50);
     await click(await screen(800, 420)); await wait(150);
     assert.equal(await focused(), 'TEXTAREA:What should go here?');
-    await typeText('Logo here'); await key('Enter', process.platform === 'darwin' ? 4 : 2); await wait(150);
+    await typeText('Logo here'); await key('Enter'); await wait(150);
     all = await comments();
     const spot = all.find(c => c.text === 'Logo here');
     assert.deepEqual(spot.region, { x: 800, y: 420, width: 0, height: 0 });
@@ -69,7 +73,7 @@ try {
     await evaluate(`canvasTest.editor.getState().setTool('comment')`); await wait(50);
     await click(await screen(160, 140)); await wait(150);
     assert.equal(await focused(), 'TEXTAREA:Comment on this element…');
-    await typeText('Make this red'); await key('Enter', process.platform === 'darwin' ? 4 : 2); await wait(150);
+    await typeText('Make this red'); await key('Enter'); await wait(150);
     all = await comments();
     assert.deepEqual(all.find(c => c.text === 'Make this red').elementIds, ['subject']);
     assert.equal(all.find(c => c.text === 'Make this red').region, undefined);

@@ -220,7 +220,8 @@ const ThreadPopover: React.FC<{
           value={text}
           onChange={e => setText(e.target.value)}
           onKeyDown={e => {
-            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); post(); }
+            // Enter posts; Shift+Enter is a new line (as in the assistant chat).
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); post(); }
           }}
           rows={2}
           placeholder={region ? (point ? 'What should go here?' : 'Comment on this area…') : !elementIds ? 'Comment on this slide…' : plural ? 'Comment on these elements…' : 'Comment on this element…'}
@@ -235,7 +236,7 @@ const ThreadPopover: React.FC<{
             onClick={post}
             disabled={!text.trim()}
             className="bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 text-white rounded px-2.5 py-1 text-xs font-medium"
-            title="Post (⌘Enter)"
+            title="Post (Enter; Shift+Enter for a new line)"
           >
             Comment
           </button>
