@@ -102,21 +102,20 @@ export const SVGImageNode: React.FC<Props> = React.memo(({
     };
 
     return (
-      <GroupCrop element={element}><g
+      <><GroupCrop element={element}><g
         transform={transform}
         data-element-id={element.id}
-        onMouseEnter={disableInteraction ? undefined : handleVideoMouseEnter}
-        onMouseLeave={disableInteraction ? undefined : handleVideoMouseLeave}
       >
+        {/* The player takes no clicks: HTML in a foreignObject ignores the
+            crop's clip and mask for hit-testing. The clipped hit area below
+            takes them, as for images. */}
         <foreignObject
           x={element.x}
           y={element.y}
           width={element.width}
           height={element.height}
           opacity={element.opacity}
-          style={interactionStyle}
-          onPointerDown={disableInteraction ? undefined : onPointerDown}
-          onDoubleClick={disableInteraction ? undefined : onDoubleClick}
+          style={{ pointerEvents: 'none' }}
         >
           <video
             ref={setVideoRef}
@@ -132,6 +131,12 @@ export const SVGImageNode: React.FC<Props> = React.memo(({
             preload="metadata"
           />
         </foreignObject>
+      </g>{tint && <RenderShape element={tint} />}</GroupCrop>
+      {!disableInteraction && <GroupCrop element={element} scope={scope}><g transform={transform}
+        onMouseEnter={handleVideoMouseEnter} onMouseLeave={handleVideoMouseLeave}>
+        <rect data-element-id={element.id} x={element.x} y={element.y} width={element.width} height={element.height}
+          fill="transparent" style={interactionStyle}
+          onPointerDown={onPointerDown} onDoubleClick={onDoubleClick} />
         {/* Play/Pause button overlay - only show on hover */}
         {!disableInteraction && isHovered && (
           <g
@@ -177,7 +182,8 @@ export const SVGImageNode: React.FC<Props> = React.memo(({
             )}
           </g>
         )}
-      </g>{tint && <RenderShape element={tint} />}</GroupCrop>
+      </g></GroupCrop>}
+      </>
     );
   }
 

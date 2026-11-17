@@ -66,13 +66,31 @@ export function GroupCrop({ element, children, scope }: { element: SlideElement;
     const id = `group-crop-${prefix}-${i}`;
     const mark = input ? { 'data-group-crop-input': clip.group } : { 'data-group-crop': clip.group };
     const { full, union, steps } = cropSteps(clip.shapes);
-    if ((union && !clip.shapes.some(animating)) || input) {
-      // Hit areas (masks do not clip pointer input) use the adding shapes;
-      // a crop that starts from the whole image does not narrow them.
-      if (input && full) return content;
-      const adding = union ? clip.shapes : steps.filter(step => step.op === 'add').map(step => step.shape);
+    if (input) {
+      // Hit areas: masks do not clip pointer input, so the crop is built
+      // from nested clip paths — the union of the adding shapes, then each
+      // intersecting shape, then each subtracting shape's complement (a
+      // large rectangle with the shape cut out, even-odd).
+      const adding = steps.filter(step => step.op === 'add').map(step => step.shape);
+      const layers: Array<{ key: string; paths: ReactNode }> = [];
+      if (!full && adding.length) layers.push({ key: 'add', paths: adding.flatMap(shape => regionPaths(shape)) });
+      steps.forEach(({ op, shape }, k) => {
+        if (op === 'intersect') layers.push({ key: `i${k}`, paths: regionPaths(shape) });
+        if (op === 'subtract') {
+          const r = REGION;
+          const cut = groupCropRegions(shape).map(region => region.d).join(' ');
+          layers.push({ key: `s${k}`, paths: <path d={`M ${r.x} ${r.y} h ${r.width} v ${r.height} h ${-r.width} Z ${cut}`}
+            transform={groupCropRegions(shape)[0]?.transform} clipRule="evenodd" /> });
+        }
+      });
+      return layers.reduceRight<ReactNode>((inner, layer) => <g key={`${id}-${layer.key}`} {...mark}>
+        <defs><clipPath id={`${id}-${layer.key}`} clipPathUnits="userSpaceOnUse">{layer.paths}</clipPath></defs>
+        <g clipPath={`url(#${id}-${layer.key})`}>{inner}</g>
+      </g>, content);
+    }
+    if (union && !clip.shapes.some(animating)) {
       return <g key={id} {...mark}>
-        <defs><clipPath id={id} clipPathUnits="userSpaceOnUse">{adding.flatMap(shape => regionPaths(shape))}</clipPath></defs>
+        <defs><clipPath id={id} clipPathUnits="userSpaceOnUse">{clip.shapes.flatMap(shape => regionPaths(shape))}</clipPath></defs>
         <g clipPath={`url(#${id})`}>{content}</g>
       </g>;
     }

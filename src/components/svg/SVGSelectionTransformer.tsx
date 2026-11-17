@@ -1,5 +1,5 @@
 import { snapViewport } from '../../utils/snapping/snapViewport';
-import { cropSnapTargets } from '../../utils/model/groupCrop';
+import { cropSnapTargets, groupCropBoundary } from '../../utils/model/groupCrop';
 import { anchorTextSize, measureFreeTextResizeBaseline, resizeFreeText, scalesFreeText } from '../../utils/geometry/freeTextResize';
 import { useCanvasGestureGuard } from './useCanvasGestureGuard';
 import { CONTROL_THEME } from './controlTheme';
@@ -40,6 +40,15 @@ const COLOR_DEFAULT = CONTROL_THEME.color;
 const COLOR_LOCKED = CONTROL_THEME.lockedColor;
 const ANCHOR_SIZE = 8;
 const ROTATION_ANCHOR_OFFSET = 16;
+
+/** One image, or one cropped image (its image and its crop shapes, nothing
+ *  else): resized like a picture — aspect locked unless Shift. */
+function isMediaSelection(elements: SlideElement[]): boolean {
+  const images = elements.filter(el => el.type === 'image');
+  if (images.length !== 1) return false;
+  const [image] = images;
+  return elements.every(el => el === image || (groupCropBoundary(el) && !!image.objectGroupIds?.includes(el.cropGroupId!)));
+}
 
 export const SVGSelectionTransformer: React.FC<Props> = ({
   elements,
@@ -185,8 +194,9 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
         const delta = rotateDelta({ x: (e.clientX - pointer.clientX) / zoom, y: (e.clientY - pointer.clientY) / zoom }, -rot);
         const freeText = original.length === 1 && original[0].type === 'text' && !original[0].containerId ? original[0] : null;
         // Image elements also represent video resources. Shift temporarily
-        // unlocks their aspect ratio; other objects retain Shift-to-lock.
-        const media = original.length === 1 && original[0].type === 'image';
+        // unlocks their aspect ratio; other objects retain Shift-to-lock. A
+        // cropped image (its image with its crop shapes) is media too.
+        const media = isMediaSelection(original);
         const dot = original.length === 1 && original[0].type === 'shape' && original[0].shapeType === 'dot';
         const aspect = dot || (freeText ? scalesFreeText(anchor, e.shiftKey) : media ? !e.shiftKey : e.shiftKey);
         const constrainedBounds = (baseline: typeof start) => {

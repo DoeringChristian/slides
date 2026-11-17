@@ -66,7 +66,11 @@ try {
     const edited=await evaluate('canvasTest.snapshot().slide');
     assert.equal(edited.elements.boundary.x,moved.elements.boundary.x);
     assert.equal(edited.elements.subject.x,moved.elements.subject.x+20);
+    // Outside crop mode a click inside the crop reaches the picture; moving
+    // the crop itself is done in crop mode.
+    await evaluate("canvasTest.editor.getState().enterCropMode('subject')");await wait(100);
     await drag(await screen(405,250),await screen(420,260));
+    await evaluate("canvasTest.editor.getState().exitCropMode()");await wait(100);
     const boundaryMoved=await evaluate('canvasTest.snapshot().slide');
     assert.equal(boundaryMoved.elements.subject.x,edited.elements.subject.x);
     assert.equal(boundaryMoved.elements.boundary.x,edited.elements.boundary.x+15);

@@ -33,7 +33,11 @@ export const SVGShapeNode: React.FC<Props> = React.memo(({
   // Native SVG fill-rule picking preserves unselected icon holes.
   const paint = resolveShapePaint(element);
   const paths = disableInteraction ? [] : shapeToSvgPaths(element);
+  // A crop shape is an invisible outline: it takes clicks on its area only in
+  // crop mode (where it is edited) or when it tints (its fill shows) —
+  // otherwise clicks go to the picture it reveals.
   const cropShape = !!(element as GroupCropElement)._groupCropBoundary;
+  const cropMode = useEditorStore(s => !!s.croppingElementId);
   const painted = (color: string | undefined) => !noPaint(color ?? '') && (parsePaintColor(color ?? '')?.a ?? 1) > 0;
   return (
     <g data-element-id={element.id}>
@@ -41,13 +45,13 @@ export const SVGShapeNode: React.FC<Props> = React.memo(({
       <GroupCrop element={element} scope={scope}><g className="shape-input" transform={transform}
         style={{ cursor: element.locked ? 'default' : 'move', touchAction: 'none' }}
         onPointerDown={onPointerDown} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} onDoubleClick={onDoubleClick}>
-        {bounds && !disableInteraction && <rect data-selected-body
+        {bounds && !disableInteraction && (!cropShape || cropMode) && <rect data-selected-body
           x={bounds.x} y={bounds.y} width={bounds.width} height={bounds.height}
           fill="transparent" style={{ pointerEvents: 'all' }} />}
         {paths.map((path, i) => {
           // A crop shape is grabbed by its area even when unpainted: the
           // area is what it is for.
-          const fill = cropShape || painted(path.fillSourceColor ?? path.fillColor);
+          const fill = cropShape ? cropMode || !!element.cropTint : painted(path.fillSourceColor ?? path.fillColor);
           const stroke = painted(path.strokeColor) && paint.strokeWidth > 0 && path.createRole !== 'fill';
           return <g key={i} transform={path.transform}>
             {fill && <path d={path.fillD ?? path.d} fill="transparent" fillRule={path.fillRule} style={{ pointerEvents: 'fill' }} />}
