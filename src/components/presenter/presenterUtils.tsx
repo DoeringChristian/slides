@@ -2,6 +2,7 @@ import { imageTintShape } from '../../utils/paint/imageTint';
 import { isWrapperMode, wrapVisualFx } from '../svg/visualFx';
 import { GroupCrop } from '../svg/GroupCrop';
 import { followCropMedia, groupCropPaint, type GroupCropElement } from '../../utils/model/groupCrop';
+import { followGroups } from '../../utils/model/groupFollow';
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { Play, Pause } from 'lucide-react';
 import { RenderShape, RenderImage } from '../svg/ElementRenderer';
@@ -76,8 +77,10 @@ export function composeSlideFrame(args: {
     const interpolated = interpolateWithVisibility(elA, elB, animProgress, isForward);
     if (interpolated) renderedElements.push(interpolated);
   }
-  // A crop group is one object: its crop moves with the media it crops.
+  // Appearing / disappearing members move with their group; then a crop
+  // group is one object: its crop moves with the media it crops.
   if (slideB) {
+    renderedElements = followGroups(renderedElements, slideA, slideB);
     renderedElements = followCropMedia(renderedElements, slideA, slideB, animProgress,
       (el, group, t) => applyEasing(t, el.transitions?.[group] ?? defaultEasingFor(group, el)));
   }

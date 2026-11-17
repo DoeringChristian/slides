@@ -1,3 +1,4 @@
+import type { SlideElement } from '../types/presentation';
 import { afterEach, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { usePresentationStore as store } from './presentationStore';
@@ -226,4 +227,27 @@ it('snap targets: a cropped object aligns by what its crop shows (except the ima
   // An intersecting crop shape narrows it.
   const c = createShapeElement('rect', { id: 'c', x: 180, y: 100, width: 300, height: 300, objectGroupIds: ['g'], cropGroupId: 'g', cropOp: 'intersect' });
   expect(box(cropSnapTargets([image, a, b, c]), 'i')).toEqual([180, 120, 170, 140]);
+});
+
+it('split video: a new half (with its own crop) comes in with the moving video, its crop on it', () => {
+  const vid = (id: string, x: number, w: number, path: string[]) => createImageElement(null, 400, 200, { id, x, y: 0, width: w, height: 200, objectGroupIds: path });
+  const crop = (id: string, x: number, w: number, group: string) => createShapeElement('rect', { id, x, y: 0, width: w, height: 200, objectGroupIds: ['g', group], cropGroupId: group });
+  const slide = (id: string, els: SlideElement[]) => ({ id, elements: Object.fromEntries(els.map(e => [e.id, e])), elementOrder: els.map(e => e.id),
+    background: { type: 'solid' as const, color: '#fff' } });
+  // A: the whole video at x 0..400. B: it moved right and shrank to 200 wide
+  // (left half shown); the other half (a second video, cropped) beside it.
+  const A = slide('A', [vid('v', 0, 400, ['g', 'cv']), crop('cv-crop', 0, 400, 'cv')]);
+  const B = slide('B', [vid('v', 400, 200, ['g', 'cv']), crop('cv-crop', 400, 200, 'cv'),
+    vid('h', 600, 200, ['g', 'ch']), crop('ch-crop', 600, 200, 'ch')]);
+  const at = (t: number) => Object.fromEntries(composeSlideFrame({ slideA: A as never, slideB: B as never, isForward: true, animProgress: t, isAnimating: true })
+    .renderedElements.map(e => [e.id, e]));
+  const f = at(0.75);
+  const v = f.v, h = f.h, hc = f['ch-crop'];
+  // The new half sits right of the moving video, at its scale — not at its final 600.
+  expect(h.x).toBeCloseTo(v.x + v.width, 0);
+  expect(h.width).toBeCloseTo(v.width, 0);
+  expect(h.x).toBeLessThan(600);
+  // Its crop rides on it.
+  expect(hc.x).toBeCloseTo(h.x, 0);
+  expect(hc.width).toBeCloseTo(h.width, 0);
 });
