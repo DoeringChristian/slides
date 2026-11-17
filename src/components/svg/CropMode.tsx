@@ -42,7 +42,7 @@ export const CropSpotlight: React.FC<{ image: SlideElement; zoom: number }> = ({
   const box = `M ${corner(x, y)} L ${corner(x + w, y)} L ${corner(x + w, y + h)} L ${corner(x, y + h)} Z`;
   const far = 100000;
   return <g data-crop-spotlight="" style={{ pointerEvents: 'none' }}>
-    <path d={`M ${-far},${-far} H ${far} V ${far} H ${-far} Z ${box}`} fillRule="evenodd" fill="rgba(15, 23, 42, 0.55)" />
+    <path d={`M ${-far},${-far} H ${far} V ${far} H ${-far} Z ${box}`} fillRule="evenodd" fill="rgba(15, 23, 42, 0.5)" />
     <path d={box} fill="none" stroke="#ffffff" strokeWidth={3 / zoom} />
     <path d={box} fill="none" stroke={CONTROL_THEME.color} strokeWidth={1.5 / zoom} strokeDasharray={`${6 / zoom} ${4 / zoom}`} />
   </g>;

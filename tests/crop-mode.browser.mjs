@@ -76,6 +76,14 @@ try {
     assert.equal(s.scope, group, 'crop group is the entered group');
     assert.deepEqual(s.selected, [rect.id], 'the new crop shape is selected');
     assert.equal(rect.stroke, '', 'crop shapes are drawn unstroked');
+    // Drawing in crop mode snaps to other objects (they stay visible under
+    // the spotlight): from here a crop edge can line up with a neighbour.
+    await evaluate("canvasTest.editor.setState({snapToGrid:true});canvasTest.editor.getState().setTool('rect')");
+    await mouse('mousePressed', await screen(560, 300)); await mouse('mouseMoved', await screen(600, 320)); await mouse('mouseMoved', await screen(648, 340)); await mouse('mouseReleased', await screen(648, 340)); await wait(150);
+    const snappedCrop = Object.values((await state()).elements).filter(el => el.type === 'shape' && el.cropGroupId === group).find(el => el.id !== rect.id);
+    assert.equal(snappedCrop.x + snappedCrop.width, 650, `a crop edge snaps to another object's edge: ${snappedCrop.x + snappedCrop.width}`);
+    await undo(); await wait(100);
+    await evaluate("canvasTest.editor.setState({snapToGrid:false})");
     assert.deepEqual(await pixel(320, 210), RED_PX, 'inside the crop shows');
     assert.deepEqual(await pixel(480, 300), WHITE_PX, 'outside the crop is cut');
 

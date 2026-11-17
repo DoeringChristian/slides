@@ -1349,7 +1349,9 @@ export const SVGSlideCanvas: React.FC = () => {
               onDoubleClick={handleDoubleClick}
               onTextLayout={gesturePreview || textPreview || editingTextId ? undefined : handleTextLayout}
             />;
-            if (outside) return <g key={el.id} opacity={0.25} data-crop-dimmed="">{rendered}</g>;
+            // Outside objects stay visible under the crop spotlight (they are
+            // snap targets — e.g. lining up a split screen) but are inert.
+            if (outside) return <g key={el.id} data-crop-dimmed="">{rendered}</g>;
             if (el.id === croppingImageId && el.type === 'image') return <React.Fragment key={el.id}><CropGhost element={el} />{rendered}</React.Fragment>;
             return rendered;
           })}
