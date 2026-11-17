@@ -84,7 +84,8 @@ try {
   await check(`shared precise bounds/actions/control clearance ${kind} zoom=${zoom}`,async()=>{
    await setup({mode:'production',zoom,subject:{x:400,y:200,width:300,height:450,rotation:20,fill:'#5599bb',shapeType:kind,...(kind==='vector'?{geometry:ring}:{}),...(kind==='path'?{points:[-60,-30,100,40,220,90]}:{}),...(kind==='image'?{type:'image'}:{})}});
    const result=await evaluate(`(async()=>{const {elementVisualBounds,selectionControlMetrics}=await import('/src/utils/geometry/shapeVisualBounds.ts');const e=canvasTest.snapshot().slide.elements.subject,z=canvasTest.editor.getState().zoom,b=elementVisualBounds(e),m=selectionControlMetrics(e,z),r=document.querySelector('.selection-transformer > rect'),bar=document.querySelector('button[title="Lock"]').parentElement.parentElement,outer=bar.parentElement;return {b,m,outline:{x:+r.getAttribute('x'),y:+r.getAttribute('y'),width:+r.getAttribute('width'),height:+r.getAttribute('height')},width:parseFloat(outer.style.width),height:parseFloat(outer.style.height),gap:parseFloat(bar.style.marginTop)}})()`);
-   near(result.outline.x,result.b.x-result.m.padding);near(result.outline.y,result.b.y-result.m.padding);near(result.width,result.b.width*zoom);near(result.height,result.b.height*zoom);near(result.gap,(result.m.padding+result.m.pathCornerOffset+result.m.cornerTouchRadius+result.m.actionClearance)*zoom);
+   // A path's whole control box (border with its corner handles) stands off by pathCornerOffset.
+   near(result.outline.x,result.b.x-result.m.padding-result.m.pathCornerOffset);near(result.outline.y,result.b.y-result.m.padding-result.m.pathCornerOffset);near(result.width,result.b.width*zoom);near(result.height,result.b.height*zoom);near(result.gap,(result.m.padding+result.m.pathCornerOffset+result.m.cornerTouchRadius+result.m.actionClearance)*zoom);
    if(kind==='triangle')assert(result.b.height<450,'inscribed triangle ignores oversized stored height');
   });
  }

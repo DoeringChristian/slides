@@ -328,8 +328,10 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
   const halfAnchor = anchorSize / 2;
   const strokeW = CONTROL_THEME.strokeWidth / zoom;
   const metrics = selectionControlMetrics(displaySingle, zoom);
+  // A path's vertex handles sit on its box, so its whole control box (border,
+  // corners and sides alike) stands off by this much — one consistent frame.
   const linearExtra = metrics.pathCornerOffset;
-  const rotationOffset = ROTATION_ANCHOR_OFFSET / zoom + linearExtra;
+  const rotationOffset = ROTATION_ANCHOR_OFFSET / zoom;
   const anchorRadius = 2 / zoom;
 
   // Rotate around the center of the bounding box (matches how elements rotate)
@@ -338,7 +340,7 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
   const transform = displayRotation ? `rotate(${displayRotation}, ${rotationOriginX}, ${rotationOriginY})` : undefined;
 
   // DISPLAY ONLY. Resize math and snapping above retain the true bounds.
-  const pad = metrics.padding;
+  const pad = metrics.padding + linearExtra;
   const visible = visualBounds ?? displayBounds;
   const overlay = { x: visible.x - pad, y: visible.y - pad, width: visible.width + 2 * pad, height: visible.height + 2 * pad };
   const anchors = [
@@ -351,10 +353,7 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
     { name: 'bottom-center', x: overlay.x + overlay.width / 2, y: overlay.y + overlay.height, cursor: 'ns-resize' },
     { name: 'bottom-right', x: overlay.x + overlay.width, y: overlay.y + overlay.height, cursor: 'nwse-resize' },
   ];
-  const corners = anchors.filter(a => !a.name.includes('center') && !a.name.startsWith('middle')).map(a => ({ ...a,
-    x: a.x + (a.name.includes('left') ? -linearExtra : linearExtra),
-    y: a.y + (a.name.includes('top') ? -linearExtra : linearExtra),
-  }));
+  const corners = anchors.filter(a => !a.name.includes('center') && !a.name.startsWith('middle'));
   const sides = anchors.filter(a => a.name.includes('center') || a.name.startsWith('middle'));
 
 
