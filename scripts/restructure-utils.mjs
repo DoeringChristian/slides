@@ -65,7 +65,7 @@ const DOMAINS = {
   ],
   // Presentation-data operations: factories, cleanup, cross-slide edits.
   model: [
-    'cropRegions', 'groupFollow',
+    'cropRegions', 'groupFollow', 'arrangeUnits',
     'slideFactory', 'presentationCleanup', 'currentPresentation', 'multiSlide',
     'mergeObjects', 'objectGroups', 'objectListTree', 'objectSelection',
     'groupCrop', 'groupTransfer', 'mirrorOperation', 'slideGroupEditing',

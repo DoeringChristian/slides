@@ -2,6 +2,8 @@ import React from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useSelectedElements } from '../../store/selectors';
+import { arrangeUnits, planAlign, planDistribute, type AlignEdge } from '../../utils/model/arrangeUnits';
+import type { SlideElement } from '../../types/presentation';
 import { AlignStartVertical, AlignCenterVertical, AlignEndVertical, AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal, AlignHorizontalSpaceBetween, AlignVerticalSpaceBetween } from 'lucide-react';
 
 export const AlignmentTools: React.FC = () => {
@@ -9,56 +11,23 @@ export const AlignmentTools: React.FC = () => {
   const updateElements = usePresentationStore((s) => s.updateElements);
   const selected = useSelectedElements();
 
-  if (selected.length < 2) return null;
+  const scope = useEditorStore((s) => s.activeObjectGroupId);
+  const slideElements = usePresentationStore((s) => s.presentation.slides[activeSlideId]?.elements);
+  // A cropped image (or any group) is one unit: one alone has nothing to align with.
+  const unitCount = slideElements ? arrangeUnits(slideElements, selected.map(el => el.id), scope).length : 0;
+  if (unitCount < 2) return null;
 
-  const align = (type: string) => {
-    const xs = selected.map((e) => e.x);
-    const ys = selected.map((e) => e.y);
-    const rights = selected.map((e) => e.x + e.width);
-    const bottoms = selected.map((e) => e.y + e.height);
-
-    // One batch update per action → a single undo entry, same as a canvas
-    // drag commit.
-    const updates = selected.flatMap((el) => {
-      let changes: Partial<Record<'x' | 'y', number>> = {};
-      switch (type) {
-        case 'left': changes = { x: Math.min(...xs) }; break;
-        case 'center-h': changes = { x: (Math.min(...xs) + Math.max(...rights)) / 2 - el.width / 2 }; break;
-        case 'right': changes = { x: Math.max(...rights) - el.width }; break;
-        case 'top': changes = { y: Math.min(...ys) }; break;
-        case 'center-v': changes = { y: (Math.min(...ys) + Math.max(...bottoms)) / 2 - el.height / 2 }; break;
-        case 'bottom': changes = { y: Math.max(...bottoms) - el.height }; break;
-      }
-      const noop = (changes.x === undefined || changes.x === el.x) &&
-        (changes.y === undefined || changes.y === el.y);
-      return noop ? [] : [{ elementId: el.id, changes }];
-    });
+  // Groups move as one, by the box they show (a cropped image by its crop):
+  // see utils/model/arrangeUnits. One batch update → one undo step.
+  const plan = (make: (elements: Record<string, SlideElement>, units: ReturnType<typeof arrangeUnits>) => ReturnType<typeof planAlign>) => {
+    const slide = usePresentationStore.getState().presentation.slides[activeSlideId];
+    if (!slide) return;
+    const units = arrangeUnits(slide.elements, selected.map(el => el.id), useEditorStore.getState().activeObjectGroupId);
+    const updates = make(slide.elements, units);
     if (updates.length > 0) updateElements(activeSlideId, updates);
   };
-
-  // Google Slides–style distribute: the outermost two elements stay put and
-  // the ones between are spaced so every gap is equal (gaps may be negative
-  // when the elements overlap, same as Slides).
-  const distribute = (axis: 'h' | 'v') => {
-    if (selected.length < 3) return;
-    const pos = axis === 'h' ? 'x' : 'y';
-    const size = axis === 'h' ? 'width' : 'height';
-    const sorted = [...selected].sort((a, b) => a[pos] - b[pos]);
-    const first = sorted[0];
-    const last = sorted[sorted.length - 1];
-    const span = last[pos] + last[size] - first[pos];
-    const total = sorted.reduce((sum, el) => sum + el[size], 0);
-    const gap = (span - total) / (sorted.length - 1);
-    let cursor = first[pos];
-    const updates: Array<{ elementId: string; changes: Partial<Record<'x' | 'y', number>> }> = [];
-    sorted.forEach((el) => {
-      if (el[pos] !== cursor) {
-        updates.push({ elementId: el.id, changes: { [pos]: cursor } });
-      }
-      cursor += el[size] + gap;
-    });
-    if (updates.length > 0) updateElements(activeSlideId, updates);
-  };
+  const align = (edge: AlignEdge) => plan((elements, units) => planAlign(elements, units, edge));
+  const distribute = (axis: 'h' | 'v') => plan((elements, units) => planDistribute(elements, units, axis));
 
   return (
     <div className="flex items-center gap-1">
@@ -80,10 +49,10 @@ export const AlignmentTools: React.FC = () => {
       <button onClick={() => align('bottom')} className="p-1 rounded hover:bg-gray-100 text-gray-600" title="Align Bottom">
         <AlignEndHorizontal size={14} />
       </button>
-      <button onClick={() => distribute('h')} disabled={selected.length < 3} className="p-1 rounded hover:bg-gray-100 text-gray-600 disabled:opacity-40 disabled:hover:bg-transparent" title="Distribute Horizontally">
+      <button onClick={() => distribute('h')} disabled={unitCount < 3} className="p-1 rounded hover:bg-gray-100 text-gray-600 disabled:opacity-40 disabled:hover:bg-transparent" title="Distribute Horizontally">
         <AlignHorizontalSpaceBetween size={14} />
       </button>
-      <button onClick={() => distribute('v')} disabled={selected.length < 3} className="p-1 rounded hover:bg-gray-100 text-gray-600 disabled:opacity-40 disabled:hover:bg-transparent" title="Distribute Vertically">
+      <button onClick={() => distribute('v')} disabled={unitCount < 3} className="p-1 rounded hover:bg-gray-100 text-gray-600 disabled:opacity-40 disabled:hover:bg-transparent" title="Distribute Vertically">
         <AlignVerticalSpaceBetween size={14} />
       </button>
     </div>
