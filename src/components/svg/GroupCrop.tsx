@@ -1,7 +1,9 @@
-import { useId, type ReactNode } from 'react';
+import React, { useId, type ReactNode } from 'react';
+import { isWrapperMode, wrapVisualFx } from './visualFx';
+import type { WriteEffect } from '../../utils/animation/interpolation';
 import { useCropLayouts } from './useCropLayouts';
 import type { SlideElement } from '../../types/presentation';
-import { cropSteps, groupCropClips, groupCropRegions, type CropShape } from '../../utils/model/groupCrop';
+import { cropSteps, groupCropClips, groupCropRegions, type CropShape, type GroupCropElement } from '../../utils/model/groupCrop';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 
 /** Mask region: the slide with a slide's margin all round (content and crop
@@ -10,6 +12,31 @@ const REGION = { x: -SLIDE_WIDTH, y: -SLIDE_HEIGHT, width: SLIDE_WIDTH * 3, heig
 
 const regionPaths = (shape: CropShape, fill?: string) => groupCropRegions(shape).map((region, j) =>
   <path key={`${shape.id}-${j}`} d={region.d} transform={region.transform} clipRule={region.rule} fillRule={region.rule} fill={fill} />);
+
+/** The visibility effect a crop shape is playing (appearing / leaving). */
+const fxOf = (shape: CropShape) => (shape as CropShape & { _writeFx?: WriteEffect })._writeFx;
+
+/** A crop shape's mask contribution: its region, shaped by its own appear
+ *  effect (wipe / slide-in / grow / iris through the shared wrapper; other
+ *  effects by their progress) and its opacity (a fade) — so a crop appears
+ *  the way its shape is set to appear. */
+function contribution(shape: CropShape, fill: string, idPrefix: string, key: string, full = false): ReactNode {
+  const fx = fxOf(shape);
+  // The fade belongs to the crop only when the crop comes or goes on its own;
+  // when the whole group does, the image's own fade already shows it.
+  const strength = full ? 1 : ((shape as GroupCropElement)._cropSolo ? shape.opacity ?? 1 : 1)
+    * (fx && !isWrapperMode(fx) ? Math.max(0, Math.min(1, fx.t)) : 1);
+  const node = <g key={key} opacity={strength}>{regionPaths(shape, fill)}</g>;
+  return fx && isWrapperMode(fx) && !full ? <React.Fragment key={key}>{wrapVisualFx(node, shape, fx, idPrefix)}</React.Fragment> : node;
+}
+/** How far a crop shape's appear/leave effect has got (1 = fully there). */
+const strengthOf = (shape: CropShape) => {
+  const fx = fxOf(shape);
+  return Math.max(0, Math.min(1, (fx ? fx.t : shape.opacity ?? 1)));
+};
+/** Whether a crop shape is mid-effect, or coming / going on its own: then
+ *  the crop needs the mask, which can show effects and partial strength. */
+const animating = (shape: CropShape) => !!fxOf(shape) || !!(shape as GroupCropElement)._cropSolo;
 
 /**
  * Crops `children` by the element's crop groups. Each crop group is one
@@ -37,7 +64,7 @@ export function GroupCrop({ element, children, scope }: { element: SlideElement;
     const id = `group-crop-${prefix}-${i}`;
     const mark = input ? { 'data-group-crop-input': clip.group } : { 'data-group-crop': clip.group };
     const { full, union, steps } = cropSteps(clip.shapes);
-    if (union || input) {
+    if ((union && !clip.shapes.some(animating)) || input) {
       // Hit areas (masks do not clip pointer input) use the adding shapes;
       // a crop that starts from the whole image does not narrow them.
       if (input && full) return content;
@@ -48,13 +75,21 @@ export function GroupCrop({ element, children, scope }: { element: SlideElement;
       </g>;
     }
     const masks: ReactNode[] = [];
-    let mask: ReactNode = full ? <rect key="full" {...REGION} fill="white" /> : null;
+    // An image cropped (or uncropped) between keyframes while on screen:
+    // what lies outside the crop fades out (or back) with the crop's effect.
+    const reveal = clip.shapes.every(shape => (shape as GroupCropElement)._cropReveal);
+    const outside = reveal ? 1 - Math.min(...clip.shapes.map(strengthOf)) : 0;
+    let mask: ReactNode = full ? <rect key="full" {...REGION} fill="white" />
+      : outside > 0 ? <rect key="outside" {...REGION} fill="white" opacity={outside} /> : null;
     steps.forEach(({ op, shape }, k) => {
-      if (op === 'add') mask = <g key={`s${k}`}>{mask}{regionPaths(shape, 'white')}</g>;
-      else if (op === 'subtract') mask = <g key={`s${k}`}>{mask}{regionPaths(shape, 'black')}</g>;
+      const fxPrefix = `${id}-fx${k}-`;
+      // Cropping an on-screen image: the crop itself shows in full throughout.
+      if (op === 'add') mask = <g key={`s${k}`}>{mask}{contribution(shape, 'white', fxPrefix, 'c', reveal)}</g>;
+      else if (op === 'subtract') mask = <g key={`s${k}`}>{mask}{contribution(shape, 'black', fxPrefix, 'c')}</g>;
       else {
+        // An intersecting shape mid-effect keeps only what it covers so far.
         const sub = `${id}-k${k}`;
-        masks.push(<mask key={sub} id={sub} maskUnits="userSpaceOnUse" {...REGION} style={{ maskType: 'luminance' }}>{regionPaths(shape, 'white')}</mask>);
+        masks.push(<mask key={sub} id={sub} maskUnits="userSpaceOnUse" {...REGION} style={{ maskType: 'luminance' }}>{contribution(shape, 'white', fxPrefix, 'c')}</mask>);
         mask = <g key={`s${k}`} mask={`url(#${sub})`}>{mask}</g>;
       }
     });

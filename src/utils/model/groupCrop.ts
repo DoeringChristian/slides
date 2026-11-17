@@ -19,7 +19,13 @@ export function groupCropBoundary(el: SlideElement): el is CropShape {
 }
 /** Elements that can become crop shapes (bound labels ride with their containers). */
 export const canCrop = (el: SlideElement): el is CropShape => el.type === 'shape' || el.type === 'text' && !el.containerId;
-export type GroupCropElement = SlideElement & { _groupClips?: CropShape[]; _groupCropBoundary?: boolean };
+export type GroupCropElement = SlideElement & { _groupClips?: CropShape[]; _groupCropBoundary?: boolean;
+  /** Set during a transition on a crop shape entering or leaving while its
+   *  image stays on screen: its fade shapes the crop. */
+  _cropSolo?: boolean;
+  /** …and the image shows uncropped on the other keyframe: the outside of
+   *  the crop fades with its effect instead. */
+  _cropReveal?: boolean };
 export function attachGroupCrops(elements: SlideElement[]): SlideElement[] {
   const boundaries = elements.filter(groupCropBoundary);
   if (!boundaries.length) return elements;
@@ -364,11 +370,22 @@ export function followCropMedia(
       h: relA.h + (relB.h - relA.h) * ks,
       rot: relA.rot + (relB.rot - relA.rot) * kr,
     } : (relA ?? relB)!;
+    // Cropping (or uncropping) an image that is on screen on both keyframes:
+    // the side without the crop shows it whole, so the area outside the crop
+    // must go (or come back) with the crop's own effect, not all at once.
+    // A crop shape coming or going on its own (its image on screen on both
+    // keyframes) fades the crop itself; with no crop at all on the other side
+    // (cropping or uncropping an on-screen image) the outside fades instead.
+    const otherSide = onA ? slideB : slideA;
+    const otherMedia = otherSide.elements[media.id];
+    const solo = (!onA || !onB) && !!otherMedia?.visible;
+    const reveal = solo && !cropGroupOf(otherSide.elements, media.id);
     const pose = absolutePose(rel, poseOf(media));
     // Text keeps its own (interpolated) box size — resizing it would reflow
     // the glyphs — and follows the media's position and rotation.
     const w = el.type === 'text' ? el.width : pose.w, h = el.type === 'text' ? el.height : pose.h;
-    const next: SlideElement = { ...el, x: pose.cx - w / 2, y: pose.cy - h / 2, width: w, height: h, rotation: pose.rot };
+    const next: SlideElement = { ...el, x: pose.cx - w / 2, y: pose.cy - h / 2, width: w, height: h, rotation: pose.rot,
+      ...(solo ? { _cropSolo: true } : {}), ...(reveal ? { _cropReveal: true } : {}) } as SlideElement;
     if (next.type === 'shape' && next.shapeType === 'path' && next.points && el.width && el.height) {
       const sx = pose.w / el.width, sy = pose.h / el.height;
       next.points = next.points.map((v, i) => v * (i % 2 ? sy : sx));
