@@ -254,7 +254,8 @@ interface ImageProps {
   element: ImageElement;
   resource?: Resource;
   /**
-   * Override video autoplay. Defaults to `element.playing ?? true`.
+   * Let the video play on its own. Off by default: the presenter's media
+   * controller drives videos (see presenter/mediaController).
    * Editor passes `false` (paused preview); cross-fade source passes `false`
    * so the transition doesn't pop a video into playback.
    */
@@ -353,8 +354,10 @@ export const RenderImage: React.FC<ImageProps> = memo(({ element, resource, vide
           <video
             src={resource.src}
             style={mediaStyle}
-            autoPlay={videoAutoplay ?? element.playing ?? true}
-            loop={element.loop ?? false}
+            // Playback (seek, play, pause, loop) is driven by the media
+            // controller by this id; it plays on its own only when asked.
+            data-media-id={element.id}
+            autoPlay={videoAutoplay ?? false}
             muted={element.muted ?? true}
             playsInline
             preload="metadata"

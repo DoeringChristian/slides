@@ -270,7 +270,6 @@ function renderElementInner(
       resourceToRender: typeof targetResource,
       opacity: number,
       keySuffix: string,
-      autoPlay: boolean = true,
     ) => {
       if (!resourceToRender) return null;
       // Overlay dissolve/animation values without mutating the live element.
@@ -284,18 +283,17 @@ function renderElementInner(
           key={`${element.id}${keySuffix}`}
           element={tempElement}
           resource={resourceToRender}
-          videoAutoplay={autoPlay && (imgEl.playing ?? true)}
         />
       );
     };
 
     if (dissolveSource && sourceResource) {
-      // Freeze both videos during cross-fade so the transition reads as a
-      // visual blend rather than two competing playbacks.
+      // Both sides of a cross-fade show the object's one playback (the media
+      // controller drives every <video> of the object).
       return (
         <React.Fragment key={element.id}>
-          {renderMedia(sourceResource, dissolveSource.opacity, '-src', false)}
-          {renderMedia(targetResource, element.opacity, '-tgt', false)}
+          {renderMedia(sourceResource, dissolveSource.opacity, '-src')}
+          {renderMedia(targetResource, element.opacity, '-tgt')}
         </React.Fragment>
       );
     }
@@ -369,8 +367,8 @@ const TipDrawArrow: React.FC<{ element: ShapeElement; fx: WriteEffect }> = ({ el
 
 interface VideoWithControlsProps {
   src: string;
-  autoPlay: boolean;
-  loop: boolean;
+  /** The video object's id: the media controller drives this player. */
+  mediaId: string;
   muted: boolean;
   videoStyle: React.CSSProperties;
   containerStyle?: React.CSSProperties;
@@ -380,15 +378,14 @@ interface VideoWithControlsProps {
 
 const VideoWithControls: React.FC<VideoWithControlsProps> = ({
   src,
-  autoPlay,
-  loop,
+  mediaId,
   muted,
   videoStyle,
   containerStyle,
   onVideoCommand,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [isPlaying, setIsPlaying] = useState(autoPlay);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [isHovered, setIsHovered] = useState(false);
   const rafRef = useRef<number>(0);
@@ -412,7 +409,7 @@ const VideoWithControls: React.FC<VideoWithControlsProps> = ({
     if (!v) return;
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
-    const onEnded = () => { if (!loop) setIsPlaying(false); };
+    const onEnded = () => setIsPlaying(false);
     v.addEventListener('play', onPlay);
     v.addEventListener('pause', onPause);
     v.addEventListener('ended', onEnded);
@@ -421,7 +418,7 @@ const VideoWithControls: React.FC<VideoWithControlsProps> = ({
       v.removeEventListener('pause', onPause);
       v.removeEventListener('ended', onEnded);
     };
-  }, [loop]);
+  }, []);
 
   const togglePlayPause = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -465,8 +462,7 @@ const VideoWithControls: React.FC<VideoWithControlsProps> = ({
       <video
         ref={videoRef}
         src={src}
-        autoPlay={autoPlay}
-        loop={loop}
+        data-media-id={mediaId}
         muted={muted}
         playsInline
         preload="metadata"
@@ -541,7 +537,6 @@ interface SlideRendererProps {
   width: number;
   height: number;
   resources: Record<string, Resource>;
-  autoPlayVideos?: boolean;
   onVideoCommand?: (action: 'play' | 'pause' | 'seek', currentTime?: number) => void;
 }
 
@@ -550,7 +545,6 @@ export const SlideRenderer: React.FC<SlideRendererProps> = ({
   width,
   height,
   resources,
-  autoPlayVideos = false,
   onVideoCommand,
 }) => {
   const scale = width / SLIDE_WIDTH;
@@ -583,7 +577,6 @@ export const SlideRenderer: React.FC<SlideRendererProps> = ({
           const resource = imgEl.resourceId ? resources[imgEl.resourceId] : undefined;
 
           if (resource?.type === 'video') {
-            const shouldAutoPlay = autoPlayVideos && (imgEl.playing ?? true);
             // The player is HTML; its tint is drawn over it by the shared
             // shape renderer, at the same z-level.
             const tint = imageTintShape(imgEl);
@@ -593,8 +586,7 @@ export const SlideRenderer: React.FC<SlideRendererProps> = ({
               <VideoWithControls
                 key={element.id}
                 src={resource.src}
-                autoPlay={shouldAutoPlay}
-                loop={imgEl.loop ?? false}
+                mediaId={element.id}
                 muted={imgEl.muted ?? true}
                 onVideoCommand={onVideoCommand}
                 videoStyle={{

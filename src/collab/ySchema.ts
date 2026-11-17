@@ -272,10 +272,11 @@ export function elementToYMap(el: SlideElement): Y.Map<unknown> {
       setIfDefined(m, 'tintStyle', i.tintStyle);
       setIfDefined(m, 'tintTo', i.tintTo);
       if (i.tintLine) m.set('tintLine', [...i.tintLine]);
-      setIfDefined(m, 'playing', i.playing);
-      setIfDefined(m, 'loop', i.loop);
+      setIfDefined(m, 'playback', i.playback);
+      setIfDefined(m, 'playFrom', i.playFrom);
+      setIfDefined(m, 'playTo', i.playTo);
+      setIfDefined(m, 'atEnd', i.atEnd);
       setIfDefined(m, 'muted', i.muted);
-      setIfDefined(m, 'startTime', i.startTime);
       return m;
     }
     case 'group': {

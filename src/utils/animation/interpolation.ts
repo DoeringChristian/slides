@@ -715,10 +715,13 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
       type: 'image',
       resourceId: ib.resourceId,
       ...(tint ? { tint: tint.fill, tintStyle: (tint.fillStyle ?? 'solid') as ImageElement['tintStyle'], tintTo: tint.fillTo, tintLine: tint.fillLine } : {}),
-      playing: ib.playing,
-      loop: ib.loop,
+      // Playback is per keyframe: the target keyframe's (the media
+      // controller applies it on arrival; nothing here interpolates).
+      playback: ib.playback,
+      playFrom: ib.playFrom,
+      playTo: ib.playTo,
+      atEnd: ib.atEnd,
       muted: ib.muted,
-      startTime: ib.startTime,
     };
 
     if (resourceChanges) {

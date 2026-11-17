@@ -6,6 +6,7 @@ import { useAutoAdvanceChain } from '../../hooks/useAutoAdvanceChain';
 import { manualNextTarget } from '../../utils/animation/presenterAdvance';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 import { composeSlideFrame, renderPresenterElement } from './presenterUtils';
+import { useMediaController } from './mediaController';
 
 export const PresenterView: React.FC = () => {
   const isPresenting = useEditorStore((s) => s.isPresenting);
@@ -193,6 +194,13 @@ export const PresenterView: React.FC = () => {
       document.removeEventListener('fullscreenchange', handleFullscreenChange);
     };
   }, [isPresenting, goNext, goPrev, exitPresentation, setPresentingSlideIndex, totalSlides, setPresenting, isAnimating, showSlideNumbers, setShowSlideNumbers, hasBootstrapped, standaloneMode]);
+
+  // Videos play by keyframe (mediaController): the keyframe being moved to
+  // decides, from the moment its transition starts.
+  const objects = usePresentationStore((s) => s.presentation.objects);
+  // eslint-disable-next-line react-hooks/refs -- targetIndexRef is set before the animation state that triggers this render
+  const mediaIndex = isAnimating ? targetIndexRef.current : currentIndex;
+  useMediaController(containerRef, isPresenting && !isPresenterMode ? slides[slideOrder[mediaIndex]] ?? null : null, resources, objects);
 
   // Don't render when in presenter mode (PresenterControlPanel handles that)
   // This view is only for simple fullscreen presentation

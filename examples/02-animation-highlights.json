@@ -1684,10 +1684,7 @@
           "locked": false,
           "visible": true,
           "resourceId": "res-grid",
-          "playing": true,
-          "loop": false,
           "muted": false,
-          "startTime": 0,
           "name": "cropped image",
           "objectGroupIds": [
             "crop-demo"
@@ -1857,10 +1854,7 @@
           "locked": false,
           "visible": true,
           "resourceId": "res-grid",
-          "playing": true,
-          "loop": false,
           "muted": false,
-          "startTime": 0,
           "name": "cropped image",
           "objectGroupIds": [
             "crop-demo"
@@ -2041,10 +2035,7 @@
           "locked": false,
           "visible": true,
           "resourceId": "res-grid",
-          "playing": true,
-          "loop": false,
           "muted": false,
-          "startTime": 0,
           "name": "dissolve"
         },
         "res-fadeinout": {
@@ -2059,10 +2050,7 @@
           "locked": false,
           "visible": true,
           "resourceId": "res-grid",
-          "playing": true,
-          "loop": false,
           "muted": false,
-          "startTime": 0,
           "name": "fadeinout"
         },
         "res-dissolve-cap": {
@@ -2175,10 +2163,7 @@
           "locked": false,
           "visible": true,
           "resourceId": "res-target",
-          "playing": true,
-          "loop": false,
           "muted": false,
-          "startTime": 0,
           "name": "dissolve",
           "transitions": {
             "resource": "dissolve"
@@ -2196,10 +2181,7 @@
           "locked": false,
           "visible": true,
           "resourceId": "res-target",
-          "playing": true,
-          "loop": false,
           "muted": false,
-          "startTime": 0,
           "name": "fadeinout",
           "transitions": {
             "resource": "fadeinout"

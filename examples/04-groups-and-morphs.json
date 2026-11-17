@@ -335,10 +335,7 @@
           "locked": false,
           "visible": true,
           "resourceId": "res-grid",
-          "playing": true,
-          "loop": false,
           "muted": false,
-          "startTime": 0,
           "name": "cropped image",
           "objectGroupIds": [
             "grp-crop"
@@ -405,10 +402,7 @@
           "locked": false,
           "visible": true,
           "resourceId": "res-grid",
-          "playing": true,
-          "loop": false,
           "muted": false,
-          "startTime": 0,
           "name": "tinted image",
           "tint": "rgba(0, 0, 0, 0)",
           "tintStyle": "linear",

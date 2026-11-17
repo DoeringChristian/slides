@@ -41,7 +41,7 @@ function authoredSettings(fillStyle: FillStyle | undefined): Presentation {
     originalWidth: 640, originalHeight: 480, duration: 12, hash: 'fixture-hash' };
   const video: SlideElement = { id: 'video', type: 'image', resourceId: 'video', x: 50, y: 400,
     width: 500, height: 300, rotation: 23, opacity: .6, locked: false, visible: true,
-playing: true, loop: false, muted: true, startTime: 2.3, transitions };
+playback: 'range', playFrom: 2.3, playTo: 9, atEnd: 'hold', muted: true, transitions };
   const group: SlideElement = { id: 'group', type: 'group', childIds: ['vector', 'video'], x: 5, y: 6,
     width: 800, height: 500, rotation: 4, opacity: .9, locked: true, visible: true, transitions };
   for (const el of [box, label, path, vector, video, group]) {

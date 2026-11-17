@@ -2,6 +2,10 @@ export interface ObjectMeta {
   id: string;
   name: string;
   type: 'text' | 'shape' | 'image';
+  /** Videos: the trimmed part of the video (seconds), one range for the
+   *  object across all its keyframes. Absent: the whole video. */
+  trimStart?: number;
+  trimEnd?: number;
 }
 
 export interface Resource {
@@ -442,12 +446,24 @@ export interface ImageElement extends BaseElement {
   tintTo?: string;
   /** Same as a shape's `fillLine`, for the tint. */
   tintLine?: [number, number, number, number];
-  // Video playback properties (used when resource is a video)
-  playing?: boolean;  // Whether video should be playing (can be toggled per keyframe)
-  loop?: boolean;
+  // ── Video playback, per keyframe (videos only). A video is ONE playback
+  // across the keyframes it is on; on arriving at a keyframe it does:
+  //   continue — keep playing from where it is (from the trim start if it
+  //              was not on screen before), to the trim end;
+  //   range    — play `playFrom` → `playTo`;
+  //   still    — show `playFrom`, paused.
+  // `atEnd` says what happens at the end: hold the last frame, or loop.
+  // Times are in seconds of the video; the object's trim range
+  // (ObjectMeta.trimStart / trimEnd) bounds them. See presenter/mediaController.
+  playback?: VideoPlayback;
+  playFrom?: number;
+  playTo?: number;
+  atEnd?: 'hold' | 'loop';
   muted?: boolean;
-  startTime?: number; // Start position in seconds
 }
+
+/** What a video does on arriving at a keyframe (see ImageElement). */
+export type VideoPlayback = 'continue' | 'range' | 'still';
 
 export interface GroupElement extends BaseElement {
   type: 'group';

@@ -161,7 +161,7 @@ function makeFixture(): Presentation {
             type: 'image', resourceId: 'res-vid',
             x: 100, y: 500, width: 480, height: 270,
             rotation: 0, opacity: 1, locked: false, visible: true,
-            playing: true, loop: false, muted: true, startTime: 2.5,
+            playback: 'range', playFrom: 2.5, playTo: 6, atEnd: 'loop', muted: true,
           },
           'el-group': {
             id: 'el-group',

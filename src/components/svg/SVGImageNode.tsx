@@ -2,6 +2,7 @@ import { GroupCrop } from './GroupCrop';
 import React, { useRef, useCallback, useState } from 'react';
 import { usePresentationStore } from '../../store/presentationStore';
 import { RenderImage, RenderShape } from './ElementRenderer';
+import { trimRange } from '../../utils/animation/mediaPlayback';
 import { imageTintShape } from '../../utils/paint/imageTint';
 import { useEditorStore } from '../../store/editorStore';
 import type { ImageElement } from '../../types/presentation';
@@ -37,24 +38,22 @@ export const SVGImageNode: React.FC<Props> = React.memo(({
   // The editor's video player is HTML; its tint is the shared shape fill.
   const tint = isVideo ? imageTintShape(element) : null;
 
-  // Callback ref for video element - handles initial setup only
+  // The editor preview opens on the frame this keyframe starts from (the
+  // range / still start, else the trim start) and plays within the trim.
+  const meta = usePresentationStore((s) => s.presentation.objects[element.id]);
+  const trim = trimRange(meta, resource?.duration);
+  const startFrame = element.playback === 'range' || element.playback === 'still'
+    ? Math.min(trim.end, Math.max(trim.start, element.playFrom ?? trim.start)) : trim.start;
   const setVideoRef = useCallback((video: HTMLVideoElement | null) => {
     if (video) {
       videoRef.current = video;
-
-      // Set initial time if specified
-      if ((element.startTime ?? 0) > 0) {
-        video.currentTime = element.startTime ?? 0;
-      }
-
-      // Reset playing state when video ends (if not looping)
-      video.onended = () => {
-        if (!video.loop) {
-          setIsPlaying(false);
-        }
+      if (startFrame > 0) video.currentTime = startFrame;
+      video.ontimeupdate = () => {
+        if (video.currentTime >= trim.end) { video.pause(); video.currentTime = trim.end; setIsPlaying(false); }
       };
+      video.onended = () => setIsPlaying(false);
     }
-  }, [element.startTime]);
+  }, [startFrame, trim.end]);
 
   // Toggle play/pause
   const handlePlayPause = useCallback((e: React.MouseEvent) => {
@@ -130,7 +129,6 @@ export const SVGImageNode: React.FC<Props> = React.memo(({
               pointerEvents: 'none',
             }}
             muted={element.muted ?? false}
-            loop={element.loop ?? false}
             playsInline
             preload="metadata"
           />

@@ -121,11 +121,8 @@ export function createImageElement(resourceId: string | null, originalWidth: num
     locked: false,
     visible: true,
     resourceId,
-    // Video playback properties (used when resource is a video)
-    playing: true,
-    loop: false,
+    // Videos: keep playing across keyframes (see ImageElement.playback).
     muted: false,
-    startTime: 0,
     ...overrides,
   };
 }

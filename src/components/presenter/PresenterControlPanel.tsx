@@ -7,6 +7,7 @@ import { useSlideAnimation } from '../../hooks/useSlideAnimation';
 import { useAutoAdvanceChain } from '../../hooks/useAutoAdvanceChain';
 import { manualNextTarget } from '../../utils/animation/presenterAdvance';
 import { SlideRenderer } from './presenterUtils';
+import { useMediaController } from './mediaController';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 import type { Slide, Resource } from '../../types/presentation';
 
@@ -25,12 +26,20 @@ interface SlidePreviewProps {
   scale: number;
   label: string;
   resources: Record<string, Resource>;
+  /** Play its videos as the audience sees them (the current slide). */
   autoPlayVideos?: boolean;
   onVideoCommand?: (action: 'play' | 'pause' | 'seek', currentTime?: number) => void;
   onClick?: () => void;
 }
 
 const SlidePreview: React.FC<SlidePreviewProps> = ({ slide, scale, label, resources, autoPlayVideos, onVideoCommand, onClick }) => {
+  // The current slide's videos play as the audience's do (the same media
+  // controller); the next-slide preview stays still. Manual play / pause /
+  // seek on a player go to the controller too, so it does not undo them.
+  const frameRef = useRef<HTMLDivElement>(null);
+  const objects = usePresentationStore(s => s.presentation.objects);
+  const [command, setCommand] = useState<{ action: 'play' | 'pause' | 'seek'; currentTime?: number } | null>(null);
+  useMediaController(frameRef, autoPlayVideos ? slide : null, resources, objects, command);
   if (!slide) {
     return (
       <div className="flex flex-col">
@@ -49,6 +58,7 @@ const SlidePreview: React.FC<SlidePreviewProps> = ({ slide, scale, label, resour
     <div className="flex flex-col">
       <span className="text-xs text-gray-400 mb-1">{label}</span>
       <div
+        ref={frameRef}
         className={`rounded overflow-hidden border-2 border-gray-700 ${onClick ? 'cursor-pointer hover:border-gray-500' : ''}`}
         onClick={onClick}
       >
@@ -57,8 +67,7 @@ const SlidePreview: React.FC<SlidePreviewProps> = ({ slide, scale, label, resour
           width={SLIDE_WIDTH * scale}
           height={SLIDE_HEIGHT * scale}
           resources={resources}
-          autoPlayVideos={autoPlayVideos}
-          onVideoCommand={onVideoCommand}
+          onVideoCommand={(action, currentTime) => { setCommand({ action, currentTime }); onVideoCommand?.(action, currentTime); }}
         />
       </div>
     </div>

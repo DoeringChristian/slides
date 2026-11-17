@@ -141,7 +141,7 @@ try {
   const first = await cards(); await wait(260); const second = await cards();
   const labels = Object.keys(first);
   assert(labels.length >= 3, `previews shown: ${labels}`);
-  for (const label of labels) assert(Number(/data-preview-elements="(\d+)"/.exec(first[label])[1]) >= 2, `${label}: the preview shows the crop with its image`);
+
   // Every easing but the cut ("Constant") moves between two moments.
   const moving = labels.filter(l => first[l] !== second[l]);
   const still = labels.filter(l => !moving.includes(l) && l !== 'Constant');
@@ -157,6 +157,10 @@ try {
     if (moments.every(m => norm(m[labels[i]]) === norm(m[labels[j]]))) same.push(`${labels[i]} = ${labels[j]}`);
   }
   assert(!same.length, `different easings preview differently (identical: ${same})`);
+  // Each preview shows the crop with its image at some point of its loop (the
+  // crop enters in the second half).
+  const count = html => Number(/data-preview-elements="(\d+)"/.exec(html)[1]);
+  for (const label of labels) assert(moments.some(m => count(m[label]) >= 2), `${label}: the preview shows the crop with its image`);
   console.log('PASS crop appear: wipe, grow, iris and fades shape the crop; one fade with its image; cropping an on-screen image eases in; the easing previews animate and differ');
   assert.deepEqual(runtimeErrors, []);
 } finally { ws.close(); }

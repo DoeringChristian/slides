@@ -35,7 +35,7 @@ const DOMAINS = {
   // Playback: easing catalogues, the interpolation engine, per-effect builders.
   animation: [
     'interpolation', 'easingCatalog', 'stickyEasings', 'transitionProperties',
-    'closingBirthCohorts', 'roundedClosingBirth',
+    'mediaPlayback', 'closingBirthCohorts', 'roundedClosingBirth',
     'presenterAdvance', 'morphGeometry', 'pathInterpolation',
   ],
   // Coordinate spaces, sizing and the transforms between them.

@@ -33,7 +33,8 @@ try {
     const rec = new MediaRecorder(c.captureStream(30), { mimeType: 'video/webm' });
     const chunks = []; rec.ondataavailable = e => chunks.push(e.data);
     rec.start();
-    for (let i = 0; i < 15; i++) { ctx.fillStyle = 'rgb(255,0,0)'; ctx.fillRect(0, 0, 320, 200); await new Promise(r => setTimeout(r, 33)); }
+    // Red for the first half second, then blue.
+    for (let i = 0; i < 30; i++) { ctx.fillStyle = i < 15 ? 'rgb(255,0,0)' : 'rgb(0,0,255)'; ctx.fillRect(0, 0, 320, 200); await new Promise(r => setTimeout(r, 33)); }
     await new Promise(r => { rec.onstop = r; rec.stop(); });
     const src = URL.createObjectURL(new Blob(chunks, { type: 'video/webm' }));
     const { preloadResources, renderSlide } = await import('/src/utils/io/exportPdf.ts');
@@ -43,12 +44,17 @@ try {
     const images = await preloadResources([slide], resources);
     const page = renderSlide(slide, resources, images, 1);
     const px = (x, y) => Array.from(page.getContext('2d').getImageData(x, y, 1, 1).data);
-    return { framed: images.has('v'), inside: px(260, 200), outside: px(50, 50) };
+    // A keyframe showing a still from late in the clip exports that frame.
+    const still = { ...slide, id: 's2', elements: { vid: { ...slide.elements.vid, playback: 'still', playFrom: 0.8 } } };
+    const later = renderSlide(still, resources, await preloadResources([still], resources), 1);
+    return { framed: images.has('video:s:vid'), inside: px(260, 200), outside: px(50, 50),
+      still: Array.from(later.getContext('2d').getImageData(260, 200, 1, 1).data) };
   })()`);
   console.log('PDF_VIDEO', JSON.stringify(result));
   assert.equal(result.framed, true, 'the first frame was extracted');
   const [r, g, b] = result.inside;
   assert(r > 200 && g < 60 && b < 60, `the page shows the video's red first frame, not the dark placeholder: ${result.inside}`);
   assert.deepEqual(result.outside.slice(0, 3), [255, 255, 255]);
-  console.log('PASS PDF export shows a video as its first frame');
+  assert(result.still[2] > 200 && result.still[0] < 60, `a Still keyframe exports its own frame (blue, at 0.8 s): ${result.still}`);
+  console.log('PASS PDF export shows a video at the frame its keyframe starts from');
 } finally { ws.close(); }

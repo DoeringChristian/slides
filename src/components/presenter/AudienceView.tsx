@@ -3,6 +3,7 @@ import { usePresentationStore } from '../../store/presentationStore';
 import { useAudienceReceiver } from '../../hooks/usePresenterMode';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 import { composeSlideFrame, renderPresenterElement } from './presenterUtils';
+import { useMediaController } from './mediaController';
 
 export const AudienceView: React.FC = () => {
   const { slideIndex, isAnimating, animProgress, targetIndex, shouldExit, videoCommand, showSlideNumbers } = useAudienceReceiver();
@@ -35,32 +36,11 @@ export const AudienceView: React.FC = () => {
     }
   }, [shouldExit]);
 
-  // Handle video commands from presenter
-  useEffect(() => {
-    if (!videoCommand || !containerRef.current) return;
-    const videos = containerRef.current.querySelectorAll('video');
-    videos.forEach((v) => {
-      switch (videoCommand.action) {
-        case 'play':
-          if (videoCommand.currentTime !== undefined) {
-            v.currentTime = videoCommand.currentTime;
-          }
-          v.play().catch(() => {});
-          break;
-        case 'pause':
-          v.pause();
-          if (videoCommand.currentTime !== undefined) {
-            v.currentTime = videoCommand.currentTime;
-          }
-          break;
-        case 'seek':
-          if (videoCommand.currentTime !== undefined) {
-            v.currentTime = videoCommand.currentTime;
-          }
-          break;
-      }
-    });
-  }, [videoCommand]);
+  // Videos play by keyframe (mediaController) — the keyframe being moved to
+  // decides — and the presenter's manual play / pause / seek reach them.
+  const objects = usePresentationStore((s) => s.presentation.objects);
+  const mediaIndex = isAnimating ? targetIndex : slideIndex;
+  useMediaController(containerRef, slides[slideOrder[mediaIndex]] ?? null, resources, objects, videoCommand);
 
   const totalSlides = slideOrder.length;
   const currentSlide = slides[slideOrder[slideIndex]] || null;

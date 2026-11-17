@@ -287,7 +287,7 @@ const cases: Array<{ name: string; action: Action }> = [
   {
     name: 'addElement (image)',
     action: (s) => s.addElement('s3', imageEl('el-new-img', {
-      playing: true, loop: false, muted: true, startTime: 1.5,
+      playback: 'still', playFrom: 1.5, muted: true,
     })),
   },
   {
