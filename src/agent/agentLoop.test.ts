@@ -7,7 +7,7 @@ import { runAgentTurn, dropOldImages } from './agentLoop';
 import { validateInput } from './validateInput';
 import { toAnthropicMessages, fromAnthropicMessage } from './providers/anthropic';
 import { renderSlideSvg } from './renderSlide';
-import { ToolInputParseError, type AgentMessage, type ModelProvider, type ProviderResult } from './providers/types';
+import { ProviderError, ToolInputParseError, type AgentMessage, type ModelProvider, type ProviderResult } from './providers/types';
 import type Anthropic from '@anthropic-ai/sdk';
 
 vi.mock('../utils/text/glyphPaths', async importOriginal => {
@@ -168,5 +168,32 @@ describe('renderSlideSvg', () => {
     expect(svg).toContain('<path');
     expect(svg).not.toContain('foreignObject');
     expect(svg).toContain('>title</text>');
+  });
+});
+
+describe('context overflow', () => {
+  it('compacts the conversation and retries when the provider says it is too long', async () => {
+    loadDeck();
+    // An earlier long conversation, then the provider refuses once.
+    const messages: AgentMessage[] = [];
+    for (let i = 0; i < 4; i++) {
+      messages.push({ role: 'user', content: [{ type: 'text', text: `ask ${i}` }] });
+      messages.push({ role: 'assistant', content: [{ type: 'tool_call', id: `k${i}`, name: 'get_deck', input: {} }] });
+      messages.push({ role: 'user', content: [{ type: 'tool_result', id: `k${i}`, content: [{ type: 'text', text: 'y'.repeat(5000) }] }] });
+      messages.push({ role: 'assistant', content: [{ type: 'text', text: `ok ${i}` }] });
+    }
+    const steps: Array<ProviderResult | Error> = [
+      new ProviderError('OpenAI error: context_length_exceeded — Your input exceeds the context window of this model.'),
+      say('Summary: earlier the user asked for things 0–2.'),   // the summarizer
+      say('Done.'),
+    ];
+    const provider = scripted(steps);
+    const events: string[] = [];
+    await runAgentTurn({ provider, messages, prompt: [{ type: 'text', text: 'now this' }], signal: new AbortController().signal,
+      onEvent: e => { if (e.type === 'tool_end') events.push(e.summary); } });
+    expect(events.some(s => /Summarized the earlier conversation/.test(s))).toBe(true);
+    expect(JSON.stringify(messages[0])).toContain('[Summary of the earlier conversation]');
+    expect(JSON.stringify(messages)).toContain('now this');
+    expect(messages.at(-1)).toMatchObject({ role: 'assistant', content: [{ type: 'text', text: 'Done.' }] });
   });
 });

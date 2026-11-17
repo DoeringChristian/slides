@@ -1,5 +1,6 @@
 import { DECK_TOOLS, runTool, type ToolContext } from './tools';
 import { SYSTEM_PROMPT } from './systemPrompt';
+import { compactTranscript, isContextOverflow } from './compaction';
 import {
   ToolInputParseError,
   type AgentMessage,
@@ -58,10 +59,30 @@ export async function runAgentTurn(args: {
   const { provider, messages, signal, onEvent } = args;
   dropOldImages(messages);
   appendUser(messages, args.prompt);
+  // This turn's prompt (compaction never trims it; indices shift when it
+  // summarizes, so find it again each time).
+  const prompt = messages[messages.length - 1];
+  let compactions = 0;
+  // Keep the conversation within the context window (see compaction.ts),
+  // shown in the conversation like a tool step.
+  const compact = async (force: boolean) => {
+    const id = `compact-${Date.now()}-${compactions}`;
+    let started = false;
+    const start = () => { if (!started) { started = true; onEvent({ type: 'tool_start', id, name: 'compact_conversation' }); } };
+    if (force) start();
+    const did = await compactTranscript(messages, provider, signal, { force, currentTurnStart: messages.indexOf(prompt) });
+    if (!did && !started) return false;
+    start();
+    onEvent({ type: 'tool_end', id, isError: false, summary: did === 'summarized'
+      ? 'Summarized the earlier conversation to keep it within the model\'s limit'
+      : did ? 'Trimmed earlier tool outputs to keep the conversation within the model\'s limit' : 'Nothing left to compact' });
+    return !!did;
+  };
 
   let parseRetries = 0;
   for (let step = 0; step < MAX_STEPS; step++) {
     if (signal.aborted) return;
+    await compact(false);
     let result;
     try {
       result = await provider.stream({
@@ -74,6 +95,8 @@ export async function runAgentTurn(args: {
       parseRetries = 0;
     } catch (err) {
       if (err instanceof ToolInputParseError && parseRetries++ < MAX_PARSE_RETRIES && !signal.aborted) continue;
+      // Still too large for this model: compact harder and try again (twice).
+      if (isContextOverflow(err) && !signal.aborted && compactions++ < 2 && await compact(true)) { step--; continue; }
       throw err;
     }
     onEvent({ type: 'assistant_done' });
