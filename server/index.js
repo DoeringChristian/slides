@@ -15,7 +15,7 @@ const shares = createShareStore('./data');
 
 // Middleware
 app.use(cors({ exposedHeaders: ['X-Slides-User'] }));
-app.use(express.json({ limit: '50mb' })); // Large limit for presentations with embedded images
+app.use(express.json({ limit: '512mb' })); // Decks embed their images (one figure can carry tens of MB)
 
 // Sign in with ChatGPT: plan usage for the editor's assistant. Loopback-only;
 // see chatgpt.js for why the server, not the browser, holds these tokens.

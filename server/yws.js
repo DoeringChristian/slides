@@ -153,11 +153,22 @@ function subscribeSnapshot(projectId, storage) {
 // Public attach point — call from server/index.js after http.createServer.
 // =============================================================================
 
+/** Largest single collab message accepted (bytes). */
+const MAX_PAYLOAD_BYTES = 512 * 1024 * 1024;
+
 export function attachYWS(httpServer, storage, shares) {
-  const wss = new WebSocketServer({ noServer: true });
+  // Decks embed their images, so one sync message can be large (a figure
+  // with tens of MB of photos); ws's 100 MiB default dropped such decks.
+  const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD_BYTES });
 
   wss.on('connection', (conn, req) => {
     const projectId = req.projectId; // set by upgrade handler
+    // A failing connection (e.g. an oversized message) closes itself; left
+    // unhandled, ws re-throws it and takes the whole server down.
+    conn.on('error', (err) => {
+      console.error(`[yws] connection error on ${projectId}:`, err?.message ?? err);
+      try { conn.terminate(); } catch { /* already gone */ }
+    });
     setupWSConnection(conn, req, { docName: projectId, gc: true });
     subscribeSnapshot(projectId, storage);
   });

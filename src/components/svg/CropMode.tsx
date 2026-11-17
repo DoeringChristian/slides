@@ -3,7 +3,8 @@ import { usePresentationStore } from '../../store/presentationStore';
 import { RenderImage } from './ElementRenderer';
 import { CONTROL_THEME } from './controlTheme';
 import { useCropLayouts } from './useCropLayouts';
-import { groupCropBoundary, groupCropRegions, type CropShape } from '../../utils/model/groupCrop';
+import { groupCropBoundary, type CropShape } from '../../utils/model/groupCrop';
+import { groupCropRegions } from '../../utils/model/cropRegions';
 import type { ImageElement, SlideElement } from '../../types/presentation';
 
 /** Crop mode's view of the image being cropped: the whole picture, greyed

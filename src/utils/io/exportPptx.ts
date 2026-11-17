@@ -1,4 +1,5 @@
-import { attachGroupCrops, ensureCropLayouts, groupCropPaint, type GroupCropElement } from '../model/groupCrop';
+import { attachGroupCrops, groupCropPaint, type GroupCropElement } from '../model/groupCrop';
+import { ensureCropLayouts } from '../model/cropRegions';
 import { renderElement, svgToPngDataURL } from './svgRenderer';
 import PptxGenJS from 'pptxgenjs';
 import { officePaint, officeShapeNeedsSvg, officeShapeSvg } from './officeShape';

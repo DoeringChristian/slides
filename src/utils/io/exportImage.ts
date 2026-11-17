@@ -1,6 +1,6 @@
 import type { Presentation } from '../../types/presentation';
 import { renderSlideToSVG, svgToPngDataURL } from './svgRenderer';
-import { ensureCropLayouts } from '../model/groupCrop';
+import { ensureCropLayouts } from '../model/cropRegions';
 
 export async function exportImage(presentation: Presentation): Promise<void> {
   const activeSlideId = presentation.slideOrder[0];

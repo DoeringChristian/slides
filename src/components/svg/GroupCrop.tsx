@@ -3,7 +3,8 @@ import { isWrapperMode, wrapVisualFx } from './visualFx';
 import type { WriteEffect } from '../../utils/animation/interpolation';
 import { useCropLayouts } from './useCropLayouts';
 import type { SlideElement } from '../../types/presentation';
-import { cropSteps, groupCropClips, groupCropRegions, type CropShape, type GroupCropElement } from '../../utils/model/groupCrop';
+import { cropSteps, groupCropClips, type CropShape, type GroupCropElement } from '../../utils/model/groupCrop';
+import { groupCropRegions } from '../../utils/model/cropRegions';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 
 /** Mask region: the slide with a slide's margin all round (content and crop
