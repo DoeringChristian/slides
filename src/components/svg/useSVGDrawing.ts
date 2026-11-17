@@ -87,6 +87,13 @@ function effectiveDraftStart(draft: PolyDraftState, elements: SlideElement[], su
   return { ...draft, vertices, retainedStart: target ? draft.retainedStart : null };
 }
 
+/** The point that closes the draft when clicked: its first vertex — or,
+ *  extending an existing line, the line's other end. */
+function closeTarget(draft: PolyDraftState): { x: number; y: number } {
+  const i = draft.extension?.end === 'start' ? draft.vertices.length - 2 : 0;
+  return { x: draft.vertices[i], y: draft.vertices[i + 1] };
+}
+
 /** Gesture-local identity only: authored coincident vertices are never deduplicated. */
 function isDraftTerminal(draft: PolyDraftState, point: { x: number; y: number }): boolean {
   const i = draft.extension?.end === 'start' ? 0 : draft.vertices.length - 2;
@@ -270,7 +277,8 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback,
     const idx = extensionRequest.end === 'start' ? 0 : vertices.length - 2;
     const draft: PolyDraftState = {
       context: { slideId: activeSlideId, tool, request: extensionRequest },
-      curve: source.curve ?? 'linear', canClose: false, vertices,
+      // Clicking the line's other end closes it (at least three points).
+      curve: source.curve ?? 'linear', canClose: vertices.length >= 4, vertices,
       previewX: vertices[idx], previewY: vertices[idx + 1],
       extension: { source, end: extensionRequest.end }, previewElement: source,
     };
@@ -331,7 +339,13 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback,
     if (draft.extension) {
       const { source } = draft.extension;
       const current = usePresentationStore.getState().presentation.slides[activeSlideId]?.elements[source.id];
-      if (current?.type === 'shape' && !current.locked && !current.closed && draftVertices.length > (source.points?.length ?? 0)) {
+      if (current?.type === 'shape' && !current.locked && !current.closed && closed && draftVertices.length >= 6) {
+        // Clicked the line's other end: the extended line closes into a loop
+        // (a closed loop has no endpoints to bind).
+        updateElement(activeSlideId, source.id, { ...pathExtensionUpdate(source, draftVertices, draft.extension.end),
+          closed: true, startBinding: null, endBinding: null });
+        setSelectedElements([source.id]);
+      } else if (current?.type === 'shape' && !current.locked && !current.closed && draftVertices.length > (source.points?.length ?? 0)) {
         const preview = resolveExtensionDraft(draft, draftVertices, getSlideElements(), isMetaHeld(), terminalDecision);
         updateElement(activeSlideId, source.id, preview);
         setSelectedElements([source.id]);
@@ -486,9 +500,8 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback,
         // snap — `computePointSnap` may have pulled the cursor to a different
         // element's edge, making it look further from the first vertex than
         // it really is on screen.
-        const dx = pos.x - draft.vertices[0];
-        const dy = pos.y - draft.vertices[1];
-        if (Math.hypot(dx, dy) <= screenPixelsToSlide(POLY_CLOSE_RADIUS, useEditorStore.getState().zoom)) {
+        const target = closeTarget(draft);
+        if (Math.hypot(pos.x - target.x, pos.y - target.y) <= screenPixelsToSlide(POLY_CLOSE_RADIUS, useEditorStore.getState().zoom)) {
           commitPolyDraft(true);
           return;
         }
@@ -597,9 +610,10 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback,
         snappingEnabled ? { others, marginBounds, viewport } : undefined);
       const closed = magnet.closed;
       let previewX = magnet.point.x, previewY = magnet.point.y;
+      const closeAt = closeTarget(draft);
       const previewClosed = !e.metaKey && draft.canClose !== false && draft.vertices.length >= 6
-        && Math.hypot(pos.x - draft.vertices[0], pos.y - draft.vertices[1]) <= screenPixelsToSlide(POLY_CLOSE_RADIUS, useEditorStore.getState().zoom);
-      if (previewClosed) { previewX = draft.vertices[0]; previewY = draft.vertices[1]; }
+        && Math.hypot(pos.x - closeAt.x, pos.y - closeAt.y) <= screenPixelsToSlide(POLY_CLOSE_RADIUS, useEditorStore.getState().zoom);
+      if (previewClosed) { previewX = closeAt.x; previewY = closeAt.y; }
       const atLast = isDraftTerminal(draft, { x: previewX, y: previewY });
       const raw = previewClosed || atLast ? draft.vertices : addDraftVertex(draft, previewX, previewY);
       const elements = getSlideElements(), zoom = useEditorStore.getState().zoom;
