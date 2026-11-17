@@ -1,4 +1,5 @@
-import { useContext } from 'react';
+import { useContext, useMemo } from 'react';
+import { cropContext } from '../../utils/model/groupCrop';
 import { SelectionPropertiesContext } from './SelectionPropertiesContext';
 import { readSlideForMutation } from '../../store/currentMutation';
 import { getActiveUndoManager } from '../../collab/activeUndo';
@@ -58,7 +59,7 @@ export const TransitionButton: React.FC<Props> = ({
   const slideOrder = usePresentationStore((s) => s.presentation.slideOrder);
   const slides = usePresentationStore((s) => s.presentation.slides);
   const batchIds = useContext(SelectionPropertiesContext);
-  const ids = batchIds ?? [elementId];
+  const ids = useMemo(() => batchIds ?? [elementId], [batchIds, elementId]);
   // Read this hook unconditionally — it MUST be above the `if (!canEdit)
   // early return below, or the hook count varies between renders and React
   // aborts mid-reconcile. That abort leaves fibers half-attached and shows
@@ -77,6 +78,9 @@ export const TransitionButton: React.FC<Props> = ({
   const targetSlide = targetSlideId ? slides[targetSlideId] : undefined;
   const candidates = ids.map(id => ({ id, source: sourceSlide?.elements[id], target: targetSlide?.elements[id] }))
     .filter(({ source, target }) => transitionPropertiesDiffer(source, target, group));
+  // A crop shape alone draws nothing: preview it with its crop group.
+  const sourceContext = useMemo(() => sourceSlide ? cropContext(sourceSlide.elements, ids) : [], [sourceSlide, ids]);
+  const targetContext = useMemo(() => targetSlide ? cropContext(targetSlide.elements, ids) : [], [targetSlide, ids]);
   const sourceElement = candidates[0]?.source;
   const targetElement = candidates[0]?.target;
 
@@ -164,6 +168,8 @@ export const TransitionButton: React.FC<Props> = ({
         preview: <TransitionPreview
           sourceElements={ids.flatMap(id => sourceSlide?.elements[id] ? [sourceSlide.elements[id]] : [])}
           targetElements={ids.flatMap(id => targetSlide?.elements[id] ? [targetSlide.elements[id]] : [])}
+          sourceContext={sourceContext}
+          targetContext={targetContext}
           group={group}
           easing={easing}
           options={easing === currentEasing ? currentOptions : undefined}

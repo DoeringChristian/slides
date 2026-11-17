@@ -108,6 +108,16 @@ export function groupCropRegions(shape: CropShape): CropRegion[] {
   return regions.map(region => ({ ...region, ...rotation }));
 }
 
+/** The rest of the crop groups that `ids` are crop shapes of (their image
+ *  and other crop shapes), for showing a crop shape in context — alone it
+ *  draws nothing. */
+export function cropContext(elements: Record<string, SlideElement>, ids: string[]): SlideElement[] {
+  const groups = new Set(ids.map(id => elements[id]).filter((el): el is CropShape => !!el && groupCropBoundary(el)).map(el => el.cropGroupId!));
+  if (!groups.size) return [];
+  const chosen = new Set(ids);
+  return Object.values(elements).filter(el => !chosen.has(el.id) && [...groups].some(g => el.objectGroupIds?.includes(g)));
+}
+
 /** Lay out every crop text in these slides, so synchronous renderers
  *  (exports) clip to their glyphs. */
 export async function ensureCropLayouts(slides: Array<{ elements: Record<string, SlideElement> }>): Promise<void> {
@@ -305,7 +315,8 @@ function absolutePose(rel: Pose, media: Pose): Pose {
  * apart whenever their transitions differ (an `ease` image under a `linear`
  * crop slides beneath a crop that lags behind). A crop group is one object,
  * so the boundary is interpolated in the media's own frame — its pose
- * relative to the image at each keyframe, eased like the image's position —
+ * relative to the image at each keyframe, eased by the crop shape's own
+ * position / size / rotation easings —
  * and placed with the media's interpolated pose. A crop that is fixed
  * relative to the image stays fixed; one that changes relative to it
  * (panning the image under the crop) changes smoothly between keyframes.
@@ -319,7 +330,9 @@ export function followCropMedia(
   slideA: { elements: Record<string, SlideElement> },
   slideB: { elements: Record<string, SlideElement> },
   t: number,
-  ease: (media: SlideElement, t: number) => number,
+  /** Eased progress for an element's transition group — called with the
+   *  crop shape, whose own easings drive its motion relative to the media. */
+  ease: (element: SlideElement, group: 'position' | 'size' | 'rotation', t: number) => number,
 ): SlideElement[] {
   if (!frame.some(groupCropBoundary)) return frame;
   const byId = new Map(frame.map(el => [el.id, el]));
@@ -340,13 +353,16 @@ export function followCropMedia(
     if (!media) continue;
     const relA = onA ? relativePose(poseOf(a), poseOf(mediaA!)) : null;
     const relB = onB ? relativePose(poseOf(b), poseOf(mediaB!)) : null;
-    const k = ease(mediaB ?? mediaA!, t);
+    // The crop shape's own easings (it is the object whose position, size
+    // and rotation are animating — relative to its media).
+    const own = (b ?? a)!;
+    const kp = ease(own, 'position', t), ks = ease(own, 'size', t), kr = ease(own, 'rotation', t);
     const rel: Pose = relA && relB ? {
-      cx: relA.cx + (relB.cx - relA.cx) * k,
-      cy: relA.cy + (relB.cy - relA.cy) * k,
-      w: relA.w + (relB.w - relA.w) * k,
-      h: relA.h + (relB.h - relA.h) * k,
-      rot: relA.rot + (relB.rot - relA.rot) * k,
+      cx: relA.cx + (relB.cx - relA.cx) * kp,
+      cy: relA.cy + (relB.cy - relA.cy) * kp,
+      w: relA.w + (relB.w - relA.w) * ks,
+      h: relA.h + (relB.h - relA.h) * ks,
+      rot: relA.rot + (relB.rot - relA.rot) * kr,
     } : (relA ?? relB)!;
     const pose = absolutePose(rel, poseOf(media));
     // Text keeps its own (interpolated) box size — resizing it would reflow

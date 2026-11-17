@@ -76,6 +76,10 @@ interface Props {
   height: number;
   /** Pause the RAF when the card isn't visible (perf). */
   active?: boolean;
+  /** Drawn as they are (no easing override): what the previewed elements
+   *  need to be seen — a crop shape's image and fellow crop shapes. */
+  sourceContext?: SlideElement[];
+  targetContext?: SlideElement[];
 }
 
 /**
@@ -86,8 +90,11 @@ interface Props {
  * All cards share a single RAF source (`useSharedAnimationTick`) so they tick
  * in phase — picking "ease" vs "write" you see the same t across the grid.
  */
+const NO_CONTEXT: SlideElement[] = [];
+
 export const TransitionPreview: React.FC<Props> = ({
   sourceElement, targetElement, sourceElements, targetElements, group, easing, options, width, height, active = true,
+  sourceContext = NO_CONTEXT, targetContext = NO_CONTEXT,
 }) => {
   const resources = usePresentationStore((s) => s.presentation.resources);
   const t = useSharedAnimationTick(active);
@@ -106,13 +113,14 @@ export const TransitionPreview: React.FC<Props> = ({
     const a = sources.map(el => isVisibilityFadeOut(el, targetMap.get(el.id), group) ? withEasing(el) : el);
     const b = targets.map(el => isVisibilityFadeOut(sourceMap.get(el.id), el, group) ? el : withEasing(el));
     // Include every member on both sides and account for rotated bounds.
-    const bounds = sources.length || targets.length ? selectionResizeBounds([...sources, ...targets]) : {x:0,y:0,width:100,height:50};
+    const all = [...sources, ...targets, ...sourceContext, ...targetContext];
+    const bounds = all.length ? selectionResizeBounds(all) : {x:0,y:0,width:100,height:50};
     const padX = Math.max(20, bounds.width * .2), padY = Math.max(20, bounds.height * .2);
     return {
-      slideA: makePreviewSlide('preview-A', a), slideB: makePreviewSlide('preview-B', b),
+      slideA: makePreviewSlide('preview-A', [...sourceContext, ...a]), slideB: makePreviewSlide('preview-B', [...targetContext, ...b]),
       bbox: { x: bounds.x-padX, y: bounds.y-padY, width: bounds.width+2*padX, height: bounds.height+2*padY },
     };
-  }, [sourceElement, targetElement, sourceElements, targetElements, group, easing, options]);
+  }, [sourceElement, targetElement, sourceElements, targetElements, group, easing, options, sourceContext, targetContext]);
 
   const { renderedElements } = composeSlideFrame({
     slideA,

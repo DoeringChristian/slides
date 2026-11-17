@@ -166,9 +166,30 @@ it('a crop shape on only one keyframe moves with its media, not at its own place
   const crop = createShapeElement('rect', { id: 'c', x: 520, y: 10, width: 50, height: 50, objectGroupIds: ['g'], cropGroupId: 'g' });
   const slideA = { elements: { i: image(0) } }, slideB = { elements: { i: image(500), c: crop } };
   // Mid-transition the image is at x=250; the crop rides along at +20.
-  const frame = followCropMedia([image(250), crop], slideA, slideB, 0.5, (_m, t) => t);
+  const frame = followCropMedia([image(250), crop], slideA, slideB, 0.5, (_e, _g, t) => t);
   expect(frame.find(el => el.id === 'c')!.x).toBeCloseTo(270);
   // Present on both keyframes: unchanged behaviour (relative pose interpolated).
-  const both = followCropMedia([image(250), crop], { elements: { i: image(0), c: { ...crop, x: 20 } } }, slideB, 0.5, (_m, t) => t);
+  const both = followCropMedia([image(250), crop], { elements: { i: image(0), c: { ...crop, x: 20 } } }, slideB, 0.5, (_e, _g, t) => t);
   expect(both.find(el => el.id === 'c')!.x).toBeCloseTo(270);
+});
+
+it("a crop shape's own easings drive its motion; its preview shows it with its crop group", async () => {
+  const { followCropMedia, cropContext } = await import('../utils/model/groupCrop');
+  const { TransitionPreview } = await import('../components/properties/TransitionPreview');
+  const image = createImageElement(null, 200, 100, { id: 'i', x: 0, y: 0, width: 200, height: 100, objectGroupIds: ['g'] });
+  const at = (x: number) => createShapeElement('rect', { id: 'c', x, y: 10, width: 50, height: 50, objectGroupIds: ['g'], cropGroupId: 'g', transitions: { position: 'linear' } });
+  const seen: string[] = [];
+  const frame = followCropMedia([image, at(50)], { elements: { i: image, c: at(0) } }, { elements: { i: image, c: at(100) } }, 0.25,
+    (el, group, t) => { seen.push(`${el.id}:${group}`); return group === 'position' ? t * 2 : t; });
+  expect(seen).toEqual(['c:position', 'c:size', 'c:rotation']);
+  // Position eased by the crop shape's own easing (here doubled), not the image's.
+  expect(frame.find(el => el.id === 'c')!.x).toBeCloseTo(50);
+  // Alone a crop shape draws nothing; with its context the preview shows the cropped image.
+  const elements = { i: image, c: at(0) };
+  const context = cropContext(elements, ['c']);
+  expect(context.map(el => el.id)).toEqual(['i']);
+  const markup = renderToStaticMarkup(<TransitionPreview sourceElements={[at(0)]} targetElements={[at(100)]} sourceContext={context} targetContext={context}
+    group="position" easing="linear" width={120} height={80} active={false} />);
+  expect(markup).toContain('data-group-crop');
+  expect(Number(/data-preview-elements="(\d+)"/.exec(markup)![1])).toBe(2);
 });

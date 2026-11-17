@@ -182,7 +182,7 @@ export function composeSlideFrame(args: {
   // A crop group is one object: its crop moves with the media it crops.
   if (slideB) {
     renderedElements = followCropMedia(renderedElements, slideA, slideB, animProgress,
-      (media, t) => applyEasing(t, media.transitions?.position ?? defaultEasingFor('position', media)));
+      (el, group, t) => applyEasing(t, el.transitions?.[group] ?? defaultEasingFor(group, el)));
   }
   return { renderedElements: attachLabelMasks(renderedElements, bgColor), bgColor };
 }
