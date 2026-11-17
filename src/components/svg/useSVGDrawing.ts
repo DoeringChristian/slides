@@ -130,23 +130,23 @@ function resolveExtensionDraft(draft: PolyDraftState, raw: number[], elements: S
 /** Shared movement/click/release policy: alignment followed by compatible attachment. */
 function snapDraftPoint(point: { x: number; y: number }, origin: { x: number; y: number } | undefined,
   elements: SlideElement[], zoom: number, shift: boolean, suppress: boolean,
-  alignment?: Parameters<typeof snapPathPoint>[4], excludeId = '') {
-  return snapConnectorPoint(point, origin, elements, zoom, shift, suppress, alignment, excludeId);
+  alignment?: Parameters<typeof snapPathPoint>[4], excludeId = '', allowDock = true) {
+  return snapConnectorPoint(point, origin, elements, zoom, shift, suppress, alignment, excludeId, allowDock);
 }
 
 /** Returning to an accepted terminal is not a new zero-length segment. Resolve
  * its retained raw intent against its ORIGINAL adjacency, including modifier replay. */
 function snapPolyDraftPoint(point: { x: number; y: number }, draft: PolyDraftState,
   elements: SlideElement[], zoom: number, shift: boolean, suppress: boolean,
-  alignment?: Parameters<typeof snapPathPoint>[4]) {
+  alignment?: Parameters<typeof snapPathPoint>[4], allowDock = true) {
   const i = draft.extension?.end === 'start' ? 0 : draft.vertices.length - 2;
   const raw = { x: draft.vertices[i], y: draft.vertices[i + 1] };
   const snapped = isDraftTerminal(draft, point) ? null : snapDraftPoint(point, draft.acceptedTerminal ?? raw,
-    elements, zoom, shift, suppress, alignment, draft.extension?.source.id);
+    elements, zoom, shift, suppress, alignment, draft.extension?.source.id, allowDock);
   if (snapped && !isDraftTerminal(draft, snapped.point)) return snapped;
   const adjacentIndex = i === 0 ? 2 : i - 2;
   const adjacent = draft.vertices.length >= 4 ? { x: draft.vertices[adjacentIndex], y: draft.vertices[adjacentIndex + 1] } : undefined;
-  return snapDraftPoint(raw, adjacent, elements, zoom, shift, suppress, alignment, draft.extension?.source.id);
+  return snapDraftPoint(raw, adjacent, elements, zoom, shift, suppress, alignment, draft.extension?.source.id, allowDock);
 }
 
 /** Same-path vertex magnets for a draft: every ALREADY ACCEPTED vertex — the
@@ -172,7 +172,10 @@ function resolvePolyDraftPoint(point: { x: number; y: number }, draft: PolyDraft
   tool: import('../../types/presentation').Tool, elements: SlideElement[], zoom: number,
   shift: boolean, suppress: boolean, alignment?: Parameters<typeof snapPathPoint>[4]) {
   const prospectiveClosed = !draft.extension && !!composeUserShape(tool, { points: addDraftVertex(draft, point.x, point.y) }).closed;
-  const snapped = snapPolyDraftPoint(point, draft, elements, zoom, shift, suppress || prospectiveClosed, draftMagnets(draft, alignment));
+  // A closed shape has no endpoints to bind, but its points still align
+  // (to objects' edges and centres, and to its own vertices).
+  const aligned = snapPolyDraftPoint(point, draft, elements, zoom, shift, suppress, draftMagnets(draft, alignment), !prospectiveClosed);
+  const snapped = prospectiveClosed ? { ...aligned, drop: null } : aligned;
   const vertices = addDraftVertex(draft, snapped.point.x, snapped.point.y);
   const closed = !draft.extension && !!composeUserShape(tool, { points: vertices }).closed;
   if (prospectiveClosed && !closed && !suppress && vertices.length >= 4) {

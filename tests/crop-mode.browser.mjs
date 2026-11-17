@@ -99,6 +99,18 @@ try {
     const toSibling = await drawCrop([380, 175], [402, 210]);
     assert.equal(toSibling.y, rect.y, `crop edge snaps to a fellow crop shape's edge: ${toSibling.y} vs ${rect.y}`);
     await undo(); await wait(100);
+    // Polygon points snap to every edge of the image (left/right included);
+    // the last point's y (297) has no target nearby and stays.
+    {
+      const before = new Set(Object.keys((await state()).elements));
+      await evaluate("canvasTest.editor.getState().setTool('polygon')");
+      for (const p of [[253, 153], [403, 152], [547, 347], [252, 297]]) { await click(await screen(...p)); await wait(80); }
+      await key('Enter'); await wait(200);
+      const poly = Object.values((await state()).elements).find(el => !before.has(el.id));
+      const pts = await evaluate(`canvasTest.pathPointsInSlide(canvasTest.snapshot().slide.elements[${JSON.stringify(poly?.id)}])`);
+      assert.deepEqual(pts.map(Math.round), [250, 150, 400, 150, 550, 350, 250, 297], `polygon points snap to the image's edges and centre: ${pts}`);
+      await undo(); await wait(100);
+    }
     await evaluate("canvasTest.editor.setState({snapToGrid:false})");
     assert.deepEqual(await pixel(320, 210), RED_PX, 'inside the crop shows');
     assert.deepEqual(await pixel(480, 300), WHITE_PX, 'outside the crop is cut');
