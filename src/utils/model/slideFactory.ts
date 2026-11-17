@@ -121,11 +121,6 @@ export function createImageElement(resourceId: string | null, originalWidth: num
     locked: false,
     visible: true,
     resourceId,
-    // Image crop properties
-    cropX: 0,
-    cropY: 0,
-    cropWidth: originalWidth,
-    cropHeight: originalHeight,
     // Video playback properties (used when resource is a video)
     playing: true,
     loop: false,

@@ -70,6 +70,7 @@ export const SVGElementRenderer: React.FC<Props> = React.memo(({
           onPointerDown={handlePointerDown}
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
+          onDoubleClick={handleDoubleClick}
         />
       );
     default:

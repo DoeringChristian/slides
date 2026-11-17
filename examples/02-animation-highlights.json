@@ -1657,7 +1657,7 @@
           "opacity": 1,
           "locked": false,
           "visible": true,
-          "text": "Crop easings — from",
+          "text": "Crop shapes — from",
           "textSizing": "auto-content",
           "boundTextLayout": "padded",
           "style": {
@@ -1672,184 +1672,118 @@
             "lineHeight": 1.2
           }
         },
-        "crop-cropfade": {
-          "id": "crop-cropfade",
+        "crop-image": {
+          "id": "crop-image",
           "type": "image",
-          "x": 60,
-          "y": 150,
-          "width": 200,
-          "height": 150,
+          "x": 240,
+          "y": 130,
+          "width": 480,
+          "height": 360,
           "rotation": 0,
           "opacity": 1,
           "locked": false,
           "visible": true,
           "resourceId": "res-grid",
-          "cropX": 0,
-          "cropY": 0,
-          "cropWidth": 320,
-          "cropHeight": 240,
           "playing": true,
           "loop": false,
           "muted": false,
           "startTime": 0,
-          "name": "cropfade"
+          "name": "cropped image",
+          "objectGroupIds": [
+            "crop-demo"
+          ]
         },
-        "crop-cropfadeease": {
-          "id": "crop-cropfadeease",
-          "type": "image",
-          "x": 285,
+        "crop-rect": {
+          "id": "crop-rect",
+          "type": "shape",
+          "shapeType": "rect",
+          "creationPreset": "rect",
+          "x": 260,
           "y": 150,
-          "width": 200,
-          "height": 150,
+          "width": 160,
+          "height": 120,
           "rotation": 0,
           "opacity": 1,
           "locked": false,
           "visible": true,
-          "resourceId": "res-grid",
-          "cropX": 0,
-          "cropY": 0,
-          "cropWidth": 320,
-          "cropHeight": 240,
-          "playing": true,
-          "loop": false,
-          "muted": false,
-          "startTime": 0,
-          "name": "cropfadeease"
+          "fill": "rgba(0, 0, 0, 0.7)",
+          "stroke": "",
+          "strokeWidth": 2,
+          "cornerRadius": 8,
+          "name": "crop rectangle (tinting)",
+          "fillStyle": "linear",
+          "fillTo": "rgba(0, 0, 0, 0)",
+          "fillLine": [
+            0.5,
+            0,
+            0.5,
+            1
+          ],
+          "cropTint": true,
+          "objectGroupIds": [
+            "crop-demo"
+          ],
+          "cropGroupId": "crop-demo"
         },
-        "crop-croplift": {
-          "id": "crop-croplift",
-          "type": "image",
-          "x": 510,
-          "y": 150,
-          "width": 200,
-          "height": 150,
+        "crop-ellipse": {
+          "id": "crop-ellipse",
+          "type": "shape",
+          "shapeType": "ellipse",
+          "creationPreset": "ellipse",
+          "x": 520,
+          "y": 330,
+          "width": 140,
+          "height": 120,
           "rotation": 0,
           "opacity": 1,
           "locked": false,
           "visible": true,
-          "resourceId": "res-grid",
-          "cropX": 0,
-          "cropY": 0,
-          "cropWidth": 320,
-          "cropHeight": 240,
-          "playing": true,
-          "loop": false,
-          "muted": false,
-          "startTime": 0,
-          "name": "croplift"
+          "fill": "#000000",
+          "stroke": "",
+          "strokeWidth": 2,
+          "cornerRadius": 0,
+          "name": "crop ellipse",
+          "objectGroupIds": [
+            "crop-demo"
+          ],
+          "cropGroupId": "crop-demo"
         },
-        "crop-cropliftease": {
-          "id": "crop-cropliftease",
-          "type": "image",
-          "x": 735,
-          "y": 150,
-          "width": 200,
-          "height": 150,
+        "crop-hole": {
+          "id": "crop-hole",
+          "type": "shape",
+          "shapeType": "ellipse",
+          "creationPreset": "ellipse",
+          "x": 300,
+          "y": 180,
+          "width": 50,
+          "height": 50,
           "rotation": 0,
           "opacity": 1,
           "locked": false,
           "visible": true,
-          "resourceId": "res-grid",
-          "cropX": 0,
-          "cropY": 0,
-          "cropWidth": 320,
-          "cropHeight": 240,
-          "playing": true,
-          "loop": false,
-          "muted": false,
-          "startTime": 0,
-          "name": "cropliftease"
+          "fill": "#000000",
+          "stroke": "",
+          "strokeWidth": 2,
+          "cornerRadius": 0,
+          "name": "crop hole (subtract)",
+          "objectGroupIds": [
+            "crop-demo"
+          ],
+          "cropGroupId": "crop-demo",
+          "cropOp": "subtract"
         },
-        "crop-cropfade-cap": {
-          "id": "crop-cropfade-cap",
+        "crop-cap": {
+          "id": "crop-cap",
           "type": "text",
-          "x": 60,
-          "y": 320,
-          "width": 200,
+          "x": 240,
+          "y": 500,
+          "width": 480,
           "height": 22,
           "rotation": 0,
           "opacity": 1,
           "locked": false,
           "visible": true,
-          "text": "cropfade",
-          "textSizing": "auto-content",
-          "boundTextLayout": "padded",
-          "style": {
-            "fontFamily": "Inter",
-            "fontSize": 14,
-            "fontWeight": "normal",
-            "fontStyle": "normal",
-            "textDecoration": "none",
-            "color": "#5f6368",
-            "align": "center",
-            "verticalAlign": "top",
-            "lineHeight": 1.2
-          }
-        },
-        "crop-cropfadeease-cap": {
-          "id": "crop-cropfadeease-cap",
-          "type": "text",
-          "x": 285,
-          "y": 320,
-          "width": 200,
-          "height": 22,
-          "rotation": 0,
-          "opacity": 1,
-          "locked": false,
-          "visible": true,
-          "text": "cropfadeease",
-          "textSizing": "auto-content",
-          "boundTextLayout": "padded",
-          "style": {
-            "fontFamily": "Inter",
-            "fontSize": 14,
-            "fontWeight": "normal",
-            "fontStyle": "normal",
-            "textDecoration": "none",
-            "color": "#5f6368",
-            "align": "center",
-            "verticalAlign": "top",
-            "lineHeight": 1.2
-          }
-        },
-        "crop-croplift-cap": {
-          "id": "crop-croplift-cap",
-          "type": "text",
-          "x": 510,
-          "y": 320,
-          "width": 200,
-          "height": 22,
-          "rotation": 0,
-          "opacity": 1,
-          "locked": false,
-          "visible": true,
-          "text": "croplift",
-          "textSizing": "auto-content",
-          "boundTextLayout": "padded",
-          "style": {
-            "fontFamily": "Inter",
-            "fontSize": 14,
-            "fontWeight": "normal",
-            "fontStyle": "normal",
-            "textDecoration": "none",
-            "color": "#5f6368",
-            "align": "center",
-            "verticalAlign": "top",
-            "lineHeight": 1.2
-          }
-        },
-        "crop-cropliftease-cap": {
-          "id": "crop-cropliftease-cap",
-          "type": "text",
-          "x": 735,
-          "y": 320,
-          "width": 200,
-          "height": 22,
-          "rotation": 0,
-          "opacity": 1,
-          "locked": false,
-          "visible": true,
-          "text": "cropliftease",
+          "text": "crop group: crop shapes add (rectangle, ellipse) or subtract (the hole), in layer order; the rectangle also tints (any fill, here a gradient)",
           "textSizing": "auto-content",
           "boundTextLayout": "padded",
           "style": {
@@ -1867,14 +1801,11 @@
       },
       "elementOrder": [
         "crop-title",
-        "crop-cropfade",
-        "crop-cropfadeease",
-        "crop-croplift",
-        "crop-cropliftease",
-        "crop-cropfade-cap",
-        "crop-cropfadeease-cap",
-        "crop-croplift-cap",
-        "crop-cropliftease-cap"
+        "crop-image",
+        "crop-rect",
+        "crop-ellipse",
+        "crop-hole",
+        "crop-cap"
       ],
       "background": {
         "type": "solid",
@@ -1883,7 +1814,7 @@
       "transition": {
         "duration": 300
       },
-      "notes": "Four copies of the same source image, fully framed."
+      "notes": "One image cropped by two shapes: the crop shows the union of a rectangle and an ellipse."
     },
     "example-animation-s9": {
       "id": "example-animation-s9",
@@ -1899,7 +1830,7 @@
           "opacity": 1,
           "locked": false,
           "visible": true,
-          "text": "Crop easings — to",
+          "text": "Crop shapes — to",
           "textSizing": "auto-content",
           "boundTextLayout": "padded",
           "style": {
@@ -1914,196 +1845,129 @@
             "lineHeight": 1.2
           }
         },
-        "crop-cropfade": {
-          "id": "crop-cropfade",
+        "crop-image": {
+          "id": "crop-image",
           "type": "image",
-          "x": 60,
-          "y": 150,
-          "width": 200,
-          "height": 150,
+          "x": 240,
+          "y": 130,
+          "width": 480,
+          "height": 360,
           "rotation": 0,
           "opacity": 1,
           "locked": false,
           "visible": true,
           "resourceId": "res-grid",
-          "cropX": 40,
-          "cropY": 40,
-          "cropWidth": 120,
-          "cropHeight": 90,
           "playing": true,
           "loop": false,
           "muted": false,
           "startTime": 0,
-          "name": "cropfade",
-          "transitions": {
-            "crop": "cropfade"
-          }
+          "name": "cropped image",
+          "objectGroupIds": [
+            "crop-demo"
+          ]
         },
-        "crop-cropfadeease": {
-          "id": "crop-cropfadeease",
-          "type": "image",
-          "x": 285,
-          "y": 150,
-          "width": 200,
-          "height": 150,
+        "crop-rect": {
+          "id": "crop-rect",
+          "type": "shape",
+          "shapeType": "rect",
+          "creationPreset": "rect",
+          "x": 400,
+          "y": 200,
+          "width": 240,
+          "height": 180,
           "rotation": 0,
           "opacity": 1,
           "locked": false,
           "visible": true,
-          "resourceId": "res-grid",
-          "cropX": 60,
-          "cropY": 40,
-          "cropWidth": 120,
-          "cropHeight": 90,
-          "playing": true,
-          "loop": false,
-          "muted": false,
-          "startTime": 0,
-          "name": "cropfadeease",
+          "fill": "rgba(0, 0, 0, 0.7)",
+          "stroke": "",
+          "strokeWidth": 2,
+          "cornerRadius": 8,
+          "name": "crop rectangle (tinting)",
+          "fillStyle": "linear",
+          "fillTo": "rgba(0, 0, 0, 0)",
+          "fillLine": [
+            0.5,
+            1,
+            0.5,
+            0
+          ],
+          "cropTint": true,
+          "objectGroupIds": [
+            "crop-demo"
+          ],
+          "cropGroupId": "crop-demo",
           "transitions": {
-            "crop": "cropfadeease"
+            "position": "ease",
+            "size": "ease"
           }
         },
-        "crop-croplift": {
-          "id": "crop-croplift",
-          "type": "image",
-          "x": 510,
-          "y": 150,
+        "crop-ellipse": {
+          "id": "crop-ellipse",
+          "type": "shape",
+          "shapeType": "ellipse",
+          "creationPreset": "ellipse",
+          "x": 260,
+          "y": 300,
           "width": 200,
-          "height": 150,
+          "height": 170,
           "rotation": 0,
           "opacity": 1,
           "locked": false,
           "visible": true,
-          "resourceId": "res-grid",
-          "cropX": 80,
-          "cropY": 40,
-          "cropWidth": 120,
-          "cropHeight": 90,
-          "playing": true,
-          "loop": false,
-          "muted": false,
-          "startTime": 0,
-          "name": "croplift",
+          "fill": "#000000",
+          "stroke": "",
+          "strokeWidth": 2,
+          "cornerRadius": 0,
+          "name": "crop ellipse",
+          "objectGroupIds": [
+            "crop-demo"
+          ],
+          "cropGroupId": "crop-demo",
           "transitions": {
-            "crop": "croplift"
+            "position": "ease",
+            "size": "ease"
           }
         },
-        "crop-cropliftease": {
-          "id": "crop-cropliftease",
-          "type": "image",
-          "x": 735,
-          "y": 150,
-          "width": 200,
-          "height": 150,
+        "crop-hole": {
+          "id": "crop-hole",
+          "type": "shape",
+          "shapeType": "ellipse",
+          "creationPreset": "ellipse",
+          "x": 495,
+          "y": 265,
+          "width": 50,
+          "height": 50,
           "rotation": 0,
           "opacity": 1,
           "locked": false,
           "visible": true,
-          "resourceId": "res-grid",
-          "cropX": 100,
-          "cropY": 40,
-          "cropWidth": 120,
-          "cropHeight": 90,
-          "playing": true,
-          "loop": false,
-          "muted": false,
-          "startTime": 0,
-          "name": "cropliftease",
+          "fill": "#000000",
+          "stroke": "",
+          "strokeWidth": 2,
+          "cornerRadius": 0,
+          "name": "crop hole (subtract)",
+          "objectGroupIds": [
+            "crop-demo"
+          ],
+          "cropGroupId": "crop-demo",
+          "cropOp": "subtract",
           "transitions": {
-            "crop": "cropliftease"
+            "position": "ease"
           }
         },
-        "crop-cropfade-cap": {
-          "id": "crop-cropfade-cap",
+        "crop-cap": {
+          "id": "crop-cap",
           "type": "text",
-          "x": 60,
-          "y": 320,
-          "width": 200,
+          "x": 240,
+          "y": 500,
+          "width": 480,
           "height": 22,
           "rotation": 0,
           "opacity": 1,
           "locked": false,
           "visible": true,
-          "text": "cropfade",
-          "textSizing": "auto-content",
-          "boundTextLayout": "padded",
-          "style": {
-            "fontFamily": "Inter",
-            "fontSize": 14,
-            "fontWeight": "normal",
-            "fontStyle": "normal",
-            "textDecoration": "none",
-            "color": "#5f6368",
-            "align": "center",
-            "verticalAlign": "top",
-            "lineHeight": 1.2
-          }
-        },
-        "crop-cropfadeease-cap": {
-          "id": "crop-cropfadeease-cap",
-          "type": "text",
-          "x": 285,
-          "y": 320,
-          "width": 200,
-          "height": 22,
-          "rotation": 0,
-          "opacity": 1,
-          "locked": false,
-          "visible": true,
-          "text": "cropfadeease",
-          "textSizing": "auto-content",
-          "boundTextLayout": "padded",
-          "style": {
-            "fontFamily": "Inter",
-            "fontSize": 14,
-            "fontWeight": "normal",
-            "fontStyle": "normal",
-            "textDecoration": "none",
-            "color": "#5f6368",
-            "align": "center",
-            "verticalAlign": "top",
-            "lineHeight": 1.2
-          }
-        },
-        "crop-croplift-cap": {
-          "id": "crop-croplift-cap",
-          "type": "text",
-          "x": 510,
-          "y": 320,
-          "width": 200,
-          "height": 22,
-          "rotation": 0,
-          "opacity": 1,
-          "locked": false,
-          "visible": true,
-          "text": "croplift",
-          "textSizing": "auto-content",
-          "boundTextLayout": "padded",
-          "style": {
-            "fontFamily": "Inter",
-            "fontSize": 14,
-            "fontWeight": "normal",
-            "fontStyle": "normal",
-            "textDecoration": "none",
-            "color": "#5f6368",
-            "align": "center",
-            "verticalAlign": "top",
-            "lineHeight": 1.2
-          }
-        },
-        "crop-cropliftease-cap": {
-          "id": "crop-cropliftease-cap",
-          "type": "text",
-          "x": 735,
-          "y": 320,
-          "width": 200,
-          "height": 22,
-          "rotation": 0,
-          "opacity": 1,
-          "locked": false,
-          "visible": true,
-          "text": "cropliftease",
+          "text": "crop group: crop shapes add (rectangle, ellipse) or subtract (the hole), in layer order; the rectangle also tints (any fill, here a gradient)",
           "textSizing": "auto-content",
           "boundTextLayout": "padded",
           "style": {
@@ -2121,14 +1985,11 @@
       },
       "elementOrder": [
         "crop-title",
-        "crop-cropfade",
-        "crop-cropfadeease",
-        "crop-croplift",
-        "crop-cropliftease",
-        "crop-cropfade-cap",
-        "crop-cropfadeease-cap",
-        "crop-croplift-cap",
-        "crop-cropliftease-cap"
+        "crop-image",
+        "crop-rect",
+        "crop-ellipse",
+        "crop-hole",
+        "crop-cap"
       ],
       "background": {
         "type": "solid",
@@ -2137,7 +1998,7 @@
       "transition": {
         "duration": 300
       },
-      "notes": "Each crop tightens onto a different cell of the grid, with a different crop easing."
+      "notes": "The crop shapes move and grow; the crop follows them."
     },
     "example-animation-s10": {
       "id": "example-animation-s10",
@@ -2180,10 +2041,6 @@
           "locked": false,
           "visible": true,
           "resourceId": "res-grid",
-          "cropX": 0,
-          "cropY": 0,
-          "cropWidth": 320,
-          "cropHeight": 240,
           "playing": true,
           "loop": false,
           "muted": false,
@@ -2202,10 +2059,6 @@
           "locked": false,
           "visible": true,
           "resourceId": "res-grid",
-          "cropX": 0,
-          "cropY": 0,
-          "cropWidth": 320,
-          "cropHeight": 240,
           "playing": true,
           "loop": false,
           "muted": false,
@@ -2322,10 +2175,6 @@
           "locked": false,
           "visible": true,
           "resourceId": "res-target",
-          "cropX": 0,
-          "cropY": 0,
-          "cropWidth": 320,
-          "cropHeight": 240,
           "playing": true,
           "loop": false,
           "muted": false,
@@ -2347,10 +2196,6 @@
           "locked": false,
           "visible": true,
           "resourceId": "res-target",
-          "cropX": 0,
-          "cropY": 0,
-          "cropWidth": 320,
-          "cropHeight": 240,
           "playing": true,
           "loop": false,
           "muted": false,
@@ -2609,44 +2454,29 @@
       "name": "crop-title",
       "type": "text"
     },
-    "crop-cropfade": {
-      "id": "crop-cropfade",
-      "name": "cropfade",
+    "crop-image": {
+      "id": "crop-image",
+      "name": "cropped image",
       "type": "image"
     },
-    "crop-cropfadeease": {
-      "id": "crop-cropfadeease",
-      "name": "cropfadeease",
-      "type": "image"
+    "crop-rect": {
+      "id": "crop-rect",
+      "name": "crop rectangle (tinting)",
+      "type": "shape"
     },
-    "crop-croplift": {
-      "id": "crop-croplift",
-      "name": "croplift",
-      "type": "image"
+    "crop-ellipse": {
+      "id": "crop-ellipse",
+      "name": "crop ellipse",
+      "type": "shape"
     },
-    "crop-cropliftease": {
-      "id": "crop-cropliftease",
-      "name": "cropliftease",
-      "type": "image"
+    "crop-hole": {
+      "id": "crop-hole",
+      "name": "crop hole (subtract)",
+      "type": "shape"
     },
-    "crop-cropfade-cap": {
-      "id": "crop-cropfade-cap",
-      "name": "crop-cropfade-cap",
-      "type": "text"
-    },
-    "crop-cropfadeease-cap": {
-      "id": "crop-cropfadeease-cap",
-      "name": "crop-cropfadeease-cap",
-      "type": "text"
-    },
-    "crop-croplift-cap": {
-      "id": "crop-croplift-cap",
-      "name": "crop-croplift-cap",
-      "type": "text"
-    },
-    "crop-cropliftease-cap": {
-      "id": "crop-cropliftease-cap",
-      "name": "crop-cropliftease-cap",
+    "crop-cap": {
+      "id": "crop-cap",
+      "name": "crop-cap",
       "type": "text"
     },
     "res-title": {

@@ -33,10 +33,10 @@ try {
   await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
   for (const collab of [false, true]) {
     await waitForCanvasFixture(evaluate);
-    await evaluate(`canvasTest.setup(${JSON.stringify({mode:'production',collab,creationProperties:true,objectList:true,subject:{type:'image',x:250,y:150,width:300,height:200,cropX:0,cropY:0,cropWidth:300,cropHeight:200,resourceId:'red'},targets:[{id:'boundary',shapeType:'ellipse',x:300,y:180,width:150,height:120,stroke:'#000000',strokeWidth:4,fill:'#00ff00'}]})})`);
+    await evaluate(`canvasTest.setup(${JSON.stringify({mode:'production',collab,creationProperties:true,objectList:true,subject:{type:'image',x:250,y:150,width:300,height:200,resourceId:'red'},targets:[{id:'boundary',shapeType:'ellipse',x:300,y:180,width:150,height:120,stroke:'#000000',strokeWidth:4,fill:'#00ff00'}]})})`);
     await wait(100);
     await evaluate(`${RED};canvasTest.editor.getState().setSelectedElements(['subject','boundary'])`);
-    await wait(150); await button('Crop to shape');
+    await wait(150); await button('Crop to shapes');await evaluate('canvasTest.editor.getState().exitCropMode()');await wait(80);
     await evaluate(`canvasTest.editor.getState().clearSelection()`); await wait(50);
     // Select the crop group by clicking what is visible of it.
     await click(await screen(375, 240)); await wait(120);
@@ -65,7 +65,7 @@ try {
   // which another element enters ahead of it (it used to remount and flash).
   await evaluate(RED);
   const ids = await evaluate(`(()=>{
-    const img = {id:'img',type:'image',x:100,y:100,width:300,height:200,rotation:0,opacity:1,locked:false,visible:true,resourceId:'red',cropX:0,cropY:0,cropWidth:300,cropHeight:200,objectGroupIds:['g']};
+    const img = {id:'img',type:'image',x:100,y:100,width:300,height:200,rotation:0,opacity:1,locked:false,visible:true,resourceId:'red',objectGroupIds:['g']};
     const mask = {id:'mask',type:'shape',shapeType:'ellipse',creationPreset:'ellipse',x:150,y:120,width:150,height:120,rotation:0,opacity:1,locked:false,visible:true,fill:'',stroke:'#000',strokeWidth:2,cornerRadius:0,objectGroupIds:['g'],cropGroupId:'g'};
     const other = {...mask,id:'other',objectGroupIds:undefined,cropGroupId:undefined,x:600,y:50};
     const slide = (els) => ({id:'s'+els.length,elements:Object.fromEntries(els.map(e=>[e.id,e])),elementOrder:els.map(e=>e.id),background:{type:'solid',color:'#fff'},transition:{duration:300},notes:''});
@@ -77,7 +77,7 @@ try {
   // frame. A clipped video must survive that reorder, or it blanks (reloads)
   // while its crop outline is still fading out.
   const exitIds = await evaluate(`(()=>{
-    const img = {id:'img',type:'image',x:100,y:100,width:300,height:200,rotation:0,opacity:1,locked:false,visible:true,resourceId:'red',cropX:0,cropY:0,cropWidth:300,cropHeight:200,objectGroupIds:['g']};
+    const img = {id:'img',type:'image',x:100,y:100,width:300,height:200,rotation:0,opacity:1,locked:false,visible:true,resourceId:'red',objectGroupIds:['g']};
     const mask = {id:'mask',type:'shape',shapeType:'ellipse',creationPreset:'ellipse',x:150,y:120,width:150,height:120,rotation:0,opacity:1,locked:false,visible:true,fill:'',stroke:'#000',strokeWidth:2,cornerRadius:0,objectGroupIds:['g'],cropGroupId:'g'};
     const other = {...mask,id:'other',objectGroupIds:undefined,cropGroupId:undefined,x:600,y:50};
     const slide = (els) => ({id:'s'+els.length,elements:Object.fromEntries(els.map(e=>[e.id,e])),elementOrder:els.map(e=>e.id),background:{type:'solid',color:'#fff'},transition:{duration:300},notes:''});

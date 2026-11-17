@@ -23,6 +23,7 @@ import { pathPointsInSlide, pathExtensionUpdate } from '../../utils/paths/pathEd
 import { pathBoundsFor } from '../../utils/paths/pathShapes';
 import { getBindingTarget2, bindDraftEndpoints, resolveBinding, bindingAimGuides, connectorDockCue, bindingAimPoint, supportsConnectorDocks, type ConnectorHighlightCallback, type BindingAimGuide } from '../../utils/paths/connectorUtils';
 import type { PathCurve, ConnectorBinding, SlideElement, ShapeElement } from '../../types/presentation';
+import type { CropShape } from '../../utils/model/groupCrop';
 
 /** Click within this many screen pixels of the first vertex while drafting a
  *  polygon / bspline closes the path. Matches typical SVG editors. */
@@ -178,6 +179,27 @@ function resolvePolyDraftPoint(point: { x: number; y: number }, draft: PolyDraft
 // Drawing hook — pointer-event based so it works for mouse, touch, and stylus.
 // `onConnectorHighlight` outlines the element a drawn line/arrow endpoint
 // would bind to (SVGSlideCanvas renders SVGConnectorHighlight from it).
+/** Add a drawn shape (or text) and select it. In crop mode it becomes a crop
+ *  shape of the image being cropped instead (a shape unstroked and unbound:
+ *  it only marks the area that shows; text crops by its glyphs), and the
+ *  crop group becomes the entered group. */
+function commitShape(slideId: string, el: SlideElement) {
+  const editor = useEditorStore.getState();
+  const imageId = editor.croppingElementId;
+  if (imageId && (el.type === 'shape' || el.type === 'text')) {
+    const shape: CropShape = el.type === 'text' ? el
+      : { ...el, stroke: '', startBinding: null, endBinding: null, startHead: 'none', endHead: 'none' };
+    const group = usePresentationStore.getState().addCropShape(slideId, imageId, shape);
+    if (group) {
+      useEditorStore.setState({ activeObjectGroupId: group });
+      useEditorStore.getState().setSelectedElements([el.id]);
+      return;
+    }
+  }
+  usePresentationStore.getState().addElement(slideId, el);
+  editor.setSelectedElements([el.id]);
+}
+
 export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback, svgRef?: React.RefObject<SVGSVGElement | null>) {
   const [drawState, setReactDrawState] = useState<DrawState>({
     startX: 0, startY: 0, currentX: 0, currentY: 0, isDrawing: false,
@@ -229,7 +251,6 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback,
   const setEditingTextId = useEditorStore((s) => s.setEditingTextId);
   const extensionRequest = useEditorStore((s) => s.pathExtension);
   const updateElement = usePresentationStore((s) => s.updateElement);
-  const addElement = usePresentationStore((s) => s.addElement);
 
   useEffect(() => {
     if (!extensionRequest) {
@@ -347,15 +368,14 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback,
       startBinding,
       endBinding,
     });
-    addElement(activeSlideId, el);
-    setSelectedElements([el.id]);
+    commitShape(activeSlideId, el);
     polyDraftRef.current = null;
     setPolyDraft(null);
     setGuides([]);
     onConnectorHighlight?.(null);
     setTool('select');
     justFinishedDrawing.current = true;
-  }, [activeSlideId, addElement, updateElement, setSelectedElements, setTool, getSlideElements, onConnectorHighlight, finishLine]);
+  }, [activeSlideId, updateElement, setSelectedElements, setTool, getSlideElements, onConnectorHighlight, finishLine]);
 
   const clearIconPlacement = useCallback(() => {
     finishIcon();
@@ -753,7 +773,7 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback,
       const dot = composeLineDot(current.snappedStartX, current.snappedStartY);
       const undo = getActiveUndoManager();
       undo?.stopCapturing();
-      addElement(activeSlideId, dot);
+      commitShape(activeSlideId, dot);
       undo?.stopCapturing();
       finishLine();
       initialPressRef.current = null;
@@ -761,7 +781,6 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback,
       setGuides([]);
       onConnectorHighlight?.(null);
       setDrawState(s => ({ ...s, isDrawing: false }));
-      setSelectedElements([dot.id]);
       justFinishedDrawing.current = true;
       setTool('select');
       return;
@@ -826,8 +845,8 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback,
         style,
       });
       markTextCreation(activeSlideId, el.id);
-      addElement(activeSlideId, el);
-      setSelectedElements([el.id]);
+      // In crop mode the text becomes a crop shape: the image shows through it.
+      commitShape(activeSlideId, el);
       setEditingTextId(el.id);
     } else if (tool === 'line' || tool === 'arrow') {
       // Two-point line/arrow gestures stay open while retaining remembered
@@ -849,16 +868,14 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback,
         startBinding,
         endBinding,
       });
-      addElement(activeSlideId, el);
-      setSelectedElements([el.id]);
+      commitShape(activeSlideId, el);
     } else if (['rect', 'ellipse', 'triangle', 'star', 'icon'].includes(tool)) {
       const el = composeUserShape(tool, { x, y, width, height });
       // A placement is one discrete undo, never part of Yjs's typing window.
       const undo = tool === 'icon' ? getActiveUndoManager() : null;
       undo?.stopCapturing();
-      addElement(activeSlideId, el);
+      commitShape(activeSlideId, el);
       undo?.stopCapturing();
-      setSelectedElements([el.id]);
     }
 
     // Drop back to select after any successful shape commit — the text
@@ -871,7 +888,7 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback,
       startX: 0, startY: 0, currentX: 0, currentY: 0, isDrawing: false,
       snappedStartX: 0, snappedStartY: 0, snappedCurrentX: 0, snappedCurrentY: 0,
     });
-  }, [handlePointerMove, tool, activeSlideId, addElement, setTool, setSelectedElements, setEditingTextId, getSlideElements, onConnectorHighlight, setDrawState, cancelPolyDraft, finishIcon, finishLine]);
+  }, [handlePointerMove, tool, activeSlideId, setTool, setEditingTextId, getSlideElements, onConnectorHighlight, setDrawState, cancelPolyDraft, finishIcon, finishLine]);
 
   const handlePointerLeave = useCallback(() => {
     if (drawStateRef.current.isDrawing || polyDraftRef.current) return;

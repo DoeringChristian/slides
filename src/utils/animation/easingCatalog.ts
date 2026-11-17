@@ -7,7 +7,6 @@ import type { EasingType, SlideElement } from '../../types/presentation';
  */
 
 export const DEFAULT_TYPES: EasingType[] = ['const', 'linear', 'ease'];
-export const CROP_TYPES: EasingType[] = ['const', 'linear', 'ease', 'cropfade', 'cropfadeease', 'croplift', 'cropliftease'];
 export const RESOURCE_TYPES: EasingType[] = ['const', 'dissolve', 'fadeinout'];
 
 // Cross-TYPE morph (text ↔ shape): 'const' = the historical hard cut at

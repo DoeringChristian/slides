@@ -1,7 +1,7 @@
 import { planSlideTransfer, transferIds } from '../utils/model/groupTransfer';
 import { mirrorOperation } from '../utils/model/mirrorOperation';
 import { planJoinPaths } from '../utils/paths/joinPaths';
-import { planGroupCrop } from '../utils/model/groupCrop';
+import { planCrop, planCropCleanup, planCropShape, type CropShape } from '../utils/model/groupCrop';
 import { reorderSelection, type LayerMove } from '../utils/editor/selectionProperties';
 import { useEditorStore } from './editorStore';
 import { create } from 'zustand';
@@ -202,7 +202,14 @@ interface PresentationStore {
   groupSlides: (slideIds: string[]) => string | null;
   moveObjectsToGroup: (slideId: string, ids: string[], target: string | null, sourceGroup?: string) => void;
   joinPaths: (slideId: string, ids: string[]) => string | null;
-  setGroupCrop: (slideId: string, ids: string[], shapeId: string | null) => void;
+  /** Make `shapeIds` the crop shapes of `imageId` (its crop group), or with
+   *  null remove its crop and keep the group. Active slide only. */
+  setCrop: (slideId: string, imageId: string, shapeIds: string[] | null) => void;
+  /** Add a shape drawn in crop mode as a crop shape of `imageId` (creating
+   *  its crop group): one history step, this slide only. Returns the group. */
+  addCropShape: (slideId: string, imageId: string, shape: CropShape) => string | null;
+  /** Dissolve `group` if it has no visible crop shape left (leaving crop mode). */
+  cleanupCrop: (slideId: string, group: string) => void;
   groupObjects: (slideId: string, ids: string[]) => void;
   ungroupObjects: (slideId: string, ids: string[]) => void;
   /** Strip the groupId from every slide sharing a group with any given id. */
@@ -216,7 +223,10 @@ interface PresentationStore {
 
   // Element actions
   addElement: (slideId: string, element: SlideElement) => void;
-  addElements: (slideId: string, elements: SlideElement[]) => void;
+  /** `options.mirror: false` keeps the elements on this slide only;
+   *  `options.changes` are applied to existing elements of this slide in the
+   *  same transaction / history step. */
+  addElements: (slideId: string, elements: SlideElement[], options?: { mirror?: boolean; changes?: Array<{ elementId: string; changes: Partial<SlideElement> }> }) => void;
   updateElement: (slideId: string, elementId: string, changes: Partial<SlideElement>) => void;
   updateAcrossSlides: (updates: Array<{ slideId: string; elementId: string; changes: Partial<SlideElement> }>, measuredFit?: boolean) => void;
   updateElements: (slideId: string, updates: Array<{ elementId: string; changes: Partial<SlideElement> }>, measuredFit?: boolean) => void;
@@ -435,11 +445,32 @@ export const usePresentationStore = create<PresentationStore>()(
         getActiveUndoManager()?.stopCapturing();
         return ids[0];
       },
-      setGroupCrop: (slideId, ids, shapeId) => {
+      setCrop: (slideId, imageId, shapeIds) => {
         const doc = getActiveDoc();
         const slide = doc ? yDocToJsonSlideOnly(doc, slideId) : usePresentationStore.getState().presentation.slides[slideId];
         if (!slide) return;
-        const updates = planGroupCrop(slide.elements, ids, shapeId, generateId);
+        const updates = planCrop(slide.elements, imageId, shapeIds, generateId);
+        if (!updates.length) return;
+        getActiveUndoManager()?.stopCapturing();
+        usePresentationStore.getState().updateAcrossSlides(updates.map(update => ({ ...update, slideId })));
+        getActiveUndoManager()?.stopCapturing();
+      },
+      addCropShape: (slideId, imageId, shape) => {
+        const doc = getActiveDoc();
+        const slide = doc ? yDocToJsonSlideOnly(doc, slideId) : usePresentationStore.getState().presentation.slides[slideId];
+        if (!slide) return null;
+        const plan = planCropShape(slide.elements, imageId, shape, generateId);
+        if (!plan) return null;
+        getActiveUndoManager()?.stopCapturing();
+        usePresentationStore.getState().addElements(slideId, [plan.shape], { mirror: false, changes: plan.changes });
+        getActiveUndoManager()?.stopCapturing();
+        return plan.group;
+      },
+      cleanupCrop: (slideId, group) => {
+        const doc = getActiveDoc();
+        const slide = doc ? yDocToJsonSlideOnly(doc, slideId) : usePresentationStore.getState().presentation.slides[slideId];
+        if (!slide) return;
+        const updates = planCropCleanup(slide.elements, group);
         if (!updates.length) return;
         getActiveUndoManager()?.stopCapturing();
         usePresentationStore.getState().updateAcrossSlides(updates.map(update => ({ ...update, slideId })));
@@ -1105,7 +1136,7 @@ export const usePresentationStore = create<PresentationStore>()(
       // object registration cannot drift between the two.
       addElement: (slideId, element) => usePresentationStore.getState().addElements(slideId, [element]),
 
-      addElements: (slideId, elements) => {
+      addElements: (slideId, elements, options) => {
         slideId = beforeMutation(slideId);
         // Inherit the user's last-picked easings (applicable ones only).
         // Anything explicitly set on an element wins.
@@ -1115,7 +1146,8 @@ export const usePresentationStore = create<PresentationStore>()(
         // on the active one appears on every selected slide — the same object
         // (same id), so it is one object across those keyframes. Written in one
         // transaction / one history step, like mirrored edits.
-        const targets = [slideId, ...mirrorTargets(slideId)];
+        const targets = options?.mirror === false ? [slideId] : [slideId, ...mirrorTargets(slideId)];
+        const changes = options?.changes ?? [];
         const doc = getActiveDoc();
         if (doc) {
           runInTxn(() => {
@@ -1132,6 +1164,10 @@ export const usePresentationStore = create<PresentationStore>()(
               if (!elMap || !order) continue;
               const existing = new Set(order.toArray());
               const placed = target === slideId ? elements : elementsForMirror(elements, existing);
+              if (target === slideId) for (const { elementId, changes: c } of changes) {
+                const yEl = elMap.get(elementId) as Y.Map<unknown> | undefined;
+                if (yEl) applyChangesToYElement(yEl, c as Record<string, unknown>);
+              }
               for (const el of placed) {
                 elMap.set(el.id, elementToYMap(el));
                 order.push([el.id]);
@@ -1160,6 +1196,9 @@ export const usePresentationStore = create<PresentationStore>()(
             if (!slide) continue;
             const placed = target === slideId ? elements : elementsForMirror(elements, new Set(slide.elementOrder));
             const newElements: Record<string, SlideElement> = { ...slide.elements };
+            if (target === slideId) for (const { elementId, changes: c } of changes) {
+              if (newElements[elementId]) newElements[elementId] = { ...newElements[elementId], ...c } as SlideElement;
+            }
             const newOrder = [...slide.elementOrder];
             for (const element of placed) {
               if (!objects[element.id]) {

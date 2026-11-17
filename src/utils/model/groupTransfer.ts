@@ -19,7 +19,7 @@ export function planSlideTransfer(source: Slide, target: Slide, ids: string[], f
       ...copyNestedFields(from, to, fields),
       ...(fields.includes('fillStyle') && from.type === 'shape' ? {fillStyle: from.fillStyle ?? 'solid'} : {}),
       ...(from.objectGroupIds?.length ? {objectGroupIds: [...from.objectGroupIds]} : {}),
-      ...(from.type === 'shape' && from.cropGroupId ? {cropGroupId: from.cropGroupId} : {}),
+      ...((from.type === 'shape' || from.type === 'text') && from.cropGroupId ? {cropGroupId: from.cropGroupId} : {}),
     } : structuredClone(from);
     return {slideId: target.id, elementId, changes};
   });

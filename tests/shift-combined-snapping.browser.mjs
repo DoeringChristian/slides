@@ -89,7 +89,7 @@ try {
       await key('z','KeyZ',2);assert.equal(await authoritative(),before);matrix.push({collab,origin,end,compatible});
     }
     for(const kind of ['text','image']) {
-      const target=kind==='text'?await evaluate(`(async()=>{const {createTextElement}=await import('/src/utils/model/slideFactory.ts');return createTextElement({id:'box',x:400,y:250,width:180,height:120,text:'Free text'})})()`):{type:'image',cropX:0,cropY:0,cropWidth:1,cropHeight:1,resourceId:null};
+      const target=kind==='text'?await evaluate(`(async()=>{const {createTextElement}=await import('/src/utils/model/slideFactory.ts');return createTextElement({id:'box',x:400,y:250,width:180,height:120,text:'Free text'})})()`):{type:'image',resourceId:null};
       const dock=await setup({collab,tool:'line',target}),a=await screen([dock[0]+5,dock[1]]),b=await screen([dock[0]+140,dock[1]+70]);
       await mouse('mouseMoved',a);assert.equal((await cue())?.state,'active');await mouse('mousePressed',a);await mouse('mouseMoved',b);const live=await shaft();await mouse('mouseReleased',b);close(await shaft(),live,'text/image commit');
       const ss=await snap();assert.equal(ss.slide.elements[ss.slide.elementOrder.at(-1)].startBinding.mode,'pinned');matrix.push({collab,kind});

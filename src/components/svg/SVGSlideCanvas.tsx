@@ -7,6 +7,7 @@ import { canAutoFitText } from '../../utils/text/textAutoFit';
 import { textHoverOwner } from '../../utils/text/textHoverOwner';
 import { autoFitText, hasPendingTextFinish, subscribeTextFinishes, textFinishRevision } from '../../store/textEditSession';
 import { getActiveDoc } from '../../collab/yDocAdapter';
+import { yDocToJsonSlideOnly } from '../../collab/ySchema';
 import { boundTextMeasurementKey } from '../../utils/text/boundTextLayout';
 import { readSlideForMutation } from '../../store/currentMutation';
 import { updateShapeStyleFromCurrent } from '../../store/shapeStyleMutation';
@@ -24,6 +25,7 @@ import { SVGGridOverlay } from './SVGGridOverlay';
 import { SVGAlignmentGuides } from './SVGAlignmentGuides';
 import { SVGMarginGuides } from './SVGMarginGuides';
 import { SVGHoverOverlay } from './SVGHoverOverlay';
+import { attachGroupCrops, cropGroupOf, cropModeMember, groupCropBoundary } from '../../utils/model/groupCrop';
 import { type ConnectorDockCue, supportsConnectorDocks } from '../../utils/paths/connectorUtils';
 import { SVGConnectorHighlight } from './SVGConnectorHighlight';
 import { SVGDrawingPreview, SVGPolyDraftPreview } from './SVGDrawingPreview';
@@ -34,12 +36,15 @@ import { SVGSelectionTransformer } from './SVGSelectionTransformer';
 import { SVGPeerSelectionOverlay } from './SVGPeerSelectionOverlay';
 import { SVGPathHandles } from './SVGPathHandles';
 import { SVGCornerRadiusHandle } from './SVGCornerRadiusHandle';
+import { SVGGradientHandles } from './SVGGradientHandles';
+import { gradientLineKey } from '../../utils/paint/shapeFill';
 import { useSVGDrag } from './useSVGDrag';
 import { useSVGDrawing } from './useSVGDrawing';
 import { TextEditOverlay } from '../canvas/TextEditOverlay';
-import { CropOverlay } from '../canvas/CropOverlay';
+import { CropGhost, CropOutlines, CropSpotlight } from './CropMode';
 import { SelectionActionBar } from '../canvas/SelectionActionBar';
 import { CommentLayer } from '../canvas/CommentLayer';
+import { isSvgFile, useSvgImport } from '../dialogs/svgImport';
 import { deckTextStyle } from '../../store/textDefaults';
 import { marqueeSelection } from '../../utils/editor/marqueeSelection';
 
@@ -60,7 +65,7 @@ import {
   fitLabelToDoc,
   labelWrapWidthFor,
 } from '../../utils/model/syncDependents';
-import type { ShapeElement, SlideElement, TextElement } from '../../types/presentation';
+import type { ShapeElement, SlideElement, TextElement, ImageElement } from '../../types/presentation';
 import { layoutSvgText, type SvgTextDoc } from '../../utils/text/textLayout';
 import type { Guide } from '../../hooks/useAlignmentGuides';
 
@@ -130,6 +135,7 @@ function refitBoundLabel(textId: string, canRefit: () => boolean): void {
 
 export const SVGSlideCanvas: React.FC = () => {
   const activeObjectGroupId = useEditorStore(s => s.activeObjectGroupId);
+  const croppingImageId = useEditorStore(s => s.croppingElementId);
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
@@ -224,6 +230,10 @@ export const SVGSlideCanvas: React.FC = () => {
   const displayElements = gesturePreview?.slideId === activeSlideId ? gesturePreview.elements
     : textPreview && textPreview.slideId === activeSlideId && textPreview.label.id === editingTextId && slide
       ? projectGestureScene(slide, textPreview.patches, true, true) : elements;
+  // Crop mode: the image being cropped and its crop group (none until the
+  // first crop shape is drawn).
+  const cropGroup = croppingImageId && slide ? cropGroupOf(slide.elements, croppingImageId) : undefined;
+  const croppingImage = croppingImageId ? displayElements.find(el => el.id === croppingImageId) : undefined;
 
   // Sole selected visible path shape (2-point lines are just degenerate
   // polys) — gets the unified vertex/endpoint/tangent handles instead of
@@ -240,6 +250,15 @@ export const SVGSlideCanvas: React.FC = () => {
   // Sole selected unlocked shape that supports the on-canvas corner-radius
   // handle: rects, and LINEAR paths with corners (cornerRadius is forced to 0 for
   // every other configuration).
+  // Sole-selected shape with a gradient fill, or image with a gradient tint:
+  // its gradient gets Inkscape-style handles on the canvas.
+  const soleGradientElement = useMemo(() => {
+    if (selectedElementIds.length !== 1 || !slide) return null;
+    const el = slide.elements[selectedElementIds[0]];
+    if (!el || !el.visible || el.locked || (el.type !== 'shape' && el.type !== 'image')) return null;
+    return gradientLineKey(el) ? el : null;
+  }, [selectedElementIds, slide]);
+
   const soleSelectedCornerElement = useMemo(() => {
     if (selectedElementIds.length !== 1 || !slide) return null;
     const el = slide.elements[selectedElementIds[0]];
@@ -536,7 +555,12 @@ export const SVGSlideCanvas: React.FC = () => {
   }, [addElements, deleteElements, setSelectedElements, updateElement]);
 
   useEffect(() => {
-    if (activeObjectGroupId && !Object.values(slide?.elements ?? {}).some(el => el.objectGroupIds?.includes(activeObjectGroupId))) {
+    if (!activeObjectGroupId) return;
+    // Read the authoritative slide: in collab the rendered snapshot can lag a
+    // just-created group (a crop shape drawn in crop mode) by a microtask.
+    const doc = getActiveDoc();
+    const current = doc ? yDocToJsonSlideOnly(doc, useEditorStore.getState().activeSlideId) : slide;
+    if (!Object.values(current?.elements ?? {}).some(el => el.objectGroupIds?.includes(activeObjectGroupId))) {
       useEditorStore.setState({ activeObjectGroupId: null });
     }
   }, [activeObjectGroupId, slide]);
@@ -684,7 +708,8 @@ export const SVGSlideCanvas: React.FC = () => {
     // Bound text: double-clicking a shape (or arrow/path) opens its label —
     // creating an empty one centered in the container (bbox center for
     // shapes, arc-length midpoint for paths) when none exists yet.
-    if (el.type === 'shape' && !el.locked) {
+    // A crop boundary is an invisible outline, not a box to label.
+    if (el.type === 'shape' && !el.locked && !groupCropBoundary(el)) {
       const existing = findBoundText(slide, id);
       if (existing) {
         setEditingTextId(existing.id);
@@ -745,7 +770,12 @@ export const SVGSlideCanvas: React.FC = () => {
       (e.target === e.currentTarget || (e.target as Element).classList.contains('svg-background'))
       && stagePointerDownOnBackground.current
     ) {
-      clearSelection();
+      // In crop mode a click on empty canvas ends it — unless it is a click
+      // of a drawing in progress (placing a line's points, extending one).
+      const editor = useEditorStore.getState();
+      if (editor.croppingElementId) {
+        if (editor.tool === 'select' && !editor.pathExtension) editor.exitCropMode();
+      } else clearSelection();
     }
   }, [clearSelection, justFinishedDrawing]);
 
@@ -885,6 +915,11 @@ export const SVGSlideCanvas: React.FC = () => {
     if (attrs && soleSelectedPathElement) publishGesturePreview([{ elementId: soleSelectedPathElement.id, changes: attrs }], false);
     else clearGesturePreview();
   }, [soleSelectedPathElement, publishGesturePreview, clearGesturePreview]);
+  const handleGradientPreview = useCallback((changes: Partial<SlideElement> | null) => {
+    if (changes && soleGradientElement) publishGesturePreview([{ elementId: soleGradientElement.id, changes }], false);
+    else clearGesturePreview();
+  }, [soleGradientElement, publishGesturePreview, clearGesturePreview]);
+
   const handleRadiusPreview = useCallback((attrs: Partial<ShapeElement> | null) => {
     if (attrs && soleSelectedCornerElement) publishGesturePreview([{ elementId: soleSelectedCornerElement.id, changes: attrs }], false);
     else clearGesturePreview();
@@ -997,7 +1032,10 @@ export const SVGSlideCanvas: React.FC = () => {
           }
           if (lastSlideId) setActiveSlide(lastSlideId);
         }
-      } else if (file.type.startsWith('image/') || file.name.endsWith('.svg')) {
+      } else if (isSvgFile(file)) {
+        // An SVG can come in as editable shapes or as one image: ask.
+        useSvgImport.getState().ask({ file, slideId: activeSlideId, center: [pos.x, pos.y] });
+      } else if (file.type.startsWith('image/')) {
         const { resource, element, isExisting } = await loadImageFile(file, { x: pos.x, y: pos.y }, existingResources);
         if (!isExisting) {
           addResource(resource);
@@ -1298,23 +1336,29 @@ export const SVGSlideCanvas: React.FC = () => {
 
         {/* Content layer */}
         <g className="content-layer" data-gesture-preview={gesturePreview ? true : undefined}>
-          {displayElements.filter((el) => el.id !== polyDraft?.extension?.source.id).map((el) => (
-            <SVGElementRenderer
+          {displayElements.filter((el) => el.id !== polyDraft?.extension?.source.id).map((el) => {
+            const outside = !!croppingImageId && !cropModeMember(el, croppingImageId, cropGroup);
+            const rendered = <SVGElementRenderer
               key={el.id}
               element={el}
-              disableInteraction={tool !== 'select'}
+              disableInteraction={tool !== 'select' || outside}
               editingTextId={editingTextId}
               onPointerDown={handleSelect}
               onMouseEnter={handleMouseEnter}
               onMouseLeave={handleMouseLeave}
               onDoubleClick={handleDoubleClick}
               onTextLayout={gesturePreview || textPreview || editingTextId ? undefined : handleTextLayout}
-            />
-          ))}
+            />;
+            if (outside) return <g key={el.id} opacity={0.25} data-crop-dimmed="">{rendered}</g>;
+            if (el.id === croppingImageId && el.type === 'image') return <React.Fragment key={el.id}><CropGhost element={el} />{rendered}</React.Fragment>;
+            return rendered;
+          })}
         </g>
 
         {/* UI layer */}
         <g className="ui-layer">
+          {croppingImage && <CropSpotlight image={croppingImage} zoom={zoom} />}
+          {croppingImageId && <CropOutlines elements={displayElements} group={cropGroup} zoom={zoom} />}
           <SVGGridOverlay gridSize={gridSize} visible={showGrid} zoom={zoom} />
           <SVGMarginGuides zoom={zoom} />
           <SVGAlignmentGuides guides={guides} zoom={zoom} />
@@ -1385,6 +1429,22 @@ export const SVGSlideCanvas: React.FC = () => {
             />
           )}
 
+          {/* Gradient handles (shape fill / image tint). */}
+          {soleGradientElement && tool === 'select' && (
+            <SVGGradientHandles
+              key={`gradient:${activeSlideId}:${soleGradientElement.id}`}
+              element={soleGradientElement}
+              displayElement={displayElements.find(el => el.id === soleGradientElement.id) as ShapeElement | ImageElement | undefined}
+              zoom={zoom}
+              svgRef={svgRef}
+              onPreview={handleGradientPreview}
+              elements={displayElements}
+              onGuidesChange={setDragGuides}
+              onUpdate={(changes) => { if (activeSlideId) updateElement(activeSlideId, soleGradientElement.id, changes); }}
+              onTransformStart={handleTransformStart}
+            />
+          )}
+
           {/* Connector highlight */}
           {connectorHighlight && displayElements.filter(el => el.id === connectorHighlight.elementId && el.visible !== false && !el.locked).map(element => (
             <SVGConnectorHighlight key={element.id} element={element} zoom={zoom} dock={supportsConnectorDocks(element) ? connectorHighlight.dock : null} />
@@ -1397,12 +1457,20 @@ export const SVGSlideCanvas: React.FC = () => {
           {/* Hover overlay */}
           {hoveredElement && !selectedElementIds.includes(hoveredElement.id) && (
             <SVGHoverOverlay element={hoveredElement} isVisibleOnSlide={isHoveredVisibleOnSlide} zoom={zoom}
-              members={isHoveredVisibleOnSlide && slide ? expandObjectGroups(slide.elements, [hoveredElement.id], activeObjectGroupId).map(id => slide.elements[id]).filter(Boolean) : undefined} />
+              members={isHoveredVisibleOnSlide && slide ? attachGroupCrops(expandObjectGroups(slide.elements, [hoveredElement.id], activeObjectGroupId).map(id => slide.elements[id]).filter(Boolean)) : undefined} />
           )}
         </g>
       </svg>
 
-      {activeObjectGroupId && (
+      {croppingImageId ? (
+        <div className="absolute top-2 left-2 z-20 flex items-center gap-2 rounded bg-white px-2 py-1 text-sm text-gray-700 shadow" data-crop-mode="">
+          <span className="text-gray-500">Crop: draw shapes to choose what shows</span>
+          <button className="rounded bg-green-600 px-2 py-0.5 text-white hover:bg-green-700"
+            onClick={() => useEditorStore.getState().exitCropMode()}>
+            Done (Enter)
+          </button>
+        </div>
+      ) : activeObjectGroupId && (
         <button className="absolute top-2 left-2 z-20 rounded bg-white px-3 py-1 text-sm text-gray-700 shadow"
           onClick={() => useEditorStore.getState().exitObjectGroup()}>
           Exit group (Esc)
@@ -1410,7 +1478,6 @@ export const SVGSlideCanvas: React.FC = () => {
       )}
       {/* HTML overlays */}
       <TextEditOverlay key={`${activeSlideId}:${editingTextId}`} stageRef={containerRef} zoom={zoom} onPreview={setTextPreview} />
-      <CropOverlay stageRef={containerRef} zoom={zoom} />
       {!gesturePreview && <CommentLayer zoom={zoom} />}
       {/* Unmount actions during manipulation: no stale native hit targets.
           Body previews start only after drag slop; extension uses its own draft. */}

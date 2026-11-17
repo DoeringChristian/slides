@@ -1,7 +1,6 @@
 import { GroupCrop } from './GroupCrop';
 import { groupCropPaint, type GroupCropElement } from '../../utils/model/groupCrop';
 import { SVGStrokeCoverage } from './SVGStrokeCoverage';
-import { cropFadeRegions, type CropFadeImage } from '../../utils/animation/cropAnimation';
 import { resolveShapePaint, rectangleRadii } from '../../utils/paint/shapePaint';
 import { resolveShapeGeometry } from '../../utils/geometry/vectorGeometry';
 import { getRotationCenter } from '../../utils/geometry/geometry';
@@ -9,6 +8,7 @@ import React, { memo, useId } from 'react';
 import { ShapeFillPaint } from './ShapeFillPaint';
 import { SVGStrokeClip } from './SVGStrokeClip';
 import { SVGTextPaths } from './SVGTextPaths';
+import { imageTintShape } from '../../utils/paint/imageTint';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 import { pathArrowGeometry, strokeDashFor, type ArrowheadGeometry } from '../../utils/paths/pathShapes';
 import type { SlideElement, TextElement, ShapeElement, ImageElement, Resource } from '../../types/presentation';
@@ -277,52 +277,23 @@ interface ImageProps {
 // elements behind/in front in the same SVG document; the editor adds its own
 // transparent hit <rect> at the element layer.
 export const RenderImage: React.FC<ImageProps> = memo(({ element, resource, videoAutoplay }) => {
-  const cropMaskId = `crop-fade-${useId().replace(/:/g, '')}`;
   if ((element as GroupCropElement)._groupClips?.length) {
     const plain = { ...element, _groupClips: undefined };
     return <GroupCrop element={element}><RenderImage element={plain} resource={resource} videoAutoplay={videoAutoplay} /></GroupCrop>;
   }
   if (!element.visible) return null;
-
-  const { x, y, width, height, rotation, opacity, cropX, cropY, cropWidth, cropHeight } = element;
-  const lift = (element as CropFadeImage)._cropLift;
-  if (lift && resource) {
-    const original: CropFadeImage = { ...lift.original, _cropFade: undefined, _cropLift: undefined, opacity: 1 - lift.t };
-    const foreground: CropFadeImage = { ...element, _cropFade: undefined, _cropLift: undefined, opacity: 1 };
-    return <g opacity={opacity} data-crop-lift="">
-      <RenderImage element={original} resource={resource} videoAutoplay={videoAutoplay} />
-      <RenderImage element={foreground} resource={resource} videoAutoplay={videoAutoplay} />
+  // A tint is part of the image: the shared shape fill over the media, inside
+  // any crop (the GroupCrop above wraps both).
+  const tint = imageTintShape(element);
+  if (tint) {
+    const untinted = { ...element, tint: undefined, tintStyle: undefined, tintTo: undefined, tintLine: undefined };
+    return <g data-image-tint="">
+      <RenderImage element={untinted} resource={resource} videoAutoplay={videoAutoplay} />
+      <RenderShape element={tint} />
     </g>;
   }
-  const fade = (element as CropFadeImage)._cropFade;
-  if (fade && resource && cropWidth > 0 && cropHeight > 0) {
-    const sx = width / cropWidth, sy = height / cropHeight;
-    const left = Math.min(fade.from.x, fade.to.x);
-    const top = Math.min(fade.from.y, fade.to.y);
-    const w = Math.max(fade.from.x + fade.from.width, fade.to.x + fade.to.width) - left;
-    const h = Math.max(fade.from.y + fade.from.height, fade.to.y + fade.to.height) - top;
-    const px = (u: number) => x + (u - cropX) * sx;
-    const py = (v: number) => y + (v - cropY) * sy;
-    const media: CropFadeImage = {
-      ...element, _cropFade: undefined, rotation: 0, opacity: 1,
-      x: px(left), y: py(top), width: w * sx, height: h * sy,
-      cropX: left, cropY: top, cropWidth: w, cropHeight: h,
-    };
-    return (
-      <g opacity={opacity} transform={`rotate(${rotation}, ${x + width / 2}, ${y + height / 2})`}>
-        <defs>
-          <mask id={cropMaskId} maskUnits="userSpaceOnUse" maskContentUnits="userSpaceOnUse"
-            x={media.x} y={media.y} width={media.width} height={media.height} style={{ maskType: 'alpha' }}>
-            {cropFadeRegions(fade).map((r, i) => <rect key={i} x={px(r.x)} y={py(r.y)}
-              width={r.width * sx} height={r.height * sy} fill="white" opacity={r.opacity} />)}
-          </mask>
-        </defs>
-        <g mask={`url(#${cropMaskId})`}>
-          <RenderImage element={media} resource={resource} videoAutoplay={videoAutoplay} />
-        </g>
-      </g>
-    );
-  }
+
+  const { x, y, width, height, rotation, opacity } = element;
 
   // No resource - render placeholder. Vector, doesn't move much, stays SVG.
   if (!resource) {
@@ -347,7 +318,6 @@ export const RenderImage: React.FC<ImageProps> = memo(({ element, resource, vide
     );
   }
 
-  const hasCrop = cropWidth > 0 && cropHeight > 0;
   const containerStyle: React.CSSProperties = {
     position: 'absolute',
     left: 0,
@@ -357,12 +327,18 @@ export const RenderImage: React.FC<ImageProps> = memo(({ element, resource, vide
     transform: `translate3d(${x}px, ${y}px, 0) rotate(${rotation}deg)`,
     transformOrigin: '50% 50%',
     opacity,
-    overflow: hasCrop ? 'hidden' : 'visible',
     willChange: 'transform',
     pointerEvents: 'none',
   };
 
-  const isVideo = resource.type === 'video';
+  // The media fills its box; cropping is a crop group (GroupCrop above).
+  const mediaStyle: React.CSSProperties = {
+    width: '100%',
+    height: '100%',
+    objectFit: 'fill',
+    display: 'block',
+    pointerEvents: 'none',
+  };
 
   return (
     <foreignObject
@@ -373,60 +349,18 @@ export const RenderImage: React.FC<ImageProps> = memo(({ element, resource, vide
       style={{ pointerEvents: 'none', overflow: 'visible' }}
     >
       <div style={containerStyle}>
-        {hasCrop ? (
-          // Crop: oversize the media and offset it so the crop region fills the box.
-          (() => {
-            const scaleX = width / cropWidth;
-            const scaleY = height / cropHeight;
-            const mediaStyle: React.CSSProperties = {
-              position: 'absolute',
-              left: `${-cropX * scaleX}px`,
-              top: `${-cropY * scaleY}px`,
-              width: `${resource.originalWidth * scaleX}px`,
-              height: `${resource.originalHeight * scaleY}px`,
-              // Cropping requires media wider than its clipping box. Override
-              // Tailwind preflight's img/video max-width: 100% constraint.
-              maxWidth: 'none',
-              display: 'block',
-              pointerEvents: 'none',
-            };
-            return isVideo ? (
-              <video
-                src={resource.src}
-                style={mediaStyle}
-                autoPlay={videoAutoplay ?? element.playing ?? true}
-                loop={element.loop ?? false}
-                muted={element.muted ?? true}
-                playsInline
-                preload="metadata"
-              />
-            ) : (
-              <img src={resource.src} alt="" style={mediaStyle} draggable={false} />
-            );
-          })()
+        {resource.type === 'video' ? (
+          <video
+            src={resource.src}
+            style={mediaStyle}
+            autoPlay={videoAutoplay ?? element.playing ?? true}
+            loop={element.loop ?? false}
+            muted={element.muted ?? true}
+            playsInline
+            preload="metadata"
+          />
         ) : (
-          (() => {
-            const mediaStyle: React.CSSProperties = {
-              width: '100%',
-              height: '100%',
-              objectFit: 'fill',
-              display: 'block',
-              pointerEvents: 'none',
-            };
-            return isVideo ? (
-              <video
-                src={resource.src}
-                style={mediaStyle}
-                autoPlay={videoAutoplay ?? element.playing ?? true}
-                loop={element.loop ?? false}
-                muted={element.muted ?? true}
-                playsInline
-                preload="metadata"
-              />
-            ) : (
-              <img src={resource.src} alt="" style={mediaStyle} draggable={false} />
-            );
-          })()
+          <img src={resource.src} alt="" style={mediaStyle} draggable={false} />
         )}
       </div>
     </foreignObject>

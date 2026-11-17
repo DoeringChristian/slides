@@ -2,7 +2,7 @@ import type { ImageElement, Resource } from '../../types/presentation';
 
 /**
  * Compute the updates needed when changing an image element's resource.
- * Resets crop to full image and resizes element to fit while maintaining aspect ratio.
+ * Resizes the element to fit while maintaining aspect ratio.
  * Resizes with respect to the center point (not top-left).
  */
 export function computeResourceUpdate(
@@ -13,12 +13,6 @@ export function computeResourceUpdate(
   const updates: Partial<ImageElement> = { resourceId };
 
   if (resource) {
-    // Reset crop to full image
-    updates.cropX = 0;
-    updates.cropY = 0;
-    updates.cropWidth = resource.originalWidth;
-    updates.cropHeight = resource.originalHeight;
-
     // Calculate current center point
     const centerX = element.x + element.width / 2;
     const centerY = element.y + element.height / 2;

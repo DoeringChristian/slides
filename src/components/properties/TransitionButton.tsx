@@ -21,7 +21,7 @@ import type {
 import { TransitionPreview } from './TransitionPreview';
 import { isVisibilityFadeOut, optionsKeyFor } from './transitionSide';
 import { defaultEasingFor } from '../../utils/animation/interpolation';
-import { DEFAULT_TYPES, CROP_TYPES, RESOURCE_TYPES, CONTENT_TYPES, MORPH_TYPES, visibilityTypesFor } from '../../utils/animation/easingCatalog';
+import { DEFAULT_TYPES, RESOURCE_TYPES, CONTENT_TYPES, MORPH_TYPES, visibilityTypesFor } from '../../utils/animation/easingCatalog';
 import { EASING_LABELS, easingHasOptions, transitionPropertiesDiffer } from '../../utils/animation/transitionProperties';
 
 interface Props {
@@ -33,10 +33,6 @@ interface Props {
 const ICON_SIZE = 14;
 
 const EASING_ICONS: Record<EasingType, React.ReactNode> = {
-  croplift: <Layers size={ICON_SIZE} />,
-  cropliftease: <Layers size={ICON_SIZE} />,
-  cropfade: <Layers size={ICON_SIZE} />,
-  cropfadeease: <Layers size={ICON_SIZE} />,
   const: <Minus size={ICON_SIZE} />,
   linear: <TrendingUp size={ICON_SIZE} />,
   ease: <Spline size={ICON_SIZE} />,
@@ -91,7 +87,6 @@ export const TransitionButton: React.FC<Props> = ({
   const elementType = element?.type;
   const typesFor = (el: SlideElement | undefined) =>
     group === 'content' ? CONTENT_TYPES :
-    group === 'crop' ? CROP_TYPES :
     group === 'resource' ? RESOURCE_TYPES :
     group === 'visibility' ? visibilityTypesFor(el) :
     group === 'morph' ? MORPH_TYPES :

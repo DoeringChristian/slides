@@ -7,6 +7,7 @@ import type {
 } from '../types/presentation';
 import { usePresentationStore } from './presentationStore';
 import { expandObjectGroups, objectGroupRoot } from '../utils/model/objectGroups';
+import { cropGroupOf } from '../utils/model/groupCrop';
 
 export interface MarginLayout {
   id: string;
@@ -28,7 +29,11 @@ interface EditorStore extends EditorState {
   standaloneEditorOrigin: string | null;
   setStandaloneMode: (mode: StandaloneMode, editorOrigin: string | null) => void;
   hoveredObjectId: string | null;
+  /** The image in crop mode: its crop shapes are drawn and edited while the
+   *  rest of the slide is dimmed (see enterCropMode). */
   croppingElementId: string | null;
+  /** The entered group to return to when crop mode ends. */
+  cropReturnScope: string | null;
   marginLayoutId: string | null;
   showMarginGuides: boolean;
   isPresenterMode: boolean;
@@ -74,7 +79,13 @@ interface EditorStore extends EditorState {
   setClipboard: (elements: SlideElement[]) => void;
   setEditingTextId: (id: string | null, clickPosition?: { x: number; y: number }) => void;
   setIsPanning: (panning: boolean) => void;
-  setCroppingElementId: (id: string | null) => void;
+  /** Crop mode for one image. Its crop group (if any) becomes the entered
+   *  group, so its members alone are selectable; with no crop yet the scope
+   *  is the image's own parent group, so clicking it selects only it. */
+  enterCropMode: (imageId: string) => void;
+  /** End crop mode: dissolve a crop left without shapes, return to the
+   *  previous group scope and select the cropped image's group. */
+  exitCropMode: () => void;
   setMarginLayoutId: (id: string | null) => void;
   setShowMarginGuides: (show: boolean) => void;
   setPresenterMode: (mode: boolean) => void;
@@ -103,6 +114,7 @@ export const useEditorStore = create<EditorStore>()((set) => ({
   isPanning: false,
   hoveredObjectId: null,
   croppingElementId: null,
+  cropReturnScope: null,
   marginLayoutId: null,
   showMarginGuides: true,
   isPresenterMode: false,
@@ -169,6 +181,8 @@ export const useEditorStore = create<EditorStore>()((set) => ({
       hoveredObjectId: null,
       hoverPreviewHidden: false,
       activeObjectGroupId: null,
+      croppingElementId: null,
+      cropReturnScope: null,
       pathExtension: null,
       selectedElementIds: slide ? expandObjectGroups(slide.elements, kept) : kept,
       editingTextId: null,
@@ -224,7 +238,38 @@ export const useEditorStore = create<EditorStore>()((set) => ({
   setClipboard: (elements) => set({ clipboard: elements }),
   setEditingTextId: (id, clickPosition) => set({ editingTextId: id, textEditClickPosition: clickPosition ?? null }),
   setIsPanning: (panning) => set({ isPanning: panning }),
-  setCroppingElementId: (id) => set({ croppingElementId: id }),
+  enterCropMode: (imageId) => set(s => {
+    const doc = getActiveDoc();
+    const slide = doc ? yDocToJsonSlideOnly(doc, s.activeSlideId) : usePresentationStore.getState().presentation.slides[s.activeSlideId];
+    const image = slide?.elements[imageId];
+    if (!slide || image?.type !== 'image' || image.locked) return s;
+    const group = cropGroupOf(slide.elements, imageId);
+    const path = image.objectGroupIds ?? [];
+    return {
+      croppingElementId: imageId,
+      cropReturnScope: s.activeObjectGroupId,
+      activeObjectGroupId: group ?? path[path.length - 1] ?? null,
+      selectedElementIds: [], editingTextId: null, tool: 'select', pathExtension: null,
+    };
+  }),
+  exitCropMode: () => {
+    const s = useEditorStore.getState();
+    const imageId = s.croppingElementId;
+    if (!imageId) return;
+    const doc = getActiveDoc();
+    const read = () => doc ? yDocToJsonSlideOnly(doc, s.activeSlideId) : usePresentationStore.getState().presentation.slides[s.activeSlideId];
+    const before = read();
+    const group = before ? cropGroupOf(before.elements, imageId) : undefined;
+    // A crop whose shapes were all removed is dissolved (hidden crop shapes
+    // still mark the group, so it is found).
+    if (group) usePresentationStore.getState().cleanupCrop(s.activeSlideId, group);
+    const after = read();
+    const ret = s.cropReturnScope && after && Object.values(after.elements).some(el => el.objectGroupIds?.includes(s.cropReturnScope!)) ? s.cropReturnScope : null;
+    set({
+      croppingElementId: null, cropReturnScope: null, activeObjectGroupId: ret, editingTextId: null, tool: 'select',
+      selectedElementIds: after?.elements[imageId] ? expandObjectGroups(after.elements, [imageId], ret) : [],
+    });
+  },
   setMarginLayoutId: (id) => set({ marginLayoutId: id }),
   setShowMarginGuides: (show) => set({ showMarginGuides: show }),
   setPresenterMode: (mode) => set({ isPresenterMode: mode, presenterStartTime: mode ? Date.now() : 0 }),

@@ -224,6 +224,8 @@ export function elementToYMap(el: SlideElement): Y.Map<unknown> {
       const t = el as TextElement;
       m.set('text', mkText(t.text));
       setIfDefined(m, 'textSizing', t.textSizing);
+      setIfDefined(m, 'cropGroupId', t.cropGroupId);
+      setIfDefined(m, 'cropOp', t.cropOp);
       setIfDefined(m, 'boundTextLayout', t.boundTextLayout);
       setIfDefined(m, 'boundTextBaselineHeight', t.boundTextBaselineHeight);
       m.set('style', mkScalarMap(t.style));
@@ -241,6 +243,11 @@ export function elementToYMap(el: SlideElement): Y.Map<unknown> {
       if (s.geometry) m.set('geometry', JSON.parse(JSON.stringify(s.geometry)));
       m.set('fill', s.fill);
       setIfDefined(m, 'fillStyle', s.fillStyle);
+      setIfDefined(m, 'fillTo', s.fillTo);
+      if (s.fillLine) m.set('fillLine', [...s.fillLine]);
+      setIfDefined(m, 'cropTint', s.cropTint);
+      setIfDefined(m, 'cropOp', s.cropOp);
+      setIfDefined(m, 'arrowScale', s.arrowScale);
       setIfDefined(m, 'strokeStyle', s.strokeStyle);
       m.set('stroke', s.stroke);
       m.set('strokeWidth', s.strokeWidth);
@@ -261,10 +268,10 @@ export function elementToYMap(el: SlideElement): Y.Map<unknown> {
     case 'image': {
       const i = el as ImageElement;
       setIfDefined(m, 'resourceId', i.resourceId);
-      m.set('cropX', i.cropX);
-      m.set('cropY', i.cropY);
-      m.set('cropWidth', i.cropWidth);
-      m.set('cropHeight', i.cropHeight);
+      setIfDefined(m, 'tint', i.tint);
+      setIfDefined(m, 'tintStyle', i.tintStyle);
+      setIfDefined(m, 'tintTo', i.tintTo);
+      if (i.tintLine) m.set('tintLine', [...i.tintLine]);
       setIfDefined(m, 'playing', i.playing);
       setIfDefined(m, 'loop', i.loop);
       setIfDefined(m, 'muted', i.muted);

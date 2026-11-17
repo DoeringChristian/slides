@@ -1,7 +1,8 @@
 import { selectionResizeBounds } from '../../utils/geometry/resizeGeometry';
 import { expandObjectGroups } from '../../utils/model/objectGroups';
 import React, { useState, useRef } from 'react';
-import { ImagePlus, Lock, Unlock, Crop, Trash2, MessageSquarePlus } from 'lucide-react';
+import { ImagePlus, Lock, Unlock, Crop, Trash2, MessageSquarePlus, Check, Eraser } from 'lucide-react';
+import { useCropAction, runCrop, removeCrop, cropLabel } from './cropActions';
 import { useCommentUi } from './commentUi';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useEditorStore } from '../../store/editorStore';
@@ -24,7 +25,8 @@ export const SelectionActionBar: React.FC<Props> = ({ elements: selection, zoom,
   const hideElements = usePresentationStore((s) => s.hideElements);
   const updateElements = usePresentationStore((s) => s.updateElements);
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
-  const setCroppingElementId = useEditorStore((s) => s.setCroppingElementId);
+  const cropping = useEditorStore((s) => !!s.croppingElementId);
+  const cropAction = useCropAction();
   const setSelectedElements = useEditorStore((s) => s.setSelectedElements);
 
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -47,7 +49,7 @@ export const SelectionActionBar: React.FC<Props> = ({ elements: selection, zoom,
   // Only show when selected
   if (!element) return null;
 
-  const isImage = single?.type === 'image';
+  const isImage = single?.type === 'image' && !cropping;
 
   const handleResourceClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -63,10 +65,6 @@ export const SelectionActionBar: React.FC<Props> = ({ elements: selection, zoom,
     updateElements(activeSlideId, expandObjectGroups(elements, selection.map(el => el.id), useEditorStore.getState().activeObjectGroupId).map(elementId => ({ elementId, changes: { locked: !locked } })));
   };
 
-  const handleCropClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setCroppingElementId(element.id);
-  };
 
   const handleHideClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -125,14 +123,33 @@ export const SelectionActionBar: React.FC<Props> = ({ elements: selection, zoom,
               {locked ? <Lock size={18} /> : <Unlock size={18} />}
             </button>
 
-            {/* Crop button - only for images */}
-            {isImage && (
+            {/* Crop: one image, one image with shapes to crop to, or exactly one crop group */}
+            {cropAction && (
               <button
-                onClick={handleCropClick}
+                onClick={(e) => { e.stopPropagation(); runCrop(cropAction); }}
                 className="p-1.5 rounded-full hover:bg-green-100 text-gray-400 hover:text-green-600 transition-colors"
-                title="Crop"
+                title={cropLabel(cropAction)}
+                data-crop-action={cropAction.kind}
               >
                 <Crop size={18} />
+              </button>
+            )}
+            {cropAction?.kind === 'edit' && (
+              <button
+                onClick={(e) => { e.stopPropagation(); removeCrop(cropAction); }}
+                className="p-1.5 rounded-full hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition-colors"
+                title="Remove crop"
+              >
+                <Eraser size={18} />
+              </button>
+            )}
+            {cropping && (
+              <button
+                onClick={(e) => { e.stopPropagation(); useEditorStore.getState().exitCropMode(); }}
+                className="p-1.5 rounded-full hover:bg-green-100 text-green-600 transition-colors"
+                title="Done cropping (Enter)"
+              >
+                <Check size={18} />
               </button>
             )}
 

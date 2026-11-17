@@ -76,7 +76,7 @@ async function rememberActions() {await evaluate(`window.oldActions=Array.from(d
 async function captureShot(name){await writeFile(`${evidence}/${name}.png`,Buffer.from((await send('Page.captureScreenshot',{format:'png'})).data,'base64'));}
 async function configure(kind,collab) {
   const path=['endpoint','midpoint','tangent','extension'].includes(kind);
-  await setup({mode:'production',collab,secondSlide:true,zoom:.8,subject:{x:400,y:250,width:200,height:120,fill:'#5599bb',...(kind==='image'?{type:'image',cropX:0,cropY:0,cropWidth:100,cropHeight:100}:{}),...(path?{shapeType:'path',points:[0,0,200,100],curve:'bezier',tangents:[-30,-20,30,20,-30,-20,30,20],endHead:'triangle',rotation:25}: {})},targets:kind==='group'?[{id:'other',x:650,y:250,width:120,height:100,fill:'#ddaa44'}]:[]});
+  await setup({mode:'production',collab,secondSlide:true,zoom:.8,subject:{x:400,y:250,width:200,height:120,fill:'#5599bb',...(kind==='image'?{type:'image'}:{}),...(path?{shapeType:'path',points:[0,0,200,100],curve:'bezier',tangents:[-30,-20,30,20,-30,-20,30,20],endHead:'triangle',rotation:25}: {})},targets:kind==='group'?[{id:'other',x:650,y:250,width:120,height:100,fill:'#ddaa44'}]:[]});
   if(kind==='group')await select(['subject','other']);
 }
 async function acquire(kind) {

@@ -1,6 +1,7 @@
 import React, { useContext } from 'react';
 import type { CurrentChange } from '../../store/currentMutation';
 import { CreationDraftContext } from './CreationDraftContext';
+import { cropOpProperty } from './cropOpProperty';
 import { PropertyList } from './PropertyList';
 import {
   Property,
@@ -11,6 +12,7 @@ import {
   ReadoutProperty,
   type PropertyContext,
 } from './Property';
+import { noPaint, withPaintAlpha } from '../../utils/paint/paintColor';
 import type { ShapeElement, ConnectorBinding, PathCurve, StrokeStyle, FillStyle, ArrowheadType, TransitionGroup } from '../../types/presentation';
 import { bindingFor, resolveBinding, isPinnedBinding } from '../../utils/paths/connectorUtils';
 import { pathGeometryUpdate, pathPointsInSlide, slidePointToPath } from '../../utils/paths/pathEditing';
@@ -293,6 +295,12 @@ class ArrowheadProperty extends Property<ShapeElement> {
  * TransitionIn/Out + KeyframeButtons) automatically from this metadata.
  */
 class FillStyleProperty extends PreviewSelectProperty<ShapeElement, FillStyle> {
+  // Picking a gradient starts it as a fade-out of the current fill, written
+  // explicitly so the end colour has a value to edit.
+  protected override set(el: ShapeElement, v: FillStyle): Partial<ShapeElement> {
+    return (v === 'linear' || v === 'radial') && el.fillTo === undefined
+      ? { fillStyle: v, fillTo: withPaintAlpha(noPaint(el.fill) ? '#000000' : el.fill, 0) } : { fillStyle: v };
+  }
   override copyFromKeyframe(target: ShapeElement): Partial<ShapeElement> {
     // Explicit default: Yjs intentionally ignores undefined mutation values.
     return { fillStyle: target.fillStyle ?? 'solid' };
@@ -310,6 +318,11 @@ class DotDiameterProperty extends NumberProperty<ShapeElement> {
     return {x: el.x + (el.width - diameter) / 2, y: el.y + (el.height - diameter) / 2, width: diameter, height: diameter};
   }
 }
+const FILL_STYLE_LABELS: Record<FillStyle, string> = {
+  solid: 'Solid', hachure: 'Hachure', crosshatch: 'Crosshatch', linear: 'Linear gradient', radial: 'Radial gradient',
+};
+const isGradientFill = (el: ShapeElement) => el.fillStyle === 'linear' || el.fillStyle === 'radial';
+
 const SHAPE_PROPERTIES: Property<ShapeElement>[] = [
   new DotDiameterProperty(),
   new NumberProperty<ShapeElement>({ key: 'opacity', label: 'Opacity', transitionGroup: 'opacity', min: 0, max: 100, scale: 100, step: 1, precision: 1 }),
@@ -318,14 +331,25 @@ const SHAPE_PROPERTIES: Property<ShapeElement>[] = [
     key: 'stroke', label: 'Stroke', transitionGroup: 'stroke', alpha: true,
   }),
   new FillStyleProperty({
-    key: 'fillStyle', label: 'Fill Style', iconOnly: true, defaultValue: 'solid', columns: 3,
-    options: (['solid', 'hachure', 'crosshatch'] as const).map(value => ({ value,
-      label: value === 'solid' ? 'Solid' : value === 'hachure' ? 'Hachure' : 'Crosshatch',
+    key: 'fillStyle', label: 'Fill Style', iconOnly: true, defaultValue: 'solid', columns: 5,
+    options: (['solid', 'hachure', 'crosshatch', 'linear', 'radial'] as const).map(value => ({ value,
+      label: FILL_STYLE_LABELS[value],
       preview: () => <svg width={44} height={30} viewBox="0 0 44 30" aria-hidden="true">
         <RenderShape element={createShapeElement('rect', { id: `fill-preview-${value}`, x: 2, y: 2, width: 40, height: 26,
           cornerRadius: 4, fill: '#555555', fillStyle: value, stroke: '#333333', strokeWidth: 1 })} />
       </svg>,
     })),
+  }),
+  new ColorProperty<ShapeElement>({
+    key: 'fillTo', label: 'Gradient To', transitionGroup: 'fill', alpha: true,
+    visibleFor: el => isGradientFill(el),
+  }),
+  cropOpProperty<ShapeElement>(),
+  new CheckboxProperty<ShapeElement>({
+    key: 'cropTint', label: 'Tint Image',
+    // A crop shape's fill is hidden while it crops; with Tint it paints over
+    // the image inside the crop instead.
+    visibleFor: el => !!el.cropGroupId && !!el.objectGroupIds?.includes(el.cropGroupId),
   }),
   new NumberProperty<ShapeElement>({
     key: 'strokeWidth', label: 'Stroke Width',
@@ -359,6 +383,13 @@ const SHAPE_PROPERTIES: Property<ShapeElement>[] = [
   // 'startArrow'/'endArrow' names (persisted in decks).
   new ArrowheadProperty({ key: 'startHead', label: 'Start head', transitionGroup: 'startArrow' }),
   new ArrowheadProperty({ key: 'endHead', label: 'End head', transitionGroup: 'endArrow' }),
+  new NumberProperty<ShapeElement>({
+    key: 'arrowScale', label: 'Head Size', transitionGroup: 'strokeWidth',
+    // Head length in stroke widths: thin lines get small heads, thick lines
+    // big ones, at the same proportion.
+    min: 0.5, max: 20, step: 0.5, scrubStep: 0.05, precision: 2, unit: '× stroke', defaultValue: 10 / 3,
+    visibleFor: el => isPath(el) && ((el.startHead ?? 'none') !== 'none' || (el.endHead ?? 'none') !== 'none'),
+  }),
   new ReadoutProperty<ShapeElement>({
     key: 'geometry', label: 'Vector geometry', transitionGroup: 'controlPoints',
     syncFields: ['geometry'], visibleFor: el => el.shapeType === 'vector',

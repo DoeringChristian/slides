@@ -1,4 +1,5 @@
 import React from 'react';
+import { cropOpProperty } from './cropOpProperty';
 import { PropertyList } from './PropertyList';
 import { PanelHeader } from './PanelHeader';
 import {
@@ -28,6 +29,7 @@ injectFontFaces();
  * the TEXT type label in the header — see below.
  */
 const TEXT_PROPERTIES: Property<TextElement>[] = [
+  cropOpProperty<TextElement>(),
   new TextPreviewProperty<TextElement>({
     key: 'text', label: 'Content',
     preview: (el) => {

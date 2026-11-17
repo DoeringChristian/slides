@@ -1,3 +1,4 @@
+import { imageTintShape } from '../../utils/paint/imageTint';
 import { GroupCrop } from '../svg/GroupCrop';
 import { followCropMedia, groupCropPaint, type GroupCropElement } from '../../utils/model/groupCrop';
 import React, { useRef, useState, useCallback, useEffect } from 'react';
@@ -371,10 +372,6 @@ function renderElementInner(
     const renderMedia = (
       resourceToRender: typeof targetResource,
       opacity: number,
-      cropX: number,
-      cropY: number,
-      cropWidth: number,
-      cropHeight: number,
       keySuffix: string,
       autoPlay: boolean = true,
     ) => {
@@ -384,10 +381,6 @@ function renderElementInner(
         ...imgEl,
         resourceId: resourceToRender.id,
         opacity,
-        cropX,
-        cropY,
-        cropWidth,
-        cropHeight,
       };
       return (
         <RenderImage
@@ -404,13 +397,13 @@ function renderElementInner(
       // visual blend rather than two competing playbacks.
       return (
         <React.Fragment key={element.id}>
-          {renderMedia(sourceResource, dissolveSource.opacity, dissolveSource.cropX, dissolveSource.cropY, dissolveSource.cropWidth, dissolveSource.cropHeight, '-src', false)}
-          {renderMedia(targetResource, element.opacity, imgEl.cropX, imgEl.cropY, imgEl.cropWidth, imgEl.cropHeight, '-tgt', false)}
+          {renderMedia(sourceResource, dissolveSource.opacity, '-src', false)}
+          {renderMedia(targetResource, element.opacity, '-tgt', false)}
         </React.Fragment>
       );
     }
 
-    return renderMedia(targetResource, element.opacity, imgEl.cropX, imgEl.cropY, imgEl.cropWidth, imgEl.cropHeight, '');
+    return renderMedia(targetResource, element.opacity, '');
   }
 
   // Shape: native SVG primitive via the shared RenderShape. If a Create
@@ -484,8 +477,6 @@ interface VideoWithControlsProps {
   muted: boolean;
   videoStyle: React.CSSProperties;
   containerStyle?: React.CSSProperties;
-  /** If true, wrap video in a container div (for cropped videos) */
-  cropped?: boolean;
   /** Callback to send video commands to audience view */
   onVideoCommand?: (action: 'play' | 'pause' | 'seek', currentTime?: number) => void;
 }
@@ -497,7 +488,6 @@ const VideoWithControls: React.FC<VideoWithControlsProps> = ({
   muted,
   videoStyle,
   containerStyle,
-  cropped,
   onVideoCommand,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -583,7 +573,7 @@ const VideoWithControls: React.FC<VideoWithControlsProps> = ({
         muted={muted}
         playsInline
         preload="metadata"
-        style={cropped ? videoStyle : {
+        style={{
           width: '100%',
           height: '100%',
           objectFit: (videoStyle.objectFit as React.CSSProperties['objectFit']) || 'cover',
@@ -696,44 +686,13 @@ export const SlideRenderer: React.FC<SlideRendererProps> = ({
           const resource = imgEl.resourceId ? resources[imgEl.resourceId] : undefined;
 
           if (resource?.type === 'video') {
-            const hasCrop = imgEl.cropWidth > 0 && imgEl.cropHeight > 0;
             const shouldAutoPlay = autoPlayVideos && (imgEl.playing ?? true);
-
-            if (hasCrop) {
-              const scaleX = resource.originalWidth / imgEl.cropWidth;
-              const scaleY = resource.originalHeight / imgEl.cropHeight;
-              return (
-                <VideoWithControls
-                  key={element.id}
-                  src={resource.src}
-                  autoPlay={shouldAutoPlay}
-                  loop={imgEl.loop ?? false}
-                  muted={imgEl.muted ?? true}
-                  cropped
-                  onVideoCommand={onVideoCommand}
-                  containerStyle={{
-                    position: 'absolute',
-                    left: `${element.x * scale}px`,
-                    top: `${element.y * scale}px`,
-                    width: `${element.width * scale}px`,
-                    height: `${element.height * scale}px`,
-                    transform: `rotate(${element.rotation}deg)`,
-                    transformOrigin: 'center center',
-                    opacity: element.opacity,
-                    overflow: 'hidden',
-                    zIndex: index,
-                  }}
-                  videoStyle={{
-                    width: `${element.width * scale * scaleX}px`,
-                    height: `${element.height * scale * scaleY}px`,
-                    marginLeft: `${-imgEl.cropX * (element.width / imgEl.cropWidth) * scale}px`,
-                    marginTop: `${-imgEl.cropY * (element.height / imgEl.cropHeight) * scale}px`,
-                  }}
-                />
-              );
-            }
+            // The player is HTML; its tint is drawn over it by the shared
+            // shape renderer, at the same z-level.
+            const tint = imageTintShape(imgEl);
 
             return (
+              <React.Fragment key={element.id}>
               <VideoWithControls
                 key={element.id}
                 src={resource.src}
@@ -754,6 +713,13 @@ export const SlideRenderer: React.FC<SlideRendererProps> = ({
                   zIndex: index,
                 }}
               />
+              {tint && (
+                <svg style={{ position: 'absolute', left: 0, top: 0, width, height, pointerEvents: 'none', zIndex: index }}
+                  viewBox={`0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}`}>
+                  <RenderShape element={tint} />
+                </svg>
+              )}
+              </React.Fragment>
             );
           }
         }

@@ -35,7 +35,7 @@ const DOMAINS = {
   // Playback: easing catalogues, the interpolation engine, per-effect builders.
   animation: [
     'interpolation', 'easingCatalog', 'stickyEasings', 'transitionProperties',
-    'cropAnimation', 'closingBirthCohorts', 'roundedClosingBirth',
+    'closingBirthCohorts', 'roundedClosingBirth',
     'presenterAdvance', 'morphGeometry', 'pathInterpolation',
   ],
   // Coordinate spaces, sizing and the transforms between them.
@@ -76,7 +76,7 @@ const DOMAINS = {
     'exportStandaloneHtml', 'svgRenderer', 'embedResources',
     'thumbnailGenerator', 'officeShape', 'importOdp', 'importPptx',
     'importPresentation', 'storageClient', 'vaultStorage', 'projectFiles',
-    'fileHash', 'standaloneBoot', 'editorLocation',
+    'fileHash', 'standaloneBoot', 'editorLocation', 'importSvg', 'svgPathData',
   ],
   // Interaction plumbing and property-panel metadata.
   editor: [

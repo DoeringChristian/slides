@@ -39,7 +39,7 @@ export interface ExtendEffect {
    *  1 (or above) is a no-op and leaves the authored geometry untouched. */
   progress: number;
 }
-type PathGeometryShape = Pick<ShapeElement, 'points' | 'curve' | 'closed' | 'cornerRadius' | 'tangents' | 'startHead' | 'endHead' | 'strokeWidth'> & { _pathClosure?: PathClosureEffect; _pathExtension?: PathExtensionEffect; _extendFx?: ExtendEffect };
+type PathGeometryShape = Pick<ShapeElement, 'points' | 'curve' | 'closed' | 'cornerRadius' | 'tangents' | 'startHead' | 'endHead' | 'strokeWidth' | 'arrowScale'> & { _pathClosure?: PathClosureEffect; _pathExtension?: PathExtensionEffect; _extendFx?: ExtendEffect };
 export type ExtendPathShape = ShapeElement & { _extendFx?: ExtendEffect };
 
 /** Only curves whose authored chain does not change basis on closure. */
@@ -668,7 +668,7 @@ export function pathArrowGeometry(shape: PathGeometryShape) {
     const idx = end === 'start' ? 0 : points.length - 2;
     const dir = extension ? (end === 'start' ? extension.startDirection : extension.endDirection)
       : pathEndpointDirection(points, curve, supported ? false : closed, shape.tangents, end);
-    return arrowheadGeometry(type, points[idx], points[idx + 1], dir.dx, dir.dy, 10, sw);
+    return arrowheadGeometry(type, points[idx], points[idx + 1], dir.dx, dir.dy, (shape.arrowScale ?? DEFAULT_ARROW_SCALE) * 3, sw);
   };
   const startGeo = head('start'), endGeo = head('end');
   const sampled = !supported && curve !== 'linear' && !!(startGeo?.boundary || endGeo?.boundary);
@@ -802,12 +802,17 @@ export interface ArrowheadGeometry {
   strokes: Array<{ d: string }>;
 }
 
-/** Nominal head length: `size`, scaled up with strokeWidth beyond the
- *  default path width of 3 (so heavier lines grow proportionally bigger
- *  heads) with `size` itself as the sensible minimum — a hairline never
- *  shrinks its head below the classic 10-unit triangle. */
+/** Default head length in stroke widths: 10/3, so a default 3-unit line
+ *  keeps the classic 10-unit triangle. */
+export const DEFAULT_ARROW_SCALE = 10 / 3;
+/** Heads never shrink below this, however thin the line. */
+const MIN_HEAD = 1.5;
+
+/** Head length: `size` is the length at the default stroke width of 3, and
+ *  heads scale with the line in both directions — a hairline gets a small
+ *  head (as drawing tools do), a heavy line a big one. */
 function headSize(size: number, strokeWidth: number): number {
-  return Math.max(size, (size * strokeWidth) / 3);
+  return Math.max(MIN_HEAD, (size * strokeWidth) / 3);
 }
 
 /** Shaft inset for a head type without needing the tip position — the
@@ -824,9 +829,10 @@ export function arrowheadInset(
 }
 
 /** Geometry for a typed arrowhead whose tip sits at (tipX, tipY) pointing
- *  along (dirX, dirY) (need not be normalized). `size` is the nominal head
- *  length at the default strokeWidth of 3; see `headSize` for the scaling
- *  rule. Glyph catalogue (Excalidraw's option set):
+ *  along (dirX, dirY) (need not be normalized). `size` is the head length at
+ *  the default strokeWidth of 3; see `headSize` for the scaling rule (paths
+ *  pass `arrowScale × 3`, so their heads are `arrowScale` stroke widths).
+ *  Glyph catalogue (Excalidraw's option set):
  *
  *    arrow             open V of two stroked segments,       inset 0
  *    triangle          filled triangle (today's classic),    inset s

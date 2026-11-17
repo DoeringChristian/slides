@@ -10,6 +10,7 @@ import { Toolbar } from '../toolbar/Toolbar';
 import { PropertiesPanel } from '../properties/PropertiesPanel';
 import { NotesEditor } from '../notes/NotesEditor';
 import { ObjectListDrawer } from '../objectlist/ObjectListDrawer';
+import { SvgImportDialog } from '../dialogs/SvgImportDialog';
 import { SIZES, useLayout, type SideTab } from '../../store/layoutStore';
 
 // The assistant pulls in the model SDK; load it only when its tab is shown.
@@ -125,6 +126,7 @@ export const AppLayout: React.FC = () => {
         </aside>
       </div>
       <StatusBar />
+      <SvgImportDialog />
     </div>
   );
 };

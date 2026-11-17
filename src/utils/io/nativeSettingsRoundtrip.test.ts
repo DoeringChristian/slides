@@ -11,7 +11,7 @@ function authoredSettings(fillStyle: FillStyle | undefined): Presentation {
   const transitions: PropertyTransitions = {
     position: 'ease', size: 'linear', rotation: 'ease', opacity: 'fadeinout',
     fill: 'linear', stroke: 'ease', strokeWidth: 'linear', cornerRadius: 'ease',
-    fontSize: 'linear', color: 'ease', lineHeight: 'linear', crop: 'ease', resource: 'dissolve',
+    fontSize: 'linear', color: 'ease', lineHeight: 'linear', resource: 'dissolve',
     visibility: 'grow', content: 'write', controlPoints: 'ease', startArrow: 'linear', endArrow: 'ease', morph: 'linear',
     contentOptions: { write: { undoFirst: true }, typewriter: { undoFirst: false }, stagger: { lagRatio: .3 } },
     visibilityOptions: { wipe: { from: 'right' }, slidein: { from: 'bottom' }, grow: { anchor: 'top-left' },
@@ -41,7 +41,7 @@ function authoredSettings(fillStyle: FillStyle | undefined): Presentation {
     originalWidth: 640, originalHeight: 480, duration: 12, hash: 'fixture-hash' };
   const video: SlideElement = { id: 'video', type: 'image', resourceId: 'video', x: 50, y: 400,
     width: 500, height: 300, rotation: 23, opacity: .6, locked: false, visible: true,
-    cropX: 5, cropY: 7, cropWidth: 600, cropHeight: 450, playing: true, loop: false, muted: true, startTime: 2.3, transitions };
+playing: true, loop: false, muted: true, startTime: 2.3, transitions };
   const group: SlideElement = { id: 'group', type: 'group', childIds: ['vector', 'video'], x: 5, y: 6,
     width: 800, height: 500, rotation: 4, opacity: .9, locked: true, visible: true, transitions };
   for (const el of [box, label, path, vector, video, group]) {

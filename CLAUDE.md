@@ -107,8 +107,8 @@ and the real module loads).
   `ArrowheadType`, `PathCurve`, `StrokeStyle` and `FillStyle`. Adding a value to
   one of those unions fails `tsc -b` until it is listed and fails the suite
   until a deck actually uses it.
-- `tests/fixtures/gpis-53-slides.json` — a real 53-slide talk (1330 elements,
-  134 objects) with image pixels replaced by 1×1 placeholders and every
+- `tests/fixtures/gpis-53-slides.json` — a real 53-slide talk (1352 elements,
+  135 objects; its one rect image crop converted to a crop group) with image pixels replaced by 1×1 placeholders and every
   coordinate intact. `tests/gpis-deck.test.ts` checks it against the current
   schema, verifies referential integrity, and walks every keyframe pair through
   the interpolator looking for NaN. If the schema changes, this fails first —

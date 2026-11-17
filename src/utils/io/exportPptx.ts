@@ -1,4 +1,4 @@
-import { attachGroupCrops, groupCropPaint, type GroupCropElement } from '../model/groupCrop';
+import { attachGroupCrops, ensureCropLayouts, groupCropPaint, type GroupCropElement } from '../model/groupCrop';
 import { renderElement, svgToPngDataURL } from './svgRenderer';
 import PptxGenJS from 'pptxgenjs';
 import { officePaint, officeShapeNeedsSvg, officeShapeSvg } from './officeShape';
@@ -253,6 +253,7 @@ export async function exportPptx(presentation: Presentation): Promise<void> {
   const visibleSlides = presentation.slideOrder
     .map(id => presentation.slides[id])
     .filter((slide): slide is Slide => !!slide && !slide.hidden);
+  await ensureCropLayouts(visibleSlides);
 
   for (const slideData of visibleSlides) {
     const slide = pptx.addSlide();

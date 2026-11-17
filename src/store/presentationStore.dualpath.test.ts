@@ -87,7 +87,6 @@ function imageEl(id: string, overrides?: Partial<ImageElement>): ImageElement {
     resourceId: 'res-1',
     x: 500, y: 300, width: 320, height: 180,
     rotation: 0, opacity: 1, locked: false, visible: true,
-    cropX: 0, cropY: 0, cropWidth: 640, cropHeight: 360,
     ...overrides,
   };
 }

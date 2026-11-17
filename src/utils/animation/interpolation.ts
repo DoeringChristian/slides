@@ -1,12 +1,13 @@
-import { cropRect, interpolateCropGeometry, type CropFadeImage } from './cropAnimation';
 import { interpolateVectorGeometry } from '../geometry/vectorGeometry';
-import { parsePaintColor, formatPaintColor, noPaint } from '../paint/paintColor';
+import { parsePaintColor, formatPaintColor, noPaint, withPaintAlpha } from '../paint/paintColor';
 import { stationaryPathPair } from './pathInterpolation';
 import { bsplineExtensionPair } from '../paths/bsplineExtension';
 import { pathGeometryInBox, pathPointsInSlide, slidePointToPath } from '../paths/pathEditing';
 import type { SlideElement, TextElement, ShapeElement, ImageElement, EasingType, ArrowheadType, TransitionGroup } from '../../types/presentation';
-import { resamplePath, catmullTangents, supportsPathClosure, pathEndpointDirection, type PathClosureEffect, type PathExtensionEffect, type ExtendEffect } from '../paths/pathShapes';
+import { resamplePath, catmullTangents, supportsPathClosure, pathEndpointDirection, type PathClosureEffect, type PathExtensionEffect, type ExtendEffect, DEFAULT_ARROW_SCALE } from '../paths/pathShapes';
 import { lerpMorphedPaths, morphShapeOutlines, outlineIsClosed } from './morphGeometry';
+import { imageTintShape } from '../paint/imageTint';
+import { gradientLineOf } from '../paint/shapeFill';
 
 export function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
@@ -21,8 +22,6 @@ function easeInOutCubic(t: number): number {
 export function applyEasing(t: number, easing: EasingType | undefined): number {
   switch (easing) {
     case 'const': return t < 0.5 ? 0 : 1;  // Snap at midpoint
-    case 'cropliftease':
-    case 'cropfadeease':
     case 'ease': return easeInOutCubic(t);
     case 'dissolve': return t;
     // Glyph/path/visual-wrapper easings — numeric branch doesn't apply, the
@@ -303,10 +302,24 @@ export interface TextDissolveSource {
 export interface CrossfadeSource {
   resourceId: string | null | undefined;
   opacity: number;
-  cropX: number;
-  cropY: number;
-  cropWidth: number;
-  cropHeight: number;
+}
+
+const isGradient = (style: ShapeElement['fillStyle']) => style === 'linear' || style === 'radial';
+/** The fill group: colour, style and gradient. A solid fill is a gradient to
+ *  its own colour, so solid ↔ gradient blends instead of snapping; other
+ *  style changes (hatching, linear ↔ radial) switch at the midpoint. */
+function lerpFill(a: ShapeElement, b: ShapeElement, t: number): Pick<ShapeElement, 'fill' | 'fillStyle' | 'fillTo' | 'fillLine'> {
+  const fill = lerpColor(a.fill, b.fill, t);
+  const ga = isGradient(a.fillStyle), gb = isGradient(b.fillStyle);
+  if (!ga && !gb) return { fill, fillStyle: t < 0.5 ? a.fillStyle : b.fillStyle };
+  const style = ga && gb ? (t < 0.5 ? a.fillStyle : b.fillStyle) : ga ? a.fillStyle : b.fillStyle;
+  const endOf = (s: ShapeElement) => isGradient(s.fillStyle) ? s.fillTo ?? withPaintAlpha(s.fill, 0) : s.fill;
+  // A solid side borrows the other side's line (its colours are equal, so the
+  // line is invisible there); a linear ↔ radial switch keeps each line.
+  const lineOf = (s: ShapeElement, other: ShapeElement) => gradientLineOf(isGradient(s.fillStyle) ? s : { ...other, fill: s.fill })!;
+  const la = lineOf(a, b), lb = lineOf(b, a);
+  return { fill, fillStyle: style, fillTo: lerpColor(endOf(a), endOf(b), t),
+    fillLine: la.map((v, i) => lerp(v, lb[i], t)) as ShapeElement['fillLine'] };
 }
 
 export function interpolateElement(a: SlideElement, b: SlideElement, t: number, isForward: boolean = true): SlideElement {
@@ -338,8 +351,7 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
     const box = { x: base.x, y: base.y, width: base.width, height: base.height, rotation: base.rotation, opacity: base.opacity, visible: true };
     // Geometry progress never owns paint or box progress, even at const cuts.
     const paint = a.type === 'shape' && b.type === 'shape' ? {
-      fill: lerpColor(a.fill, b.fill, applyEasing(t, tr.fill)),
-      fillStyle: applyEasing(t, tr.fill) < 0.5 ? a.fillStyle : b.fillStyle,
+      ...lerpFill(a, b, applyEasing(t, tr.fill)),
       stroke: lerpColor(a.stroke, b.stroke, applyEasing(t, tr.stroke)),
       strokeWidth: lerpEased(a.strokeWidth, b.strokeWidth, t, tr.strokeWidth),
     } : {};
@@ -487,8 +499,7 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
         ...base,
         type: 'shape',
         shapeType: 'path',
-        fill: lerpColor(sa.fill, sb.fill, fillT),
-        fillStyle: fillT < 0.5 ? sa.fillStyle : sb.fillStyle,
+        ...lerpFill(sa, sb, fillT),
         stroke: lerpColor(sa.stroke, sb.stroke, strokeT),
         strokeWidth: lerpEased(sa.strokeWidth, sb.strokeWidth, t, tr.strokeWidth),
         cornerRadius: 0,
@@ -661,10 +672,12 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
       ...base,
       type: 'shape',
       shapeType: t < 0.5 ? sa.shapeType : sb.shapeType,
-      fill: lerpColor(sa.fill, sb.fill, fillT),
-      fillStyle: fillT < 0.5 ? sa.fillStyle : sb.fillStyle,
+      ...lerpFill(sa, sb, fillT),
       stroke: lerpColor(sa.stroke, sb.stroke, strokeT),
       strokeWidth: lerpEased(sa.strokeWidth, sb.strokeWidth, t, tr.strokeWidth),
+      // Head size rides with the stroke width it is measured in.
+      ...(sa.arrowScale !== undefined || sb.arrowScale !== undefined ? { arrowScale: lerpEased(
+        sa.arrowScale ?? DEFAULT_ARROW_SCALE, sb.arrowScale ?? DEFAULT_ARROW_SCALE, t, tr.strokeWidth) } : {}),
       cornerRadius: lerpEased(sa.cornerRadius, sb.cornerRadius, t, tr.cornerRadius),
       points: nextPoints,
       curve: nextCurve,
@@ -693,50 +706,20 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
     // Determine resource transition behavior (default to dissolve)
     const resourceEasing = tr.resource ?? 'dissolve';
 
-    // For crop: if resource changes, snap values; otherwise interpolate with easing
-    const cropT = applyEasing(t, tr.crop);
-
     // Build base image result
-    const result: CropFadeImage & { _dissolveSource?: CrossfadeSource } = {
+    // The tint interpolates like a shape fill (solid ↔ gradient blends).
+    const tintA = imageTintShape(ia), tintB = imageTintShape(ib);
+    const tint = tintA || tintB ? lerpFill(tintA ?? { ...tintB!, fill: '', fillTo: undefined }, tintB ?? { ...tintA!, fill: '', fillTo: undefined }, applyEasing(t, tr.fill)) : null;
+    const result: ImageElement & { _dissolveSource?: CrossfadeSource } = {
       ...base,
       type: 'image',
       resourceId: ib.resourceId,
-      cropX: resourceChanges ? ib.cropX : lerp(ia.cropX, ib.cropX, cropT),
-      cropY: resourceChanges ? ib.cropY : lerp(ia.cropY, ib.cropY, cropT),
-      cropWidth: resourceChanges ? ib.cropWidth : lerp(ia.cropWidth, ib.cropWidth, cropT),
-      cropHeight: resourceChanges ? ib.cropHeight : lerp(ia.cropHeight, ib.cropHeight, cropT),
+      ...(tint ? { tint: tint.fill, tintStyle: (tint.fillStyle ?? 'solid') as ImageElement['tintStyle'], tintTo: tint.fillTo, tintLine: tint.fillLine } : {}),
       playing: ib.playing,
       loop: ib.loop,
       muted: ib.muted,
       startTime: ib.startTime,
     };
-
-    // Keep a source-pixel mask separate from the interpolated image mapping.
-    // Position/size/rotation can then animate independently of the fade.
-    delete result._cropFade;
-    delete result._cropLift;
-    if (!resourceChanges && ia.cropWidth > 0 && ia.cropHeight > 0 && ib.cropWidth > 0 && ib.cropHeight > 0 &&
-        (ia.cropX !== ib.cropX || ia.cropY !== ib.cropY || ia.cropWidth !== ib.cropWidth || ia.cropHeight !== ib.cropHeight)) {
-      Object.assign(result, interpolateCropGeometry(ia, ib, result,
-        applyEasing(t, tr.position), applyEasing(t, tr.size)));
-    }
-    if (!resourceChanges && (tr.crop === 'cropfade' || tr.crop === 'cropfadeease') &&
-        ia.cropWidth > 0 && ia.cropHeight > 0 && ib.cropWidth > 0 && ib.cropHeight > 0) {
-      result._cropFade = { from: cropRect(ia), to: cropRect(ib), t: cropT };
-    }
-
-    if (!resourceChanges && (tr.crop === 'croplift' || tr.crop === 'cropliftease') &&
-        ia.cropWidth > 0 && ia.cropHeight > 0 && ib.cropWidth > 0 && ib.cropHeight > 0) {
-      // The retained window travels independently; the original stays at its
-      // source keyframe transform. Use the same layers when playing backwards.
-      const original = isForward ? ia : ib;
-      const target = isForward ? ib : ia;
-      Object.assign(result, { cropX: target.cropX, cropY: target.cropY,
-        cropWidth: target.cropWidth, cropHeight: target.cropHeight });
-      Object.assign(result, interpolateCropGeometry(ia, ib, result,
-        applyEasing(t, tr.position), applyEasing(t, tr.size)));
-      result._cropLift = { original, t: isForward ? cropT : 1 - cropT };
-    }
 
     if (resourceChanges) {
       switch (resourceEasing) {
@@ -750,10 +733,6 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
           result._dissolveSource = {
             resourceId: ia.resourceId,
             opacity: baseOpacity * sqrtOneMinusT,
-            cropX: ia.cropX,
-            cropY: ia.cropY,
-            cropWidth: ia.cropWidth,
-            cropHeight: ia.cropHeight,
           };
           break;
         }
@@ -762,20 +741,12 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
           // Fade out first half, fade in second half
           result.resourceId = useFirst ? ia.resourceId : ib.resourceId;
           result.opacity = fadeinoutOpacity(baseOpacity, t);
-          result.cropX = useFirst ? ia.cropX : ib.cropX;
-          result.cropY = useFirst ? ia.cropY : ib.cropY;
-          result.cropWidth = useFirst ? ia.cropWidth : ib.cropWidth;
-          result.cropHeight = useFirst ? ia.cropHeight : ib.cropHeight;
           break;
 
         case 'const':
         default:
           // Snap at midpoint
           result.resourceId = useFirst ? ia.resourceId : ib.resourceId;
-          result.cropX = useFirst ? ia.cropX : ib.cropX;
-          result.cropY = useFirst ? ia.cropY : ib.cropY;
-          result.cropWidth = useFirst ? ia.cropWidth : ib.cropWidth;
-          result.cropHeight = useFirst ? ia.cropHeight : ib.cropHeight;
           break;
       }
     }

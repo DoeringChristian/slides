@@ -34,13 +34,12 @@ type Exhaustive<Union, List extends readonly Union[]> =
 const ALL_EASINGS = [
   'const', 'linear', 'ease', 'dissolve', 'fadeinout', 'typewriter', 'write',
   'create', 'extend', 'wipe', 'slidein', 'grow', 'iris',
-  'croplift', 'cropliftease', 'cropfade', 'cropliftease', 'cropfadeease',
   'fadebyglyph',
 ] as const satisfies readonly EasingType[];
 
 const ALL_GROUPS = [
   'position', 'size', 'rotation', 'opacity', 'fill', 'stroke', 'strokeWidth',
-  'cornerRadius', 'fontSize', 'color', 'lineHeight', 'crop', 'resource',
+  'cornerRadius', 'fontSize', 'color', 'lineHeight', 'resource',
   'visibility', 'content', 'controlPoints', 'startArrow', 'endArrow', 'morph',
 ] as const satisfies readonly TransitionGroup[];
 
@@ -56,7 +55,7 @@ const ALL_HEADS = [
 
 const ALL_CURVES = ['linear', 'smooth', 'bspline2', 'bspline3', 'bezier'] as const satisfies readonly PathCurve[];
 const ALL_STROKE_STYLES = ['solid', 'dashed', 'dotted'] as const satisfies readonly StrokeStyle[];
-const ALL_FILL_STYLES = ['solid', 'hachure', 'crosshatch'] as const satisfies readonly FillStyle[];
+const ALL_FILL_STYLES = ['solid', 'hachure', 'crosshatch', 'linear', 'radial'] as const satisfies readonly FillStyle[];
 
 // Compile-time exhaustiveness. Each must be `true`; a missing union member
 // turns the type into a tuple and fails `tsc -b`.
@@ -183,11 +182,6 @@ describe('example decks', () => {
             }
             if (frame.type === 'shape') {
               expect(((frame as ShapeElement).points ?? []).every(finite), `${where} .points`).toBe(true);
-            }
-            if (frame.type === 'image') {
-              for (const key of ['cropX', 'cropY', 'cropWidth', 'cropHeight'] as const) {
-                expect(finite((frame as ImageElement)[key]), `${where} .${key}`).toBe(true);
-              }
             }
           }
         }

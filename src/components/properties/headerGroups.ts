@@ -21,7 +21,7 @@ import { transitionPropertiesDiffer } from '../../utils/animation/transitionProp
 const HEADER_GROUPS: Record<SlideElement['type'], TransitionGroup[]> = {
   text: ['visibility', 'content', 'morph', 'controlPoints'],
   shape: ['visibility', 'morph', 'controlPoints', 'startArrow', 'endArrow'],
-  image: ['visibility', 'resource', 'crop'],
+  image: ['visibility', 'resource'],
   group: ['visibility'],
 };
 

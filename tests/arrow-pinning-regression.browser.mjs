@@ -94,7 +94,7 @@ try {
       await evaluate(`(async()=>{const {useCreationPreferences}=await import('/src/store/creationPreferences.ts');useCreationPreferences.getState().remember('arrow',{closed:true,curve:'smooth',endHead:'arrow'});})()`);
       const target={id:'destination',x:700,y:370,width:180,height:120,fill:'#ddeeff',creationPreset:kind==='ellipse'?'ellipse':'rect',textSizing:'user-width',boundTextLayout:'padded',...(kind==='ellipse'?{shapeType:'ellipse'}:{})};
       if(kind==='text') Object.assign(target,{type:'text',text:'Free target',style:{fontFamily:'Arial',fontSize:24,fontWeight:'normal',fontStyle:'normal',textDecoration:'none',color:'#000000',align:'left',verticalAlign:'top',lineHeight:1.2}});
-      if(kind==='image') Object.assign(target,{type:'image',resourceId:null,cropX:0,cropY:0,cropWidth:1,cropHeight:1});
+      if(kind==='image') Object.assign(target,{type:'image',resourceId:null});
       await evaluate(`canvasTest.store.getState().addElement(canvasTest.snapshot().slide.id,${JSON.stringify({...target,rotation:0,opacity:1,locked:false,visible:true,type:target.type??'shape',shapeType:target.shapeType??'rect',stroke:'#000000',strokeWidth:2,cornerRadius:0})})`);
       if(kind==='label') await evaluate(`(async()=>{const {createTextElement}=await import('/src/utils/model/slideFactory.ts');canvasTest.store.getState().addElement(canvasTest.snapshot().slide.id,createTextElement({id:'label',text:'Bound target',containerId:'destination'}));})()`);
       await evaluate(`canvasTest.getActiveUndoManager()?.clear();canvasTest.store.temporal.getState().clear()`);await wait(100);

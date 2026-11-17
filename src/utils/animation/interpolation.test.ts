@@ -57,7 +57,6 @@ function makeImage(overrides: Partial<ImageElement> = {}): ImageElement {
     x: 0, y: 0, width: 200, height: 100,
     rotation: 0, opacity: 1, locked: false, visible: true,
     resourceId: 'res-a',
-    cropX: 0, cropY: 0, cropWidth: 400, cropHeight: 200,
     ...overrides,
   };
 }
@@ -207,17 +206,6 @@ describe('interpolateElement endpoints', () => {
     expect(interpolateElement(ta, tb, 0.5).type === 'text' && (interpolateElement(ta, tb, 0.5) as TextElement).style.fontSize).toBeCloseTo(20);
   });
 
-  test('image: crop values hit source at t=0 and target at t=1 (same resource)', () => {
-    const ia = makeImage({ cropX: 0, cropY: 0, cropWidth: 400, cropHeight: 200 });
-    const ib = makeImage({ cropX: 40, cropY: 20, cropWidth: 200, cropHeight: 100 });
-    const at0 = interpolateElement(ia, ib, 0) as ImageElement;
-    const at1 = interpolateElement(ia, ib, 1) as ImageElement;
-    expect(at0.cropX).toBe(0);
-    expect(at0.cropWidth).toBe(400);
-    expect(at1.cropX).toBe(40);
-    expect(at1.cropWidth).toBe(200);
-  });
-
   test('mismatched element types snap at the midpoint (fallback)', () => {
     const s = makeShape();
     const txt = makeText();
@@ -357,30 +345,25 @@ describe('text content transitions', () => {
 
 describe('image resource change', () => {
   test('default dissolve renders both resources with sqrt alpha curves', () => {
-    const ia = makeImage({ resourceId: 'res-a', cropX: 1, cropY: 2, cropWidth: 3, cropHeight: 4 });
-    const ib = makeImage({ resourceId: 'res-b', cropX: 5, cropY: 6, cropWidth: 7, cropHeight: 8 });
+    const ia = makeImage({ resourceId: 'res-a' });
+    const ib = makeImage({ resourceId: 'res-b' });
     const out = interpolateElement(ia, ib, 0.25) as WithDissolveImage;
     expect(out.resourceId).toBe('res-b');
     expect(out.opacity).toBeCloseTo(Math.sqrt(0.25));
-    // Crop snaps to the target when the resource changes.
-    expect(out.cropX).toBe(5);
     expect(out._dissolveSource).toEqual({
       resourceId: 'res-a',
       opacity: Math.sqrt(0.75),
-      cropX: 1, cropY: 2, cropWidth: 3, cropHeight: 4,
     });
   });
 
-  test("resource='const' snaps resource and crop at the midpoint with no dissolve source", () => {
-    const ia = makeImage({ resourceId: 'res-a', cropX: 1 });
-    const ib = makeImage({ resourceId: 'res-b', cropX: 5, transitions: { resource: 'const' } });
+  test("resource='const' snaps the resource at the midpoint with no dissolve source", () => {
+    const ia = makeImage({ resourceId: 'res-a' });
+    const ib = makeImage({ resourceId: 'res-b', transitions: { resource: 'const' } });
     const before = interpolateElement(ia, ib, 0.4) as WithDissolveImage;
     const after = interpolateElement(ia, ib, 0.6) as WithDissolveImage;
     expect(before.resourceId).toBe('res-a');
-    expect(before.cropX).toBe(1);
     expect(before._dissolveSource).toBeUndefined();
     expect(after.resourceId).toBe('res-b');
-    expect(after.cropX).toBe(5);
   });
 
   test("resource='fadeinout' dips opacity to 0 at the midpoint", () => {
@@ -948,12 +931,6 @@ describe('an unset transition group behaves exactly like its documented default'
       group: 'resource',
       a: makeImage({ resourceId: 'res-a' }),
       b: makeImage({ resourceId: 'res-b' }),
-    },
-    {
-      name: 'image crop changes',
-      group: 'crop',
-      a: makeImage({ cropX: 0, cropY: 0, cropWidth: 400, cropHeight: 200 }),
-      b: makeImage({ cropX: 50, cropY: 25, cropWidth: 200, cropHeight: 100 }),
     },
     {
       name: 'shape type morphs',

@@ -36,10 +36,12 @@ export function ColorEditor<T extends object>({ element, update, syncFields, fie
   field: string; label: string; allowTransparent?: boolean;
 }) {
   const scrub = useScrubCommit({ element, update, syncFields });
-  const alpha = (v: number): CurrentChange<T> => current => setNestedPartial(current, field, withPaintAlpha(getNested(current, field) as string, v / 100));
-  return <ColorPicker color={getNested(element, field) as string} label={label} allowTransparent={allowTransparent} palette={field === 'fill' ? 'fill' : 'stroke'}
+  // An absent optional colour (an image's tint) reads as no colour.
+  const read = (el: T) => (getNested(el, field) as string | undefined) ?? '';
+  const alpha = (v: number): CurrentChange<T> => current => setNestedPartial(current, field, withPaintAlpha(read(current), v / 100));
+  return <ColorPicker color={read(element)} label={label} allowTransparent={allowTransparent} palette={['fill', 'fillTo', 'tint', 'tintTo'].includes(field) ? 'fill' : 'stroke'}
     onChange={v => scrub.commitDiscrete(current => setNestedPartial(current, field, v))}
-    onRgbChange={v => scrub.commitDiscrete(current => setNestedPartial(current, field, withPaintRgb(getNested(current, field) as string, v)))}
+    onRgbChange={v => scrub.commitDiscrete(current => setNestedPartial(current, field, withPaintRgb(read(current), v)))}
     alphaControl={{ onScrubStart: scrub.begin, onPreview: v => scrub.preview(alpha(v)),
       onCommit: v => scrub.end(alpha(v)), onEditCommit: v => scrub.commitDiscrete(alpha(v)), onScrubCancel: scrub.cancel }} />;
 }

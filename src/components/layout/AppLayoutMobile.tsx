@@ -13,6 +13,7 @@ import { SlidePanel } from '../sidebar/SlidePanel';
 import { PropertiesPanel } from '../properties/PropertiesPanel';
 import { NotesEditor } from '../notes/NotesEditor';
 import { ObjectListDrawer } from '../objectlist/ObjectListDrawer';
+import { SvgImportDialog } from '../dialogs/SvgImportDialog';
 import { useLayout } from '../../store/layoutStore';
 import { ExportDialog } from '../dialogs/ExportDialog';
 import { MobileToolPalette } from '../toolbar/MobileToolPalette';
@@ -351,6 +352,7 @@ export const AppLayoutMobile: React.FC = () => {
       <ObjectListDrawer />
 
       <ExportDialog isOpen={showExport} onClose={() => setShowExport(false)} />
+      <SvgImportDialog />
     </div>
   );
 };

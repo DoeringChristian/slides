@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { usePresentationStore as store } from './presentationStore';
 import { useEditorStore as editor } from './editorStore';
 import { createPresentation, createShapeElement, createImageElement, duplicateElements } from '../utils/model/slideFactory';
-import { attachGroupCrops, groupCropRegions, type GroupCropElement } from '../utils/model/groupCrop';
+import { attachGroupCrops, cropGroupOf, groupCropClips, groupCropRegions, selectionCropAction, type GroupCropElement } from '../utils/model/groupCrop';
 import { jsonToYDoc, yDocToJson } from '../collab/ySchema';
 import { setActiveDoc } from '../collab/yDocAdapter';
 import { createUndoManagerFor, setActiveUndoManager } from '../collab/activeUndo';
@@ -22,7 +22,7 @@ it.each([false,true])('crop is an undoable ordinary group property (collab=%s)',
   const doc=collab?jsonToYDoc(p):null;setActiveDoc(doc);
   const undo=doc?createUndoManagerFor(doc):null;setActiveUndoManager(undo);
   const read=()=> (doc?yDocToJson(doc):store.getState().presentation).slides[slide.id];
-  store.getState().setGroupCrop(slide.id,['boundary','media'],'boundary');
+  store.getState().setCrop(slide.id,'media',['boundary']);
   const cropped=structuredClone(read()), boundary=cropped.elements.boundary;
   expect(boundary.type).toBe('shape');
   if(boundary.type!=='shape') throw Error('shape');
@@ -45,12 +45,12 @@ it.each([false,true])('crop is an undoable ordinary group property (collab=%s)',
   expect(roundtrip.slides[slide.id]).toEqual(cropped);
   if(undo) undo.undo();else store.temporal.getState().undo();expect(read()).toEqual(slide);
   if(undo) undo.redo();else store.temporal.getState().redo();expect(read()).toEqual(cropped);
-  store.getState().setGroupCrop(slide.id,['boundary','media'],null);
+  store.getState().setCrop(slide.id,'media',null);
   expect(read().elements.media.objectGroupIds).toEqual(boundary.objectGroupIds);
   expect(attachGroupCrops(Object.values(read().elements))).toBeTruthy();
   expect(Object.values(read().elements).some(el=>(el as GroupCropElement)._groupClips)).toBe(false);
   // Ungrouping disables the group property without rewriting the image.
-  store.getState().setGroupCrop(slide.id,['boundary','media'],'boundary');
+  store.getState().setCrop(slide.id,'media',['boundary']);
   store.getState().ungroupObjects(slide.id,['boundary','media']);
   const ungrouped=Object.values(read().elements);expect(attachGroupCrops(ungrouped)).toBe(ungrouped);
 });
@@ -64,4 +64,111 @@ it('supports all primitive boundaries and nested crop intersections',()=>{
   const image=createImageElement(null,200,100,{id:'i',objectGroupIds:['outer','inner']});
   const result=attachGroupCrops([outer,inner,image]);
   expect((result.find(e=>e.id==='i') as GroupCropElement)._groupClips).toHaveLength(2);
+});
+
+it('shapes of one crop group union; nested crop groups intersect', () => {
+  const a=createShapeElement('rect',{id:'a',objectGroupIds:['g'],cropGroupId:'g'});
+  const b=createShapeElement('ellipse',{id:'b',objectGroupIds:['g'],cropGroupId:'g'});
+  const image=createImageElement(null,200,100,{id:'i',objectGroupIds:['g']});
+  const clipped=attachGroupCrops([a,b,image]).find(e=>e.id==='i')!;
+  expect(groupCropClips(clipped)).toEqual([{group:'g',shapes:[a,b]}]);
+  // Crop shapes are not cut by their own group's other shapes (an outline
+  // on one would otherwise show only where it overlaps the others).
+  const painted=attachGroupCrops([a,b,image]);
+  expect(groupCropClips(painted.find(e=>e.id==='a')!)).toEqual([]);
+  expect(groupCropClips(painted.find(e=>e.id==='b')!)).toEqual([]);
+  const outer=createShapeElement('rect',{id:'o',objectGroupIds:['outer'],cropGroupId:'outer'});
+  const inner=createShapeElement('rect',{id:'n',objectGroupIds:['outer','inner'],cropGroupId:'inner'});
+  const nested=createImageElement(null,200,100,{id:'m',objectGroupIds:['outer','inner']});
+  expect(groupCropClips(attachGroupCrops([outer,inner,nested]).find(e=>e.id==='m')!).map(c=>c.group)).toEqual(['outer','inner']);
+  // ...but a nested group's crop shape is still cut by the outer crop.
+  expect(groupCropClips(attachGroupCrops([outer,inner,nested]).find(e=>e.id==='n')!).map(c=>c.group)).toEqual(['outer']);
+});
+
+it('offers crop for one image, image + shapes, or exactly one crop group', () => {
+  const image=createImageElement(null,200,100,{id:'i'});
+  const rect=createShapeElement('rect',{id:'r'});
+  const other=createImageElement(null,200,100,{id:'j'});
+  const text={...createShapeElement('rect',{id:'t'}),type:'text'} as never;
+  const label={...createShapeElement('rect',{id:'l'}),type:'text',containerId:'r'} as never;
+  let els: Record<string, never>={i:image,r:rect,j:other,t:text,l:label} as never;
+  expect(selectionCropAction(els,['i'])).toEqual({kind:'start',imageId:'i'});
+  expect(selectionCropAction(els,['i','r'])).toEqual({kind:'make',imageId:'i',shapeIds:['r']});
+  expect(selectionCropAction(els,['i','j'])).toBeNull();
+  // Free text crops by its glyphs; a bound label is not offered.
+  expect(selectionCropAction(els,['i','t'])).toEqual({kind:'make',imageId:'i',shapeIds:['t']});
+  expect(selectionCropAction(els,['i','l'])).toEqual({kind:'start',imageId:'i'});
+  expect(selectionCropAction(els,['r'])).toBeNull();
+  const cropped={...image,objectGroupIds:['g']}, boundary={...rect,objectGroupIds:['g'],cropGroupId:'g'}, extra=createShapeElement('rect',{id:'x',objectGroupIds:['g']});
+  els={i:cropped,r:boundary,x:extra,j:other} as never;
+  expect(selectionCropAction(els,['i','r','x'])).toEqual({kind:'edit',imageId:'i',group:'g'});
+  expect(selectionCropAction(els,['i'])).toEqual({kind:'edit',imageId:'i',group:'g'});
+  expect(selectionCropAction(els,['i','r'])).toBeNull();
+  expect(selectionCropAction(els,['i','r','x','j'])).toBeNull();
+});
+
+it.each([false,true])('crop mode: drawn shapes become crop shapes in one undo step; an emptied crop dissolves (collab=%s)', collab => {
+  const p=createPresentation(), slide=p.slides[p.slideOrder[0]];
+  const image=createImageElement(null,200,100,{id:'media',x:50,y:50,width:200,height:100,objectGroupIds:['outer']});
+  const sibling=createShapeElement('rect',{id:'sib',objectGroupIds:['outer']});
+  slide.elements={media:image,sib:sibling};slide.elementOrder=['media','sib'];
+  store.setState({presentation:structuredClone(p)});store.temporal.getState().clear();
+  editor.setState({activeSlideId:slide.id,activeObjectGroupId:null,selectedElementIds:[],autoDrawMode:false,selectedSlideIds:[]});
+  const doc=collab?jsonToYDoc(p):null;setActiveDoc(doc);
+  const undo=doc?createUndoManagerFor(doc):null;setActiveUndoManager(undo);
+  const read=()=> (doc?yDocToJson(doc):store.getState().presentation).slides[slide.id];
+  const group=store.getState().addCropShape(slide.id,'media',createShapeElement('rect',{id:'c1',x:60,y:60,width:50,height:50}))!;
+  let s=read();
+  expect(s.elements.media.objectGroupIds).toEqual(['outer',group]);
+  expect(s.elements.c1.objectGroupIds).toEqual(['outer',group]);
+  expect(s.elements.c1.type==='shape'&&s.elements.c1.cropGroupId).toBe(group);
+  expect(s.elements.sib.objectGroupIds).toEqual(['outer']);
+  expect(store.getState().addCropShape(slide.id,'media',createShapeElement('ellipse',{id:'c2'}))).toBe(group);
+  s=read();expect(cropGroupOf(s.elements,'media')).toBe(group);
+  expect(groupCropClips(attachGroupCrops(Object.values(s.elements)).find(e=>e.id==='media')!)[0].shapes).toHaveLength(2);
+  // Each drawn shape is one undo step, image regrouping included.
+  if(undo) undo.undo();else store.temporal.getState().undo();
+  expect(read().elements.c2).toBeUndefined();
+  if(undo) undo.undo();else store.temporal.getState().undo();
+  expect(read()).toEqual(slide);
+  if(undo) undo.redo();else store.temporal.getState().redo();
+  // Hiding the last crop shape and cleaning up dissolves the crop group.
+  store.getState().hideElements(slide.id,['c1']);
+  store.getState().cleanupCrop(slide.id,group);
+  s=read();
+  expect(s.elements.media.objectGroupIds).toEqual(['outer']);
+  expect(cropGroupOf(s.elements,'media')).toBeUndefined();
+});
+
+it('crop shapes combine in layer order: add, subtract, intersect', async () => {
+  const { cropSteps } = await import('../utils/model/groupCrop');
+  const { selectionResizeBounds } = await import('../utils/geometry/resizeGeometry');
+  const shape = (id: string, x: number, op?: 'add' | 'subtract' | 'intersect') =>
+    createShapeElement('rect', { id, x, y: 0, width: 100, height: 100, objectGroupIds: ['g'], cropGroupId: 'g', ...(op ? { cropOp: op } : {}) });
+  expect(cropSteps([shape('a', 0), shape('b', 50)])).toMatchObject({ full: false, union: true });
+  // A first subtracting shape cuts from the whole image; a first intersect adds.
+  expect(cropSteps([shape('a', 0, 'subtract')])).toMatchObject({ full: true, union: false });
+  expect(cropSteps([shape('a', 0, 'intersect')]).steps[0].op).toBe('add');
+  // Selection bounds: the image counts only where its crop shows it; the crop
+  // shapes themselves are selected objects and frame as such.
+  const image = createImageElement(null, 400, 100, { id: 'i', x: 0, y: 0, width: 400, height: 100, objectGroupIds: ['g'] });
+  const sel = (shapes: ReturnType<typeof shape>[]) => selectionResizeBounds(attachGroupCrops([image, ...shapes]));
+  expect(sel([shape('a', 0), shape('b', 200)])).toMatchObject({ x: 0, width: 300 });
+  expect(sel([shape('a', 0), shape('b', 50, 'intersect')])).toMatchObject({ x: 0, width: 150 });
+  // Starting from the whole image (a first subtract), the image frames in full.
+  expect(sel([shape('a', 150, 'subtract')])).toMatchObject({ x: 0, width: 400 });
+});
+
+it('a crop shape on only one keyframe moves with its media, not at its own place', async () => {
+  const { followCropMedia } = await import('../utils/model/groupCrop');
+  const image = (x: number) => createImageElement(null, 200, 100, { id: 'i', x, y: 0, width: 200, height: 100, objectGroupIds: ['g'] });
+  // Drawn only on the destination keyframe, 20 units into the image.
+  const crop = createShapeElement('rect', { id: 'c', x: 520, y: 10, width: 50, height: 50, objectGroupIds: ['g'], cropGroupId: 'g' });
+  const slideA = { elements: { i: image(0) } }, slideB = { elements: { i: image(500), c: crop } };
+  // Mid-transition the image is at x=250; the crop rides along at +20.
+  const frame = followCropMedia([image(250), crop], slideA, slideB, 0.5, (_m, t) => t);
+  expect(frame.find(el => el.id === 'c')!.x).toBeCloseTo(270);
+  // Present on both keyframes: unchanged behaviour (relative pose interpolated).
+  const both = followCropMedia([image(250), crop], { elements: { i: image(0), c: { ...crop, x: 20 } } }, slideB, 0.5, (_m, t) => t);
+  expect(both.find(el => el.id === 'c')!.x).toBeCloseTo(270);
 });

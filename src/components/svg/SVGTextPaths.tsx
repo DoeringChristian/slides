@@ -63,7 +63,8 @@ export const SVGTextPaths: React.FC<Props> = memo(({
   // Default to the element's own opacity. A literal default of 1 made every
   // caller that did not think to pass it — the editor canvas, the edit
   // overlay, the object-list preview — draw text fully opaque.
-  const opacity = opacityOverride ?? element.opacity ?? 1;
+  // Crop text draws nothing itself: the image shows through its glyphs.
+  const opacity = (element as GroupCropElement)._groupCropBoundary ? 0 : opacityOverride ?? element.opacity ?? 1;
   const padding = textInsets(element);
   const clipPad = clipPadding ?? textInkOverflow(element);
   const bottomOverflow = 500;

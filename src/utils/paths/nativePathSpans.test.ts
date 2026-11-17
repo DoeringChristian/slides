@@ -103,7 +103,8 @@ describe('nativePathSpans serialization and authored provenance', () => {
   });
   it('owns all terminal Q components even when its midpoint is outside', () => {
     const path = native(points, 0.938);
-    const head = arrowheadGeometry('triangle', 100, 100, 0, 100, 10, 1);
+    // A 10-unit head (the size at stroke width 3; heads scale with the stroke).
+    const head = arrowheadGeometry('triangle', 100, 100, 0, 100, 10, 3);
     const result = consumeNativeTerminals(path, undefined, head.boundary);
     expect(result.consumed[3]).toHaveLength(1);
     expect(result.consumed[3][0][0]).toBeGreaterThan(0.5);

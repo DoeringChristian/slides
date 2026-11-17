@@ -2,7 +2,8 @@ import { describe, expect, test } from 'vitest';
 import type { Slide, SlideElement, ShapeElement, TextElement, ImageElement, Resource } from '../../types/presentation';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../constants';
 import { pathArrowGeometry, pathD, arrowheadGeometry, strokeDashFor } from '../paths/pathShapes';
-import { renderSlideToSVG } from './svgRenderer';
+import { renderElement, renderSlideToSVG } from './svgRenderer';
+import { attachGroupCrops } from '../model/groupCrop';
 
 // =============================================================================
 // Regression net for the export SVG renderer.
@@ -373,7 +374,6 @@ describe('svgRenderer geometry (stable across renderer unification)', () => {
       ...baseEl,
       id: 'img1', type: 'image', resourceId: 'res1',
       x: 100, y: 120, width: 400, height: 300,
-      cropX: 0, cropY: 0, cropWidth: 0, cropHeight: 0,
       opacity: 0.9,
     };
     const svg = renderOne(el, resources);
@@ -387,24 +387,17 @@ describe('svgRenderer geometry (stable across renderer unification)', () => {
     expect(img.attrs.preserveAspectRatio).toBe('none');
   });
 
-  test('cropped image: clipPath + scaled/offset image', () => {
+  test('crop group: one clipPath per crop group, its shapes unioned inside it', () => {
     const resources: Record<string, Resource> = {
       res1: { id: 'res1', name: 'pic', type: 'image', src: 'data:image/png;base64,BBBB', originalWidth: 1000, originalHeight: 500 },
     };
-    const el: ImageElement = {
-      ...baseEl,
-      id: 'img2', type: 'image', resourceId: 'res1',
-      x: 50, y: 60, width: 200, height: 100,
-      cropX: 100, cropY: 50, cropWidth: 400, cropHeight: 200,
-    };
-    const svg = renderOne(el, resources);
+    const image: ImageElement = { ...baseEl, id: 'img2', type: 'image', resourceId: 'res1', x: 50, y: 60, width: 200, height: 100, objectGroupIds: ['g'] };
+    const crop = (id: string, x: number) => ({ ...baseEl, id, type: 'shape' as const, shapeType: 'rect' as const, x, y: 60, width: 40, height: 40,
+      fill: '#000000', stroke: '', strokeWidth: 0, cornerRadius: 0, objectGroupIds: ['g'], cropGroupId: 'g' }) as ShapeElement;
+    const [clipped] = attachGroupCrops([image, crop('a', 50), crop('b', 150)]);
+    const svg = renderElement(clipped, resources);
     expect(tagsOf(svg, 'clipPath').length).toBe(1);
-    const img = firstTag(svg, 'image');
-    const scaleX = 200 / 400, scaleY = 100 / 200;
-    expect(nums(img.attrs.x)[0]).toBeCloseTo(50 - 100 * scaleX);
-    expect(nums(img.attrs.y)[0]).toBeCloseTo(60 - 50 * scaleY);
-    expect(nums(img.attrs.width)[0]).toBeCloseTo(1000 * scaleX);
-    expect(nums(img.attrs.height)[0]).toBeCloseTo(500 * scaleY);
+    expect(tagsOf(svg, 'path').length).toBe(2);
   });
 
   test('video resource renders a dark placeholder rect (video cannot rasterize)', () => {
@@ -415,7 +408,6 @@ describe('svgRenderer geometry (stable across renderer unification)', () => {
       ...baseEl,
       id: 'v1', type: 'image', resourceId: 'vid1',
       x: 10, y: 20, width: 300, height: 200,
-      cropX: 0, cropY: 0, cropWidth: 0, cropHeight: 0,
     };
     const svg = renderOne(el, resources);
     const rects = tagsOf(svg, 'rect');

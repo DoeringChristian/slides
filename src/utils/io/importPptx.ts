@@ -644,7 +644,7 @@ export async function importPptx(file: File): Promise<Presentation> {
       const dataUrl = await extractMediaAsDataUrl(zip, normalizedPath);
       if (!dataUrl) continue;
 
-      // Get actual image dimensions for correct crop values
+      // Actual image dimensions, for the resource
       const imgDims = await getImageDimensions(dataUrl);
 
       const resource = createResource(
@@ -667,10 +667,6 @@ export async function importPptx(file: File): Promise<Presentation> {
         locked: false,
         visible: true,
         resourceId: resource.id,
-        cropX: 0,
-        cropY: 0,
-        cropWidth: imgDims.width,
-        cropHeight: imgDims.height,
       };
       elements.push(el);
     }

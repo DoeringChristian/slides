@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { RenderShape } from '../../components/svg/ElementRenderer';
 import type { ShapeElement } from '../../types/presentation';
-import { hasPatternFill } from '../paint/shapeFill';
+import { gradientFill, hasPatternFill } from '../paint/shapeFill';
 import { noPaint, parsePaintColor, paintHex } from '../paint/paintColor';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../constants';
 
@@ -14,7 +14,7 @@ export function officePaint(color: string, opacity = 1) {
  * Composition opacity over overlapping paints, hatches and translucent
  * headed paths need the shared renderer rather than target approximations. */
 export function officeShapeNeedsSvg(el: ShapeElement): boolean {
-  return el.shapeType === 'vector' || hasPatternFill(el)
+  return el.shapeType === 'vector' || hasPatternFill(el) || !!gradientFill(el)
     || (el.opacity < 1 && !noPaint(el.fill) && !noPaint(el.stroke) && el.strokeWidth > 0)
     || (el.shapeType === 'path' && (el.opacity < 1
       || (parsePaintColor(el.stroke)?.a ?? 1) < 1

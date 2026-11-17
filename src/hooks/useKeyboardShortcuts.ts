@@ -71,6 +71,16 @@ export function useKeyboardShortcuts() {
       const activeSlideId = editor.getState().activeSlideId;
       const selectedIds = editor.getState().selectedElementIds;
 
+      // Crop mode owns Esc and Enter — except while drawing (a tool picked, a
+      // line being extended): then they finish or cancel the drawing as
+      // anywhere else, and crop mode carries on.
+      const drawing = editor.getState().tool !== 'select' || !!editor.getState().pathExtension;
+      if (editor.getState().croppingElementId && !isInput && (e.key === 'Escape' || e.key === 'Enter') && !ctrl && !drawing) {
+        e.preventDefault();
+        editor.getState().exitCropMode();
+        return;
+      }
+
       // Object groups are independent of slide-chain grouping.
       if (ctrl && key === 'g' && !isInput && !editor.getState().editingTextId &&
           !editor.getState().croppingElementId && editor.getState().tool === 'select') {
@@ -140,6 +150,9 @@ export function useKeyboardShortcuts() {
         e.preventDefault();
         if (editor.getState().editingTextId) {
           editor.getState().setEditingTextId(null);
+        } else if (editor.getState().croppingElementId) {
+          // Esc in crop mode while drawing cancels the drawing, nothing more.
+          editor.getState().setTool('select');
         } else if (editor.getState().activeObjectGroupId) {
           editor.getState().exitObjectGroup();
         } else {

@@ -4,7 +4,7 @@ import { parsePaintColor } from '../utils/paint/paintColor';
 
 export const CREATION_PREFERENCES_KEY = 'slides.creation-preferences.v1';
 export type CreationKey = 'dot' | 'rect' | 'ellipse' | 'triangle' | 'star' | 'line' | 'arrow' | 'curve' | 'polygon' | 'icon';
-export type CreationStyle = Partial<Pick<ShapeElement, 'fill' | 'stroke' | 'strokeWidth' | 'strokeStyle' | 'fillStyle' | 'cornerRadius' | 'curve' | 'closed' | 'startHead' | 'endHead'>>;
+export type CreationStyle = Partial<Pick<ShapeElement, 'fill' | 'stroke' | 'strokeWidth' | 'strokeStyle' | 'fillStyle' | 'cornerRadius' | 'curve' | 'closed' | 'startHead' | 'endHead' | 'arrowScale'>>;
 const keys: CreationKey[] = ['dot', 'rect', 'ellipse', 'triangle', 'star', 'line', 'arrow', 'curve', 'polygon', 'icon'];
 const heads = ['none', 'arrow', 'triangle', 'triangle-outline', 'bar', 'dot', 'circle', 'circle-outline', 'diamond', 'diamond-outline', 'crowfoot-one', 'crowfoot-many', 'crowfoot-one-many'];
 export function creationKeyForTool(tool: Tool): CreationKey | undefined {
@@ -26,10 +26,11 @@ export function sanitizeCreationStyle(key: CreationKey, input: unknown): Creatio
     if (field === 'cornerRadius' && !['rect', 'line', 'arrow', 'curve', 'polygon'].includes(key)) continue;
     if (typeof value === 'number' && Number.isFinite(value)) out[field] = Math.max(0, Math.min(max, value));
   }
-  const enums: Record<string, string[]> = { fillStyle: ['solid', 'hachure', 'crosshatch'], strokeStyle: ['solid', 'dashed', 'dotted'] };
+  const enums: Record<string, string[]> = { fillStyle: ['solid', 'hachure', 'crosshatch', 'linear', 'radial'], strokeStyle: ['solid', 'dashed', 'dotted'] };
   if (['line', 'arrow', 'curve', 'polygon'].includes(key)) {
     Object.assign(enums, { curve: ['linear', 'smooth', 'bezier', 'bspline2', 'bspline3'], startHead: heads, endHead: heads });
     if (typeof source.closed === 'boolean') out.closed = source.closed;
+    if (typeof source.arrowScale === 'number' && Number.isFinite(source.arrowScale)) out.arrowScale = Math.max(0.5, Math.min(20, source.arrowScale));
   }
   for (const [field, values] of Object.entries(enums)) if (typeof source[field] === 'string' && values.includes(source[field])) out[field] = source[field];
   return out as CreationStyle;

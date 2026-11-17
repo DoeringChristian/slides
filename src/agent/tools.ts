@@ -92,10 +92,10 @@ const SHAPE_TYPES = ['rect', 'ellipse', 'triangle', 'star', 'dot', 'path'] as co
 const HEADS = ['none', 'arrow', 'triangle', 'triangle-outline', 'bar', 'dot', 'circle', 'circle-outline',
   'diamond', 'diamond-outline', 'crowfoot-one', 'crowfoot-many', 'crowfoot-one-many'] as const;
 const GROUPS: TransitionGroup[] = ['position', 'size', 'rotation', 'opacity', 'fill', 'stroke', 'strokeWidth',
-  'cornerRadius', 'fontSize', 'color', 'lineHeight', 'crop', 'resource', 'visibility', 'content',
+  'cornerRadius', 'fontSize', 'color', 'lineHeight', 'resource', 'visibility', 'content',
   'controlPoints', 'startArrow', 'endArrow', 'morph'];
 const EASINGS: EasingType[] = ['const', 'linear', 'ease', 'dissolve', 'fadeinout', 'typewriter', 'write', 'create',
-  'extend', 'wipe', 'slidein', 'grow', 'iris', 'croplift', 'cropliftease', 'cropfade', 'cropfadeease', 'fadebyglyph'];
+  'extend', 'wipe', 'slidein', 'grow', 'iris', 'fadebyglyph'];
 
 const num = (description?: string, minimum?: number, maximum?: number): JsonSchema =>
   ({ type: 'number', ...(description ? { description } : {}), ...(minimum !== undefined ? { minimum } : {}), ...(maximum !== undefined ? { maximum } : {}) });
@@ -135,7 +135,11 @@ const elementFields: Record<string, JsonSchema> = {
   containerId: str('Bind this text as the label of a shape or arrow on the same slide'),
   shapeType: oneOf(SHAPE_TYPES),
   fill: str('Fill color, "" for none'),
-  fillStyle: oneOf(['solid', 'hachure', 'crosshatch']),
+  fillStyle: oneOf(['solid', 'hachure', 'crosshatch', 'linear', 'radial']),
+  arrowScale: num('path only: arrowhead length in stroke widths (default 3.33)', 0.5, 20),
+  fillTo: str('linear/radial gradients: end colour (start is fill); default fill made transparent'),
+  fillLine: { type: 'array', items: { type: 'number' },
+    description: 'gradients: [x1,y1,x2,y2] relative to the box (0..1): linear start→end, radial centre→radius point. Default [0.5,0,0.5,1] / [0.5,0.5,1,1]' },
   stroke: str('Stroke color, "" for none'),
   strokeWidth: num(undefined, 0, 100),
   cornerRadius: num('rect only', 0),

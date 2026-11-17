@@ -10,7 +10,6 @@ import {
   visibilityTypesFor,
   CONTENT_TYPES,
   RESOURCE_TYPES,
-  CROP_TYPES,
   MORPH_TYPES,
   DEFAULT_TYPES as NUMERIC,
 } from './easingCatalog';
@@ -41,12 +40,12 @@ export function applicable(element: SlideElement, group: TransitionGroup, easing
       return elementType === 'text' && CONTENT_TYPES.includes(easing);
     case 'resource':
       return elementType === 'image' && RESOURCE_TYPES.includes(easing);
-    case 'fill': case 'stroke': case 'strokeWidth': case 'cornerRadius':
+    case 'fill':
+      return (elementType === 'shape' || elementType === 'image') && NUMERIC.includes(easing);
+    case 'stroke': case 'strokeWidth': case 'cornerRadius':
       return elementType === 'shape' && NUMERIC.includes(easing);
     case 'fontSize': case 'color': case 'lineHeight':
       return elementType === 'text' && NUMERIC.includes(easing);
-    case 'crop':
-      return elementType === 'image' && CROP_TYPES.includes(easing);
     case 'controlPoints': case 'startArrow': case 'endArrow':
       return elementType === 'shape' && NUMERIC.includes(easing);
     case 'morph':

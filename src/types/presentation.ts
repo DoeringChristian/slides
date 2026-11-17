@@ -119,8 +119,6 @@ export type EasingType =
   | 'slidein'       // translate from off-screen edge
   | 'grow'          // scale from anchor point
   | 'iris'          // circular clip-path reveal
-  | 'croplift' | 'cropliftease' // lift the crop over a stationary fading original
-  | 'cropfade' | 'cropfadeease' // fade the area outside the destination crop
   | 'fadebyglyph';  // staggered per-glyph fade (text)
 
 /** Per-easing settings. Each top-level key targets one easing's behaviour;
@@ -197,7 +195,7 @@ export type TransitionGroup =
   | 'position' | 'size' | 'rotation' | 'opacity'
   | 'fill' | 'stroke' | 'strokeWidth' | 'cornerRadius'
   | 'fontSize' | 'color' | 'lineHeight'
-  | 'crop' | 'resource' | 'visibility' | 'content'
+  | 'resource' | 'visibility' | 'content'
   | 'controlPoints' | 'startArrow' | 'endArrow' | 'morph';
 
 // Per-property-group transition settings
@@ -213,7 +211,6 @@ export interface PropertyTransitions {
   fontSize?: EasingType;
   color?: EasingType;         // text color
   lineHeight?: EasingType;
-  crop?: EasingType;          // cropX, cropY, cropWidth, cropHeight
   resource?: EasingType;      // resourceId (supports dissolve)
   visibility?: EasingType;    // fade-in/fade-out animation
   content?: EasingType;       // text content (typewriter effect)
@@ -277,6 +274,11 @@ export interface TextStyle {
 export interface TextElement extends BaseElement {
   type: 'text';
   text: string;
+  /** This text is a crop shape of the crop group `cropGroupId`: the image
+   *  shows through its glyphs (see utils/model/groupCrop.ts). */
+  cropGroupId?: string | null;
+  /** See `ShapeElement.cropOp`. */
+  cropOp?: CropOp;
   /** Free text uses zero inset and explicit content sizing. */
   textSizing: 'auto-content' | 'user-width';
   style: TextStyle;
@@ -324,8 +326,13 @@ export type PathCurve = 'linear' | 'smooth' | 'bspline2' | 'bspline3' | 'bezier'
  *  `strokeWidth` in the renderer so it scales with the line. */
 export type StrokeStyle = 'solid' | 'dashed' | 'dotted';
 
-/** Absent means solid for existing decks. No-colour fills stay transparent. */
-export type FillStyle = 'solid' | 'hachure' | 'crosshatch';
+/** How a crop shape combines with the crop shapes below it. */
+export type CropOp = 'add' | 'subtract' | 'intersect';
+
+/** Absent means solid for existing decks. No-colour fills stay transparent.
+ *  `linear` / `radial` are gradients from `fill` to `fillTo` across the
+ *  shape's box (see utils/paint/shapeFill.ts). */
+export type FillStyle = 'solid' | 'hachure' | 'crosshatch' | 'linear' | 'radial';
 
 /** Aim tracks the silhouette toward a local focus; pinned tracks the local point. */
 export type BindingMode = 'pinned' | 'aim';
@@ -364,7 +371,9 @@ export interface VectorGeometry {
 }
 
 export interface ShapeElement extends BaseElement {
-  /** This member supplies the crop boundary for this ordinary object group. */
+  /** This member is a crop shape of the crop group `cropGroupId` (one of
+   *  its object groups): the group's single image shows only inside the
+   *  union of its crop shapes. See utils/model/groupCrop.ts. */
   cropGroupId?: string | null;
   geometry?: VectorGeometry;
   /** User drawing family; preserves line/arrow/curve defaults after style edits. */
@@ -373,6 +382,21 @@ export interface ShapeElement extends BaseElement {
   shapeType: ShapeType;
   fill: string;
   fillStyle?: FillStyle;
+  /** Gradient fills: the end colour (start is `fill`). Absent: `fill` made
+   *  fully transparent — a fade-out. */
+  fillTo?: string;
+  /** Gradient geometry relative to the shape's box ([0,0] top-left, [1,1]
+   *  bottom-right): linear from (x1,y1) to (x2,y2); radial centred at (x1,y1)
+   *  reaching (x2,y2). Absent: top→bottom, or centre→corner. Edited with the
+   *  on-canvas gradient handles. */
+  fillLine?: [number, number, number, number];
+  /** A crop shape that also tints: its fill paints over the image inside the
+   *  crop instead of being hidden (e.g. darken a photo under a title). */
+  cropTint?: boolean;
+  /** A crop shape's operation, applied in layer order: `add` reveals its
+   *  area (default), `subtract` cuts it away, `intersect` keeps only what
+   *  it overlaps. A first shape that subtracts cuts from the whole image. */
+  cropOp?: CropOp;
   stroke: string;
   strokeWidth: number;
   cornerRadius: number;
@@ -398,6 +422,9 @@ export interface ShapeElement extends BaseElement {
    *  `'startArrow'`/`'endArrow'` names — they're persisted in decks.) */
   startHead?: ArrowheadType;
   endHead?: ArrowheadType;
+  /** Path only: arrowhead length in stroke widths (default 10/3, so a
+   *  3-unit line has a 10-unit head). Both ends. */
+  arrowScale?: number;
   /** Path only: solid / dashed / dotted stroke. Defaults to 'solid'. */
   strokeStyle?: StrokeStyle;
   startBinding?: ConnectorBinding | null;
@@ -407,11 +434,14 @@ export interface ShapeElement extends BaseElement {
 export interface ImageElement extends BaseElement {
   type: 'image';
   resourceId?: string | null;  // null = empty placeholder
-  // Image crop properties
-  cropX: number;
-  cropY: number;
-  cropWidth: number;
-  cropHeight: number;
+  /** A tint over the picture: a solid or gradient fill painted on top of the
+   *  media, as part of the image (a crop clips it with the picture). Same
+   *  model as a shape fill: `tint` is the colour (or gradient start). */
+  tint?: string;
+  tintStyle?: 'solid' | 'linear' | 'radial';
+  tintTo?: string;
+  /** Same as a shape's `fillLine`, for the tint. */
+  tintLine?: [number, number, number, number];
   // Video playback properties (used when resource is a video)
   playing?: boolean;  // Whether video should be playing (can be toggled per keyframe)
   loop?: boolean;

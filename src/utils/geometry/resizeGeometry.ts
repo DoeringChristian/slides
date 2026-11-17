@@ -2,6 +2,7 @@ import type { ShapeElement, SlideElement } from '../../types/presentation';
 import { getBoundingBox, type BoundingBox, type Point } from './geometry';
 import { pathPointsInSlide } from '../paths/pathEditing';
 import { pathBoundsFor } from '../paths/pathShapes';
+import { cropSteps, groupCropClips } from '../model/groupCrop';
 
 export type ResizeUpdate<T extends SlideElement = SlideElement> = { elementId: string; changes: Partial<T> };
 export const rotateDelta = (p: Point, degrees: number): Point => {
@@ -52,9 +53,21 @@ export function selectionResizeBounds(elements: SlideElement[]): BoundingBox {
   const selected = new Set(elements.map(el => el.id));
   return getBoundingBox(elements.map(el => {
     const box = rotatedBox(el);
-    const clips = (el as SlideElement & { _groupClips?: SlideElement[] })._groupClips ?? [];
-    if (!clips.length || !clips.every(clip => selected.has(clip.id))) return box;
-    return clips.reduce<BoundingBox | null>((visible, clip) => visible && intersect(visible, rotatedBox(clip)), box) ?? box;
+    // Each crop group's visible area (its shapes added, subtracted and
+    // intersected in order — a subtraction may not shrink the box, so it is
+    // kept); nested groups intersect.
+    const clips = groupCropClips(el);
+    if (!clips.length || !clips.every(clip => clip.shapes.every(shape => selected.has(shape.id)))) return box;
+    return clips.reduce<BoundingBox | null>((visible, clip) => {
+      const { full, steps } = cropSteps(clip.shapes);
+      let area: BoundingBox | null = full ? box : null;
+      for (const { op, shape } of steps) {
+        const b = rotatedBox(shape);
+        if (op === 'add') area = area ? getBoundingBox([area, b]) : b;
+        else if (op === 'intersect') area = area && intersect(area, b);
+      }
+      return visible && area && intersect(visible, area);
+    }, box) ?? box;
   }));
 }
 

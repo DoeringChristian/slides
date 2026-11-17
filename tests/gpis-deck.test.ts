@@ -6,10 +6,11 @@ import { interpolateWithVisibility } from '../src/utils/animation/interpolation'
 import type { ImageElement, Presentation, ShapeElement, SlideElement } from '../src/types/presentation';
 
 /**
- * Regression deck: a real 53-slide talk ("GPIS", 1330 elements, 134 objects)
+ * Regression deck: a real 53-slide talk ("GPIS", 1352 elements, 135 objects)
  * exported from the editor on 2026-11-05. Image and video pixels are replaced
  * with 1x1 placeholders — `originalWidth`/`originalHeight` are kept verbatim,
- * so every coordinate, crop rect and animation in the deck is unchanged.
+ * so every coordinate and animation in the deck is unchanged. (Rect image
+ * crops were converted to crop groups when that crop was removed, 2026-11-17.)
  *
  * **The fixture is deliberately not in git** (`.gitignore`): it is the content
  * of an unpublished talk and this repo is public. The whole suite therefore
@@ -21,8 +22,8 @@ import type { ImageElement, Presentation, ShapeElement, SlideElement } from '../
  *
  * This is the broadest "did I break the data model" check in the suite. It
  * exercises combinations no hand-written fixture covers: bezier paths with
- * persisted tangents, smooth curves, `write` content reveals, `cropfade`
- * transitions, nested object groups, group crops, and 976 per-slide-hidden
+ * persisted tangents, smooth curves, `write` content reveals, nested object
+ * groups, crop groups (one converted from a rect crop), and 976 per-slide-hidden
  * elements (the keyframe model's normal state).
  *
  * If the schema changes, this test fails first. Re-export the deck from the
@@ -48,8 +49,10 @@ describe.skipIf(!present)('GPIS regression deck', () => {
 
   it('has the shape we recorded it with', () => {
     expect(deck.slideOrder).toHaveLength(53);
-    expect(Object.keys(deck.objects)).toHaveLength(134);
-    expect(slides().reduce((n, s) => n + Object.keys(s.elements).length, 0)).toBe(1330);
+    // 134 objects / 1330 elements as exported, plus the rect crop's crop
+    // shape (one object on 22 keyframes) from the crop-group conversion.
+    expect(Object.keys(deck.objects)).toHaveLength(135);
+    expect(slides().reduce((n, s) => n + Object.keys(s.elements).length, 0)).toBe(1352);
     expect(Object.keys(deck.resources)).toHaveLength(24);
   });
 
@@ -65,7 +68,6 @@ describe.skipIf(!present)('GPIS regression deck', () => {
     expect(curves).toContain('smooth');
     expect(shapes.some((s) => s.tangents?.length)).toBe(true);
     expect(easings).toContain('write');
-    expect(easings).toContain('cropfade');
     expect(all.some((el) => el.objectGroupIds?.length)).toBe(true);
     expect(all.some((el) => el.cropGroupId)).toBe(true);
     expect(all.some((el) => el.visible === false)).toBe(true);
@@ -126,13 +128,6 @@ describe.skipIf(!present)('GPIS regression deck', () => {
           expect((shape.points ?? []).every(finite), `${where}.points`).toBe(true);
           expect((shape.tangents ?? []).flat().every(finite), `${where}.tangents`).toBe(true);
         }
-        if (el.type === 'image') {
-          const image = el as ImageElement;
-          for (const key of ['cropX', 'cropY', 'cropWidth', 'cropHeight'] as const) {
-            expect(finite(image[key]), `${where}.${key} = ${image[key]}`).toBe(true);
-          }
-          expect(image.cropWidth > 0 && image.cropHeight > 0, `${where} has an empty crop`).toBe(true);
-        }
       }
     }
   });
@@ -167,12 +162,6 @@ describe.skipIf(!present)('GPIS regression deck', () => {
             if (frame.type === 'shape') {
               expect(((frame as ShapeElement).points ?? []).every(finite), `${where} .points`)
                 .toBe(true);
-            }
-            if (frame.type === 'image') {
-              const image = frame as ImageElement;
-              for (const key of ['cropX', 'cropY', 'cropWidth', 'cropHeight'] as const) {
-                expect(finite(image[key]), `${where} .${key} = ${image[key]}`).toBe(true);
-              }
             }
           }
         }

@@ -1,4 +1,6 @@
-import { groupCropRegions, type GroupCropElement } from '../model/groupCrop';
+import { groupCropClips, groupCropPaint } from '../model/groupCrop';
+import { GroupCrop } from '../../components/svg/GroupCrop';
+import { imageTintShape } from '../paint/imageTint';
 import { textInsets, textInkOverflow } from '../text/boundTextLayout';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -72,7 +74,7 @@ function renderShapeElement(element: ShapeElement): string {
 
 // Render image element to SVG string
 function renderImageElement(element: ImageElement, resources: Record<string, Resource>): string {
-  const { x, y, width, height, rotation, opacity, resourceId, cropX, cropY, cropWidth, cropHeight } = element;
+  const { x, y, width, height, rotation, opacity, resourceId } = element;
   const resource = resourceId ? resources[resourceId] : undefined;
 
   const cx = x + width / 2;
@@ -80,59 +82,38 @@ function renderImageElement(element: ImageElement, resources: Record<string, Res
   const transform = rotation ? `rotate(${rotation}, ${cx}, ${cy})` : '';
 
   if (!resource || resource.type === 'video') {
-    // Placeholder for missing images or videos
+    // Placeholder for missing images or videos (still tinted).
     const fillColor = resource?.type === 'video' ? '#1f2937' : '#f3f4f6';
+    const placeholderTint = imageTintShape(element);
     return `
       <g transform="${transform}">
         <rect x="${x}" y="${y}" width="${width}" height="${height}" fill="${fillColor}" opacity="${opacity}" />
-      </g>
+      </g>${placeholderTint ? renderShapeElement(placeholderTint) : ''}
     `;
   }
 
-  const hasCrop = cropWidth > 0 && cropHeight > 0;
-
-  if (hasCrop) {
-    const clipId = `clip-export-${element.id}`;
-    const scaleX = width / cropWidth;
-    const scaleY = height / cropHeight;
-
-    return `
-      <g transform="${transform}">
-        <defs>
-          <clipPath id="${clipId}">
-            <rect x="${x}" y="${y}" width="${width}" height="${height}" />
-          </clipPath>
-        </defs>
-        <g clip-path="url(#${clipId})">
-          <image href="${resource.src}" x="${x - cropX * scaleX}" y="${y - cropY * scaleY}" width="${resource.originalWidth * scaleX}" height="${resource.originalHeight * scaleY}" opacity="${opacity}" preserveAspectRatio="none" />
-        </g>
-      </g>
-    `;
-  }
-
+  // The tint (part of the image) through the shared shape renderer.
+  const tint = imageTintShape(element);
   return `
     <g transform="${transform}">
       <image href="${resource.src}" x="${x}" y="${y}" width="${width}" height="${height}" opacity="${opacity}" preserveAspectRatio="none" />
-    </g>
+    </g>${tint ? renderShapeElement(tint) : ''}
   `;
 }
 
 // Render element to SVG string
 export function renderElement(element: SlideElement, resources: Record<string, Resource>): string {
   if (!element.visible) return '';
-  const clips = (element as GroupCropElement)._groupClips;
-  if (clips?.length) {
+  if (groupCropClips(element).length) {
+    // The editor's own crop (clip path or mask), around this element's markup.
     const plain = { ...element, _groupClips: undefined };
-    return clips.reduce((content, shape, i) => {
-      const id = `group-crop-${element.id}-${i}`;
-      const paths = groupCropRegions(shape).map(p => `<path d="${p.d}" clip-rule="${p.rule}"${p.transform ? ` transform="${p.transform}"` : ''}/>`).join('');
-      return `<defs><clipPath id="${id}" clipPathUnits="userSpaceOnUse">${paths}</clipPath></defs><g clip-path="url(#${id})">${content}</g>`;
-    }, renderElement(plain, resources));
+    return renderToStaticMarkup(createElement(GroupCrop, { element,
+      children: createElement('g', { dangerouslySetInnerHTML: { __html: renderElement(plain, resources) } }) }));
   }
 
   switch (element.type) {
     case 'text':
-      return renderTextElement(element as TextElement);
+      return renderTextElement(groupCropPaint(element as TextElement));
     case 'shape':
       return renderShapeElement(element as ShapeElement);
     case 'image':

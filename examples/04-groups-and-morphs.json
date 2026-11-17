@@ -335,10 +335,6 @@
           "locked": false,
           "visible": true,
           "resourceId": "res-grid",
-          "cropX": 0,
-          "cropY": 0,
-          "cropWidth": 320,
-          "cropHeight": 240,
           "playing": true,
           "loop": false,
           "muted": false,
@@ -346,8 +342,7 @@
           "name": "cropped image",
           "objectGroupIds": [
             "grp-crop"
-          ],
-          "cropGroupId": "grp-crop"
+          ]
         },
         "gc-mask": {
           "id": "gc-mask",
@@ -383,7 +378,60 @@
           "opacity": 1,
           "locked": false,
           "visible": true,
-          "text": "cropGroupId — the ellipse clips the image",
+          "text": "cropGroupId — the ellipse crops the image",
+          "textSizing": "auto-content",
+          "boundTextLayout": "padded",
+          "style": {
+            "fontFamily": "Inter",
+            "fontSize": 14,
+            "fontWeight": "normal",
+            "fontStyle": "normal",
+            "textDecoration": "none",
+            "color": "#5f6368",
+            "align": "center",
+            "verticalAlign": "top",
+            "lineHeight": 1.2
+          }
+        },
+        "tint-image": {
+          "id": "tint-image",
+          "type": "image",
+          "x": 690,
+          "y": 170,
+          "width": 240,
+          "height": 180,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "resourceId": "res-grid",
+          "playing": true,
+          "loop": false,
+          "muted": false,
+          "startTime": 0,
+          "name": "tinted image",
+          "tint": "rgba(0, 0, 0, 0)",
+          "tintStyle": "linear",
+          "tintTo": "rgba(0, 0, 0, 0.75)",
+          "tintLine": [
+            0.5,
+            0,
+            0.5,
+            1
+          ]
+        },
+        "tint-cap": {
+          "id": "tint-cap",
+          "type": "text",
+          "x": 690,
+          "y": 360,
+          "width": 240,
+          "height": 22,
+          "rotation": 0,
+          "opacity": 1,
+          "locked": false,
+          "visible": true,
+          "text": "tint — a gradient over the image",
           "textSizing": "auto-content",
           "boundTextLayout": "padded",
           "style": {
@@ -403,7 +451,9 @@
         "gc-title",
         "gc-image",
         "gc-mask",
-        "gc-cap"
+        "gc-cap",
+        "tint-image",
+        "tint-cap"
       ],
       "background": {
         "type": "solid",
@@ -1008,6 +1058,16 @@
     "gc-cap": {
       "id": "gc-cap",
       "name": "gc-cap",
+      "type": "text"
+    },
+    "tint-image": {
+      "id": "tint-image",
+      "name": "tinted image",
+      "type": "image"
+    },
+    "tint-cap": {
+      "id": "tint-cap",
+      "name": "tint-cap",
       "type": "text"
     },
     "morph-title": {

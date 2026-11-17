@@ -151,7 +151,7 @@ export function openComments(slide: Slide): Array<Record<string, unknown>> {
 }
 
 const GROUPS: TransitionGroup[] = ['position', 'size', 'rotation', 'opacity', 'fill', 'stroke', 'strokeWidth',
-  'cornerRadius', 'fontSize', 'color', 'lineHeight', 'crop', 'resource', 'content', 'controlPoints',
+  'cornerRadius', 'fontSize', 'color', 'lineHeight', 'resource', 'content', 'controlPoints',
   'startArrow', 'endArrow', 'morph'];
 
 const shown = (el: SlideElement | undefined): boolean => !!el && el.visible;

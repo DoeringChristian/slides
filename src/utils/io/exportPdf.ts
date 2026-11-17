@@ -1,10 +1,11 @@
-import { attachGroupCrops, groupCropPaint, groupCropRegions, type GroupCropElement } from '../model/groupCrop';
+import { attachGroupCrops, cropSteps, ensureCropLayouts, groupCropClips, groupCropPaint, groupCropRegions } from '../model/groupCrop';
 import { drawCanvasStrokeCoverage } from '../paint/canvasStrokeCoverage';
 import { textInsets } from '../text/boundTextLayout';
 import { resolveShapePaint } from '../paint/shapePaint';
 import { resolveShapeGeometry } from '../geometry/vectorGeometry';
 import jsPDF from 'jspdf';
 import { drawShapeFill } from '../paint/shapeFill';
+import { imageTintShape } from '../paint/imageTint';
 import type { Presentation, Slide, TextElement, ShapeElement, ImageElement, Resource } from '../../types/presentation';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../constants';
 import { parseBlocks, parseInlineSegments, getBlockFontMultiplier } from '../../components/canvas/CustomMarkdownRenderer';
@@ -25,12 +26,60 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 }
 
 // Pre-load all unique resources used across visible slides
-async function preloadResources(
+/**
+ * A video's first frame as a still. A PDF cannot play video, so the page
+ * shows the frame the audience first sees — not a placeholder box. Resolves
+ * null when the video cannot be decoded (the placeholder is used then).
+ */
+export function loadVideoFrame(src: string, time = 0, timeoutMs = 10000): Promise<HTMLCanvasElement | null> {
+  return new Promise(resolve => {
+    const video = document.createElement('video');
+    let settled = false;
+    const finish = (frame: HTMLCanvasElement | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      video.removeAttribute('src');
+      video.load();
+      resolve(frame);
+    };
+    const timer = setTimeout(() => finish(null), timeoutMs);
+    const grab = () => {
+      if (!video.videoWidth || !video.videoHeight) { finish(null); return; }
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { finish(null); return; }
+      try {
+        ctx.drawImage(video, 0, 0);
+        finish(canvas);
+      } catch {
+        // A cross-origin video without CORS taints the canvas.
+        finish(null);
+      }
+    };
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = 'auto';
+    video.crossOrigin = 'anonymous';
+    video.onerror = () => finish(null);
+    // Seek explicitly: some browsers do not paint a frame for drawImage until
+    // a seek has completed, even at time 0.
+    video.onloadeddata = () => {
+      video.onseeked = grab;
+      video.currentTime = Math.max(0, time);
+    };
+    video.src = src;
+  });
+}
+
+export async function preloadResources(
   slides: Slide[],
   resources: Record<string, Resource>,
-): Promise<Map<string, HTMLImageElement>> {
+): Promise<Map<string, CanvasImageSource>> {
   const usedIds = new Set<string>();
-  const map = new Map<string, HTMLImageElement>();
+  const map = new Map<string, CanvasImageSource>();
   const promises: Promise<void>[] = [];
 
   for (const slide of slides) {
@@ -54,6 +103,8 @@ async function preloadResources(
       promises.push(
         loadImage(r.src).then(img => { map.set(rid, img); }).catch(() => {}),
       );
+    } else if (r && r.type === 'video') {
+      promises.push(loadVideoFrame(r.src).then(frame => { if (frame) map.set(rid, frame); }));
     }
   }
 
@@ -62,7 +113,7 @@ async function preloadResources(
 }
 
 // ── Background ──
-function drawBackground(ctx: CanvasRenderingContext2D, slide: Slide, images: Map<string, HTMLImageElement>) {
+function drawBackground(ctx: CanvasRenderingContext2D, slide: Slide, images: Map<string, CanvasImageSource>) {
   const bg = slide.background;
   if (bg.type === 'solid') {
     ctx.fillStyle = bg.color;
@@ -80,7 +131,8 @@ function drawBackground(ctx: CanvasRenderingContext2D, slide: Slide, images: Map
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, SLIDE_WIDTH, SLIDE_HEIGHT);
   } else if (bg.type === 'image') {
-    const img = images.get('bg:' + slide.id);
+    // Background entries are always images (videos are element resources).
+    const img = images.get('bg:' + slide.id) as HTMLImageElement | undefined;
     if (img) {
       // Cover
       const scale = Math.max(SLIDE_WIDTH / img.naturalWidth, SLIDE_HEIGHT / img.naturalHeight);
@@ -418,9 +470,9 @@ function drawImageElement(
   ctx: CanvasRenderingContext2D,
   element: ImageElement,
   resources: Record<string, Resource>,
-  images: Map<string, HTMLImageElement>,
+  images: Map<string, CanvasImageSource>,
 ) {
-  const { x, y, width, height, rotation, opacity, resourceId, cropX, cropY, cropWidth, cropHeight } = element;
+  const { x, y, width, height, rotation, opacity, resourceId } = element;
   const resource = resourceId ? resources[resourceId] : undefined;
   const img = resourceId ? images.get(resourceId) : undefined;
 
@@ -435,42 +487,47 @@ function drawImageElement(
     ctx.translate(-cx, -cy);
   }
 
-  if (!img || !resource || resource.type === 'video') {
-    // Placeholder
+  if (!img || !resource) {
+    // Placeholder: no resource, or media that could not be loaded (a video
+    // whose first frame could not be decoded stays dark).
     ctx.fillStyle = resource?.type === 'video' ? '#1f2937' : '#f3f4f6';
     ctx.fillRect(x, y, width, height);
+    drawImageTint(ctx, element);
     ctx.restore();
     return;
   }
 
-  const hasCrop = cropWidth > 0 && cropHeight > 0;
-  if (hasCrop) {
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(x, y, width, height);
-    ctx.clip();
-
-    const scaleX = width / cropWidth;
-    const scaleY = height / cropHeight;
-    ctx.drawImage(
-      img,
-      0, 0, resource.originalWidth, resource.originalHeight,
-      x - cropX * scaleX, y - cropY * scaleY,
-      resource.originalWidth * scaleX, resource.originalHeight * scaleY,
-    );
-    ctx.restore();
-  } else {
-    ctx.drawImage(img, x, y, width, height);
-  }
+  ctx.drawImage(img, x, y, width, height);
+  drawImageTint(ctx, element);
 
   ctx.restore();
 }
 
+/** The tint over an image (the context is already rotated about the image's
+ *  centre, with its opacity applied): the shared shape fill over its box. */
+function drawImageTint(ctx: CanvasRenderingContext2D, element: ImageElement) {
+  const tint = imageTintShape(element);
+  if (!tint) return;
+  const box = new Path2D();
+  box.rect(element.x, element.y, element.width, element.height);
+  drawShapeFill(ctx, box, tint);
+}
+
+/** A transparent slide-sized canvas at the export scale, in slide units. */
+function slideLayer(scale: number): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
+  const canvas = document.createElement('canvas');
+  canvas.width = SLIDE_WIDTH * scale;
+  canvas.height = SLIDE_HEIGHT * scale;
+  const ctx = canvas.getContext('2d')!;
+  ctx.scale(scale, scale);
+  return { canvas, ctx };
+}
+
 // ── Render a single slide onto a canvas ──
-function renderSlide(
+export function renderSlide(
   slide: Slide,
   resources: Record<string, Resource>,
-  images: Map<string, HTMLImageElement>,
+  images: Map<string, CanvasImageSource>,
   scale: number,
 ): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
@@ -484,23 +541,51 @@ function renderSlide(
   for (const source of attachGroupCrops(slide.elementOrder.map(id => slide.elements[id]).filter(Boolean))) {
     const el = groupCropPaint(source);
     if (!el.visible) continue;
+    const draw = (target: CanvasRenderingContext2D) => {
+      if (el.type === 'text') drawTextElement(target, el as TextElement);
+      else if (el.type === 'shape') drawShapeElement(target, el as ShapeElement);
+      else if (el.type === 'image') drawImageElement(target, el as ImageElement, resources, images);
+    };
+    const clips = groupCropClips(source);
+    if (!clips.length) {
+      ctx.save(); draw(ctx); ctx.restore();
+      continue;
+    }
+    // Each crop group is evaluated as the editor does (`cropSteps`): its
+    // shapes, each filled with its own winding rule, add / subtract /
+    // intersect in layer order. A clip path cannot do that (nor union mixed
+    // rules), so the element is drawn on a layer and masked by each crop
+    // group in turn (nested groups intersect).
+    const layer = slideLayer(scale);
+    draw(layer.ctx);
+    for (const clip of clips) {
+      const mask = slideLayer(scale);
+      const { full, steps } = cropSteps(clip.shapes);
+      if (full) { mask.ctx.fillStyle = '#000'; mask.ctx.fillRect(-SLIDE_WIDTH, -SLIDE_HEIGHT, SLIDE_WIDTH * 3, SLIDE_HEIGHT * 3); }
+      for (const { op, shape } of steps) {
+        const piece = slideLayer(scale);
+        piece.ctx.fillStyle = '#000';
+        for (const region of groupCropRegions(shape)) {
+          const [ma, mb, mc, md, me, mf] = region.matrix;
+          const path = new Path2D();
+          path.addPath(new Path2D(region.d), new DOMMatrix([ma, mb, mc, md, me, mf]));
+          piece.ctx.fill(path, region.rule);
+        }
+        mask.ctx.save();
+        mask.ctx.setTransform(1, 0, 0, 1, 0, 0);
+        mask.ctx.globalCompositeOperation = op === 'subtract' ? 'destination-out' : op === 'intersect' ? 'destination-in' : 'source-over';
+        mask.ctx.drawImage(piece.canvas, 0, 0);
+        mask.ctx.restore();
+      }
+      layer.ctx.save();
+      layer.ctx.setTransform(1, 0, 0, 1, 0, 0);
+      layer.ctx.globalCompositeOperation = 'destination-in';
+      layer.ctx.drawImage(mask.canvas, 0, 0);
+      layer.ctx.restore();
+    }
     ctx.save();
-    for (const shape of (source as GroupCropElement)._groupClips ?? []) {
-      const center = { x: shape.x + shape.width / 2, y: shape.y + shape.height / 2 };
-      const matrix = new DOMMatrix().translate(center.x, center.y).rotate(shape.rotation).translate(-center.x, -center.y);
-      const regions = groupCropRegions(shape);
-      const path = new Path2D();
-      for (const region of regions) path.addPath(new Path2D(region.d), matrix);
-      ctx.clip(path, regions[0]?.rule ?? 'nonzero');
-    }
-
-    if (el.type === 'text') {
-      drawTextElement(ctx, el as TextElement);
-    } else if (el.type === 'shape') {
-      drawShapeElement(ctx, el as ShapeElement);
-    } else if (el.type === 'image') {
-      drawImageElement(ctx, el as ImageElement, resources, images);
-    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(layer.canvas, 0, 0);
     ctx.restore();
   }
 
@@ -520,6 +605,7 @@ export async function exportPdf(presentation: Presentation): Promise<void> {
 
   // Pre-load all images in parallel
   const images = await preloadResources(visibleSlides, presentation.resources);
+  await ensureCropLayouts(visibleSlides);
 
   const scale = 2;
 

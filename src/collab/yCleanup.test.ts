@@ -72,10 +72,6 @@ const image = (id: string, resourceId: string): ImageElement => ({
   id,
   type: 'image',
   resourceId,
-  cropX: 0,
-  cropY: 0,
-  cropWidth: 100,
-  cropHeight: 100,
 });
 
 const slide = (id: string, elements: Slide['elements'], elementOrder = Object.keys(elements)): Slide => ({

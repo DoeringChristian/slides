@@ -102,7 +102,6 @@ function makeFixture(): Presentation {
             type: 'image', resourceId: 'res-img',
             x: 600, y: 320, width: 320, height: 180,
             rotation: 15, opacity: 1, locked: false, visible: true,
-            cropX: 120, cropY: 60, cropWidth: 1040, cropHeight: 600,
           },
           'el-hidden': {
             id: 'el-hidden',
@@ -162,7 +161,6 @@ function makeFixture(): Presentation {
             type: 'image', resourceId: 'res-vid',
             x: 100, y: 500, width: 480, height: 270,
             rotation: 0, opacity: 1, locked: false, visible: true,
-            cropX: 0, cropY: 0, cropWidth: 0, cropHeight: 0,
             playing: true, loop: false, muted: true, startTime: 2.5,
           },
           'el-group': {

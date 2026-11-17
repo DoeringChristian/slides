@@ -8,8 +8,12 @@ import { useMultiSlideUpdate } from '../../store/selectors';
 import { ResourcePicker } from './ResourcePicker';
 import { PropertyList } from './PropertyList';
 import { PanelHeader } from './PanelHeader';
+import { CropRow } from './CropRow';
 import { IconButtonRow } from '../controls/IconButtonRow';
-import { Property, NumberProperty, ReadoutProperty } from './Property';
+import { Property, NumberProperty, ColorProperty, PreviewSelectProperty } from './Property';
+import { RenderShape } from '../svg/ElementRenderer';
+import { createShapeElement } from '../../utils/model/slideFactory';
+import { noPaint, withPaintAlpha } from '../../utils/paint/paintColor';
 import { computeResourceUpdate } from '../../utils/editor/imageUtils';
 import type { ImageElement } from '../../types/presentation';
 
@@ -35,25 +39,41 @@ class ResourceProperty extends Property<ImageElement> {
   renderEditor() { return null; }
 }
 
+/** Picking a gradient tint starts it as a fade-out of the tint colour,
+ *  written explicitly so its end colour has a value to edit. */
+class TintStyleProperty extends PreviewSelectProperty<ImageElement, NonNullable<ImageElement['tintStyle']>> {
+  protected override set(el: ImageElement, v: NonNullable<ImageElement['tintStyle']>): Partial<ImageElement> {
+    return v !== 'solid' && el.tintTo === undefined
+      ? { tintStyle: v, tintTo: withPaintAlpha(noPaint(el.tint ?? '') ? '#000000' : el.tint!, 0) } : { tintStyle: v };
+  }
+}
+
 const IMAGE_PROPERTIES: Property<ImageElement>[] = [
   new NumberProperty<ImageElement>({
     key: 'opacity', label: 'Opacity',
     transitionGroup: 'opacity', min: 0, max: 100, scale: 100,
     step: 1, scrubStep: 0.5, precision: 1,
   }),
-  // Header-only crop row: the rect is edited on the canvas (crop mode), but
-  // the header supplies the previously missing crop transition / sync /
-  // keyframe buttons. Crop coords are in SOURCE-IMAGE pixels (a full image
-  // is 0,0 originalWidth×originalHeight — see computeResourceUpdate and the
-  // width/cropWidth scaling in RenderImage).
-  new ReadoutProperty<ImageElement>({
-    key: 'cropX', label: 'Crop',
-    transitionGroup: 'crop',
-    syncFields: ['cropX', 'cropY', 'cropWidth', 'cropHeight'],
-    readout: (el) =>
-      `${Math.round(el.cropX)},${Math.round(el.cropY)} ${Math.round(el.cropWidth)}×${Math.round(el.cropHeight)}px`,
-  }),
   new ResourceProperty(),
+  // Tint: a solid or gradient fill over the picture, part of the image (a
+  // crop clips it too). Animates with the fill group, like a shape's fill.
+  new ColorProperty<ImageElement>({ key: 'tint', label: 'Tint', transitionGroup: 'fill', alpha: true }),
+  // The same icon picker as a shape's Fill Style, previewing each tint.
+  new TintStyleProperty({
+    key: 'tintStyle', label: 'Tint Style', iconOnly: true, defaultValue: 'solid', columns: 3, transitionGroup: 'fill',
+    options: (['solid', 'linear', 'radial'] as const).map(value => ({ value,
+      label: value === 'solid' ? 'Solid' : value === 'linear' ? 'Linear gradient' : 'Radial gradient',
+      preview: () => <svg width={44} height={30} viewBox="0 0 44 30" aria-hidden="true">
+        <RenderShape element={createShapeElement('rect', { id: `tint-preview-${value}`, x: 2, y: 2, width: 40, height: 26,
+          cornerRadius: 4, fill: '#555555', fillStyle: value, stroke: '#333333', strokeWidth: 1 })} />
+      </svg>,
+    })),
+    visibleFor: el => !!el.tint || !!el.tintTo,
+  }),
+  new ColorProperty<ImageElement>({
+    key: 'tintTo', label: 'Gradient To', transitionGroup: 'fill', alpha: true,
+    visibleFor: el => el.tintStyle === 'linear' || el.tintStyle === 'radial',
+  }),
 ];
 
 interface Props {
@@ -99,6 +119,8 @@ export const ImageProperties: React.FC<Props> = ({ element }) => {
       />
 
       <PropertyList properties={IMAGE_PROPERTIES} element={element} />
+
+      {!ids && <CropRow />}
 
       {resource && (
         <div className="text-xs text-gray-400">

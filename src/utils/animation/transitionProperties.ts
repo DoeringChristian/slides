@@ -8,10 +8,6 @@ import type {
 } from '../../types/presentation';
 
 export const EASING_LABELS: Record<EasingType, string> = {
-  croplift: 'Lift crop',
-  cropliftease: 'Lift crop (ease)',
-  cropfade: 'Fade surroundings',
-  cropfadeease: 'Fade surroundings (ease)',
   const: 'Constant',
   linear: 'Linear',
   ease: 'Ease',
@@ -42,19 +38,16 @@ export function transitionPropertyValues(element: SlideElement, group: Transitio
     case 'size': return [element.width, element.height];
     case 'rotation': return [element.rotation];
     case 'opacity': return [element.opacity];
-    case 'fill': return element.type === 'shape' ? [(element as ShapeElement).fill] : [];
+    case 'fill': return element.type === 'shape' ? [(element as ShapeElement).fill, (element as ShapeElement).fillStyle,
+      (element as ShapeElement).fillTo, (element as ShapeElement).fillLine?.join()]
+      : element.type === 'image' ? [(element as ImageElement).tint, (element as ImageElement).tintStyle,
+        (element as ImageElement).tintTo, (element as ImageElement).tintLine?.join()] : [];
     case 'stroke': return element.type === 'shape' ? [(element as ShapeElement).stroke] : [];
     case 'strokeWidth': return element.type === 'shape' ? [(element as ShapeElement).strokeWidth] : [];
     case 'cornerRadius': return element.type === 'shape' ? [(element as ShapeElement).cornerRadius] : [];
     case 'fontSize': return element.type === 'text' ? [(element as TextElement).style.fontSize] : [];
     case 'color': return element.type === 'text' ? [(element as TextElement).style.color] : [];
     case 'lineHeight': return element.type === 'text' ? [(element as TextElement).style.lineHeight] : [];
-    case 'crop': return element.type === 'image' ? [
-      (element as ImageElement).cropX,
-      (element as ImageElement).cropY,
-      (element as ImageElement).cropWidth,
-      (element as ImageElement).cropHeight,
-    ] : [];
     case 'resource': return element.type === 'image' ? [(element as ImageElement).resourceId] : [];
     case 'visibility': return [element.visible];
     case 'content': return element.type === 'text' ? [(element as TextElement).text] : [];

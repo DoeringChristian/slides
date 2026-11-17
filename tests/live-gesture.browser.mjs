@@ -137,7 +137,7 @@ try {
       const subject={x:400,y:250,width:200,height:130,opacity:.43};
       if(kind==='text')Object.assign(subject,{type:'text',text:'Live text\nsecond line',style});
       else if(kind==='vector')Object.assign(subject,{shapeType:'vector',fill:'#37a679',fillStyle:'crosshatch',geometry:{kind:'vector',version:1,contours:[{id:'a',start:[0,0],segments:[{kind:'line',to:[1,0]},{kind:'line',to:[1,1]},{kind:'line',to:[0,1]}],closed:true}],fills:[{contourIds:['a'],rule:'nonzero'}],strokes:['a']}});
-      else Object.assign(subject,{type:'image',resourceId:'media',cropX:10,cropY:10,cropWidth:80,cropHeight:80});
+      else Object.assign(subject,{type:'image',resourceId:'media'});
       await setup({mode:'production',subject});
       if(['image','video'].includes(kind))await evaluate(`canvasTest.store.getState().addResource({id:'media',name:'media',type:${JSON.stringify(kind)},src:${JSON.stringify(kind==='image'?'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="130"><rect width="200" height="130" fill="%23b739ce"/></svg>':'data:video/mp4;base64,')},originalWidth:200,originalHeight:130})`);
       await wait(300);const raw=await authoritative(),p=await screen(435,285);

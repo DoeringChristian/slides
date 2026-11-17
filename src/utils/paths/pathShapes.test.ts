@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import {
+  pathArrowGeometry,
   isLinePath,
   strokeDashFor,
   pathD,
@@ -656,11 +657,20 @@ describe('arrowheadGeometry', () => {
     });
   });
 
-  test('head size scales with strokeWidth above the default 3, never below `size`', () => {
+  test('head size scales with strokeWidth both ways, with a small floor', () => {
     // strokeWidth 6 → doubled head depth.
     expect(arrowheadGeometry('triangle', 100, 0, 1, 0, 10, 6).shaftInset).toBeCloseTo(20);
-    // Hairline stays at the nominal size (sensible minimum).
-    expect(arrowheadGeometry('triangle', 100, 0, 1, 0, 10, 0.5).shaftInset).toBeCloseTo(10);
+    // Thin lines get proportionally small heads (Inkscape-like), not 10.
+    expect(arrowheadGeometry('triangle', 100, 0, 1, 0, 10, 0.75).shaftInset).toBeCloseTo(2.5);
+    // A hairline's head stays visible.
+    expect(arrowheadGeometry('triangle', 100, 0, 1, 0, 10, 0.1).shaftInset).toBeCloseTo(1.5);
+  });
+
+  test('a path head is arrowScale stroke widths (default 10/3)', () => {
+    const line = (over: Partial<ShapeElement>) => pathArrowGeometry({ points: [0, 0, 100, 0], curve: 'linear', closed: false,
+      cornerRadius: 0, endHead: 'triangle', strokeWidth: 2, ...over });
+    expect(line({}).endGeo!.shaftInset).toBeCloseTo(20 / 3);
+    expect(line({ arrowScale: 5 }).endGeo!.shaftInset).toBeCloseTo(10);
   });
 
   test('direction vector is normalized (magnitude does not change the glyph)', () => {

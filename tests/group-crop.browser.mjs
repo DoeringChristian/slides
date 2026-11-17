@@ -44,9 +44,9 @@ async function button(label){const point=await evaluate(`(()=>{const b=[...docum
 try {
   await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
   for(const collab of [false,true]){
-    await setup({mode:'production',collab,creationProperties:true,objectList:true,subject:{type:'image',x:250,y:150,width:300,height:200,cropX:0,cropY:0,cropWidth:300,cropHeight:200,resourceId:'red'},targets:[{id:'boundary',shapeType:'ellipse',x:300,y:180,width:150,height:120,stroke:'#000000',strokeWidth:4,fill:'#00ff00'}]});
+    await setup({mode:'production',collab,creationProperties:true,objectList:true,subject:{type:'image',x:250,y:150,width:300,height:200,resourceId:'red'},targets:[{id:'boundary',shapeType:'ellipse',x:300,y:180,width:150,height:120,stroke:'#000000',strokeWidth:4,fill:'#00ff00'}]});
     await evaluate(`canvasTest.store.getState().addResource({id:'red',name:'red',type:'image',src:'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><rect width="300" height="200" fill="red"/></svg>'),originalWidth:300,originalHeight:200});canvasTest.editor.getState().setSelectedElements(['subject','boundary']);canvasTest.getActiveUndoManager()?.clear();canvasTest.store.temporal.getState().clear()`);
-    await wait(150);await button('Crop to shape');
+    await wait(150);await button('Crop to shapes');await evaluate('canvasTest.editor.getState().exitCropMode()');await wait(80);
     let state=await evaluate('canvasTest.snapshot().slide');const group=state.elements.boundary.cropGroupId;
     assert(group);assert.deepEqual(state.elements.subject.objectGroupIds,[group]);
     assert.equal(await evaluate("document.querySelectorAll('.content-layer [data-group-crop]').length"),1);

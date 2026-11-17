@@ -1,7 +1,9 @@
 import { GroupCrop } from './GroupCrop';
 import React, { useRef, useCallback, useState } from 'react';
 import { usePresentationStore } from '../../store/presentationStore';
-import { RenderImage } from './ElementRenderer';
+import { RenderImage, RenderShape } from './ElementRenderer';
+import { imageTintShape } from '../../utils/paint/imageTint';
+import { useEditorStore } from '../../store/editorStore';
 import type { ImageElement } from '../../types/presentation';
 
 interface Props {
@@ -10,6 +12,7 @@ interface Props {
   onPointerDown?: (e: React.PointerEvent) => void;
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
+  onDoubleClick?: () => void;
 }
 
 export const SVGImageNode: React.FC<Props> = React.memo(({
@@ -18,7 +21,9 @@ export const SVGImageNode: React.FC<Props> = React.memo(({
   onPointerDown,
   onMouseEnter,
   onMouseLeave,
+  onDoubleClick,
 }) => {
+  const scope = useEditorStore(s => s.activeObjectGroupId);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   // Editor preview starts paused - user clicks play button to preview
   const [isPlaying, setIsPlaying] = useState(false);
@@ -29,6 +34,8 @@ export const SVGImageNode: React.FC<Props> = React.memo(({
   );
 
   const isVideo = resource?.type === 'video';
+  // The editor's video player is HTML; its tint is the shared shape fill.
+  const tint = isVideo ? imageTintShape(element) : null;
 
   // Callback ref for video element - handles initial setup only
   const setVideoRef = useCallback((video: HTMLVideoElement | null) => {
@@ -111,6 +118,7 @@ export const SVGImageNode: React.FC<Props> = React.memo(({
           opacity={element.opacity}
           style={interactionStyle}
           onPointerDown={disableInteraction ? undefined : onPointerDown}
+          onDoubleClick={disableInteraction ? undefined : onDoubleClick}
         >
           <video
             ref={setVideoRef}
@@ -172,7 +180,7 @@ export const SVGImageNode: React.FC<Props> = React.memo(({
             )}
           </g>
         )}
-      </g></GroupCrop>
+      </g>{tint && <RenderShape element={tint} />}</GroupCrop>
     );
   }
 
@@ -180,8 +188,9 @@ export const SVGImageNode: React.FC<Props> = React.memo(({
   return (
     <g data-element-id={element.id}>
       <RenderImage element={element} resource={resource} />
-      {/* Transparent hit area for interaction */}
-      <g transform={transform}>
+      {/* Transparent hit area for interaction, clipped like the picture:
+          the cropped-away part is not there to click. */}
+      <GroupCrop element={element} scope={scope}><g transform={transform}>
         <rect
           x={element.x}
           y={element.y}
@@ -193,9 +202,10 @@ export const SVGImageNode: React.FC<Props> = React.memo(({
             onPointerDown,
             onMouseEnter,
             onMouseLeave,
+            onDoubleClick,
           })}
         />
-      </g>
+      </g></GroupCrop>
     </g>
   );
 });

@@ -167,7 +167,7 @@ const resource = (id: string, name: string, src: string): Resource => ({
 const SHAPE_TYPES: ShapeType[] = ['rect', 'ellipse', 'triangle', 'star', 'path', 'vector', 'dot'];
 const CURVES: PathCurve[] = ['linear', 'smooth', 'bspline2', 'bspline3', 'bezier'];
 const STROKE_STYLES: StrokeStyle[] = ['solid', 'dashed', 'dotted'];
-const FILL_STYLES: FillStyle[] = ['solid', 'hachure', 'crosshatch'];
+const FILL_STYLES: FillStyle[] = ['solid', 'hachure', 'crosshatch', 'linear', 'radial'];
 const ARROWHEADS: ArrowheadType[] = [
   'none', 'arrow', 'triangle', 'triangle-outline', 'bar', 'dot', 'circle',
   'circle-outline', 'diamond', 'diamond-outline', 'crowfoot-one',
@@ -250,10 +250,12 @@ function shapesDeck(): Presentation {
         ...FILL_STYLES.flatMap((fillStyle, i) => [
           createShapeElement('rect', {
             id: `fill-${fillStyle}`, name: `${fillStyle} fill`,
-            x: 580 + i * 120, y: 130, width: 96, height: 96,
+            x: 572 + i * 72, y: 140, width: 64, height: 76,
             fill: '#f9ab00', fillStyle, stroke: '#b06000', strokeWidth: 2, cornerRadius: 10,
+            // Gradients run from fill to fillTo (here a deep red, at 45°).
+            ...(fillStyle === 'linear' || fillStyle === 'radial' ? { fillTo: '#c5221f', fillLine: fillStyle === 'linear' ? [0, 0, 1, 1] : [0.3, 0.3, 1, 1] } : {}),
           }),
-          caption(`fill-${fillStyle}-cap`, fillStyle, 580 + i * 120, 234, 96),
+          caption(`fill-${fillStyle}-cap`, fillStyle, 568 + i * 72, 224, 72),
         ]),
         createShapeElement('rect', {
           id: 'radius-demo', name: 'corner radius',
@@ -290,7 +292,6 @@ function shapesDeck(): Presentation {
 /** Visibility easings get one row each: hidden on the first keyframe, visible
  *  on the second, with the easing on the appearing element. */
 const VISIBILITY: EasingType[] = ['const', 'linear', 'ease', 'create', 'extend', 'wipe', 'slidein', 'grow', 'iris'];
-const CROP: EasingType[] = ['cropfade', 'cropfadeease', 'croplift', 'cropliftease'];
 
 function animationDeck(): Presentation {
   const grid5 = grid(VISIBILITY.length, 5, 170);
@@ -383,28 +384,52 @@ function animationDeck(): Presentation {
         }),
       ],
     },
-    // Crop easings (image). Four images, each with a different crop easing.
+    // Crop: one image, a crop group of two crop shapes. What shows is the
+    // union of the shapes; the crop animates by the shapes moving and
+    // resizing between keyframes, like any other object.
     {
-      meta: { notes: 'Four copies of the same source image, fully framed.' },
+      meta: { notes: 'One image cropped by two shapes: the crop shows the union of a rectangle and an ellipse.' },
       els: [
-        heading('crop-title', 'Crop easings — from'),
-        ...CROP.map((easing, i) => img(`crop-${easing}`, {
-          name: easing, x: 60 + i * 225, y: 150, width: 200, height: 150,
-          cropX: 0, cropY: 0, cropWidth: TEX_W, cropHeight: TEX_H,
-        })),
-        ...CROP.map((easing, i) => caption(`crop-${easing}-cap`, easing, 60 + i * 225, 320, 200)),
+        heading('crop-title', 'Crop shapes — from'),
+        img('crop-image', { name: 'cropped image', x: 240, y: 130, width: 480, height: 360, objectGroupIds: ['crop-demo'] }),
+        createShapeElement('rect', {
+          id: 'crop-rect', name: 'crop rectangle (tinting)', x: 260, y: 150, width: 160, height: 120,
+          fill: 'rgba(0, 0, 0, 0.7)', fillStyle: 'linear', fillTo: 'rgba(0, 0, 0, 0)', fillLine: [0.5, 0, 0.5, 1], cropTint: true,
+          stroke: '', objectGroupIds: ['crop-demo'], cropGroupId: 'crop-demo',
+        }),
+        createShapeElement('ellipse', {
+          id: 'crop-ellipse', name: 'crop ellipse', x: 520, y: 330, width: 140, height: 120,
+          fill: '#000000', stroke: '', objectGroupIds: ['crop-demo'], cropGroupId: 'crop-demo',
+        }),
+        createShapeElement('ellipse', {
+          id: 'crop-hole', name: 'crop hole (subtract)', x: 300, y: 180, width: 50, height: 50,
+          fill: '#000000', stroke: '', objectGroupIds: ['crop-demo'], cropGroupId: 'crop-demo', cropOp: 'subtract',
+        }),
+        caption('crop-cap', 'crop group: crop shapes add (rectangle, ellipse) or subtract (the hole), in layer order; the rectangle also tints (any fill, here a gradient)', 240, 500, 480),
       ],
     },
     {
-      meta: { notes: 'Each crop tightens onto a different cell of the grid, with a different crop easing.' },
+      meta: { notes: 'The crop shapes move and grow; the crop follows them.' },
       els: [
-        heading('crop-title', 'Crop easings — to'),
-        ...CROP.map((easing, i) => img(`crop-${easing}`, {
-          name: easing, x: 60 + i * 225, y: 150, width: 200, height: 150,
-          cropX: 40 + i * 20, cropY: 40, cropWidth: 120, cropHeight: 90,
-          transitions: { crop: easing },
-        })),
-        ...CROP.map((easing, i) => caption(`crop-${easing}-cap`, easing, 60 + i * 225, 320, 200)),
+        heading('crop-title', 'Crop shapes — to'),
+        img('crop-image', { name: 'cropped image', x: 240, y: 130, width: 480, height: 360, objectGroupIds: ['crop-demo'] }),
+        createShapeElement('rect', {
+          id: 'crop-rect', name: 'crop rectangle (tinting)', x: 400, y: 200, width: 240, height: 180,
+          fill: 'rgba(0, 0, 0, 0.7)', fillStyle: 'linear', fillTo: 'rgba(0, 0, 0, 0)', fillLine: [0.5, 1, 0.5, 0], cropTint: true,
+          stroke: '', objectGroupIds: ['crop-demo'], cropGroupId: 'crop-demo',
+          transitions: { position: 'ease', size: 'ease' },
+        }),
+        createShapeElement('ellipse', {
+          id: 'crop-ellipse', name: 'crop ellipse', x: 260, y: 300, width: 200, height: 170,
+          fill: '#000000', stroke: '', objectGroupIds: ['crop-demo'], cropGroupId: 'crop-demo',
+          transitions: { position: 'ease', size: 'ease' },
+        }),
+        createShapeElement('ellipse', {
+          id: 'crop-hole', name: 'crop hole (subtract)', x: 495, y: 265, width: 50, height: 50,
+          fill: '#000000', stroke: '', objectGroupIds: ['crop-demo'], cropGroupId: 'crop-demo', cropOp: 'subtract',
+          transitions: { position: 'ease' },
+        }),
+        caption('crop-cap', 'crop group: crop shapes add (rectangle, ellipse) or subtract (the hole), in layer order; the rectangle also tints (any fill, here a gradient)', 240, 500, 480),
       ],
     },
     // Resource swap easings.
@@ -615,14 +640,20 @@ function structureDeck(): Presentation {
         heading('gc-title', 'Group crop'),
         createImageElement('res-grid', TEX_W, TEX_H, {
           id: 'gc-image', name: 'cropped image', x: 300, y: 140, width: 360, height: 270,
-          objectGroupIds: ['grp-crop'], cropGroupId: 'grp-crop',
+          objectGroupIds: ['grp-crop'],
         }),
         createShapeElement('ellipse', {
           id: 'gc-mask', name: 'crop boundary', x: 340, y: 160, width: 280, height: 230,
           fill: '', stroke: '#1a73e8', strokeWidth: 2,
           objectGroupIds: ['grp-crop'], cropGroupId: 'grp-crop',
         }),
-        caption('gc-cap', 'cropGroupId — the ellipse clips the image', 300, 430, 360),
+        caption('gc-cap', 'cropGroupId — the ellipse crops the image', 300, 430, 360),
+        createImageElement('res-grid', TEX_W, TEX_H, {
+          id: 'tint-image', name: 'tinted image', x: 690, y: 170, width: 240, height: 180,
+          // A tint is part of the image: here a gradient darkening the bottom.
+          tint: 'rgba(0, 0, 0, 0)', tintStyle: 'linear', tintTo: 'rgba(0, 0, 0, 0.75)', tintLine: [0.5, 0, 0.5, 1],
+        }),
+        caption('tint-cap', 'tint — a gradient over the image', 690, 360, 240),
       ],
     },
     {

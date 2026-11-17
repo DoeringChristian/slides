@@ -69,7 +69,7 @@ try {
   const frames = [0, 0.1, 0.2, 0.3, 0.35, 0.4, 0.45, 0.48];
   for (const t of frames) {
     await evaluate(`(() => {
-      const img = { id: 'vid', type: 'image', x: 100, y: 100, width: 320, height: 200, rotation: 0, opacity: 1, locked: false, visible: true, resourceId: 'v', cropX: 0, cropY: 0, cropWidth: 320, cropHeight: 200, objectGroupIds: ['g'], playing: false, muted: true };
+      const img = { id: 'vid', type: 'image', x: 100, y: 100, width: 320, height: 200, rotation: 0, opacity: 1, locked: false, visible: true, resourceId: 'v', objectGroupIds: ['g'], playing: false, muted: true };
       const mask = { id: 'mask', type: 'shape', shapeType: 'rect', creationPreset: 'rect', x: 120, y: 120, width: 200, height: 140, rotation: 0, opacity: 1, locked: false, visible: true, fill: 'transparent', stroke: '#000000', strokeWidth: 6, cornerRadius: 0, objectGroupIds: ['g'], cropGroupId: 'g' };
       const slide = els => ({ id: 's' + els.length, elements: Object.fromEntries(els.map(e => [e.id, e])), elementOrder: els.map(e => e.id), background: { type: 'solid', color: '#ffffff' }, transition: { duration: 300 }, notes: '' });
       const resources = { v: { id: 'v', name: 'v', type: 'video', src: window.__videoUrl, originalWidth: 320, originalHeight: 200, duration: 0.6 } };

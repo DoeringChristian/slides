@@ -1,4 +1,5 @@
 import { transferIds } from '../../utils/model/groupTransfer';
+import { isSvgFile, useSvgImport } from '../dialogs/svgImport';
 import { IconsMenu } from './IconsMenu';
 import React from 'react';
 import { useEditorStore } from '../../store/editorStore';
@@ -77,6 +78,9 @@ export const Toolbar: React.FC = () => {
           }
           if (lastSlideId) setActiveSlide(lastSlideId);
         }
+      } else if (isSvgFile(file)) {
+        // An SVG can come in as editable shapes or as one image: ask.
+        useSvgImport.getState().ask({ file, slideId: activeSlideId });
       } else {
         const { resource, element, isExisting } = await loadImageFile(file, undefined, existingResources);
         if (!isExisting) {

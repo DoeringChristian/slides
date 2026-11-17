@@ -65,6 +65,26 @@ let recordedKeys: Set<string> | null = null;
 // resolves; queried via getLayoutSync.
 const syncLayoutCache = new Map<string, SvgTextDoc>();
 
+// Settle notifications: a consumer that reads layouts synchronously from
+// outside the text renderer (a crop by text glyphs) re-reads when one lands.
+// Batched to one notification per microtask.
+let settledVersion = 0;
+let notifyQueued = false;
+const settleListeners = new Set<() => void>();
+function layoutSettled(): void {
+  settledVersion++;
+  if (notifyQueued) return;
+  notifyQueued = true;
+  queueMicrotask(() => { notifyQueued = false; for (const fn of settleListeners) fn(); });
+}
+/** Subscribe to "some layout settled" (useSyncExternalStore-shaped). */
+export function subscribeLayoutSettled(fn: () => void): () => void {
+  settleListeners.add(fn);
+  return () => { settleListeners.delete(fn); };
+}
+/** Changes whenever a layout settles. */
+export const layoutSettledVersion = (): number => settledVersion;
+
 function layoutCacheKey(
   text: string,
   style: TextStyle,
@@ -761,7 +781,7 @@ export async function layoutSvgText(
   })();
 
   layoutCache.set(key, promise);
-  promise.then((d) => { syncLayoutCache.set(key, d); }, () => {});
+  promise.then((d) => { syncLayoutCache.set(key, d); layoutSettled(); }, () => {});
   return promise;
 }
 

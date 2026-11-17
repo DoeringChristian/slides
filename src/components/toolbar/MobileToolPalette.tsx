@@ -1,4 +1,5 @@
 import { IconsMenu } from './IconsMenu';
+import { isSvgFile, useSvgImport } from '../dialogs/svgImport';
 import React from 'react';
 import {
   MousePointer2, Type, Square, Circle, Triangle, Star, Minus, MoveRight, Hexagon, Spline, Image, Trash2,
@@ -63,6 +64,9 @@ export const MobileToolPalette: React.FC = () => {
           }
           if (lastSlideId) setActiveSlide(lastSlideId);
         }
+      } else if (isSvgFile(file)) {
+        // An SVG can come in as editable shapes or as one image: ask.
+        useSvgImport.getState().ask({ file, slideId: activeSlideId });
       } else {
         const { resource, element, isExisting } = await loadImageFile(file, undefined, existingResources);
         if (!isExisting) addResource(resource);
