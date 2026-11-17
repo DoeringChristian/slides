@@ -165,6 +165,25 @@ try {
     assert.deepEqual(s.selected, ['subject', rect.id, ellipse.id].sort(), 'the crop group is selected');
     assert.equal(await evaluate("document.querySelectorAll('[data-crop-ghost]').length"), 0);
 
+    // Outside crop mode, the cropped image aligns by its visible corners: a
+    // shape drawn 2 units from the crop's left edge (rect.x) snaps onto it,
+    // one drawn 2 units from the image's hidden left edge (250) does not.
+    {
+      await evaluate("canvasTest.editor.setState({snapToGrid:true});canvasTest.editor.getState().setSelectedElements([])");
+      const drawAt = async (x) => {
+        const before = new Set(Object.keys((await state()).elements));
+        await evaluate("canvasTest.editor.getState().setTool('rect')");
+        await mouse('mousePressed', await screen(x, 400)); await mouse('mouseMoved', await screen(x + 20, 420)); await mouse('mouseMoved', await screen(x + 40, 440)); await mouse('mouseReleased', await screen(x + 40, 440)); await wait(150);
+        const el = Object.values((await state()).elements).find(e => !before.has(e.id));
+        await undo(); await wait(100);
+        return el.x;
+      };
+      assert.equal(await drawAt(rect.x + 2), rect.x, 'snaps to the visible crop edge');
+      assert.equal(await drawAt(252), 252, "does not snap to the image's hidden edge");
+      await evaluate("canvasTest.editor.setState({snapToGrid:false})");
+      await evaluate("canvasTest.editor.getState().setSelectedElements(['subject'])"); await wait(150);
+    }
+
     // 7. The whole crop group selected offers Edit crop / Remove crop.
     await wait(150);
     assert(await evaluate(`!!document.querySelector('[data-crop-action="edit"]')`), 'Edit crop in the bar');

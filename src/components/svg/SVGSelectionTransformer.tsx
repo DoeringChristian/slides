@@ -1,4 +1,5 @@
 import { snapViewport } from '../../utils/snapping/snapViewport';
+import { cropSnapTargets } from '../../utils/model/groupCrop';
 import { anchorTextSize, measureFreeTextResizeBaseline, resizeFreeText, scalesFreeText } from '../../utils/geometry/freeTextResize';
 import { useCanvasGestureGuard } from './useCanvasGestureGuard';
 import { CONTROL_THEME } from './controlTheme';
@@ -194,7 +195,7 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
           const editor = useEditorStore.getState();
           if (!rot && editor.snapToGrid && !e.metaKey) {
             const layout = getMarginLayout(editor.marginLayoutId);
-            const others = elements.filter(el => !original.some(o => o.id === el.id) && el.visible);
+            const others = cropSnapTargets(elements, editor.croppingElementId).filter(el => !original.some(o => o.id === el.id) && el.visible);
             const tolerance = screenPixelsToSlide(SNAP_DISTANCE_PX, zoom);
             const viewport = snapViewport(svgRef?.current);
             const snap = computeResizeSnap(next, others, tolerance, layout ? getMarginBounds(layout) : null, viewport);

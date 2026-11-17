@@ -1,4 +1,5 @@
 import { snapDotCenter } from '../../utils/snapping/dotSnapping';
+import { cropSnapTargets } from '../../utils/model/groupCrop';
 import { snapViewport } from '../../utils/snapping/snapViewport';
 import { getActiveDoc } from '../../collab/yDocAdapter';
 import { getActiveUndoManager } from '../../collab/activeUndo';
@@ -296,7 +297,8 @@ export function useSVGDrawing(onConnectorHighlight?: ConnectorHighlightCallback,
     const slide = usePresentationStore.getState().presentation.slides[activeSlideId];
     if (!snapToGrid || meta || !slide) return { others: [], marginBounds: null, snappingEnabled: false };
 
-    const others = Object.values(slide.elements)
+    // Cropped objects align by what their crop shows (cropSnapTargets).
+    const others = cropSnapTargets(Object.values(slide.elements), useEditorStore.getState().croppingElementId)
       .filter((el) => el.visible)
       .map((el) => ({ x: el.x, y: el.y, width: el.width, height: el.height, centerOnly: el.type === 'shape' && el.shapeType === 'dot' }));
 

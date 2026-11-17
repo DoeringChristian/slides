@@ -1,4 +1,5 @@
 import { snapViewport } from '../../utils/snapping/snapViewport';
+import { cropSnapTargets } from '../../utils/model/groupCrop';
 import { useCanvasGestureGuard } from './useCanvasGestureGuard';
 import { CONTROL_THEME } from './controlTheme';
 import React, { useState, useEffect, useCallback, useMemo, useRef, useId } from 'react';
@@ -398,7 +399,7 @@ export const SVGPathHandles: React.FC<Props> = ({
         const { snapToGrid, marginLayoutId } = useEditorStore.getState();
         const layout = getMarginLayout(marginLayoutId);
         const snapped = snapPathPoint(pos, [midpoint], zoom, e.shiftKey,
-          snapToGrid && !e.metaKey && elements ? { viewport: snapViewport(svgRef?.current), others: elements.filter(el => el.id !== element.id && el.visible), marginBounds: layout ? getMarginBounds(layout) : null } : undefined);
+          snapToGrid && !e.metaKey && elements ? { viewport: snapViewport(svgRef?.current), others: cropSnapTargets(elements, useEditorStore.getState().croppingElementId).filter(el => el.id !== element.id && el.visible), marginBounds: layout ? getMarginBounds(layout) : null } : undefined);
         const endpoint = snapped.point;
         const raw = centeredPathResize(element, dragging.idx, endpoint);
         let drop = snapToGrid && !e.metaKey && elements ? bindingDrop(endpoint, raw.opposite, elements, element.id, zoom, e.shiftKey) : null;
@@ -438,7 +439,7 @@ export const SVGPathHandles: React.FC<Props> = ({
         const layout = getMarginLayout(marginLayoutId);
         const alignment = snappingEnabled && !e.metaKey && elements ? {
           viewport: snapViewport(svgRef?.current),
-          others: [...vertexAlignmentSources(ownVertices, [dragging.idx]), ...elements.filter(el => el.id !== element.id && el.visible)],
+          others: [...vertexAlignmentSources(ownVertices, [dragging.idx]), ...cropSnapTargets(elements, useEditorStore.getState().croppingElementId).filter(el => el.id !== element.id && el.visible)],
           marginBounds: layout ? getMarginBounds(layout) : null,
         } : undefined;
         const snapped = snapConnectorPoint(pos, adj, elements ?? [], zoom, e.shiftKey,
@@ -458,7 +459,7 @@ export const SVGPathHandles: React.FC<Props> = ({
         const { snapToGrid, marginLayoutId } = useEditorStore.getState();
         const layout = getMarginLayout(marginLayoutId);
         const objects = e.shiftKey && elements
-          ? { viewport: snapViewport(svgRef?.current), others: elements.filter(el => el.id !== element.id && el.visible), marginBounds: layout ? getMarginBounds(layout) : null }
+          ? { viewport: snapViewport(svgRef?.current), others: cropSnapTargets(elements, useEditorStore.getState().croppingElementId).filter(el => el.id !== element.id && el.visible), marginBounds: layout ? getMarginBounds(layout) : null }
           : { others: [], viewport: snapViewport(svgRef?.current) };
         const alignment = snapToGrid && !e.metaKey ? withVertexMagnets(objects, ownVertices, [dragging.idx]) : undefined;
         if (e.shiftKey || alignment) {

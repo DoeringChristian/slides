@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { cropSnapTargets } from '../../utils/model/groupCrop';
 import type { ImageElement, ShapeElement } from '../../types/presentation';
 import { CONTROL_THEME } from './controlTheme';
 import { useCanvasGestureGuard } from './useCanvasGestureGuard';
@@ -104,7 +105,7 @@ export const SVGGradientHandles: React.FC<Props> = ({ element, displayElement, z
       const layout = getMarginLayout(marginLayoutId);
       const snapped = snapPathPoint(screenToSVG(e.clientX, e.clientY), [other], zoom, e.shiftKey,
         snapToGrid && !e.metaKey ? { viewport: snapViewport(svgRef?.current),
-          others: (elements ?? []).filter(el => el.visible), marginBounds: layout ? getMarginBounds(layout) : null } : undefined);
+          others: cropSnapTargets(elements ?? [], useEditorStore.getState().croppingElementId).filter(el => el.visible), marginBounds: layout ? getMarginBounds(layout) : null } : undefined);
       onGuidesChange?.(resolvedPointGuides(snapped.guides, snapped.point, other));
       const [fx, fy] = toBox(snapped.point);
       const next: GradientLine = g.end === 'start' ? [round(fx), round(fy), base[2], base[3]] : [base[0], base[1], round(fx), round(fy)];

@@ -211,3 +211,19 @@ it('mid-transition, an image is in the crop group of a crop shape in the frame (
   expect(framed.objectGroupIds).toEqual(['g']);
   expect((attachGroupCrops(frame).find(el => el.id === 'i') as GroupCropElement)._groupClips?.map(s => s.id)).toEqual(['c']);
 });
+
+it('snap targets: a cropped object aligns by what its crop shows (except the image in crop mode)', async () => {
+  const { cropSnapTargets } = await import('../utils/model/groupCrop');
+  const image = createImageElement(null, 300, 200, { id: 'i', x: 100, y: 100, width: 300, height: 200, objectGroupIds: ['g'] });
+  const a = createShapeElement('rect', { id: 'a', x: 150, y: 120, width: 50, height: 50, objectGroupIds: ['g'], cropGroupId: 'g' });
+  const b = createShapeElement('rect', { id: 'b', x: 250, y: 200, width: 100, height: 60, objectGroupIds: ['g'], cropGroupId: 'g' });
+  const other = createShapeElement('rect', { id: 'o', x: 500, y: 100, width: 40, height: 40 });
+  const box = (els: ReturnType<typeof cropSnapTargets>, id: string) => { const e = els.find(el => el.id === id)!; return [e.x, e.y, e.width, e.height]; };
+  const targets = cropSnapTargets([image, a, b, other]);
+  expect(box(targets, 'i')).toEqual([150, 120, 200, 140]);   // union of the crop shapes
+  expect(box(targets, 'o')).toEqual([500, 100, 40, 40]);     // uncropped: unchanged
+  expect(box(cropSnapTargets([image, a, b, other], 'i'), 'i')).toEqual([100, 100, 300, 200]); // in crop mode: whole
+  // An intersecting crop shape narrows it.
+  const c = createShapeElement('rect', { id: 'c', x: 180, y: 100, width: 300, height: 300, objectGroupIds: ['g'], cropGroupId: 'g', cropOp: 'intersect' });
+  expect(box(cropSnapTargets([image, a, b, c]), 'i')).toEqual([180, 120, 170, 140]);
+});

@@ -1,4 +1,5 @@
 import { snapDotCenter } from '../../utils/snapping/dotSnapping';
+
 import { textFlowSnapBounds } from '../../utils/snapping/textFlowSnap';
 import { snapViewport } from '../../utils/snapping/snapViewport';
 import { objectGroupRoot, toggleObjectGroup, objectGroupLocked, expandObjectGroups } from '../../utils/model/objectGroups';
@@ -25,7 +26,7 @@ import { SVGGridOverlay } from './SVGGridOverlay';
 import { SVGAlignmentGuides } from './SVGAlignmentGuides';
 import { SVGMarginGuides } from './SVGMarginGuides';
 import { SVGHoverOverlay } from './SVGHoverOverlay';
-import { attachGroupCrops, cropGroupOf, cropModeMember, groupCropBoundary } from '../../utils/model/groupCrop';
+import { attachGroupCrops, cropGroupOf, cropModeMember, cropSnapTargets, groupCropBoundary } from '../../utils/model/groupCrop';
 import { type ConnectorDockCue, supportsConnectorDocks } from '../../utils/paths/connectorUtils';
 import { SVGConnectorHighlight } from './SVGConnectorHighlight';
 import { SVGDrawingPreview, SVGPolyDraftPreview } from './SVGDrawingPreview';
@@ -354,7 +355,8 @@ export const SVGSlideCanvas: React.FC = () => {
 
     // Filter out all elements being dragged for guide computation
     const draggedIds = new Set(dragStartPositions.current.keys());
-    const others = (source ? source.elementOrder.map(id => source.elements[id]).filter(Boolean) : [])
+    // Cropped objects align by what their crop shows (cropSnapTargets).
+    const others = cropSnapTargets(source ? source.elementOrder.map(id => source.elements[id]).filter(Boolean) : [], useEditorStore.getState().croppingElementId)
       .filter((e) => !draggedIds.has(e.id) && e.visible)
       .map(textFlowSnapBounds);
 

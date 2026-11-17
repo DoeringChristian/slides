@@ -97,6 +97,53 @@ export function cropSteps(shapes: CropShape[]): { full: boolean; union: boolean;
   };
 }
 
+type Box = { x: number; y: number; width: number; height: number };
+/** Axis-aligned box of an element's rotated rectangle. */
+function aabb(el: SlideElement): Box {
+  if (!el.rotation) return { x: el.x, y: el.y, width: el.width, height: el.height };
+  const cx = el.x + el.width / 2, cy = el.y + el.height / 2, r = el.rotation * Math.PI / 180;
+  const hw = (Math.abs(el.width * Math.cos(r)) + Math.abs(el.height * Math.sin(r))) / 2;
+  const hh = (Math.abs(el.width * Math.sin(r)) + Math.abs(el.height * Math.cos(r))) / 2;
+  return { x: cx - hw, y: cy - hh, width: hw * 2, height: hh * 2 };
+}
+const unite = (a: Box, b: Box): Box => {
+  const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+  return { x, y, width: Math.max(a.x + a.width, b.x + b.width) - x, height: Math.max(a.y + a.height, b.y + b.height) - y };
+};
+const meet = (a: Box, b: Box): Box | null => {
+  const x = Math.max(a.x, b.x), y = Math.max(a.y, b.y);
+  const w = Math.min(a.x + a.width, b.x + b.width) - x, h = Math.min(a.y + a.height, b.y + b.height) - y;
+  return w >= 0 && h >= 0 ? { x, y, width: w, height: h } : null;
+};
+
+/**
+ * Snap targets: the elements, with each cropped object's box reduced to the
+ * part its crop shows (its crop shapes added / intersected in order; a
+ * subtraction cannot shrink a box) — so aligning to a cropped image lines up
+ * with its visible corners, not the hidden ones. `keepWhole` (the image in
+ * crop mode) keeps its full box: its real edges are what a crop snaps to.
+ * Paths and rotated objects keep their own geometry.
+ */
+export function cropSnapTargets(elements: SlideElement[], keepWhole?: string | null): SlideElement[] {
+  if (!elements.some(groupCropBoundary)) return elements;
+  const clipped = new Map(attachGroupCrops(elements).map(el => [el.id, el]));
+  return elements.map(el => {
+    const clips = groupCropClips(clipped.get(el.id) ?? el);
+    if (!clips.length || el.id === keepWhole || el.rotation || (el.type === 'shape' && el.shapeType === 'path')) return el;
+    let visible: Box | null = aabb(el);
+    for (const clip of clips) {
+      const { full, steps } = cropSteps(clip.shapes);
+      let area: Box | null = full ? visible : null;
+      for (const { op, shape } of steps) {
+        if (op === 'add') area = area ? unite(area, aabb(shape)) : aabb(shape);
+        else if (op === 'intersect') area = area && meet(area, aabb(shape));
+      }
+      visible = visible && area && meet(visible, area);
+    }
+    return visible ? { ...el, ...visible } as SlideElement : el;
+  });
+}
+
 /** Suppress the boundary's own fill while cropping (its saved paint is
  *  kept): a crop shape keeps its outline; crop text, which only has fill,
  *  draws nothing — the image shows through its glyphs instead. A tinting
