@@ -22,9 +22,9 @@ const fxOf = (shape: CropShape) => (shape as CropShape & { _writeFx?: WriteEffec
  *  the way its shape is set to appear. */
 function contribution(shape: CropShape, fill: string, idPrefix: string, key: string, full = false): ReactNode {
   const fx = fxOf(shape);
-  // The fade belongs to the crop only when the crop comes or goes on its own;
-  // when the whole group does, the image's own fade already shows it.
-  const strength = full ? 1 : ((shape as GroupCropElement)._cropSolo ? shape.opacity ?? 1 : 1)
+  // The crop's fade relative to its image's (followCropMedia), and the
+  // progress of a non-wrapping effect.
+  const strength = full ? 1 : ((shape as GroupCropElement)._cropStrength ?? 1)
     * (fx && !isWrapperMode(fx) ? Math.max(0, Math.min(1, fx.t)) : 1);
   const node = <g key={key} opacity={strength}>{regionPaths(shape, fill)}</g>;
   return fx && isWrapperMode(fx) && !full ? <React.Fragment key={key}>{wrapVisualFx(node, shape, fx, idPrefix)}</React.Fragment> : node;
@@ -32,11 +32,12 @@ function contribution(shape: CropShape, fill: string, idPrefix: string, key: str
 /** How far a crop shape's appear/leave effect has got (1 = fully there). */
 const strengthOf = (shape: CropShape) => {
   const fx = fxOf(shape);
-  return Math.max(0, Math.min(1, (fx ? fx.t : shape.opacity ?? 1)));
+  return Math.max(0, Math.min(1, (fx ? fx.t : 1) * ((shape as GroupCropElement)._cropStrength ?? 1)));
 };
 /** Whether a crop shape is mid-effect, or coming / going on its own: then
  *  the crop needs the mask, which can show effects and partial strength. */
-const animating = (shape: CropShape) => !!fxOf(shape) || !!(shape as GroupCropElement)._cropSolo;
+const animating = (shape: CropShape) => !!fxOf(shape) || (shape as GroupCropElement)._cropStrength !== undefined
+  || !!(shape as GroupCropElement)._cropReveal;
 
 /**
  * Crops `children` by the element's crop groups. Each crop group is one

@@ -79,8 +79,7 @@ export const TransitionButton: React.FC<Props> = ({
   const candidates = ids.map(id => ({ id, source: sourceSlide?.elements[id], target: targetSlide?.elements[id] }))
     .filter(({ source, target }) => transitionPropertiesDiffer(source, target, group));
   // A crop shape alone draws nothing: preview it with its crop group.
-  const sourceContext = useMemo(() => sourceSlide ? cropContext(sourceSlide.elements, ids) : [], [sourceSlide, ids]);
-  const targetContext = useMemo(() => targetSlide ? cropContext(targetSlide.elements, ids) : [], [targetSlide, ids]);
+  const [sourceContext, targetContext] = useMemo(() => cropContext([sourceSlide?.elements, targetSlide?.elements], ids), [sourceSlide, targetSlide, ids]);
   const sourceElement = candidates[0]?.source;
   const targetElement = candidates[0]?.target;
 

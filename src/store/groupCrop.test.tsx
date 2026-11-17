@@ -186,10 +186,27 @@ it("a crop shape's own easings drive its motion; its preview shows it with its c
   expect(frame.find(el => el.id === 'c')!.x).toBeCloseTo(50);
   // Alone a crop shape draws nothing; with its context the preview shows the cropped image.
   const elements = { i: image, c: at(0) };
-  const context = cropContext(elements, ['c']);
+  const [context] = cropContext([elements], ['c']);
   expect(context.map(el => el.id)).toEqual(['i']);
+  // A crop drawn on the later keyframe: the earlier one has the image (not
+  // yet in the group) — it is still the context there.
+  const plainImage = { ...image, objectGroupIds: [] };
+  const [before, after] = cropContext([{ i: plainImage }, elements], ['c']);
+  expect(before.map(el => el.id)).toEqual(['i']);
+  expect(after.map(el => el.id)).toEqual(['i']);
   const markup = renderToStaticMarkup(<TransitionPreview sourceElements={[at(0)]} targetElements={[at(100)]} sourceContext={context} targetContext={context}
     group="position" easing="linear" width={120} height={80} active={false} />);
   expect(markup).toContain('data-group-crop');
   expect(Number(/data-preview-elements="(\d+)"/.exec(markup)![1])).toBe(2);
+});
+
+it('mid-transition, an image is in the crop group of a crop shape in the frame (even if only one keyframe has the group)', async () => {
+  const { followCropMedia } = await import('../utils/model/groupCrop');
+  const image = (path: string[]) => createImageElement(null, 200, 100, { id: 'i', x: 0, y: 0, width: 200, height: 100, objectGroupIds: path });
+  const crop = createShapeElement('rect', { id: 'c', x: 20, y: 10, width: 50, height: 50, objectGroupIds: ['g'], cropGroupId: 'g' });
+  // The frame's image still carries keyframe A's membership (no group).
+  const frame = followCropMedia([image([]), crop], { elements: { i: image([]) } }, { elements: { i: image(['g']), c: crop } }, 0.75, (_e, _g, t) => t);
+  const framed = frame.find(el => el.id === 'i')!;
+  expect(framed.objectGroupIds).toEqual(['g']);
+  expect((attachGroupCrops(frame).find(el => el.id === 'i') as GroupCropElement)._groupClips?.map(s => s.id)).toEqual(['c']);
 });

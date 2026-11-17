@@ -20,9 +20,9 @@ export function groupCropBoundary(el: SlideElement): el is CropShape {
 /** Elements that can become crop shapes (bound labels ride with their containers). */
 export const canCrop = (el: SlideElement): el is CropShape => el.type === 'shape' || el.type === 'text' && !el.containerId;
 export type GroupCropElement = SlideElement & { _groupClips?: CropShape[]; _groupCropBoundary?: boolean;
-  /** Set during a transition on a crop shape entering or leaving while its
-   *  image stays on screen: its fade shapes the crop. */
-  _cropSolo?: boolean;
+  /** During a transition: how strongly the crop shows (its fade relative
+   *  to its image's — see followCropMedia). Absent: fully. */
+  _cropStrength?: number;
   /** …and the image shows uncropped on the other keyframe: the outside of
    *  the crop fades with its effect instead. */
   _cropReveal?: boolean };
@@ -116,12 +116,21 @@ export function groupCropRegions(shape: CropShape): CropRegion[] {
 
 /** The rest of the crop groups that `ids` are crop shapes of (their image
  *  and other crop shapes), for showing a crop shape in context — alone it
- *  draws nothing. */
-export function cropContext(elements: Record<string, SlideElement>, ids: string[]): SlideElement[] {
-  const groups = new Set(ids.map(id => elements[id]).filter((el): el is CropShape => !!el && groupCropBoundary(el)).map(el => el.cropGroupId!));
-  if (!groups.size) return [];
+ *  draws nothing. The members are found on whichever keyframe has the crop
+ *  (a crop drawn on one keyframe is not on the one before it, where its
+ *  image is not yet in the group) and taken, by id, from each keyframe —
+ *  so a preview shows the image on both sides. */
+export function cropContext(keyframes: Array<Record<string, SlideElement> | undefined>, ids: string[]): Array<SlideElement[]> {
   const chosen = new Set(ids);
-  return Object.values(elements).filter(el => !chosen.has(el.id) && [...groups].some(g => el.objectGroupIds?.includes(g)));
+  const members = new Set<string>();
+  for (const elements of keyframes) {
+    if (!elements) continue;
+    const groups = new Set(ids.map(id => elements[id]).filter((el): el is CropShape => !!el && groupCropBoundary(el)).map(el => el.cropGroupId!));
+    for (const el of Object.values(elements)) {
+      if (!chosen.has(el.id) && [...groups].some(g => el.objectGroupIds?.includes(g))) members.add(el.id);
+    }
+  }
+  return keyframes.map(elements => elements ? [...members].flatMap(id => elements[id] ? [elements[id]] : []) : []);
 }
 
 /** Lay out every crop text in these slides, so synchronous renderers
@@ -355,8 +364,18 @@ export function followCropMedia(
     const mediaB = onB ? cropMedia(slideB.elements, b) : undefined;
     if ((onA && !mediaA?.visible) || (onB && !mediaB?.visible)) continue;
     if (onA && onB && mediaA!.id !== mediaB!.id) continue;
-    const media = byId.get((mediaA ?? mediaB)!.id);
-    if (!media) continue;
+    const media0 = byId.get((mediaA ?? mediaB)!.id);
+    if (!media0) continue;
+    // A crop added on one keyframe puts its image in the crop group only
+    // there; mid-transition the image may carry the other keyframe's
+    // membership. While the crop shape is in the frame, its image is in its
+    // group — otherwise the crop is not applied until the transition ends.
+    const group = el.cropGroupId!;
+    const media = (replaced.get(media0.id) ?? media0) as SlideElement;
+    if (!media.objectGroupIds?.includes(group)) {
+      const path = (onB ? mediaB : mediaA)!.objectGroupIds ?? [group];
+      replaced.set(media.id, { ...media, objectGroupIds: [...path] } as SlideElement);
+    }
     const relA = onA ? relativePose(poseOf(a), poseOf(mediaA!)) : null;
     const relB = onB ? relativePose(poseOf(b), poseOf(mediaB!)) : null;
     // The crop shape's own easings (it is the object whose position, size
@@ -373,19 +392,25 @@ export function followCropMedia(
     // Cropping (or uncropping) an image that is on screen on both keyframes:
     // the side without the crop shows it whole, so the area outside the crop
     // must go (or come back) with the crop's own effect, not all at once.
-    // A crop shape coming or going on its own (its image on screen on both
-    // keyframes) fades the crop itself; with no crop at all on the other side
-    // (cropping or uncropping an on-screen image) the outside fades instead.
+    // How strongly the crop shows: its own fade relative to its image's.
+    // Fading the same way as its image it shows fully (one fade, not two);
+    // with the image cutting in, the crop's own fade reveals it.
+    const fade = (frame: SlideElement, target: SlideElement | undefined) =>
+      target && target.opacity > 1e-6 ? Math.max(0, Math.min(1, frame.opacity / target.opacity)) : 1;
+    const mediaFade = fade(media, onB ? mediaB : mediaA);
+    const strength = mediaFade > 1e-6 ? Math.max(0, Math.min(1, fade(el, onB ? b : a) / mediaFade)) : 1;
+    // Cropping (or uncropping) an image that stays on screen: the side
+    // without any crop shows it whole, so the outside of the crop fades
+    // with the crop's effect instead of vanishing at once.
     const otherSide = onA ? slideB : slideA;
     const otherMedia = otherSide.elements[media.id];
-    const solo = (!onA || !onB) && !!otherMedia?.visible;
-    const reveal = solo && !cropGroupOf(otherSide.elements, media.id);
+    const reveal = (!onA || !onB) && !!otherMedia?.visible && !cropGroupOf(otherSide.elements, media.id);
     const pose = absolutePose(rel, poseOf(media));
     // Text keeps its own (interpolated) box size — resizing it would reflow
     // the glyphs — and follows the media's position and rotation.
     const w = el.type === 'text' ? el.width : pose.w, h = el.type === 'text' ? el.height : pose.h;
     const next: SlideElement = { ...el, x: pose.cx - w / 2, y: pose.cy - h / 2, width: w, height: h, rotation: pose.rot,
-      ...(solo ? { _cropSolo: true } : {}), ...(reveal ? { _cropReveal: true } : {}) } as SlideElement;
+      ...(strength < 1 ? { _cropStrength: strength } : {}), ...(reveal ? { _cropReveal: true } : {}) } as SlideElement;
     if (next.type === 'shape' && next.shapeType === 'path' && next.points && el.width && el.height) {
       const sx = pose.w / el.width, sy = pose.h / el.height;
       next.points = next.points.map((v, i) => v * (i % 2 ? sy : sx));
