@@ -30,8 +30,10 @@ export interface AgentSettings {
   /** Slides server that relays ChatGPT plan usage; '' = the storage server,
    *  else http://localhost:3001. */
   relayUrl: string;
-  /** Switch the editor to the slide the agent is editing. */
-  follow: boolean;
+  /** Switch the editor to the slide the agent is editing. Off by default:
+   *  the assistant is a collaborator and never moves the user's view unless
+   *  asked to (its slide is marked in the slide panel instead). */
+  followAgent: boolean;
 }
 
 const STORAGE_KEY = 'slides.agent.settings';
@@ -43,7 +45,7 @@ const DEFAULTS: AgentSettings = {
   models: { anthropic: DEFAULT_ANTHROPIC_MODEL, openai: '', chatgpt: '' },
   effort: '',
   relayUrl: '',
-  follow: true,
+  followAgent: false,
 };
 
 const PROVIDERS: ProviderId[] = ['anthropic', 'openai', 'chatgpt'];
@@ -67,7 +69,7 @@ function load(): AgentSettings {
       },
       effort: EFFORTS.includes(p.effort as Effort) ? p.effort as Effort : '',
       relayUrl: str(p.relayUrl, ''),
-      follow: p.follow !== false,
+      followAgent: p.followAgent === true,
     };
   } catch {
     return DEFAULTS;
@@ -80,9 +82,9 @@ interface AgentSettingsStore extends AgentSettings {
 }
 
 function persist(settings: AgentSettings) {
-  const { provider, anthropicKey, openaiKey, models, effort, relayUrl, follow } = settings;
+  const { provider, anthropicKey, openaiKey, models, effort, relayUrl, followAgent } = settings;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ provider, anthropicKey, openaiKey, models, effort, relayUrl, follow }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ provider, anthropicKey, openaiKey, models, effort, relayUrl, followAgent }));
   } catch { /* private mode: settings last for this tab only */ }
 }
 

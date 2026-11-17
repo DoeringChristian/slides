@@ -239,3 +239,40 @@ describe.each([false, true])('agent tools collab=%s', collab => {
     expect(readPresentation().slides[s1].elements.box.y).toBe(1);
   });
 });
+
+describe('the assistant as a collaborator (shared document)', () => {
+  it('its edits stay out of the user\'s undo history; "undo turn" reverts only them', async () => {
+    const { s1, read } = setup(true);
+    const user = (await import('../collab/activeUndo')).getActiveUndoManager()!;
+    store.getState().updateElement(s1, 'box', { y: 7 });      // the user's own edit
+    user.stopCapturing();
+    const finish = beginTurnHistory();
+    await runTool('update_elements', { slideId: s1, patches: [{ id: 'box', x: 400 }] });
+    store.getState().updateElement(s1, 'title', { x: 55 });  // the user edits during the turn
+    const turn = finish();
+    store.getState().updateElement(s1, 'box', { width: 150 }); // …and after it
+    // The user's Cmd+Z reverts the user's own edits, never the assistant's.
+    while (user.undoStack.length) user.undo();
+    let now = read().slides[s1].elements;
+    expect([now.box.x, now.box.y, now.box.width, now.title.x]).toEqual([400, 100, 100, 40]);
+    while (user.redoStack.length) user.redo();
+    // "Undo turn" reverts the assistant's edit alone, after the user edited on.
+    expect(turn?.canUndo()).toBe(true);
+    turn!.undo();
+    now = read().slides[s1].elements;
+    expect([now.box.x, now.box.y, now.box.width, now.title.x]).toEqual([100, 7, 150, 55]);
+    expect(turn?.canUndo()).toBe(false);
+  });
+
+  it('its edits do not cancel the user\'s gesture in progress', async () => {
+    const { s1 } = setup(true);
+    const { registerScrubMutation } = await import('../utils/editor/scrubMutation');
+    const cancel = vi.fn();
+    const release = registerScrubMutation(cancel);
+    await runTool('update_elements', { slideId: s1, patches: [{ id: 'box', x: 400 }] });
+    expect(cancel).not.toHaveBeenCalled();
+    store.getState().updateElement(s1, 'box', { y: 1 });       // the user's own write does
+    expect(cancel).toHaveBeenCalledTimes(1);
+    release();
+  });
+});

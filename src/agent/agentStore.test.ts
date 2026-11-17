@@ -66,7 +66,7 @@ beforeEach(() => {
   store.setState({ presentation: p });
   useEditorStore.setState({ activeSlideId: s1, selectedElementIds: [], selectedSlideIds: [] });
   useAgentStore.setState({ thread: emptyThread(), running: false, queue: [] });
-  useAgentSettings.setState({ follow: true });
+  useAgentSettings.setState({ followAgent: false });
 });
 
 describe('one conversation per project', () => {
@@ -101,7 +101,19 @@ describe('one conversation per project', () => {
     expect(useAgentStore.getState().thread.items.find(i => i.kind === 'user' && i.text === 'second')).toMatchObject({ queued: false });
   });
 
-  it('follows the assistant to the slide it edits', async () => {
+  it('stays where the user is while the assistant edits another slide (following is opt-in)', async () => {
+    const fake = scripted(messages => (messages.length === 1
+      ? { message: { role: 'assistant', content: [{ type: 'tool_call', id: 't', name: 'update_elements', input: { slideId: s2, patches: [{ id: 'box', x: 5 }] } }] }, stopReason: 'tool_use' }
+      : say('done')));
+    setProviderFactory(async () => fake.provider);
+    useAgentStore.getState().send('move the box on the next slide');
+    await idle();
+    expect(useEditorStore.getState().activeSlideId).toBe(s1);
+    expect(store.getState().presentation.slides[s2].elements.box.x).toBe(5);
+  });
+
+  it('follows the assistant to the slide it edits when asked to', async () => {
+    useAgentSettings.setState({ followAgent: true });
     const fake = scripted(messages => (messages.length === 1
       ? { message: { role: 'assistant', content: [{ type: 'tool_call', id: 't', name: 'update_elements', input: { slideId: s2, patches: [{ id: 'box', x: 5 }] } }] }, stopReason: 'tool_use' }
       : say('done')));
@@ -120,8 +132,10 @@ describe('comments and attachments', () => {
       ? { message: { role: 'assistant', content: [{ type: 'tool_call', id: 't', name: 'reply_to_comment', input: { slideId: s2, commentId: 'cm1', text: 'Done — it is red now.', resolve: true } }] }, stopReason: 'tool_use' }
       : say('Resolved.')));
     setProviderFactory(async () => fake.provider);
+    const layout = useLayout.getState();
     useAgentStore.getState().forwardComment(s2, comment);
-    expect(useLayout.getState()).toMatchObject({ sideOpen: true, sideTab: 'assistant' });
+    // The user is not pulled away: the side panel stays as it was.
+    expect([useLayout.getState().sideOpen, useLayout.getState().sideTab]).toEqual([layout.sideOpen, layout.sideTab]);
     await idle();
 
     expect(JSON.stringify(fake.seen[0])).toContain(`Ada left a comment on element box of slide 2 (id ${s2})`);

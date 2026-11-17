@@ -1,5 +1,6 @@
 import React from 'react';
-import { X, EyeOff, Eye, Link2 } from 'lucide-react';
+import { X, EyeOff, Eye, Link2, Sparkles } from 'lucide-react';
+import { useAgentStore } from '../../agent/agentStore';
 import { SVGStaticSlide } from '../svg/SVGStaticSlide';
 import type { Slide } from '../../types/presentation';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
@@ -31,6 +32,7 @@ interface Props {
 export const SlideThumbnail: React.FC<Props> = React.memo(({ slide, index, isActive, isSelected = false, canDelete, groupInfo, onClick, onDelete, onToggleHidden }) => {
   const hidden = slide.hidden;
   const peers = useActivePeers();
+  const agentHere = useAgentStore(s => s.workingSlideId === slide.id);
   // Distinct peer colors currently viewing this slide.
   const peersHere = peers
     .filter((p) => p.activeSlideId === slide.id)
@@ -99,6 +101,14 @@ export const SlideThumbnail: React.FC<Props> = React.memo(({ slide, index, isAct
           >
             <X size={12} />
           </button>
+        )}
+        {/* The assistant, like any collaborator, shows where it works
+            rather than moving the user there. */}
+        {agentHere && (
+          <span data-agent-working="" title="The assistant is editing this slide"
+            className="absolute bottom-1 left-1 flex items-center gap-0.5 rounded-full bg-violet-600 text-white px-1 py-px text-[9px] font-medium shadow-sm animate-pulse pointer-events-none">
+            <Sparkles size={9} /> AI
+          </span>
         )}
         {peersHere.length > 0 && (
           <div className="absolute top-1 left-1 flex gap-0.5">

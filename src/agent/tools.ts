@@ -13,6 +13,7 @@ import { getActiveDoc } from '../collab/yDocAdapter';
 import { yDocToJson } from '../collab/ySchema';
 import { withMirroring } from '../utils/model/multiSlide';
 import { withAutoDrawSuspended } from '../utils/paths/autoDraw';
+import { asAgent } from '../utils/editor/scrubMutation';
 import { createImageElement, createShapeElement, createTextElement } from '../utils/model/slideFactory';
 import { deckTextStyle } from '../store/textDefaults';
 import { planObjectGrouping } from '../utils/model/objectGroups';
@@ -70,7 +71,9 @@ export function readPresentation(): Presentation {
  *  behaviours — multi-slide mirroring and auto-draw keyframe spawning — must
  *  not redirect or fan them out. */
 export function agentWrite<T>(fn: () => T): T {
-  return withMirroring(() => withAutoDrawSuspended(fn));
+  // As a collaborator: never mirrored to the user's selected keyframes, never
+  // auto-drawn, its own origin (see asAgent).
+  return asAgent(() => withMirroring(() => withAutoDrawSuspended(fn)));
 }
 
 const store = () => usePresentationStore.getState();
@@ -734,15 +737,17 @@ const replyToComment: DeckTool = {
     const comment = slide.comments?.[input.commentId as string];
     if (!comment) throw new ToolError(`No comment ${input.commentId} on this slide`);
     const rootId = comment.parentId ?? comment.id;
-    store().addComment(slideId, {
-      id: `c-${crypto.randomUUID().slice(0, 8)}`,
-      parentId: rootId,
-      ...(comment.elementIds?.length ? { elementIds: comment.elementIds } : {}),
-      text: input.text as string,
-      author: { ...ASSISTANT_AUTHOR },
-      createdAt: Date.now(),
+    agentWrite(() => {
+      store().addComment(slideId, {
+        id: `c-${crypto.randomUUID().slice(0, 8)}`,
+        parentId: rootId,
+        ...(comment.elementIds?.length ? { elementIds: comment.elementIds } : {}),
+        text: input.text as string,
+        author: { ...ASSISTANT_AUTHOR },
+        createdAt: Date.now(),
+      });
+      if (input.resolve) store().updateComment(slideId, rootId, { resolved: true });
     });
-    if (input.resolve) store().updateComment(slideId, rootId, { resolved: true });
     return { content: [json({ ok: true })], summary: `Replied to a comment on ${slideLabel(p, slideId)}${input.resolve ? ' and resolved it' : ''}` };
   },
 };

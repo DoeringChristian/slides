@@ -9,7 +9,6 @@ import { describeAttachments, type ChatAttachment } from './attachments';
 import { ProviderError, type AgentMessage, type ModelProvider, type UserMessage } from './providers/types';
 import { createOpenAIProvider } from './providers/openai';
 import type { SlideComment } from '../types/presentation';
-import { useLayout } from '../store/layoutStore';
 import { defaultBackend, fromStored, toStored, type ThreadBackend } from './threadStorage';
 
 /**
@@ -145,7 +144,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
           attachments: thread.attachments,
           onSlide: (touched) => {
             set({ workingSlideId: touched });
-            if (useAgentSettings.getState().follow && useEditorStore.getState().activeSlideId !== touched) {
+            if (useAgentSettings.getState().followAgent && useEditorStore.getState().activeSlideId !== touched) {
               useEditorStore.getState().setActiveSlide(touched);
             }
           },
@@ -232,7 +231,8 @@ export const useAgentStore = create<AgentState>((set, get) => {
         : ids.length > 1 ? `on ${ids.length} elements together — ${ids.map(label).join(', ')} — of ${where}`
         : `on ${where}`;
       const text = `${comment.author.name} left a comment ${about}: ${comment.text}\n\n(Comment id ${comment.id}. Do what it asks, then answer it with reply_to_comment and resolve it if done.)`;
-      useLayout.getState().showSideTab('assistant');
+      // A comment is for the assistant to pick up, not a reason to pull the
+      // user away from what they are doing: no panel switch, no focus.
       enqueue(text, [], true);
     },
 

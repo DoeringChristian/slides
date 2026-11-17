@@ -180,7 +180,7 @@ const ModelField: React.FC<{ provider: ProviderId; options: Array<{ id: string; 
 };
 
 const SettingsForm: React.FC<{ chatgpt: ReturnType<typeof useChatGPT>; onDone?: () => void }> = ({ chatgpt, onDone }) => {
-  const { provider, effort, follow, update } = useAgentSettings();
+  const { provider, effort, followAgent, update } = useAgentSettings();
   return (
     <div className="p-3 space-y-3 text-sm">
       <label className="block">
@@ -211,7 +211,7 @@ const SettingsForm: React.FC<{ chatgpt: ReturnType<typeof useChatGPT>; onDone?: 
         </select>
       </label>
       <label className="flex items-center gap-2 text-xs text-gray-700">
-        <input type="checkbox" checked={follow} onChange={e => update({ follow: e.target.checked })} />
+        <input type="checkbox" checked={followAgent} onChange={e => update({ followAgent: e.target.checked })} />
         Follow the assistant to the slide it edits
       </label>
       {onDone && (

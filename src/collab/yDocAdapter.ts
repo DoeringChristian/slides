@@ -1,5 +1,5 @@
 import type { Doc as YDoc } from 'yjs';
-import { beforeLocalMutation } from '../utils/editor/scrubMutation';
+import { beforeLocalMutation, isAgentWrite } from '../utils/editor/scrubMutation';
 
 // Tiny module-level singleton tracking the currently-connected collab Y.Doc.
 // Mutating actions in presentationStore consult getActiveDoc() to decide
@@ -11,6 +11,9 @@ import { beforeLocalMutation } from '../utils/editor/scrubMutation';
 // it to distinguish local-echo from remote updates if it ever needs to.
 
 export const LOCAL_ORIGIN = Symbol('local-edit');
+/** The assistant's writes (see asAgent): tracked by its own per-turn undo,
+ *  never by the user's. */
+export const AGENT_ORIGIN = Symbol('agent-edit');
 
 let activeDoc: YDoc | null = null;
 const activeDocListeners = new Set<() => void>();
@@ -41,5 +44,5 @@ export function runInTxn(fn: () => void) {
   if (!activeDoc) {
     throw new Error('runInTxn called with no active Y.Doc');
   }
-  activeDoc.transact(fn, LOCAL_ORIGIN);
+  activeDoc.transact(fn, isAgentWrite() ? AGENT_ORIGIN : LOCAL_ORIGIN);
 }

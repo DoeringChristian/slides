@@ -13,8 +13,19 @@ export function inForeignTransaction<T>(run: () => T): T {
 
 export function isOwnedScrubMutation() { return ownedDepth > 0; }
 
+/** Writes made by the assistant. It is a collaborator, not the user's own
+ *  hand: its writes do not cancel the user's gesture in progress (as a
+ *  remote peer's do not), and in a shared document they carry their own
+ *  origin (AGENT_ORIGIN), so they stay out of the user's undo history. */
+let agentDepth = 0;
+export function asAgent<T>(write: () => T): T {
+  agentDepth++;
+  try { return write(); } finally { agentDepth--; }
+}
+export const isAgentWrite = () => agentDepth > 0;
+
 export function beforeLocalMutation() {
-  if (ownedDepth) return;
+  if (ownedDepth || agentDepth) return;
   if (cancelActive && foreignTransactionDepth) throw new Error('Local write during a remote transaction while scrubbing');
   const cancel = cancelActive;
   cancelActive = null;
