@@ -199,3 +199,40 @@ describe('comments and attachments', () => {
     expect(view.comments).toEqual([{ id: 'x', author: 'Bo', text: 'bigger', elementIds: ['box'] }]);
   });
 });
+
+describe('commands', () => {
+  it('/help lists the commands; an unknown one says so; neither reaches the model', async () => {
+    const fake = scripted(() => say('should not be called'));
+    setProviderFactory(async () => fake.provider);
+    useAgentStore.getState().send('/help');
+    useAgentStore.getState().send('/nope');
+    await idle();
+    const items = useAgentStore.getState().thread.items;
+    expect(items.map(i => i.kind)).toEqual(['assistant', 'error']);
+    expect(JSON.stringify(items[0])).toContain('/compact');
+    expect(JSON.stringify(items[1])).toContain('Unknown command /nope');
+    expect(fake.seen).toHaveLength(0);
+    expect(useAgentStore.getState().thread.transcript).toHaveLength(0);
+  });
+
+  it('/compact summarizes the earlier conversation now', async () => {
+    let n = 0;
+    const fake = scripted(() => say(`reply ${++n}`));
+    setProviderFactory(async () => fake.provider);
+    for (const ask of ['one', 'two', 'three']) { useAgentStore.getState().send(ask); await idle(); }
+    useAgentStore.getState().send('/compact');
+    await idle();
+    const { transcript, items } = useAgentStore.getState().thread;
+    expect(JSON.stringify(transcript[0])).toContain('[Summary of the earlier conversation]');
+    expect(JSON.stringify(transcript)).not.toContain('"one"');
+    expect(items.at(-1)).toMatchObject({ kind: 'tool', name: 'compact_conversation', done: true, summary: 'Summarized the earlier conversation' });
+  });
+
+  it('/clear starts a new conversation', async () => {
+    const fake = scripted(() => say('hi'));
+    setProviderFactory(async () => fake.provider);
+    useAgentStore.getState().send('hello'); await idle();
+    useAgentStore.getState().send('/clear');
+    expect(useAgentStore.getState().thread.items).toHaveLength(0);
+  });
+});

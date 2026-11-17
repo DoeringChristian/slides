@@ -1,3 +1,4 @@
+import { compactTranscript } from './compaction';
 import { create } from 'zustand';
 import { useEditorStore } from '../store/editorStore';
 import { usePresentationStore } from '../store/presentationStore';
@@ -60,7 +61,17 @@ interface AgentState {
   stop: () => void;
   undoLastTurn: () => void;
   clear: () => void;
+  /** Compact the conversation now (see compaction.ts), as `/compact`. */
+  compact: () => Promise<void>;
 }
+
+/** Commands typed in the assistant's input, e.g. `/compact`. They act on
+ *  the conversation and are never sent to the model. */
+export const AGENT_COMMANDS = [
+  { name: 'compact', description: 'Summarize the earlier conversation now, to free up context' },
+  { name: 'clear', description: 'Start a new conversation' },
+  { name: 'help', description: 'List the commands' },
+] as const;
 
 let controller: AbortController | null = null;
 let seq = 0;
@@ -189,6 +200,14 @@ export const useAgentStore = create<AgentState>((set, get) => {
     }
   }
 
+  function runCommand(name: string) {
+    if (name === 'compact') { void get().compact(); return; }
+    if (name === 'clear') { get().clear(); return; }
+    const list = AGENT_COMMANDS.map(c => `/${c.name} — ${c.description}`).join('\n');
+    const text = name === 'help' ? `Commands:\n${list}` : `Unknown command /${name}.\n\nCommands:\n${list}`;
+    patchThread(t => ({ items: [...t.items, name === 'help' ? { kind: 'assistant', id: nextId(), text } : { kind: 'error', id: nextId(), text }] }));
+  }
+
   function enqueue(text: string, attachments: ChatAttachment[], fromComment: boolean) {
     void ensureDeck();
     const itemId = nextId();
@@ -213,7 +232,38 @@ export const useAgentStore = create<AgentState>((set, get) => {
 
     send: (text, attachments = []) => {
       if (!text.trim() && !attachments.length) return;
+      const command = /^\/(\S+)\s*$/.exec(text.trim());
+      if (command && !attachments.length) { runCommand(command[1].toLowerCase()); return; }
       enqueue(text.trim(), attachments, false);
+    },
+
+    compact: async () => {
+      const id = nextId();
+      const note = (summary: string, isError = false) =>
+        patchItem(id, item => (item.kind === 'tool' ? { ...item, summary, isError, done: true } : item));
+      patchThread(t => ({ items: [...t.items, { kind: 'tool', id, name: 'compact_conversation', done: false }] }));
+      if (get().running) { note('Wait for the current turn to finish, then /compact', true); return; }
+      // Running from the start: a message sent meanwhile queues behind it.
+      controller = new AbortController();
+      set({ running: true });
+      try {
+        void ensureDeck();
+        if (loading) await loading;
+        const transcript = get().thread.transcript;
+        if (!transcript.length) { note('Nothing to compact yet'); return; }
+        const did = await compactTranscript(transcript, await providerFactory(), controller.signal,
+          { force: true, currentTurnStart: transcript.length });
+        note(did === 'summarized' ? 'Summarized the earlier conversation'
+          : did ? 'Trimmed earlier tool outputs (too little conversation to summarize yet)' : 'Nothing to compact yet');
+      } catch (err) {
+        note(controller.signal.aborted ? 'Stopped.' : `Could not compact: ${err instanceof Error ? err.message : String(err)}`, true);
+      } finally {
+        controller = null;
+        set({ running: false });
+        void saveNow();
+        const [next, ...rest] = get().queue;
+        if (next) { set({ queue: rest }); void run(next); }
+      }
     },
 
     forwardComment: (slideId, comment) => {

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Settings, X, Square, Undo2, Trash2, ArrowUp, Check, AlertCircle, Loader2, LogOut, Paperclip, FileText, MessageSquare } from 'lucide-react';
 import { isSupportedAttachment, prepareAttachment, type ChatAttachment } from '../../agent/attachments';
-import { useAgentStore, type ChatItem } from '../../agent/agentStore';
+import { AGENT_COMMANDS, useAgentStore, type ChatItem } from '../../agent/agentStore';
 import { useAgentSettings, PROVIDER_LABELS, relayServerUrl, hasCredentials, type ProviderId } from '../../agent/agentSettings';
 import { chatgptRelay, type ChatGPTStatus } from '../../agent/providers/openai';
 import { usePresentationStore } from '../../store/presentationStore';
@@ -298,9 +298,28 @@ export const AgentPanel: React.FC = () => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // The conversation sits at its newest message: it opens at the bottom and
+  // follows new content (streamed text, images that finish loading) — unless
+  // the user has scrolled up to read, until they scroll back down.
+  const stick = useRef(true);
+  // Bumped when the list element mounts (it remounts after the settings view).
+  const [listMount, setListMount] = useState(0);
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [items]);
+    const list = scrollRef.current;
+    if (!list) return;
+    stick.current = true;
+    const toBottom = () => { if (stick.current) list.scrollTop = list.scrollHeight; };
+    const onScroll = () => { stick.current = list.scrollHeight - list.scrollTop - list.clientHeight < 40; };
+    // Any row growing (streamed text, a late image) or a new row arriving.
+    const grown = new ResizeObserver(toBottom);
+    const observeRows = () => { for (const row of Array.from(list.children)) grown.observe(row); toBottom(); };
+    const rows = new MutationObserver(observeRows);
+    observeRows();
+    grown.observe(list);
+    rows.observe(list, { childList: true });
+    list.addEventListener('scroll', onScroll);
+    return () => { list.removeEventListener('scroll', onScroll); grown.disconnect(); rows.disconnect(); };
+  }, [listMount]);
 
   const addFiles = async (files: Iterable<File>) => {
     setAttachError(null);
@@ -318,8 +337,14 @@ export const AgentPanel: React.FC = () => {
     }
   };
 
+  // Typing "/…": the commands it could be (see AGENT_COMMANDS).
+  const commandQuery = /^\/(\S*)$/.exec(draft)?.[1]?.toLowerCase();
+  const commandMatches = commandQuery === undefined ? [] : AGENT_COMMANDS.filter(c => c.name.startsWith(commandQuery));
+  const [commandIndex, setCommandIndex] = useState(0);
+
   const submit = () => {
-    const text = draft.trim();
+    // A partly typed command runs the highlighted suggestion.
+    const text = commandMatches.length && !pending.length ? `/${commandMatches[commandIndex % commandMatches.length].name}` : draft.trim();
     if (!text && !pending.length) return;
     setDraft('');
     setPending([]);
@@ -366,7 +391,7 @@ export const AgentPanel: React.FC = () => {
         </div>
       ) : (
         <>
-          <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-2.5">
+          <div ref={el => { if (el && el !== scrollRef.current) { scrollRef.current = el; setListMount(n => n + 1); } }} className="flex-1 overflow-y-auto p-3 space-y-2.5" data-agent-messages="">
             {!items.length && (
               <div className="text-xs text-gray-500 space-y-1.5">
                 <p>Ask for changes to this deck. The assistant sees the slide you are on and your selection. Drop images or PDFs here to show it.</p>
@@ -405,6 +430,18 @@ export const AgentPanel: React.FC = () => {
                 onRemove={id => setPending(p => p.filter(a => a.id !== id))}
               />
             )}
+            {commandMatches.length > 0 && (
+              <div className="rounded-lg border border-gray-200 bg-white shadow-sm py-1 text-xs" role="listbox" data-agent-commands="">
+                {commandMatches.map((c, i) => (
+                  <button key={c.name} role="option" aria-selected={i === commandIndex}
+                    onMouseDown={e => { e.preventDefault(); setDraft(''); send(`/${c.name}`); }}
+                    className={`w-full flex gap-2 px-2 py-1 text-left ${i === commandIndex ? 'bg-blue-50' : 'hover:bg-gray-50'}`}>
+                    <span className="font-mono text-gray-800">/{c.name}</span>
+                    <span className="text-gray-500 truncate">{c.description}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="flex items-end gap-1.5 border border-gray-300 rounded-lg px-2 py-1.5 focus-within:border-blue-400">
               <button onClick={() => fileRef.current?.click()} className="p-1 rounded text-gray-500 hover:bg-gray-100" title="Attach images or PDFs">
                 <Paperclip size={14} />
@@ -425,13 +462,24 @@ export const AgentPanel: React.FC = () => {
                   if (files.length) { e.preventDefault(); void addFiles(files); }
                 }}
                 onKeyDown={e => {
+                  // Command suggestions: arrows pick, Tab completes.
+                  if (commandMatches.length && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+                    e.preventDefault();
+                    setCommandIndex(i => (i + (e.key === 'ArrowDown' ? 1 : commandMatches.length - 1)) % commandMatches.length);
+                    return;
+                  }
+                  if (commandMatches.length && e.key === 'Tab') {
+                    e.preventDefault();
+                    setDraft(`/${commandMatches[commandIndex % commandMatches.length].name}`);
+                    return;
+                  }
                   if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                     e.preventDefault();
                     submit();
                   }
                 }}
                 rows={Math.min(6, Math.max(1, draft.split('\n').length))}
-                placeholder={running ? 'Ask (runs after the current turn)…' : 'Ask the assistant…'}
+                placeholder={running ? 'Ask (runs after the current turn)…' : 'Ask the assistant… (/ for commands)'}
                 className="flex-1 resize-none text-sm outline-none bg-transparent"
               />
               <button
