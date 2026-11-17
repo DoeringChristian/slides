@@ -790,6 +790,9 @@ export const usePresentationStore = create<PresentationStore>()(
             const slideMap = getYSlide(doc, slideId);
             if (!slideMap) return;
             const yText = slideMap.get('notes');
+            // Unchanged notes (a slide switch flushes the draft): no write —
+            // no undo step, no update to every collaborator.
+            if ((yText instanceof Y.Text ? yText.toString() : '') === notes) return;
             if (yText instanceof Y.Text) {
               yText.delete(0, yText.length);
               yText.insert(0, notes);
@@ -804,7 +807,7 @@ export const usePresentationStore = create<PresentationStore>()(
         }
         set((state) => {
           const slide = state.presentation.slides[slideId];
-          if (!slide) return state;
+          if (!slide || (slide.notes ?? '') === notes) return state;
           return {
             presentation: {
               ...state.presentation,

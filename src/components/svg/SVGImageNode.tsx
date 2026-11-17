@@ -6,6 +6,7 @@ import { segmentOf } from '../../utils/animation/mediaPlayback';
 import { imageTintShape } from '../../utils/paint/imageTint';
 import { useEditorStore } from '../../store/editorStore';
 import type { ImageElement } from '../../types/presentation';
+import { useMediaUrl } from './mediaSources';
 
 interface Props {
   element: ImageElement;
@@ -35,6 +36,8 @@ export const SVGImageNode: React.FC<Props> = React.memo(({
   );
 
   const isVideo = resource?.type === 'video';
+  // One shared blob URL per source, not a parse of the inline data per player.
+  const videoUrl = useMediaUrl(isVideo ? resource?.src : undefined);
   // The editor's video player is HTML; its tint is the shared shape fill.
   const tint = isVideo ? imageTintShape(element) : null;
 
@@ -119,7 +122,7 @@ export const SVGImageNode: React.FC<Props> = React.memo(({
         >
           <video
             ref={setVideoRef}
-            src={resource.src}
+            src={videoUrl}
             style={{
               width: '100%',
               height: '100%',

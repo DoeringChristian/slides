@@ -1,6 +1,7 @@
 import { snapDotCenter } from '../../utils/snapping/dotSnapping';
 
 import { textFlowSnapBounds } from '../../utils/snapping/textFlowSnap';
+import { draggedExtent, unitSnapSources } from '../../utils/snapping/unitSnapSources';
 import { snapViewport } from '../../utils/snapping/snapViewport';
 import { objectGroupRoot, toggleObjectGroup, objectGroupLocked, expandObjectGroups } from '../../utils/model/objectGroups';
 import { SVGTextAutoFitHandle } from './SVGTextAutoFitHandle';
@@ -26,7 +27,7 @@ import { SVGGridOverlay } from './SVGGridOverlay';
 import { SVGAlignmentGuides } from './SVGAlignmentGuides';
 import { SVGMarginGuides } from './SVGMarginGuides';
 import { SVGHoverOverlay } from './SVGHoverOverlay';
-import { attachGroupCrops, cropGroupOf, cropModeMember, cropSnapTargets, groupCropBoundary } from '../../utils/model/groupCrop';
+import { attachGroupCrops, cropGroupOf, cropModeMember, cropSnapTargets, cropTarget, groupCropBoundary } from '../../utils/model/groupCrop';
 import { type ConnectorDockCue, supportsConnectorDocks } from '../../utils/paths/connectorUtils';
 import { SVGConnectorHighlight } from './SVGConnectorHighlight';
 import { SVGDrawingPreview, SVGPolyDraftPreview } from './SVGDrawingPreview';
@@ -355,10 +356,14 @@ export const SVGSlideCanvas: React.FC = () => {
 
     // Filter out all elements being dragged for guide computation
     const draggedIds = new Set(dragStartPositions.current.keys());
-    // Cropped objects align by what their crop shows (cropSnapTargets).
-    const others = cropSnapTargets(source ? source.elementOrder.map(id => source.elements[id]).filter(Boolean) : [], useEditorStore.getState().croppingElementId)
-      .filter((e) => !draggedIds.has(e.id) && e.visible)
-      .map(textFlowSnapBounds);
+    // Objects snap by what they show: a group as one, a cropped image by its
+    // visible area (unitSnapSources). In crop mode the crop's own image and
+    // shapes are separate targets (cropSnapTargets keeps the image whole).
+    const all = source ? source.elementOrder.map(id => source.elements[id]).filter(Boolean) : [];
+    const cropping = useEditorStore.getState().croppingElementId;
+    const others = cropping
+      ? cropSnapTargets(all, cropping).filter((e) => !draggedIds.has(e.id) && e.visible).map(textFlowSnapBounds)
+      : unitSnapSources(all.filter((e) => !draggedIds.has(e.id) && e.visible), all, useEditorStore.getState().activeObjectGroupId, textFlowSnapBounds);
 
     if (el.type === 'shape' && el.shapeType === 'dot' && draggedIds.size === 1 && !isShiftHeld()) {
       const center = snapDotCenter({x: x + el.width / 2, y: y + el.height / 2},
@@ -366,9 +371,16 @@ export const SVGSlideCanvas: React.FC = () => {
       if (center) return {snappedX: center.x - el.width / 2, snappedY: center.y - el.height / 2, guides: []};
     }
 
-    // Compute guides based on the dragged element
-    const dragged = { ...(draggedIds.size === 1 ? textFlowSnapBounds(el) : { width: el.width, height: el.height, centerOnly: false }), x, y };
-    const result = computeGuides(dragged, others, screenPixelsToSlide(SNAP_DISTANCE_PX, zoom), marginBounds, snapViewport(svgRef.current));
+    // The dragged box: one element's own (text-flow aware), or what the
+    // dragged set shows — a group as a whole, a cropped image by its visible
+    // area — moved along with the grabbed element.
+    const start = dragStartPositions.current.get(id) ?? { x: el.x, y: el.y };
+    const extent = draggedIds.size > 1 && !cropping ? draggedExtent(draggedIds, source!.elements, e => dragStartPositions.current.get(e.id) ?? e) : null;
+    const offset = extent ? { x: extent.x - start.x, y: extent.y - start.y } : { x: 0, y: 0 };
+    const dragged = extent ? { width: extent.width, height: extent.height, centerOnly: false, x: x + offset.x, y: y + offset.y }
+      : { ...(draggedIds.size === 1 ? textFlowSnapBounds(el) : { width: el.width, height: el.height, centerOnly: false }), x, y };
+    const raw = computeGuides(dragged, others, screenPixelsToSlide(SNAP_DISTANCE_PX, zoom), marginBounds, snapViewport(svgRef.current));
+    const result = { ...raw, snapX: raw.snapX === null ? null : raw.snapX - offset.x, snapY: raw.snapY === null ? null : raw.snapY - offset.y };
 
     let snappedX = x;
     let snappedY = y;
@@ -699,7 +711,14 @@ export const SVGSlideCanvas: React.FC = () => {
     const current = readSlideForMutation(useEditorStore.getState().activeSlideId);
     const clicked = current?.elements[id];
     const groupTarget = clicked?.type === 'text' && clicked.containerId ? clicked.containerId : id;
-    if (useEditorStore.getState().enterObjectGroup(groupTarget)) return;
+    // A cropped image is one object (a picture showing its crop), not a group
+    // to open: double-clicking it opens crop mode, where its image and crop
+    // shapes are edited separately — never the bare image under the crop.
+    const editor = useEditorStore.getState();
+    const next = current && !editor.croppingElementId ? objectGroupRoot(current.elements[groupTarget], editor.activeObjectGroupId) : undefined;
+    const cropImage = next ? cropTarget(current!.elements, next) : undefined;
+    if (cropImage && !cropImage.locked) { editor.enterCropMode(cropImage.id); return; }
+    if (editor.enterObjectGroup(groupTarget)) return;
     if (!slide || !activeSlideId) return;
     const el = slide.elements[id];
     if (!el) return;

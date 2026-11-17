@@ -1,18 +1,19 @@
 import { useEffect } from 'react';
-import type { Doc as YDoc } from 'yjs';
+import type { AbstractType, Doc as YDoc, YEvent } from 'yjs';
 import { usePresentationStore } from '../store/presentationStore';
-import { yDocToJson } from './ySchema';
+import { ROOT_KEY, yDocPatchJson, yDocToJson } from './ySchema';
 import type { Presentation } from '../types/presentation';
 import { getActiveDoc } from './yDocAdapter';
 
-// On every Y.Doc update — local or remote — re-derive the full Presentation
-// JSON and replace it in the Zustand store. Yjs's `.toJSON()` recursion is
-// fast enough for moderate decks; we can move to incremental patches later
-// if measurements show it matters.
+// On every Y.Doc update — local or remote — re-derive the Presentation JSON
+// and replace it in the Zustand store, patching only what changed
+// (yDocPatchJson): untouched slides, elements and resources keep their
+// identity, so memoised views do not redraw and inline media is not copied
+// out of the doc again.
 //
 // Order with mutations: an action that goes through Y will do
 //   1) yDocAdapter.runInTxn(() => mutate Y types)
-//   2) Y fires 'update' synchronously
+//   2) Y fires its events synchronously
 //   3) this sync re-materialises Presentation and calls setState
 //   4) React re-renders
 // So the local mutation is reflected in UI in the same microtask, just via a
@@ -23,6 +24,10 @@ export function useYToStoreSync(doc: YDoc | null) {
 
     let scheduled = false;
     let disposed = false;
+    // What this sync last put in the store, and the changes since: patched
+    // only while the store still holds exactly that (else rebuilt in full).
+    let derived: Presentation | null = null;
+    let pending: Array<YEvent<AbstractType<unknown>>> = [];
     const apply = () => {
       if (scheduled) return;
       // Coalesce bursts of updates in the same tick into a single setState
@@ -31,8 +36,13 @@ export function useYToStoreSync(doc: YDoc | null) {
       queueMicrotask(() => {
         scheduled = false;
         if (disposed || getActiveDoc() !== doc) return;
+        const events = pending; pending = [];
         try {
-          const presentation = yDocToJson(doc) as Presentation;
+          const current = usePresentationStore.getState().presentation;
+          const presentation = derived && current === derived
+            ? yDocPatchJson(doc, derived, events)
+            : yDocToJson(doc) as Presentation;
+          derived = presentation;
           usePresentationStore.setState({ presentation });
         } catch (err) {
           // The doc may not be initialised yet (no ROOT_KEY set). Ignore.
@@ -41,15 +51,17 @@ export function useYToStoreSync(doc: YDoc | null) {
         }
       });
     };
+    const observe = (events: Array<YEvent<AbstractType<unknown>>>) => { pending.push(...events); apply(); };
+    const root = doc.getMap(ROOT_KEY);
 
     // Initial pull — server cold-start usually populates the doc before our
     // first sync, so this catches it.
     apply();
-    doc.on('update', apply);
+    root.observeDeep(observe);
 
     return () => {
       disposed = true;
-      doc.off('update', apply);
+      root.unobserveDeep(observe);
     };
   }, [doc]);
 }

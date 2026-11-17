@@ -4,6 +4,7 @@ import { selectionResizeBounds } from '../../utils/geometry/resizeGeometry';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useEditorStore } from '../../store/editorStore';
 import { SVGBackground } from './SVGBackground';
+import { MediaStillContext } from './mediaSources';
 import { RenderElement } from './ElementRenderer';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 import { attachLabelMasks } from '../../utils/model/syncDependents';
@@ -67,53 +68,53 @@ const StaticElement: React.FC<{
   );
 };
 
-export const SVGStaticSlide: React.FC<Props> = React.memo(({
-  slide,
-  width,
-  height,
-  selectedElementIds: selectedElementIdsProp,
-  showHighlights = false,
-}) => {
-  // Read selectedElementIds from the editor store if not provided via props
-  const storeSelectedElementIds = useEditorStore((s) => s.selectedElementIds);
-  const selectedElementIds = selectedElementIdsProp ?? storeSelectedElementIds;
+/** The slide's content: depends on the slide alone, so a selection or slide
+ *  switch (which every thumbnail sees) does not redraw any thumbnail. */
+const StaticContent: React.FC<{ slide: Slide }> = React.memo(({ slide }) => {
+  const elements = attachLabelMasks(
+    slide.elementOrder.map((id) => slide.elements[id]).filter(Boolean),
+    slide.background.type === 'solid' ? slide.background.color : '#ffffff',
+  );
+  return <>
+    <SVGBackground background={slide.background} width={SLIDE_WIDTH} height={SLIDE_HEIGHT} />
+    {elements.map((el) => <StaticElement key={el.id} element={el} slideId={slide.id} />)}
+  </>;
+});
 
-  const scale = width / SLIDE_WIDTH;
+/** The selected objects' frames on this slide (elements keep their id
+ *  across keyframes, so a selection shows on every keyframe it is on). */
+const StaticHighlights: React.FC<{ slide: Slide; scale: number; selectedElementIds?: string[] }> = ({ slide, scale, selectedElementIds: prop }) => {
+  const stored = useEditorStore((s) => s.selectedElementIds);
   const scope = useEditorStore(s => s.activeObjectGroupId);
+  const selectedElementIds = prop ?? stored;
   const highlights: SlideElement[][] = [];
   const seen = new Set<string>();
-  if (showHighlights) for (const id of selectedElementIds) {
+  for (const id of selectedElementIds) {
     if (seen.has(id) || !slide.elements[id]?.visible) continue;
     const ids = expandObjectGroups(slide.elements, [id], scope);
     ids.forEach(member => seen.add(member));
     highlights.push(ids.map(member => slide.elements[member]).filter(el => el?.visible));
   }
+  return <>{highlights.map(members => <HighlightRect key={members[0].id} members={members} scale={scale} />)}</>;
+};
 
-  const elements = attachLabelMasks(
-    slide.elementOrder.map((id) => slide.elements[id]).filter(Boolean),
-    slide.background.type === 'solid' ? slide.background.color : '#ffffff',
-  );
-
+export const SVGStaticSlide: React.FC<Props> = React.memo(({
+  slide,
+  width,
+  height,
+  selectedElementIds,
+  showHighlights = false,
+}) => {
+  const scale = width / SLIDE_WIDTH;
   return (
-    <svg
+    <MediaStillContext.Provider value={true}><svg
       width={width}
       height={height}
       viewBox={`0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}`}
       style={{ display: 'block' }}
     >
-      <SVGBackground
-        background={slide.background}
-        width={SLIDE_WIDTH}
-        height={SLIDE_HEIGHT}
-      />
-      {elements.map((el) => (
-        <StaticElement
-          key={el.id}
-          element={el}
-          slideId={slide.id}
-        />
-      ))}
-      {highlights.map(members => <HighlightRect key={members[0].id} members={members} scale={scale} />)}
-    </svg>
+      <StaticContent slide={slide} />
+      {showHighlights && <StaticHighlights slide={slide} scale={scale} selectedElementIds={selectedElementIds} />}
+    </svg></MediaStillContext.Provider>
   );
 });

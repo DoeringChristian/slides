@@ -151,12 +151,12 @@ it('crop shapes combine in layer order: add, subtract, intersect', async () => {
   // A first subtracting shape cuts from the whole image; a first intersect adds.
   expect(cropSteps([shape('a', 0, 'subtract')])).toMatchObject({ full: true, union: false });
   expect(cropSteps([shape('a', 0, 'intersect')]).steps[0].op).toBe('add');
-  // Selection bounds: the image counts only where its crop shows it; the crop
-  // shapes themselves are selected objects and frame as such.
+  // Selection bounds: what the cropped image shows — the crop shapes add
+  // nothing of their own (an intersect's outer rectangle does not frame).
   const image = createImageElement(null, 400, 100, { id: 'i', x: 0, y: 0, width: 400, height: 100, objectGroupIds: ['g'] });
   const sel = (shapes: ReturnType<typeof shape>[]) => selectionResizeBounds(attachGroupCrops([image, ...shapes]));
   expect(sel([shape('a', 0), shape('b', 200)])).toMatchObject({ x: 0, width: 300 });
-  expect(sel([shape('a', 0), shape('b', 50, 'intersect')])).toMatchObject({ x: 0, width: 150 });
+  expect(sel([shape('a', 0), shape('b', 50, 'intersect')])).toMatchObject({ x: 50, width: 50 });
   // Starting from the whole image (a first subtract), the image frames in full.
   expect(sel([shape('a', 150, 'subtract')])).toMatchObject({ x: 0, width: 400 });
 });

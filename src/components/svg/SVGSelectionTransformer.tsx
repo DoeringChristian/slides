@@ -1,5 +1,7 @@
 import { snapViewport } from '../../utils/snapping/snapViewport';
-import { cropSnapTargets, groupCropBoundary } from '../../utils/model/groupCrop';
+import { cropSnapTargets, groupCropBoundary, shownExtent } from '../../utils/model/groupCrop';
+import { unitSnapSources } from '../../utils/snapping/unitSnapSources';
+import type { ElementBounds } from '../../hooks/useAlignmentGuides';
 import { anchorTextSize, measureFreeTextResizeBaseline, resizeFreeText, scalesFreeText } from '../../utils/geometry/freeTextResize';
 import { useCanvasGestureGuard } from './useCanvasGestureGuard';
 import { CONTROL_THEME } from './controlTheme';
@@ -205,7 +207,12 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
           const editor = useEditorStore.getState();
           if (!rot && editor.snapToGrid && !e.metaKey) {
             const layout = getMarginLayout(editor.marginLayoutId);
-            const others = cropSnapTargets(elements, editor.croppingElementId).filter(el => !original.some(o => o.id === el.id) && el.visible);
+            // Snap to objects by what they show (a group as one, a cropped
+            // image by its visible area); in crop mode, to the crop's parts.
+            const rest = elements.filter(el => !original.some(o => o.id === el.id) && el.visible);
+            const others: ElementBounds[] = editor.croppingElementId
+              ? cropSnapTargets(elements, editor.croppingElementId).filter(el => rest.some(r => r.id === el.id))
+              : unitSnapSources(rest, elements, editor.activeObjectGroupId, el => el);
             const tolerance = screenPixelsToSlide(SNAP_DISTANCE_PX, zoom);
             const viewport = snapViewport(svgRef?.current);
             const snap = computeResizeSnap(next, others, tolerance, layout ? getMarginBounds(layout) : null, viewport);
@@ -353,11 +360,10 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
               transform={el.rotation ? `rotate(${el.rotation}, ${c.x}, ${c.y})` : undefined}
               fill="none" stroke={color} strokeWidth={strokeW} />;
           }
-          const boxes = members.map(visualExtent);
-          const x0 = Math.min(...boxes.map(b => b.x)), y0 = Math.min(...boxes.map(b => b.y));
-          const x1 = Math.max(...boxes.map(b => b.x + b.width)), y1 = Math.max(...boxes.map(b => b.y + b.height));
+          // What the group shows: a cropped image by its visible area.
+          const b = shownExtent(members, displayedSelection, visualExtent) ?? visualExtent(members[0]);
           return <rect key={key} data-selection-outline={key}
-            x={x0 - outlinePad} y={y0 - outlinePad} width={x1 - x0 + 2 * outlinePad} height={y1 - y0 + 2 * outlinePad}
+            x={b.x - outlinePad} y={b.y - outlinePad} width={b.width + 2 * outlinePad} height={b.height + 2 * outlinePad}
             fill="none" stroke={color} strokeWidth={strokeW} />;
         })}
       </g>

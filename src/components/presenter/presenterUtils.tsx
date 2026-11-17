@@ -5,6 +5,7 @@ import { followCropMedia, groupCropPaint, type GroupCropElement } from '../../ut
 import { followGroups } from '../../utils/model/groupFollow';
 import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { Play, Pause } from 'lucide-react';
+import { useMediaUrl } from '../svg/mediaSources';
 import { RenderShape, RenderImage } from '../svg/ElementRenderer';
 import { RenderMorph } from '../svg/RenderMorph';
 import { SVGTextPaths } from '../svg/SVGTextPaths';
@@ -387,6 +388,7 @@ const VideoWithControls: React.FC<VideoWithControlsProps> = ({
   containerStyle,
   onVideoCommand,
 }) => {
+  const url = useMediaUrl(src);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -464,7 +466,7 @@ const VideoWithControls: React.FC<VideoWithControlsProps> = ({
     >
       <video
         ref={videoRef}
-        src={src}
+        src={url}
         data-media-id={mediaId}
         muted={muted}
         playsInline

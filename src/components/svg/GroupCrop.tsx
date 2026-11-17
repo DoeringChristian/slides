@@ -66,33 +66,32 @@ export function GroupCrop({ element, children, scope }: { element: SlideElement;
     const id = `group-crop-${prefix}-${i}`;
     const mark = input ? { 'data-group-crop-input': clip.group } : { 'data-group-crop': clip.group };
     const { full, union, steps } = cropSteps(clip.shapes);
-    if (input) {
-      // Hit areas: masks do not clip pointer input, so the crop is built
-      // from nested clip paths — the union of the adding shapes, then each
-      // intersecting shape, then each subtracting shape's complement (a
-      // large rectangle with the shape cut out, even-odd).
+    if (input || !clip.shapes.some(animating)) {
+      // A crop that is not fading: nested clip paths — the union of the
+      // adding shapes, then each intersecting shape, then each subtracting
+      // shape's complement (a large rectangle with the shape cut out,
+      // even-odd). Clips are cheap to draw (a mask over a video is redrawn
+      // in software every frame) and also clip pointer input, which masks do
+      // not — so hit areas use them always.
       const adding = steps.filter(step => step.op === 'add').map(step => step.shape);
       const layers: Array<{ key: string; paths: ReactNode }> = [];
       if (!full && adding.length) layers.push({ key: 'add', paths: adding.flatMap(shape => regionPaths(shape)) });
       steps.forEach(({ op, shape }, k) => {
         if (op === 'intersect') layers.push({ key: `i${k}`, paths: regionPaths(shape) });
-        if (op === 'subtract') {
-          const r = REGION;
-          const cut = groupCropRegions(shape).map(region => region.d).join(' ');
-          layers.push({ key: `s${k}`, paths: <path d={`M ${r.x} ${r.y} h ${r.width} v ${r.height} h ${-r.width} Z ${cut}`}
-            transform={groupCropRegions(shape)[0]?.transform} clipRule="evenodd" /> });
-        }
+        if (op === 'subtract') groupCropRegions(shape).forEach((region, j) => layers.push({ key: `s${k}-${j}`,
+          paths: <path d={`M ${REGION.x} ${REGION.y} h ${REGION.width} v ${REGION.height} h ${-REGION.width} Z ${region.d}`}
+            transform={region.transform} clipRule="evenodd" /> }));
       });
-      return layers.reduceRight<ReactNode>((inner, layer) => <g key={`${id}-${layer.key}`} {...mark}>
+      if (union && layers.length === 1) {
+        return <g key={id} {...mark}>
+          <defs><clipPath id={id} clipPathUnits="userSpaceOnUse">{layers[0].paths}</clipPath></defs>
+          <g clipPath={`url(#${id})`}>{content}</g>
+        </g>;
+      }
+      return layers.reduceRight<ReactNode>((inner, layer, n) => <g key={`${id}-${layer.key}`} {...(n === 0 ? mark : {})}>
         <defs><clipPath id={`${id}-${layer.key}`} clipPathUnits="userSpaceOnUse">{layer.paths}</clipPath></defs>
         <g clipPath={`url(#${id}-${layer.key})`}>{inner}</g>
       </g>, content);
-    }
-    if (union && !clip.shapes.some(animating)) {
-      return <g key={id} {...mark}>
-        <defs><clipPath id={id} clipPathUnits="userSpaceOnUse">{clip.shapes.flatMap(shape => regionPaths(shape))}</clipPath></defs>
-        <g clipPath={`url(#${id})`}>{content}</g>
-      </g>;
     }
     const masks: ReactNode[] = [];
     // An image cropped (or uncropped) between keyframes while on screen:

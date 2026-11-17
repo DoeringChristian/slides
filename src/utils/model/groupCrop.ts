@@ -116,6 +116,51 @@ const meet = (a: Box, b: Box): Box | null => {
   return w >= 0 && h >= 0 ? { x, y, width: w, height: h } : null;
 };
 
+/** The visible area of an element under its crops (an axis-aligned box),
+ *  or null when a crop hides it entirely. */
+function croppedBox(el: SlideElement, clips: Array<{ shapes: CropShape[] }>, boxOf: (el: SlideElement) => Box = aabb): Box | null {
+  let visible: Box | null = boxOf(el);
+  for (const clip of clips) {
+    const { full, steps } = cropSteps(clip.shapes);
+    let area: Box | null = full ? visible : null;
+    for (const { op, shape } of steps) {
+      if (op === 'add') area = area ? unite(area, boxOf(shape)) : boxOf(shape);
+      else if (op === 'intersect') area = area && meet(area, boxOf(shape));
+    }
+    visible = visible && area && meet(visible, area);
+  }
+  return visible;
+}
+
+/**
+ * What a set of elements (a selection, a group) shows, element by element —
+ * the box every frame, outline, guide and arrangement uses, so a cropped
+ * image acts as the area it shows:
+ *  - a cropped image: its visible area, when its crop shapes are in the set
+ *    too (just the image — as in crop mode — keeps its own box, it is what
+ *    is being edited);
+ *  - a crop shape whose image is in the set: nothing of its own (its area is
+ *    the image's visible part) — null;
+ *  - anything else: its (rotated) bounding box.
+ * `context` supplies the crop shapes (default: the set itself); `boxOf`
+ * an element's own axis-aligned box (default: its rotated rectangle).
+ */
+export function shownBoxes(set: SlideElement[], context: SlideElement[] = set, boxOf: (el: SlideElement) => Box = aabb): Map<string, Box | null> {
+  const ids = new Set(set.map(el => el.id));
+  const attached = context.some(groupCropBoundary) ? new Map(attachGroupCrops(context).map(el => [el.id, el])) : null;
+  const images = set.filter(el => el.type === 'image');
+  return new Map(set.map(el => {
+    if (groupCropBoundary(el) && images.some(img => img.objectGroupIds?.includes(el.cropGroupId!))) return [el.id, null];
+    const clips = groupCropClips(attached?.get(el.id) ?? el).filter(clip => clip.shapes.every(shape => ids.has(shape.id)));
+    return [el.id, clips.length ? croppedBox(el, clips, boxOf) : boxOf(el)];
+  }));
+}
+/** The union of what a set shows (shownBoxes), or null for nothing. */
+export function shownExtent(set: SlideElement[], context: SlideElement[] = set, boxOf: (el: SlideElement) => Box = aabb): Box | null {
+  const boxes = [...shownBoxes(set, context, boxOf).values()].filter((b): b is Box => !!b);
+  return boxes.length ? boxes.reduce(unite) : null;
+}
+
 /**
  * Snap targets: the elements, with each cropped object's box reduced to the
  * part its crop shows (its crop shapes added / intersected in order; a
@@ -130,16 +175,7 @@ export function cropSnapTargets(elements: SlideElement[], keepWhole?: string | n
   return elements.map(el => {
     const clips = groupCropClips(clipped.get(el.id) ?? el);
     if (!clips.length || el.id === keepWhole || el.rotation || (el.type === 'shape' && el.shapeType === 'path')) return el;
-    let visible: Box | null = aabb(el);
-    for (const clip of clips) {
-      const { full, steps } = cropSteps(clip.shapes);
-      let area: Box | null = full ? visible : null;
-      for (const { op, shape } of steps) {
-        if (op === 'add') area = area ? unite(area, aabb(shape)) : aabb(shape);
-        else if (op === 'intersect') area = area && meet(area, aabb(shape));
-      }
-      visible = visible && area && meet(visible, area);
-    }
+    const visible = croppedBox(el, clips);
     return visible ? { ...el, ...visible } as SlideElement : el;
   });
 }

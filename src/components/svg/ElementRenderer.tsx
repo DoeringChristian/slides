@@ -5,6 +5,7 @@ import { resolveShapePaint, rectangleRadii } from '../../utils/paint/shapePaint'
 import { resolveShapeGeometry } from '../../utils/geometry/vectorGeometry';
 import { getRotationCenter } from '../../utils/geometry/geometry';
 import React, { memo, useId } from 'react';
+import { useMediaStill, useMediaUrl, useVideoPoster } from './mediaSources';
 import { ShapeFillPaint } from './ShapeFillPaint';
 import { SVGStrokeClip } from './SVGStrokeClip';
 import { SVGTextPaths } from './SVGTextPaths';
@@ -277,6 +278,27 @@ interface ImageProps {
 // `pointer-events: none` on the foreignObject lets clicks pass through to
 // elements behind/in front in the same SVG document; the editor adds its own
 // transparent hit <rect> at the element layer.
+/** A video's media: the live player (one shared blob URL per source — see
+ *  mediaSources), or in a still render its poster frame at the segment start. */
+function VideoMedia({ src, element, style, autoPlay }: { src: string; element: ImageElement; style: React.CSSProperties; autoPlay: boolean }) {
+  const still = useMediaStill();
+  const url = useMediaUrl(still ? undefined : src);
+  const poster = useVideoPoster(still ? src : undefined, element.playFrom ?? 0);
+  if (still) return poster ? <img src={poster} alt="" style={style} draggable={false} /> : null;
+  if (!url) return null;
+  return <video
+    src={url}
+    style={style}
+    // Playback (seek, play, pause, loop) is driven by the media
+    // controller by this id; it plays on its own only when asked.
+    data-media-id={element.id}
+    autoPlay={autoPlay}
+    muted={element.muted ?? true}
+    playsInline
+    preload="metadata"
+  />;
+}
+
 export const RenderImage: React.FC<ImageProps> = memo(({ element, resource, videoAutoplay }) => {
   if ((element as GroupCropElement)._groupClips?.length) {
     const plain = { ...element, _groupClips: undefined };
@@ -351,17 +373,7 @@ export const RenderImage: React.FC<ImageProps> = memo(({ element, resource, vide
     >
       <div style={containerStyle}>
         {resource.type === 'video' ? (
-          <video
-            src={resource.src}
-            style={mediaStyle}
-            // Playback (seek, play, pause, loop) is driven by the media
-            // controller by this id; it plays on its own only when asked.
-            data-media-id={element.id}
-            autoPlay={videoAutoplay ?? false}
-            muted={element.muted ?? true}
-            playsInline
-            preload="metadata"
-          />
+          <VideoMedia src={resource.src} element={element} style={mediaStyle} autoPlay={videoAutoplay ?? false} />
         ) : (
           <img src={resource.src} alt="" style={mediaStyle} draggable={false} />
         )}

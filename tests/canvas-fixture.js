@@ -187,12 +187,14 @@ window.canvasTest = {
       presentation.slideOrder.push('other');
       if (next.nextStyle) presentation.slides.other.elements.subject.style = { ...subject.style, ...next.nextStyle };
     }
+    // A whole deck to load instead (performance probes).
+    if (next.presentation) { Object.assign(presentation, next.presentation); sid = presentation.slideOrder[0]; }
     store.setState({ presentation });
     useLayout.setState(next.mode === 'layout' ? { slides: 'full', sideOpen: true, sideTab: 'properties', objectsOpen: false } : { objectsOpen: true });
     if (next.collab) { doc = jsonToYDoc(presentation); setActiveDoc(doc); setActiveUndoManager(createUndoManagerFor(doc)); }
     store.temporal.getState().clear();
     editor.setState({ activeSlideId: sid, tool: next.tool ?? 'select', zoom: next.zoom ?? 1, snapToGrid: !!next.snap,
-      selectedElementIds: next.empty ? [] : ['subject'], editingTextId: null, selectedSlideIds: [], pathExtension: null });
+      selectedElementIds: next.empty || next.presentation ? [] : ['subject'], editingTextId: null, selectedSlideIds: [], pathExtension: null });
     root = createRoot(document.getElementById('fixture'));
     root.render(h(React.StrictMode, null, h(next.mode === 'layout' ? AppLayout : next.mode === 'production' ? ProductionFixture : Fixture)));
   },

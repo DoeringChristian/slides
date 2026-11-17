@@ -74,6 +74,51 @@ export function yDocToJson(doc: Y.Doc): Presentation {
   return assertCurrentPresentation(restoreProjectTimestamp(root.toJSON() as Presentation));
 }
 
+/**
+ * Read back a Presentation from a Y.Doc by patching `prev` (the JSON read
+ * last time) with only what `events` changed — everything else keeps its
+ * object identity. A full yDocToJson rebuilds every slide, element and
+ * resource, so every memoised view (thumbnails, element renderers) redraws
+ * on any edit, and a deck's inline media (tens of MB of data: URLs) is
+ * copied out of the doc again each time. Equivalent to yDocToJson.
+ */
+export function yDocPatchJson(doc: Y.Doc, prev: Presentation, events: Array<Y.YEvent<Y.AbstractType<unknown>>>): Presentation {
+  const root = doc.getMap(ROOT_KEY);
+  if (root.size === 0) throw new Error('yDocToJson: presentation map is empty');
+  // A trie of changed paths: `true` = rebuild this whole value.
+  type Trie = Map<string | number, Trie | true>;
+  const changed: Trie = new Map();
+  const mark = (path: Array<string | number>, keys?: Iterable<string>) => {
+    let node: Trie = changed;
+    for (const step of path) {
+      const next = node.get(step);
+      if (next === true) return;
+      if (!next) { const fresh: Trie = new Map(); node.set(step, fresh); node = fresh; } else node = next;
+    }
+    if (keys) for (const key of keys) node.set(key, true);
+  };
+  for (const event of events) {
+    const path = event.path;
+    if (event instanceof Y.YMapEvent) mark(path, event.keysChanged);
+    else if (path.length) {
+      // A Y.Array / Y.Text changed: rebuild it whole, at its parent's key.
+      mark(path.slice(0, -1), [String(path[path.length - 1])]);
+    } else return yDocToJson(doc);
+  }
+  const patch = (prevValue: unknown, y: unknown, node: Trie | true): unknown => {
+    if (!(y instanceof Y.AbstractType)) return y;
+    if (node === true || !(y instanceof Y.Map) || !prevValue || typeof prevValue !== 'object') return y.toJSON();
+    const out: Record<string, unknown> = { ...(prevValue as Record<string, unknown>) };
+    for (const [key, child] of node) {
+      const value = y.get(String(key));
+      if (value === undefined && !y.has(String(key))) delete out[key];
+      else out[key] = patch(out[key], value, child);
+    }
+    return out;
+  };
+  return assertCurrentPresentation(restoreProjectTimestamp(patch(prev, root, changed) as Presentation));
+}
+
 // =============================================================================
 // Internal: builders. Each populates a parent Y.Map / Y.Array with the right
 // nested Y types. Order matters — children must be created and then assigned

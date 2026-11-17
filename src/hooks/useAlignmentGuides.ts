@@ -35,6 +35,9 @@ export function guideKey(g: Guide): string {
 
 export interface ElementBounds {
   centerOnly?: boolean;
+  /** An edge / centre to align to, but not an object to space evenly from
+   *  (a group's member: spacing is between whole objects). */
+  alignOnly?: boolean;
   shapeType?: string;
   /** Rendered text flow offsets, including its final line advance. */
   textFlow?: { top: number; bottom: number };
@@ -257,13 +260,14 @@ export function computeGuides(
   // Equal-spacing magnets compete with edge/center alignment on the same
   // axis; the closer candidate wins. Only the winning spacing guide is
   // emitted (all matching gap pairs at once would be visual noise).
-  const spacingX = !centerOnly && bestSpacingSnap(dragged, visibleSources(others, viewport).filter(o => !o.centerOnly && o.shapeType !== 'dot'), threshold, 'x', viewport);
+  const spacingSources = visibleSources(others, viewport).filter(o => !o.centerOnly && !o.alignOnly && o.shapeType !== 'dot');
+  const spacingX = !centerOnly && bestSpacingSnap(dragged, spacingSources, threshold, 'x', viewport);
   if (spacingX && spacingX.dist < bestDx) {
     bestDx = spacingX.dist;
     snapX = spacingX.target;
     guides.push(spacingX.guide);
   }
-  const spacingY = !centerOnly && bestSpacingSnap(dragged, visibleSources(others, viewport).filter(o => !o.centerOnly && o.shapeType !== 'dot'), threshold, 'y', viewport);
+  const spacingY = !centerOnly && bestSpacingSnap(dragged, spacingSources, threshold, 'y', viewport);
   if (spacingY && spacingY.dist < bestDy) {
     bestDy = spacingY.dist;
     snapY = spacingY.target;

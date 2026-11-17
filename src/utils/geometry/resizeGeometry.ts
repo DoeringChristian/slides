@@ -2,7 +2,7 @@ import type { ShapeElement, SlideElement } from '../../types/presentation';
 import { getBoundingBox, type BoundingBox, type Point } from './geometry';
 import { pathPointsInSlide } from '../paths/pathEditing';
 import { pathBoundsFor } from '../paths/pathShapes';
-import { cropSteps, groupCropClips } from '../model/groupCrop';
+import { shownExtent } from '../model/groupCrop';
 
 export type ResizeUpdate<T extends SlideElement = SlideElement> = { elementId: string; changes: Partial<T> };
 export const rotateDelta = (p: Point, degrees: number): Point => {
@@ -38,37 +38,15 @@ function rotatedBox(el: SlideElement): BoundingBox {
   return { x: b.x + (b.width - width) / 2, y: b.y + (b.height - height) / 2, width, height };
 }
 
-function intersect(a: BoundingBox, b: BoundingBox): BoundingBox | null {
-  const x0 = Math.max(a.x, b.x), y0 = Math.max(a.y, b.y);
-  const x1 = Math.min(a.x + a.width, b.x + b.width), y1 = Math.min(a.y + a.height, b.y + b.height);
-  return x1 > x0 && y1 > y0 ? { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } : null;
-}
-
 /** Selection box. A crop group selected as a whole acts as one object, so its
  *  box is what is visible: each clipped member counts only where its crop
  *  shapes (the render hint `_groupClips`) let it show. Resizing scales every
  *  member relative to this box, so image and crop still scale together. */
 export function selectionResizeBounds(elements: SlideElement[]): BoundingBox {
   if (elements.length === 1) return resizeElementBounds(elements[0]);
-  const selected = new Set(elements.map(el => el.id));
-  return getBoundingBox(elements.map(el => {
-    const box = rotatedBox(el);
-    // Each crop group's visible area (its shapes added, subtracted and
-    // intersected in order — a subtraction may not shrink the box, so it is
-    // kept); nested groups intersect.
-    const clips = groupCropClips(el);
-    if (!clips.length || !clips.every(clip => clip.shapes.every(shape => selected.has(shape.id)))) return box;
-    return clips.reduce<BoundingBox | null>((visible, clip) => {
-      const { full, steps } = cropSteps(clip.shapes);
-      let area: BoundingBox | null = full ? box : null;
-      for (const { op, shape } of steps) {
-        const b = rotatedBox(shape);
-        if (op === 'add') area = area ? getBoundingBox([area, b]) : b;
-        else if (op === 'intersect') area = area && intersect(area, b);
-      }
-      return visible && area && intersect(visible, area);
-    }, box) ?? box;
-  }));
+  // What the selection shows: a cropped image by its visible area, its crop
+  // shapes adding nothing of their own (see shownBoxes).
+  return shownExtent(elements, elements, rotatedBox) ?? getBoundingBox(elements.map(rotatedBox));
 }
 
 /** Delta is in local axes. Edge aspect-resizes expand the perpendicular axis

@@ -2,7 +2,8 @@ import './browser-gate-required.mjs';
 import { waitForCanvasFixture } from './browserFixtureReady.mjs';
 // Clicks on cropped images and videos land on what shows: hidden parts (by
 // the crop's adds, intersects and subtracts) pass through, crop shapes take
-// no clicks outside crop mode, and a double-click enters with the picture.
+// no clicks outside crop mode, and a double-click opens crop mode (a cropped
+// image is one object, not a group to open onto its bare image).
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 const base = process.env.VITE_TEST_URL;
@@ -43,7 +44,7 @@ async function button(label){const point=await evaluate(`(()=>{const b=[...docum
 const RES = `canvasTest.store.getState().addResource({id:'red',name:'red',type:'image',src:'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><rect width="300" height="200" fill="red"/></svg>'),originalWidth:300,originalHeight:200});`;
 const VID = `(async()=>{const c=document.createElement('canvas');c.width=160;c.height=90;const ctx=c.getContext('2d');const rec=new MediaRecorder(c.captureStream(30),{mimeType:'video/webm'});const ch=[];rec.ondataavailable=e=>ch.push(e.data);rec.start();for(let i=0;i<20;i++){ctx.fillStyle='#0a0';ctx.fillRect(0,0,160,90);await new Promise(r=>setTimeout(r,33));}await new Promise(r=>{rec.onstop=r;rec.stop();});canvasTest.store.getState().addResource({id:'vid',name:'v',type:'video',src:URL.createObjectURL(new Blob(ch,{type:'video/webm'})),originalWidth:160,originalHeight:90,duration:1});})()`;
 const clickAt = async (x, y, count = 1) => { const p = await screen(x, y); for (let i = 1; i <= count; i++) { await send('Input.dispatchMouseEvent', { type: 'mousePressed', ...p, button: 'left', buttons: 1, clickCount: i }); await send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...p, button: 'left', buttons: 0, clickCount: i }); await wait(60); } await wait(150); };
-const st = () => evaluate(`({ sel: canvasTest.editor.getState().selectedElementIds.slice().sort(), scope: canvasTest.editor.getState().activeObjectGroupId })`);
+const st = () => evaluate(`({ sel: canvasTest.editor.getState().selectedElementIds.slice().sort(), scope: canvasTest.editor.getState().activeObjectGroupId, crop: canvasTest.editor.getState().croppingElementId })`);
 try {
   await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
   for (const kind of ['image', 'video']) for (const op of ['add', 'intersect']) {
@@ -60,13 +61,13 @@ try {
     await evaluate("canvasTest.editor.getState().clearSelection()"); await clickAt(450, 190); r.hiddenOverBehind = await st();
     await evaluate("canvasTest.editor.getState().clearSelection()"); await clickAt(340, 200); r.hiddenByIntersect = await st();
     await evaluate("canvasTest.editor.getState().clearSelection()"); await clickAt(250, 200, 2); r.dbl = await st();
-    await evaluate("canvasTest.editor.getState().clearSelection()"); await clickAt(250, 200, 3); r.triple = await st();
+    await evaluate("canvasTest.editor.getState().exitCropMode()"); await wait(100);
     console.log('CLICK', kind, op, JSON.stringify(r));
     const group = op === 'intersect' ? ['crop', 'crop2', 'img'] : ['crop', 'img'];
     assert.deepEqual(r.visible.sel, group, `${kind}/${op}: a click on the visible picture selects the cropped ${kind}`);
     assert.deepEqual(r.hiddenOverBehind.sel, ['behind'], `${kind}/${op}: a click on its hidden part reaches the object behind`);
     if (op === 'intersect') assert.deepEqual(r.hiddenByIntersect.sel, [], `${kind}: what an intersect crops away takes no clicks`);
-    assert.deepEqual([r.dbl.scope, r.dbl.sel], ['g', ['img']], `${kind}/${op}: a double-click enters it with the picture selected (not the invisible crop shape)`);
+    assert.equal(r.dbl.crop, 'img', `${kind}/${op}: a double-click opens crop mode, not the bare image under the crop`);
   }
   // A plain group of two rects.
   await setup({ mode: 'production', targets: [{ id: 'a', x: 200, y: 150, width: 100, height: 100, fill: '#c33', objectGroupIds: ['p'] }, { id: 'b', x: 350, y: 150, width: 100, height: 100, fill: '#3c3', objectGroupIds: ['p'] }], empty: true });

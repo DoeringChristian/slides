@@ -4,6 +4,7 @@ import { IconSelect } from '../controls/IconSelect';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useMultiSlideUpdate } from '../../store/selectors';
 import { segmentOf } from '../../utils/animation/mediaPlayback';
+import { mediaUrl } from '../svg/mediaSources';
 import type { ImageElement, VideoPlayback } from '../../types/presentation';
 
 /** Thumbnails per filmstrip. */
@@ -19,7 +20,7 @@ function filmstrip(src: string): Promise<{ duration: number; frames: string[] }>
   if (!job) {
     job = (async () => {
       const video = document.createElement('video');
-      video.muted = true; video.preload = 'auto'; video.crossOrigin = 'anonymous'; video.src = src;
+      video.muted = true; video.preload = 'auto'; video.crossOrigin = 'anonymous'; video.src = await mediaUrl(src);
       await new Promise<void>((resolve, reject) => { video.onloadedmetadata = () => resolve(); video.onerror = () => reject(new Error('video')); });
       // Some encodings (MediaRecorder WebM) report Infinity until scanned.
       if (!Number.isFinite(video.duration)) {

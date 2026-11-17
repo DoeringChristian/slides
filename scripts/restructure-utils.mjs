@@ -51,7 +51,7 @@ const DOMAINS = {
     'connectorUtils',
   ],
   // Snap targets and guides.
-  snapping: ['pathSnapping', 'dotSnapping', 'snapViewport', 'textFlowSnap'],
+  snapping: ['pathSnapping', 'dotSnapping', 'snapViewport', 'textFlowSnap', 'unitSnapSources'],
   // Text layout, glyph outlines, LaTeX.
   text: [
     'textLayout', 'textAutoFit', 'textHitTest', 'textHoverOwner',
