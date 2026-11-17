@@ -1,3 +1,4 @@
+import { shownBoxes } from '../model/groupCrop';
 import type { SlideElement } from '../../types/presentation';
 import { getElementBounds, getRotationCenter } from '../geometry/geometry';
 import { objectGroupRoot } from '../model/objectGroups';
@@ -24,8 +25,8 @@ export const selectionUnit = (el: SlideElement, scope: string | null) => objectG
 
 /**
  * What a selection rectangle selects (Inkscape / Excalidraw rule): an object
- * only when the rectangle wholly contains it, a group only when it wholly
- * contains every visible member. Touching is not enough. Hidden objects are
+ * only when the rectangle wholly contains what it shows (a cropped image: its
+ * visible area), a group only when it wholly contains every visible member. Touching is not enough. Hidden objects are
  * never picked; a bound label follows its container rather than being picked
  * on its own. Returns the selected element ids, in slide order.
  */
@@ -42,9 +43,14 @@ export function marqueeSelection(
     const unit = selectionUnit(el, scope);
     members.set(unit, [...(members.get(unit) ?? []), el]);
   }
+  // What each object shows must be inside: a cropped image or video its
+  // visible area (its crop shapes add nothing), not the hidden image whose
+  // size the user cannot see.
+  const all = Object.values(elements);
   const picked = new Set<string>();
   for (const group of members.values()) {
-    if (group.every(el => within(visualExtent(el), rect))) group.forEach(el => picked.add(el.id));
+    const shown = shownBoxes(group, all, visualExtent);
+    if (group.every(el => { const b = shown.get(el.id); return !b || within(b, rect); })) group.forEach(el => picked.add(el.id));
   }
   return candidates.filter(el => picked.has(el.id)).map(el => el.id);
 }

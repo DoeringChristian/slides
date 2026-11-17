@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 import { readFileSync } from 'node:fs';
-import { ROOT_KEY, elementToYMap, getYSlide, jsonToYDoc, yDocPatchJson, yDocToJson } from './ySchema';
-import type { Presentation } from '../types/presentation';
+import { ROOT_KEY, elementToYMap, getYSlide, jsonToYDoc, slideToYMap, yDocPatchJson, yDocToJson } from './ySchema';
+import type { Presentation, Slide, SlideElement } from '../types/presentation';
 
 const deck = JSON.parse(readFileSync(new URL('../../examples/02-animation-highlights.json', import.meta.url), 'utf8')) as Presentation;
 
@@ -44,6 +44,37 @@ describe('yDocPatchJson: patch the store JSON with only what changed', () => {
         const other = json.slides[s1].elementOrder.find(id => id !== el)!;
         expect(json.slides[s1].elements[other], 'other elements keep their identity').toBe(before.slides[s1].elements[other]);
       }
+    }
+  });
+});
+
+describe('yDocPatchJson under bursts of transactions', () => {
+  it('matches a full rebuild when several transactions land before one patch', () => {
+    const doc = jsonToYDoc(deck);
+    let json = yDocToJson(doc);
+    const root = doc.getMap(ROOT_KEY);
+    let events: Array<Y.YEvent<Y.AbstractType<unknown>>> = [];
+    root.observeDeep(e => { events.push(...e); });
+    let seed = 7;
+    const rnd = (n: number) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
+    const slides = () => root.get('slides') as Y.Map<Y.Map<unknown>>;
+    for (let round = 0; round < 300; round++) {
+      for (let k = 0, n = 1 + rnd(4); k < n; k++) doc.transact(() => {
+        const ids = [...slides().keys()];
+        const slide = slides().get(ids[rnd(ids.length)])!;
+        const els = slide.get('elements') as Y.Map<Y.Map<unknown>>;
+        const elIds = [...els.keys()];
+        if (!elIds.length) return;
+        const id = elIds[rnd(elIds.length)];
+        switch (rnd(4)) {
+          case 0: els.get(id)!.set('x', rnd(1000)); break;
+          case 1: { const copy = els.get(id)!.toJSON() as SlideElement; els.delete(id); els.set(id, elementToYMap({ ...copy, x: rnd(1000) })); break; }
+          case 2: { const copy = els.get(id)!.toJSON() as SlideElement; els.set(`${id}-c${round}`, elementToYMap({ ...copy, id: `${id}-c${round}` })); break; }
+          case 3: { const yslide = slide; const copy = yslide.toJSON() as Slide; slides().set(copy.id, slideToYMap(copy)); break; }
+        }
+      });
+      json = yDocPatchJson(doc, json, events); events = [];
+      expect(json).toEqual(yDocToJson(doc));
     }
   });
 });

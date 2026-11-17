@@ -195,12 +195,14 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
       } else {
         const delta = rotateDelta({ x: (e.clientX - pointer.clientX) / zoom, y: (e.clientY - pointer.clientY) / zoom }, -rot);
         const freeText = original.length === 1 && original[0].type === 'text' && !original[0].containerId ? original[0] : null;
-        // Image elements also represent video resources. Shift temporarily
-        // unlocks their aspect ratio; other objects retain Shift-to-lock. A
-        // cropped image (its image with its crop shapes) is media too.
+        // Corner handles keep the aspect ratio of every object; Shift frees
+        // it. Edge handles stretch one axis (Shift keeps the ratio) — except
+        // pictures (an image or video, cropped or not), whose edges also
+        // keep it unless Shift. Free text and dots have their own rules.
+        const corner = !anchor.includes('center') && !anchor.startsWith('middle');
         const media = isMediaSelection(original);
         const dot = original.length === 1 && original[0].type === 'shape' && original[0].shapeType === 'dot';
-        const aspect = dot || (freeText ? scalesFreeText(anchor, e.shiftKey) : media ? !e.shiftKey : e.shiftKey);
+        const aspect = dot || (freeText ? scalesFreeText(anchor, e.shiftKey) : corner || media ? !e.shiftKey : e.shiftKey);
         const constrainedBounds = (baseline: typeof start) => {
           let next = resizeBounds(baseline, anchor, delta, aspect, e.ctrlKey, rot);
           onGuidesChange?.([]);

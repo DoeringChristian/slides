@@ -41,3 +41,16 @@ describe('selection rectangle', () => {
     expect(pick([a, label, hidden], { x: 0, y: 0, width: 900, height: 500 })).toEqual(['a']);
   });
 });
+
+describe('selection rectangle around a cropped image', () => {
+  it('needs only the visible (cropped) area inside, not the hidden image', async () => {
+    const { createImageElement } = await import('../model/slideFactory');
+    const image = createImageElement(null, 1000, 600, { id: 'img', x: 0, y: 0, width: 1000, height: 600, objectGroupIds: ['g'] });
+    const crop = createShapeElement('rect', { id: 'crop', x: 400, y: 200, width: 200, height: 100, objectGroupIds: ['g'], cropGroupId: 'g' });
+    const elements = { img: image, crop } as Record<string, SlideElement>;
+    // Around the visible part only: picks the cropped image (image + crop).
+    expect(marqueeSelection(elements, ['img', 'crop'], { x: 390, y: 190, width: 220, height: 120 })).toEqual(['img', 'crop']);
+    // Cutting into the visible part: nothing.
+    expect(marqueeSelection(elements, ['img', 'crop'], { x: 450, y: 190, width: 220, height: 120 })).toEqual([]);
+  });
+});

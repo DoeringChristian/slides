@@ -24,11 +24,18 @@ export const CropOutlines: React.FC<{ elements: SlideElement[]; group: string | 
   useCropLayouts(shapes.some(shape => shape.type === 'text'));
   if (!group) return null;
   return <g data-crop-outlines="" style={{ pointerEvents: 'none' }}>
-    {shapes.flatMap(shape => groupCropRegions(shape).map((region, i) =>
-      <path key={`${shape.id}-${i}`} d={region.d} transform={region.transform} fill="none"
-        stroke={CONTROL_THEME.color} strokeWidth={1.5 / zoom} strokeDasharray={`${6 / zoom} ${4 / zoom}`} />))}
+    {shapes.map(shape => <CropOutline key={shape.id} shape={shape} zoom={zoom} />)}
   </g>;
 };
+
+/** One crop shape as crop mode shows it: a dashed accent outline (a crop
+ *  shape has no paint of its own). Also the draft of one being drawn, so it
+ *  looks while drawing as it will once committed. */
+export const CropOutline: React.FC<{ shape: CropShape; zoom: number }> = ({ shape, zoom }) => <>
+  {groupCropRegions(shape).map((region, i) =>
+    <path key={i} d={region.d} transform={region.transform} fill="none" style={{ pointerEvents: 'none' }}
+      stroke={CONTROL_THEME.color} strokeWidth={1.5 / zoom} strokeDasharray={`${6 / zoom} ${4 / zoom}`} />)}
+</>;
 
 /** Crop mode's spotlight: everything outside the image's box is darkened
  *  and its box is outlined, so the mode reads at a glance — even before any

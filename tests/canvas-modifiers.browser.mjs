@@ -72,7 +72,7 @@ try {
   await send('Page.enable'); await send('Runtime.enable');
   await send('Emulation.setDeviceMetricsOverride',{width:1200,height:950,deviceScaleFactor:1,mobile:false});
   await send('Page.navigate',{url:`${base}/tests/canvas-fixture.html`}); await waitForCanvasFixture(evaluate); await wait(1500);
-  await check('every outside handle: Shift aspect, Ctrl center, combos; rotated JSON/Yjs and single undo',async()=>{
+  await check('every outside handle: corner aspect (Shift frees), edge Shift aspect, Ctrl center, combos; rotated JSON/Yjs and single undo',async()=>{
     for(const collab of [false,true]) for(const rotation of [0,37]) for(const anchor of anchors) for(const bits of [2,8,10]) {
       await setup({mode:'production',collab,zoom:.5,subject:{x:500,y:300,width:200,height:100,rotation}});
       const before=(await snapshot()).slide.elements.subject;
@@ -82,7 +82,10 @@ try {
       await mouse('mousePressed',...p); await mouse('mouseMoved',...end,1,bits); await mouse('mouseReleased',...end,1,bits);
       const after=await snapshot(),el=after.slide.elements.subject;
       assert.equal(after.undo,1,JSON.stringify({collab,rotation,anchor,bits,p,end,el})); assert(el.width!==before.width||el.height!==before.height);
-      if(bits&8) near(el.width/el.height,2,'ratio');
+      // Corners keep the ratio unless Shift; edges keep it only with Shift.
+      const corner=!anchor.includes('center')&&!anchor.startsWith('middle');
+      if(corner ? !(bits&8) : bits&8) near(el.width/el.height,2,'ratio');
+      else if(corner) assert(Math.abs(el.width/el.height-2)>1e-3,'Shift frees a corner');
       if(bits&2) {near(el.x+el.width/2,600,'center x');near(el.y+el.height/2,350,'center y');}
       await key('z','KeyZ',2);assert.deepEqual((await snapshot()).slide.elements.subject,before);
       await key('y','KeyY',2);assert.deepEqual((await snapshot()).slide.elements.subject,el);
@@ -104,7 +107,7 @@ try {
     for(const collab of [false,true]) {
       await setup({mode:'production',collab,zoom:.5,subject:{shapeType:'path',x:600,y:300,width:150,height:80,rotation:37,curve:'bezier',points:[-40,-20,60,90,180,30],tangents:[0,0,30,-40,-20,0,40,30,-10,20,0,0]},targets:[{id:'target',x:350,y:200,width:100,height:90,rotation:23}]});
       await select(['subject','target']);const before=await snapshot(),points=await world(),p=await resizeHandle('bottom-right');
-      await mouse('mousePressed',...p);await mouse('mouseMoved',p[0]+40,p[1]+20,1,10);await mouse('mouseReleased',p[0]+40,p[1]+20,1,10);
+      await mouse('mousePressed',...p);await mouse('mouseMoved',p[0]+40,p[1]+20,1,2);await mouse('mouseReleased',p[0]+40,p[1]+20,1,2);
       const after=await snapshot(),el=after.slide.elements.subject,pts=await world();
       const scale=el.tangents[2]/before.slide.elements.subject.tangents[2];assert(scale>1);
       const tx=pts[0]-points[0]*scale,ty=pts[1]-points[1]*scale;

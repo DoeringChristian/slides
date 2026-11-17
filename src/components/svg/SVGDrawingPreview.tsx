@@ -1,12 +1,13 @@
 import React from 'react';
 import type { BindingAimGuide } from '../../utils/paths/connectorUtils';
 import { CONTROL_THEME } from './controlTheme';
-import type { Tool, PathCurve } from '../../types/presentation';
+import type { Tool, PathCurve, ShapeElement } from '../../types/presentation';
 import { composeUserShape, creationBox } from '../../utils/editor/userShapeCreation';
 import { useCreationPreferences } from '../../store/creationPreferences';
 import { useEditorStore } from '../../store/editorStore';
 import { pathBoundsFor } from '../../utils/paths/pathShapes';
 import { RenderShape } from './ElementRenderer';
+import { CropOutline } from './CropMode';
 import type { PolyDraftState } from './useSVGDrawing';
 
 interface DrawState {
@@ -78,10 +79,10 @@ export const SVGDrawingPreview: React.FC<Props> = ({ drawState, tool, zoom = 1 }
     case 'triangle':
     case 'star':
     case 'icon':
-      return <RenderShape element={composeUserShape(tool, { id: 'draft-preview', x, y, width, height })} />;
+      return <DraftShape element={composeUserShape(tool, { id: 'draft-preview', x, y, width, height })} zoom={zoom} />;
     case 'line':
     case 'arrow':
-      return <><BindingAimIndicators guides={drawState.aimGuides} zoom={zoom} /><DraftPath
+      return <><BindingAimIndicators guides={drawState.aimGuides} zoom={zoom} /><DraftPath zoom={zoom}
         points={[drawState.snappedStartX, drawState.snappedStartY, drawState.snappedCurrentX, drawState.snappedCurrentY]}
       /></>;
     default:
@@ -91,8 +92,8 @@ export const SVGDrawingPreview: React.FC<Props> = ({ drawState, tool, zoom = 1 }
 
 
 /** Preview uses the production path/arrow renderer, including shaft insets. */
-function DraftPath({ points, curve, closed, endHead }: {
-  points: number[]; curve?: PathCurve; closed?: boolean; endHead?: 'triangle';
+function DraftPath({ points, curve, closed, endHead, zoom = 1 }: {
+  points: number[]; curve?: PathCurve; closed?: boolean; endHead?: 'triangle'; zoom?: number;
 }) {
   useCreationPreferences(s => s.styles);
   const activeTool = useEditorStore(s => s.tool);
@@ -100,10 +101,18 @@ function DraftPath({ points, curve, closed, endHead }: {
   const preset = composeUserShape(tool, { points });
   const mode = curve ?? preset.curve ?? 'linear';
   const isClosed = closed || !!preset.closed;
-  return <RenderShape element={composeUserShape(tool, {
+  return <DraftShape element={composeUserShape(tool, {
     id: 'draft-preview', ...pathBoundsFor(points, mode, isClosed), curve: mode, closed: isClosed,
     ...(endHead ? { endHead } : {}),
-  })} />;
+  })} zoom={zoom} />;
+}
+
+/** A shape being drawn, as it will look once committed: in crop mode it
+ *  becomes a crop shape (no stroke or fill of its own), so it is drawn as
+ *  crop mode draws crop shapes — not in the drawing style it then loses. */
+function DraftShape({ element, zoom }: { element: ShapeElement; zoom: number }) {
+  const cropping = useEditorStore(s => !!s.croppingElementId);
+  return cropping ? <CropOutline shape={element} zoom={zoom} /> : <RenderShape element={element} />;
 }
 
 interface PolyPreviewProps {
@@ -128,8 +137,8 @@ export const SVGPolyDraftPreview: React.FC<PolyPreviewProps> = ({ polyDraft, zoo
   const previewVertices = polyDraft.previewPoints ?? [...committed, polyDraft.previewX, polyDraft.previewY];
   return (
     <g style={{ pointerEvents: 'none' }}>
-      {polyDraft.previewElement ? <RenderShape element={polyDraft.previewElement} />
-        : <DraftPath points={previewVertices} curve={polyDraft.curve} closed={polyDraft.previewClosed} endHead={polyDraft.endHead} />}
+      {polyDraft.previewElement ? <DraftShape element={polyDraft.previewElement} zoom={zoom} />
+        : <DraftPath points={previewVertices} curve={polyDraft.curve} closed={polyDraft.previewClosed} endHead={polyDraft.endHead} zoom={zoom} />}
       <BindingAimIndicators guides={polyDraft.aimGuides} zoom={zoom} />
       {/* Dashed rubber-band from last committed vertex to cursor — only
           really visible for the polygon mode; the bspline shape already
