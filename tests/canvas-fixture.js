@@ -55,6 +55,11 @@ function SelectionOverview() {
   return h('div', { id: 'selection-overview', style: { position: 'fixed', left: 1150, top: 0 } },
     h(SVGStaticSlide, { slide: presentation.slides[activeSlide], width: 192, height: 108, showHighlights: true }));
 }
+// The whole app, kept in sync with the fixture's collab doc like the others.
+function LayoutFixture() {
+  useYToStoreSync(doc);
+  return h(AppLayout);
+}
 function ProductionFixture() {
   useKeyboardShortcuts();
   useYToStoreSync(doc);
@@ -196,7 +201,7 @@ window.canvasTest = {
     editor.setState({ activeSlideId: sid, tool: next.tool ?? 'select', zoom: next.zoom ?? 1, snapToGrid: !!next.snap,
       selectedElementIds: next.empty || next.presentation ? [] : ['subject'], editingTextId: null, selectedSlideIds: [], pathExtension: null });
     root = createRoot(document.getElementById('fixture'));
-    root.render(h(React.StrictMode, null, h(next.mode === 'layout' ? AppLayout : next.mode === 'production' ? ProductionFixture : Fixture)));
+    root.render(h(React.StrictMode, null, h(next.mode === 'layout' ? LayoutFixture : next.mode === 'production' ? ProductionFixture : Fixture)));
   },
   snapshot() { return { slide: store.getState().presentation.slides[editor.getState().activeSlideId], editor: { tool: editor.getState().tool,
     selected: editor.getState().selectedElementIds, editing: editor.getState().editingTextId },

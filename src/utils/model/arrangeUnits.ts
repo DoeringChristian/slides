@@ -1,6 +1,7 @@
 import type { SlideElement } from '../../types/presentation';
 import { objectGroupRoot } from './objectGroups';
 import { shownExtent } from './groupCrop';
+import { resizeSelection, selectionResizeBounds } from '../geometry/resizeGeometry';
 
 export type Box = { x: number; y: number; width: number; height: number };
 /** What align / distribute move as one: a selected group (relative to the
@@ -26,19 +27,31 @@ export function arrangeUnits(elements: Record<string, SlideElement>, selectedIds
     box: shownExtent(members, all) ?? { x: members[0].x, y: members[0].y, width: 0, height: 0 } }));
 }
 
-type Updates = Array<{ elementId: string; changes: Partial<Record<'x' | 'y', number>> }>;
+/** The unit the others are arranged against: the one selected last (shift-
+ *  click the reference object last). */
+export function targetUnit(units: ArrangeUnit[], selectedIds: string[]): ArrangeUnit | undefined {
+  for (let i = selectedIds.length - 1; i >= 0; i--) {
+    const unit = units.find(u => u.ids.includes(selectedIds[i]));
+    if (unit) return unit;
+  }
+  return units[units.length - 1];
+}
+
+type Updates = Array<{ elementId: string; changes: Partial<SlideElement> }>;
 const moveUnit = (unit: ArrangeUnit, elements: Record<string, SlideElement>, dx: number, dy: number): Updates =>
   Math.abs(dx) < 1e-9 && Math.abs(dy) < 1e-9 ? [] : unit.ids.map(id => ({ elementId: id, changes: {
     ...(dx ? { x: elements[id].x + dx } : {}), ...(dy ? { y: elements[id].y + dy } : {}) } }));
 
 export type AlignEdge = 'left' | 'center-h' | 'right' | 'top' | 'center-v' | 'bottom';
 
-/** Align the units' visible boxes to the selection's edge or centre. */
-export function planAlign(elements: Record<string, SlideElement>, units: ArrangeUnit[], edge: AlignEdge): Updates {
+/** Align the units' visible boxes to the target's edge or centre (the unit
+ *  selected last, which stays put); without a target, to the selection's. */
+export function planAlign(elements: Record<string, SlideElement>, units: ArrangeUnit[], edge: AlignEdge, target?: ArrangeUnit): Updates {
   if (units.length < 2) return [];
-  const left = Math.min(...units.map(u => u.box.x)), right = Math.max(...units.map(u => u.box.x + u.box.width));
-  const top = Math.min(...units.map(u => u.box.y)), bottom = Math.max(...units.map(u => u.box.y + u.box.height));
-  return units.flatMap(({ box, ...u }) => {
+  const ref = target ? [target] : units;
+  const left = Math.min(...ref.map(u => u.box.x)), right = Math.max(...ref.map(u => u.box.x + u.box.width));
+  const top = Math.min(...ref.map(u => u.box.y)), bottom = Math.max(...ref.map(u => u.box.y + u.box.height));
+  return units.filter(u => u !== target).flatMap(({ box, ...u }) => {
     const unit = { ...u, box };
     switch (edge) {
       case 'left': return moveUnit(unit, elements, left - box.x, 0);
@@ -65,5 +78,28 @@ export function planDistribute(elements: Record<string, SlideElement>, units: Ar
     const d = cursor - unit.box[pos];
     cursor += unit.box[size] + gap;
     return axis === 'h' ? moveUnit(unit, elements, d, 0) : moveUnit(unit, elements, 0, d);
+  });
+}
+
+/** Give every other unit the target's size (width and height of what it
+ *  shows). Each scales as one object — a cropped image with its crop, a group
+ *  with its members — and keeps its top-left corner. Free text scales its
+ *  font to the target's height. */
+export function planMatchSize(elements: Record<string, SlideElement>, units: ArrangeUnit[], target: ArrangeUnit): Updates {
+  const members = (unit: ArrangeUnit) => unit.ids.map(id => elements[id]);
+  const size = selectionResizeBounds(members(target));
+  return units.filter(u => u !== target).flatMap(unit => {
+    const els = members(unit);
+    const start = selectionResizeBounds(els);
+    if (Math.abs(start.width - size.width) < 1e-9 && Math.abs(start.height - size.height) < 1e-9) return [];
+    // Free text cannot stretch — its box is its font size: it takes the
+    // target's height, its width following the text.
+    const [only] = els;
+    if (els.length === 1 && only.type === 'text' && !only.containerId) {
+      const k = size.height / start.height;
+      return [{ elementId: only.id, changes: { x: start.x, y: start.y, width: only.width * k, height: only.height * k,
+        style: { ...only.style, fontSize: only.style.fontSize * k } } as Partial<SlideElement> }];
+    }
+    return resizeSelection(els, start, { x: start.x, y: start.y, width: size.width, height: size.height });
   });
 }
