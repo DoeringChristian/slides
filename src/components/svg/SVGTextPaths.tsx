@@ -6,7 +6,7 @@ import type { WriteEffect } from '../../utils/animation/interpolation';
 import { textInsets, textInkOverflow } from '../../utils/text/boundTextLayout';
 import { textVerticalOffset, type SvgTextDoc } from '../../utils/text/textLayout';
 import { prewarmFonts } from '../../utils/text/glyphPaths';
-import { layoutForElement, layoutForElementSync } from '../../utils/text/userTextSizing';
+import { isContentBox, layoutForElement, layoutForElementSync, textHorizontalOffset } from '../../utils/text/userTextSizing';
 import { RenderPaths } from './RenderPaths';
 import { SVGTextContent } from './SVGTextContent';
 
@@ -142,10 +142,14 @@ export const SVGTextPaths: React.FC<Props> = memo(({
   // Vertical alignment offset within the box (shared helper so RenderMorph
   // and hit-testing agree with the renderer).
   const verticalOffset = textVerticalOffset(style.verticalAlign, height, padding, doc.height);
+  const horizontalOffset = textHorizontalOffset(element, doc.width);
+  // A content-sized box never clips: while it animates between two
+  // contents' sizes, clipping to it would reveal the new text glyph by glyph.
+  const contentBox = isContentBox(element);
 
   return (
     <GroupCrop element={element}><g transform={transform} style={{ pointerEvents: 'none' }}>
-      <defs>
+      {!contentBox && <defs>
         <clipPath id={clipId}>
           <rect
             x={elementX + padding - clipPad}
@@ -154,10 +158,10 @@ export const SVGTextPaths: React.FC<Props> = memo(({
             height={height - padding * 2 + clipPad * 2 + bottomOverflow}
           />
         </clipPath>
-      </defs>
-      <g clipPath={`url(#${clipId})`}>
+      </defs>}
+      <g clipPath={contentBox ? undefined : `url(#${clipId})`}>
         <g
-          transform={`translate(${elementX + padding}, ${elementY + padding + verticalOffset})`}
+          transform={`translate(${elementX + padding + horizontalOffset}, ${elementY + padding + verticalOffset})`}
           opacity={opacity}
         >
           <RenderPaths paths={doc.paths} writeFx={writeFx} strokeWidth={1.2} />

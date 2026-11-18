@@ -4,7 +4,7 @@ import type { MorphFx } from '../../utils/animation/interpolation';
 import { lerp, lerpColor } from '../../utils/animation/interpolation';
 import { textInsets } from '../../utils/text/boundTextLayout';
 import { textVerticalOffset, type SvgTextDoc } from '../../utils/text/textLayout';
-import { getUserTextLayoutSync, layoutUserText } from '../../utils/text/userTextSizing';
+import { getUserTextLayoutSync, layoutUserText, textHorizontalOffset } from '../../utils/text/userTextSizing';
 import { samplePathD } from '../../utils/text/glyphPaths';
 import {
   shapeToUnitOutline,
@@ -78,6 +78,7 @@ function buildPairing(
   if (hit) return hit;
 
   const vOff = textVerticalOffset(textEl.style.verticalAlign, textEl.height, textInsets(textEl), doc.height);
+  const hOff = textHorizontalOffset(textEl, doc.width);
   const glyphs: number[][] = [];
   const glyphColors: string[] = [];
   for (const p of doc.paths) {
@@ -87,14 +88,14 @@ function buildPairing(
     if (raw.length === 2 * SAMPLES_PER_GLYPH) {
       for (let i = 0; i < raw.length; i += 2) {
         const [x, y] = applyMat(mat, raw[i], raw[i + 1]);
-        pts.push(x + textInsets(textEl), y + textInsets(textEl) + vOff);
+        pts.push(x + textInsets(textEl) + hOff, y + textInsets(textEl) + vOff);
       }
     } else {
       // Sampling unavailable (or degenerate d): collapse the glyph to its
       // pen position so the pair still animates instead of vanishing.
       const [x, y] = applyMat(mat, 0, 0);
       for (let i = 0; i < SAMPLES_PER_GLYPH; i++) {
-        pts.push(x + textInsets(textEl), y + textInsets(textEl) + vOff);
+        pts.push(x + textInsets(textEl) + hOff, y + textInsets(textEl) + vOff);
       }
     }
     glyphs.push(pts);

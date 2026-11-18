@@ -12,7 +12,7 @@ export const EASING_LABELS: Record<EasingType, string> = {
   linear: 'Linear',
   ease: 'Ease',
   dissolve: 'Dissolve',
-  fadeinout: 'Fade In/Out',
+  fadeinout: 'Fade Out/In',
   typewriter: 'Typewriter',
   write: 'Write',
   create: 'Create',

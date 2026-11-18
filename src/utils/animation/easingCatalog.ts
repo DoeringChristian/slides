@@ -24,7 +24,7 @@ export const SHAPE_VISIBILITY_TYPES: EasingType[] = ['const', 'linear', 'ease', 
 export const IMAGE_VISIBILITY_TYPES: EasingType[] = ['const', 'linear', 'ease', 'wipe', 'slidein', 'grow', 'iris'];
 
 // Content easings — text only.
-export const CONTENT_TYPES: EasingType[] = ['const', 'dissolve', 'typewriter', 'write', 'fadebyglyph'];
+export const CONTENT_TYPES: EasingType[] = ['const', 'fadeinout', 'dissolve', 'typewriter', 'write', 'fadebyglyph'];
 
 /** Shape visibility easings minus `extend`, for shapes with no route. */
 const PRIMITIVE_VISIBILITY_TYPES: EasingType[] = SHAPE_VISIBILITY_TYPES.filter(t => t !== 'extend');

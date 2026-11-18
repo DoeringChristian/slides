@@ -104,6 +104,31 @@ try {
     assert.ok(Math.abs(pin(b) - pin(a)) < 0.5 && Math.abs(b.y - a.y) < 0.5, `${align} (${collab ? 'yjs' : 'json'}): typing grows the box around its ${align} ${JSON.stringify([a, b])}`);
     assert.ok(Math.abs(pin({ x: live.x, w: live.w }) - pin(a)) < 2, `${align}: the editor grows the same way while typing ${JSON.stringify([a, live])}`);
   }
+  // A content change with the Constant easing: the box animates between the
+  // two contents' sizes, but the text must neither be revealed glyph by
+  // glyph (clipped to the growing box — a typewriter look) nor slide off its
+  // anchor. Render real interpolated frames on the canvas.
+  for (const align of ['left', 'center', 'right']) {
+    await setup({ mode: 'production', subject: { type: 'text', text: 'Hi', x: 300, y: 200, width: 40, height: 40, textSizing: 'auto-content', style: { ...base, fontSize: 32, align, verticalAlign: 'top' } } });
+    await wait(300);
+    const frames = await evaluate(`(async()=>{const {measureUserText}=await import('/src/utils/text/userTextSizing.ts');const {interpolateElement}=await import('/src/utils/animation/interpolation.ts');
+      const e=canvasTest.snapshot().slide.elements.subject;const a={...e,...await measureUserText(e)};
+      const long={...a,text:'Hello there, everyone'};const sb=await measureUserText(long);
+      const pin=${JSON.stringify(align)}==='left'?a.x:${JSON.stringify(align)}==='right'?a.x+a.width:a.x+a.width/2;
+      const k=${JSON.stringify(align)}==='left'?0:${JSON.stringify(align)}==='right'?1:.5;
+      const b={...long,...sb,x:pin-sb.width*k,transitions:{content:'const'}};
+      return {pin,b,frames:[.25,.75].map(t=>interpolateElement(a,b,t,true))}})()`);
+    for (const frame of frames.frames) {
+      await evaluate(`canvasTest.store.getState().updateElement(canvasTest.editor.getState().activeSlideId,'subject',${JSON.stringify({ text: frame.text, x: frame.x, width: frame.width, height: frame.height })})`); await wait(300);
+      const m = await measure();
+      const clipped = await evaluate(`!!document.querySelector('.content-layer [data-element-id="subject"] [clip-path]')`);
+      const slidePin = await evaluate(`(()=>{const m=document.querySelector('.canvas-scroll-parent svg').getScreenCTM();return m.a*${frames.pin}+m.e})()`);
+      const at = align === 'left' ? m.glyphs.x0 : align === 'right' ? m.glyphs.x1 : (m.glyphs.x0 + m.glyphs.x1) / 2;
+      assert.ok(!clipped, `${align}: content-sized text is not clipped to its animating box`);
+      assert.ok(Math.abs(at - slidePin) < 4, `${align} "${frame.text}" mid-transition stays at its ${align} anchor (${(at - slidePin).toFixed(1)}px off)`);
+    }
+  }
+  console.log('PASS a Constant content change shows whole text at its anchor while the box animates');
   assert.deepEqual(runtimeErrors, [], 'no runtime errors');
   console.log('PASS typing grows an auto-sized text box around where its alignment pins it, live and committed');
 } finally { ws.close(); }

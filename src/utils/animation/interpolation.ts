@@ -273,6 +273,14 @@ function interpolateText(a: string, b: string, t: number, easing: EasingType | u
         dissolveSource: { text: a, opacityMultiplier: Math.sqrt(1 - t) },
       };
 
+    case 'fadeinout':
+      // As if they were two text boxes, one disappearing and the next
+      // appearing: the old text fades out over the first half, the new one
+      // in over the second (the same split and ramp as visibility).
+      return t < 0.5
+        ? { text: a, opacityMultiplier: fadeinoutOpacity(1, t) }
+        : { text: b, opacityMultiplier: fadeinoutOpacity(1, t) };
+
     case 'const':
     default:
       // Snap at midpoint
@@ -376,7 +384,7 @@ export function interpolateElement(a: SlideElement, b: SlideElement, t: number, 
   if (a.type === 'text' && b.type === 'text') {
     const ta = a as TextElement;
     const tb = b as TextElement;
-    const contentEasing = tr.content ?? 'const';
+    const contentEasing = tr.content ?? defaultEasingFor('content', b);
     const textLayout = t < 0.5 ? ta : tb;
     const layoutFields = { textSizing: textLayout.textSizing, boundTextLayout: textLayout.boundTextLayout,
       containerId: textLayout.containerId, boundTextBaselineHeight: textLayout.boundTextBaselineHeight };
@@ -813,9 +821,9 @@ export function defaultVisibilityEasing(element: SlideElement | undefined): Easi
 export function defaultEasingFor(group: TransitionGroup, element: SlideElement | undefined): EasingType {
   switch (group) {
     case 'resource': return 'dissolve';
-    // A text edit and a cross-type morph both default to the hard cut, which
-    // 'const' reproduces exactly.
-    case 'content':
+    // A text edit fades the old text out and the new in, as two text boxes
+    // would; a cross-type morph defaults to the hard cut.
+    case 'content': return 'fadeinout';
     case 'morph': return 'const';
     case 'visibility': return defaultVisibilityEasing(element);
     default: return 'linear';

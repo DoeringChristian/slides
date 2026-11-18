@@ -21,6 +21,26 @@ export function textSizeFromDoc(element: TextElement, doc: SvgTextDoc): Pick<Tex
   };
 }
 
+/** Text whose box is its content (free auto-content text): it never wraps
+ *  or overflows, so it is not clipped to its box. */
+export function isContentBox(element: TextElement): boolean {
+  return element.textSizing === 'auto-content' && !element.containerId;
+}
+
+/**
+ * Horizontal offset of a laid-out block inside its element box. Auto-content
+ * text is laid out at its own measured width, so it sits in the box by its
+ * alignment: at rest the box is exactly that width (offset 0); while the box
+ * animates between two contents' widths, the text stays at its anchor
+ * instead of sliding with the box's left edge. Wrapped text is laid out at
+ * the box width and aligned already.
+ */
+export function textHorizontalOffset(element: TextElement, contentWidth: number): number {
+  if (!isContentBox(element)) return 0;
+  const free = element.width - textInsets(element) * 2 - contentWidth;
+  return element.style.align === 'center' ? free / 2 : element.style.align === 'right' ? free : 0;
+}
+
 /** Auto-content measures and paints the same unwrapped layout, even before
  * the live box width catches up. Alignment uses the measured content width,
  * never the effectively infinite measurement width. */

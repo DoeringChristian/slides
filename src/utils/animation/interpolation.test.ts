@@ -306,6 +306,28 @@ describe('text content transitions', () => {
     expect(out._dissolveText!.opacity).toBeCloseTo(0.8 * Math.sqrt(0.75));
   });
 
+  test("content='fadeinout' looks like two text boxes, one disappearing and one appearing", () => {
+    const ta = makeText({ text: 'old', opacity: 0.8 });
+    const tb = makeText({ text: 'new', opacity: 0.8, transitions: { content: 'fadeinout' } });
+    // The pair it should match: the old box leaving, the new one entering
+    // (default linear visibility).
+    const gone = { ...ta, visible: false }, absent = { ...tb, visible: false, transitions: {} };
+    for (const t of [0, 0.1, 0.25, 0.49, 0.5, 0.6, 0.75, 0.99, 1]) {
+      const out = interpolateElement(ta, tb, t) as WithDissolveText;
+      const pair = t < 0.5 ? interpolateWithVisibility(ta, gone, t) : interpolateWithVisibility(absent, { ...tb, transitions: {} }, t);
+      expect(out.text).toBe(t < 0.5 ? 'old' : 'new');
+      expect(out._dissolveText).toBeUndefined();
+      expect(out.opacity).toBeCloseTo(pair?.opacity ?? 0);
+    }
+  });
+
+  test('an unset content easing fades out and in (the default)', () => {
+    const ta = makeText({ text: 'old' }), tb = makeText({ text: 'new' });
+    const early = interpolateElement(ta, tb, 0.25), late = interpolateElement(ta, tb, 0.75);
+    expect([(early as TextElement).text, early.opacity]).toEqual(['old', 0.5]);
+    expect([(late as TextElement).text, late.opacity]).toEqual(['new', 0.5]);
+  });
+
   test("content='write' attaches an 'in' _writeFx spanning the full window (snap-clear default)", () => {
     const ta = makeText({ text: 'old' });
     const tb = makeText({ text: 'new', transitions: { content: 'write' } });

@@ -2,7 +2,7 @@ import type { SlideElement, TextElement } from '../../types/presentation';
 import { shapeToPathD } from '../paths/shapeToPath';
 import { resolveShapeGeometry, vectorContourD } from '../geometry/vectorGeometry';
 import { getRotationCenter } from '../geometry/geometry';
-import { layoutForElement, layoutForElementSync } from '../text/userTextSizing';
+import { layoutForElement, layoutForElementSync, textHorizontalOffset } from '../text/userTextSizing';
 import { textInsets } from '../text/boundTextLayout';
 import { textVerticalOffset } from '../text/textLayout';
 import { parseTransformChain, type Mat2x3 } from '../animation/morphGeometry';
@@ -49,7 +49,7 @@ export function groupCropRegions(shape: CropShape): CropRegion[] {
     // await ensureCropLayouts first) and crop to nothing meanwhile.
     if (!doc) { void layoutForElement(shape).catch(() => {}); return []; }
     const padding = textInsets(shape);
-    const dx = shape.x + padding, dy = shape.y + padding + textVerticalOffset(shape.style.verticalAlign, shape.height, padding, doc.height);
+    const dx = shape.x + padding + textHorizontalOffset(shape, doc.width), dy = shape.y + padding + textVerticalOffset(shape.style.verticalAlign, shape.height, padding, doc.height);
     return doc.paths.map(path => ({
       d: path.fillD ?? path.d,
       rule: path.fillRule ?? 'nonzero',
