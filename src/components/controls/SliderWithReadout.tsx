@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ScrubInput } from './ScrubInput';
 import type { ScrubSpec } from '../../utils/editor/scrub';
+import { LOG_STEPS, logThumb, logValue } from '../../utils/editor/logScale';
 
 /**
  * Range slider + compact numeric readout, speaking the same live-preview
@@ -39,6 +40,9 @@ export interface SliderWithReadoutProps {
   onScrubCancel?: () => void;
   disabled?: boolean;
   className?: string;
+  /** The thumb moves on a log scale (equal travel per doubling), for a wide
+   *  range such as zoom. The readout still shows and takes plain values. */
+  logarithmic?: boolean;
 }
 
 export const SliderWithReadout: React.FC<SliderWithReadoutProps> = ({
@@ -55,7 +59,11 @@ export const SliderWithReadout: React.FC<SliderWithReadoutProps> = ({
   onScrubCancel,
   disabled,
   className,
+  logarithmic,
 }) => {
+  // Thumb position ⇄ display value (log mode: see logScale).
+  const toThumb = (v: number) => logarithmic ? logThumb(v, min, max) : v;
+  const fromThumb = (p: number) => logarithmic ? logValue(p, min, max, step) : p;
   // Display-unit draft while the slider thumb is being dragged; null = idle.
   const [draft, setDraft] = useState<number | null>(null);
 
@@ -119,7 +127,7 @@ export const SliderWithReadout: React.FC<SliderWithReadoutProps> = ({
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const v = Number(e.target.value);
+    const v = fromThumb(Number(e.target.value));
     if (scrubbingRef.current) {
       if (cancelledRef.current) return; // Escaped: ignore the rest of the drag
       draftRef.current = v;
@@ -154,10 +162,10 @@ export const SliderWithReadout: React.FC<SliderWithReadoutProps> = ({
     <div className={`flex items-center gap-2 ${className ?? ''}`}>
       <input
         type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={display}
+        min={logarithmic ? 0 : min}
+        max={logarithmic ? LOG_STEPS : max}
+        step={logarithmic ? 1 : step}
+        value={toThumb(display)}
         disabled={disabled}
         onPointerDown={beginScrub}
         onPointerUp={endScrub}

@@ -56,7 +56,7 @@ import { computeGuides } from '../../hooks/useAlignmentGuides';
 import { getMarginLayout, getMarginBounds } from '../../utils/geometry/marginLayouts';
 import { snapToGrid as snapToGridFn } from '../../utils/geometry/geometry';
 import { isShiftHeld, isMetaHeld } from '../../utils/editor/keyboard';
-import { SLIDE_WIDTH, SLIDE_HEIGHT, CANVAS_PADDING } from '../../utils/constants';
+import { SLIDE_WIDTH, SLIDE_HEIGHT, CANVAS_PADDING, MIN_ZOOM, MAX_ZOOM } from '../../utils/constants';
 import { loadImageFile, loadPdfFile, loadVideoFile, duplicateElements } from '../../utils/model/slideFactory';
 import { isPointOnTextContent } from '../../utils/text/textHitTest';
 import {
@@ -894,7 +894,7 @@ export const SVGSlideCanvas: React.FC = () => {
       // Zoom about gesture midpoint
       if (Math.abs(frame.scaleDelta - 1) > 0.001) {
         const oldZoom = useEditorStore.getState().zoom;
-        const newZoom = Math.max(0.25, Math.min(3, oldZoom * frame.scaleDelta));
+        const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, oldZoom * frame.scaleDelta));
         if (newZoom !== oldZoom) {
           const spRect = scrollParent.getBoundingClientRect();
           const cursorVpX = frame.midpoint.x - spRect.left;
@@ -1156,7 +1156,7 @@ export const SVGSlideCanvas: React.FC = () => {
       // Multiplicative zoom: constant perceptual speed at all zoom levels
       // Use smaller base (1.002) for smoother/less sensitive zooming, especially on touchpads
       const factor = Math.pow(1.002, -e.deltaY);
-      const newZoom = Math.max(minZoom, Math.min(3, oldZoom * factor));
+      const newZoom = Math.max(minZoom, Math.min(MAX_ZOOM, oldZoom * factor));
       if (newZoom === oldZoom) return;
 
       // Cursor position relative to scroll parent viewport

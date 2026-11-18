@@ -81,7 +81,7 @@ const DOMAINS = {
   ],
   // Interaction plumbing and property-panel metadata.
   editor: [
-    'scrub', 'scrubMutation', 'gestureProjection', 'keyboard',
+    'scrub', 'scrubMutation', 'logScale', 'gestureProjection', 'keyboard',
     'selectionProperties', 'propertyFields', 'userShapeCreation',
     'curatedIcons', 'imageUtils', 'commentTarget', 'marqueeSelection',
   ],

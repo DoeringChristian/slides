@@ -2,7 +2,12 @@ export const SLIDE_WIDTH = 960;
 export const SLIDE_HEIGHT = 540;
 export const THUMBNAIL_SCALE = 0.19;
 export const MIN_ZOOM = 0.25;
-export const MAX_ZOOM = 3;
+/** Far enough in for pixel-level alignment (a slide pixel spans 16 screen
+ *  pixels). */
+export const MAX_ZOOM = 16;
+/** One zoom-in / zoom-out step (buttons, Ctrl +/−): multiplicative, so a step
+ *  feels the same at 25% and at 1600%. */
+export const ZOOM_STEP = 1.25;
 export const DEFAULT_ZOOM = 1;
 export const GRID_SIZE = 20;
 export const CANVAS_PADDING = SLIDE_WIDTH;

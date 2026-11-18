@@ -1,6 +1,7 @@
 import { getActiveDoc } from '../collab/yDocAdapter';
 import { yDocToJsonSlideOnly } from '../collab/ySchema';
 import { create } from 'zustand';
+import { MIN_ZOOM, MAX_ZOOM } from '../utils/constants';
 import type {
   Tool, SlideElement, EditorState,
   EasingType, TransitionGroup, TransitionOptions,
@@ -217,7 +218,7 @@ export const useEditorStore = create<EditorStore>()((set) => ({
     editingTextId: null,
     ...(s.selectedSlideIds.length > 1 ? { selectedSlideIds: [s.activeSlideId] } : {}),
   })),
-  setZoom: (zoom) => set({ zoom: Math.max(0.25, Math.min(3, zoom)) }),
+  setZoom: (zoom) => set({ zoom: Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom)) }),
   beginPathExtension: (elementId, end) => set((s) => {
     const el = usePresentationStore.getState().presentation.slides[s.activeSlideId]?.elements[elementId];
     if (!el || el.type !== 'shape' || el.shapeType !== 'path' || el.closed || el.locked || !el.visible || (el.points?.length ?? 0) < 4) return s;

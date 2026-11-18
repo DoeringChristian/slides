@@ -4,7 +4,7 @@ import { usePresentationStore } from '../../store/presentationStore';
 import { ZoomIn, ZoomOut, Grid3x3, Magnet, LayoutTemplate } from 'lucide-react';
 import { MarginLayoutPicker } from './MarginLayoutPicker';
 import { SliderWithReadout } from '../controls/SliderWithReadout';
-import { MIN_ZOOM, MAX_ZOOM } from '../../utils/constants';
+import { MIN_ZOOM, MAX_ZOOM, ZOOM_STEP } from '../../utils/constants';
 
 export const StatusBar: React.FC = () => {
   const zoom = useEditorStore((s) => s.zoom);
@@ -60,7 +60,7 @@ export const StatusBar: React.FC = () => {
             <Magnet size={14} />
           </button>
           <div className="w-px h-4 bg-gray-300" />
-          <button onClick={() => setZoom(zoom - 0.1)} className="p-1 rounded hover:bg-gray-100">
+          <button onClick={() => setZoom(zoom / ZOOM_STEP)} className="p-1 rounded hover:bg-gray-100">
             <ZoomOut size={14} />
           </button>
           {/* editorStore has no history middleware, so preview and commit
@@ -71,11 +71,12 @@ export const StatusBar: React.FC = () => {
             min={MIN_ZOOM * 100}
             max={MAX_ZOOM * 100}
             scale={100}
+            logarithmic
             unit="%"
             onPreview={setZoom}
             onCommit={setZoom}
           />
-          <button onClick={() => setZoom(zoom + 0.1)} className="p-1 rounded hover:bg-gray-100">
+          <button onClick={() => setZoom(zoom * ZOOM_STEP)} className="p-1 rounded hover:bg-gray-100">
             <ZoomIn size={14} />
           </button>
         </div>

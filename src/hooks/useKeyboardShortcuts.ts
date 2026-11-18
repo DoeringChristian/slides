@@ -1,3 +1,4 @@
+import { ZOOM_STEP } from '../utils/constants';
 import { transferIds } from '../utils/model/groupTransfer';
 import { getActiveDoc } from '../collab/yDocAdapter';
 import { readElementForMutation } from '../store/currentMutation';
@@ -224,11 +225,11 @@ export function useKeyboardShortcuts() {
       // Zoom
       if (ctrl && (e.key === '=' || e.key === '+')) {
         e.preventDefault();
-        editor.getState().setZoom(editor.getState().zoom + 0.1);
+        editor.getState().setZoom(editor.getState().zoom * ZOOM_STEP);
       }
       if (ctrl && e.key === '-') {
         e.preventDefault();
-        editor.getState().setZoom(editor.getState().zoom - 0.1);
+        editor.getState().setZoom(editor.getState().zoom / ZOOM_STEP);
       }
       if (ctrl && e.key === '0') {
         e.preventDefault();
