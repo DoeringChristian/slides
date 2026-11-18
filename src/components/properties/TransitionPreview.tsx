@@ -10,7 +10,7 @@ import type {
 import { selectionResizeBounds } from '../../utils/geometry/resizeGeometry';
 import { usePresentationStore } from '../../store/presentationStore';
 import { isVisibilityFadeOut, optionsKeyFor } from './transitionSide';
-import { composeSlideFrame, renderPresenterElement } from '../presenter/presenterUtils';
+import { composeSlideFrame, FrameElements } from '../presenter/presenterUtils';
 
 // ---------------------------------------------------------------------------
 // Shared animation clock for every preview card in every open picker. With
@@ -139,7 +139,7 @@ export const TransitionPreview: React.FC<Props> = ({
       preserveAspectRatio="xMidYMid meet"
       style={{ display: 'block', background: '#ffffff' }}
     >
-      {renderedElements.map((el) => renderPresenterElement(el, resources))}
+      <FrameElements elements={renderedElements} resources={resources} background="#ffffff" />
     </svg>
   );
 };

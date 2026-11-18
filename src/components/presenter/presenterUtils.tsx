@@ -3,7 +3,8 @@ import { isWrapperMode, wrapVisualFx } from '../svg/visualFx';
 import { GroupCrop } from '../svg/GroupCrop';
 import { followCropMedia, groupCropPaint, type GroupCropElement } from '../../utils/model/groupCrop';
 import { followGroups } from '../../utils/model/groupFollow';
-import React, { useRef, useState, useCallback, useEffect } from 'react';
+import React, { useRef, useState, useCallback, useEffect, useId } from 'react';
+import { planLayerFade, type LayerFadePlan } from '../../utils/animation/layerFade';
 import { Play, Pause } from 'lucide-react';
 import { useMediaUrl } from '../svg/mediaSources';
 import { RenderShape, RenderImage } from '../svg/ElementRenderer';
@@ -91,44 +92,36 @@ export function composeSlideFrame(args: {
 // Merge element orders from two slides for animation
 // isForward: true = navigating to next slide, false = navigating to previous slide
 //
-// For forward animation: use target's order, fading-out elements at end
-//   - Elements appearing (in target) are at their correct z-position
-//   - Elements disappearing (source-only) fade out on top
-//
-// For backward animation: use source's order, fading-in elements at end
-//   - Elements disappearing (source-only) stay at their original z-position
-//   - Elements appearing (target-only) fade in from below
+// The base is the order of the slide being animated into (forward) or out of
+// (backward), for what that slide shows; everything else — elements it lacks
+// or hides — keeps its place from the other slide: each goes right above the
+// nearest element below it there that the base has. Putting the lacking ones
+// on top, and placing hidden ones by the slide that hides them, made a
+// deleted frame jump over the (hidden-next) label on it while both faded out.
 // eslint-disable-next-line react-refresh/only-export-components -- shared presenter helper exported beside components; full reload on edit is fine
 export function mergeElementOrders(sourceSlide: Slide | null, targetSlide: Slide | null, isForward: boolean = true): string[] {
   if (!targetSlide && !sourceSlide) return [];
   if (!targetSlide) return sourceSlide!.elementOrder;
   if (!sourceSlide) return targetSlide.elementOrder;
-
-  if (isForward) {
-    // Use target's order as base, add source-only elements at end
-    const baseOrder = [...targetSlide.elementOrder];
-    const baseSet = new Set(baseOrder);
-
-    for (const id of sourceSlide.elementOrder) {
-      if (!baseSet.has(id)) {
-        baseOrder.push(id);
-      }
-    }
-
-    return baseOrder;
-  } else {
-    // Use source's order as base, add target-only elements at end
-    const baseOrder = [...sourceSlide.elementOrder];
-    const baseSet = new Set(baseOrder);
-
-    for (const id of targetSlide.elementOrder) {
-      if (!baseSet.has(id)) {
-        baseOrder.push(id);
-      }
-    }
-
-    return baseOrder;
+  const [baseSlide, otherSlide] = isForward ? [targetSlide, sourceSlide] : [sourceSlide, targetSlide];
+  // An element is placed by the slide that shows it: the base orders what it
+  // shows; one the base hides (or lacks) takes its place from the other slide.
+  const shows = (slide: Slide, id: string) => !!slide.elements[id]?.visible;
+  const base = baseSlide.elementOrder.filter(id => shows(baseSlide, id) || !otherSlide.elementOrder.includes(id));
+  const other = otherSlide.elementOrder;
+  const inBase = new Set(base);
+  // Elements of `other` missing from the base, grouped by the base element
+  // they sit right above (null: below everything).
+  const above = new Map<string | null, string[]>();
+  let anchor: string | null = null;
+  for (const id of other) {
+    if (inBase.has(id)) { anchor = id; continue; }
+    above.set(anchor, [...(above.get(anchor) ?? []), id]);
   }
+  if (!above.size) return base.length === baseSlide.elementOrder.length ? baseSlide.elementOrder : base;
+  const merged = [...(above.get(null) ?? [])];
+  for (const id of base) merged.push(id, ...(above.get(id) ?? []));
+  return merged;
 }
 
 // ============================================================================
@@ -180,6 +173,53 @@ export const PresenterTextElement: React.FC<PresenterTextElementProps> = ({ elem
       <SVGTextPaths element={element} opacity={element.opacity} clipIdPrefix="presenter" />
     </svg>
   );
+};
+
+/** A frame with objects that fade together faded as one layer (see
+ *  utils/animation/layerFade): the elements to draw — layer members at their
+ *  full opacity — and the overlay to lay over them, if any. */
+// eslint-disable-next-line react-refresh/only-export-components -- shared presenter helper exported beside components; full reload on edit is fine
+export function layerFadeFrame(elements: SlideElement[], resources: Record<string, Resource>): {
+  elements: SlideElement[];
+  overlay: (LayerFadePlan & { elements: SlideElement[] }) | null;
+} {
+  const plan = planLayerFade(elements, el => el.type === 'image' && !!el.resourceId && resources[el.resourceId]?.type === 'video');
+  if (!plan) return { elements, overlay: null };
+  const ids = new Set(plan.overlay);
+  return {
+    elements: elements.map(el => plan.members.has(el.id) ? { ...el, opacity: plan.opacity.get(el.id)! } : el),
+    overlay: { ...plan, elements: elements.filter(el => ids.has(el.id)) },
+  };
+}
+
+/** Every element of a frame, objects fading together faded as one layer.
+ *  The single place frames are drawn (presenter, audience view, transition
+ *  previews). `background` is the frame's slide colour. */
+export const FrameElements: React.FC<{ elements: SlideElement[]; resources: Record<string, Resource>; background: string }> = ({ elements, resources, background }) => {
+  const clipId = `layer-fade-${useId().replace(/:/g, '')}`;
+  const frame = layerFadeFrame(elements, resources);
+  const overlay = frame.overlay;
+  const split = overlay ? overlay.drawnAfter : frame.elements.length;
+  const drawn: React.ReactNode[] = frame.elements.map(el => renderPresenterElement(el, resources));
+  if (overlay) drawn.splice(split, 0, (
+    // The slide without the layer, over the slide with it, where they
+    // differ: frame = alpha · with + (1 − alpha) · without.
+    <g key="layer-fade" opacity={1 - overlay.alpha} data-layer-fade={overlay.members.size}>
+      <defs>
+        <clipPath id={clipId}>
+          {overlay.regions.map((r, i) => <rect key={i} x={r.x} y={r.y} width={r.width} height={r.height} />)}
+        </clipPath>
+      </defs>
+      <g clipPath={`url(#${clipId})`}>
+        <rect x={-SLIDE_WIDTH} y={-SLIDE_HEIGHT} width={SLIDE_WIDTH * 3} height={SLIDE_HEIGHT * 3} fill={background} />
+        {overlay.elements.map(el => renderPresenterElement(el, resources))}
+      </g>
+    </g>
+  ));
+  // One flat list of keyed children, the overlay slotted in above the
+  // layer's topmost member: nothing already drawn moves or remounts when a
+  // fade starts or ends (a moved video would pause).
+  return <>{drawn}</>;
 };
 
 // Render a single element as SVG fragments (group / foreignObject) suitable

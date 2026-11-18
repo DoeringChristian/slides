@@ -5,7 +5,7 @@ import { useSlideAnimation } from '../../hooks/useSlideAnimation';
 import { useAutoAdvanceChain } from '../../hooks/useAutoAdvanceChain';
 import { manualNextTarget } from '../../utils/animation/presenterAdvance';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
-import { composeSlideFrame, renderPresenterElement } from './presenterUtils';
+import { composeSlideFrame, FrameElements } from './presenterUtils';
 import { useMediaController } from './mediaController';
 
 export const PresenterView: React.FC = () => {
@@ -259,7 +259,7 @@ export const PresenterView: React.FC = () => {
           viewBox={`0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}`}
           style={{ display: 'block', position: 'absolute', inset: 0 }}
         >
-          {renderedElements.map((el) => renderPresenterElement(el, resources))}
+          <FrameElements elements={renderedElements} resources={resources} background={bgColor} />
         </svg>
 
         {/* Slide number overlay on the slide */}

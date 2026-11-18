@@ -1,7 +1,7 @@
 import { createElement, Fragment } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Presentation, Resource, SlideElement, TextElement } from '../types/presentation';
-import { composeSlideFrame, renderPresenterElement } from '../components/presenter/presenterUtils';
+import { composeSlideFrame, layerFadeFrame, renderPresenterElement } from '../components/presenter/presenterUtils';
 import { SVGBackground } from '../components/svg/SVGBackground';
 import { renderElement as renderExportElement, svgToPngDataURL } from '../utils/io/svgRenderer';
 import { layoutForElement } from '../utils/text/userTextSizing';
@@ -95,9 +95,17 @@ export async function renderSlideSvg(presentation: Presentation, slideId: string
   const background = animating
     ? `<rect x="0" y="0" width="${SLIDE_WIDTH}" height="${SLIDE_HEIGHT}" fill="${frame.bgColor}"/>`
     : renderToStaticMarkup(createElement(SVGBackground, { background: slide.background, width: SLIDE_WIDTH, height: SLIDE_HEIGHT }));
-  const body = frame.renderedElements.map(el => (el.type === 'image' && !hasEffect(el)
+  const draw = (elements: SlideElement[]) => elements.map(el => (el.type === 'image' && !hasEffect(el)
     ? renderExportElement(el, resources)
     : renderToStaticMarkup(createElement(Fragment, null, renderPresenterElement(el, resources))))).join('');
+  // Objects fading together fade as one layer, as in the presenter.
+  const layered = layerFadeFrame(frame.renderedElements, resources);
+  const overlay = layered.overlay;
+  const split = overlay ? overlay.drawnAfter : layered.elements.length;
+  const body = draw(layered.elements.slice(0, split)) + (overlay
+    ? `<g opacity="${1 - overlay.alpha}"><defs><clipPath id="layer-fade">${overlay.regions.map(r => `<rect x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}"/>`).join('')}</clipPath></defs>`
+      + `<g clip-path="url(#layer-fade)"><rect x="${-SLIDE_WIDTH}" y="${-SLIDE_HEIGHT}" width="${3 * SLIDE_WIDTH}" height="${3 * SLIDE_HEIGHT}" fill="${frame.bgColor}"/>${draw(overlay.elements)}</g></g>`
+    : '') + draw(layered.elements.slice(split));
 
   return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${SLIDE_WIDTH}" height="${SLIDE_HEIGHT}" viewBox="0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}">`
     + background + body + (options.labels ? labelOverlay(frame.renderedElements) : '') + '</svg>';

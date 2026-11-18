@@ -34,7 +34,7 @@ const ALLOW_DIRTY = process.argv.includes('--allow-dirty');
 const DOMAINS = {
   // Playback: easing catalogues, the interpolation engine, per-effect builders.
   animation: [
-    'interpolation', 'easingCatalog', 'stickyEasings', 'transitionProperties',
+    'interpolation', 'layerFade', 'easingCatalog', 'stickyEasings', 'transitionProperties',
     'mediaPlayback', 'closingBirthCohorts', 'roundedClosingBirth',
     'presenterAdvance', 'morphGeometry', 'pathInterpolation',
   ],

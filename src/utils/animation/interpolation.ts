@@ -908,6 +908,12 @@ const entryProgress = (t: number) =>
   Math.min(1, Math.max(0, (t - VISIBILITY_SPLIT) / (1 - VISIBILITY_SPLIT)));
 
 // Build an interpolated element for visibility transitions.
+/** A plain visibility fade: the element is `alpha` of the way present and,
+ *  present, has `opacity`. The frame renderer fades elements sharing an
+ *  alpha as one layer (see utils/animation/layerFade); its `opacity` field
+ *  (already alpha × opacity) is the per-element fallback. */
+export type LayerFadeHint = { _layerFade?: { alpha: number; opacity: number } };
+
 export function interpolateWithVisibility(
   elA: SlideElement | undefined,
   elB: SlideElement | undefined,
@@ -941,7 +947,8 @@ export function interpolateWithVisibility(
       return { ...elA, visible: true, _writeFx: fx } as SlideElement & { _writeFx: WriteEffect };
     }
     const easedT = applyEasing(progress, easing);
-    return { ...elA, opacity: lerp(elA.opacity, 0, easedT), visible: true } as SlideElement;
+    return { ...elA, opacity: lerp(elA.opacity, 0, easedT), visible: true,
+      _layerFade: { alpha: 1 - easedT, opacity: elA.opacity } } as SlideElement & LayerFadeHint;
   }
 
   // !aVisible && bVisible
@@ -960,5 +967,6 @@ export function interpolateWithVisibility(
     return { ...target, visible: true, _writeFx: fx } as SlideElement & { _writeFx: WriteEffect };
   }
   const easedT = applyEasing(progress, easing);
-  return { ...target, opacity: lerp(0, target.opacity, easedT), visible: true } as SlideElement;
+  return { ...target, opacity: lerp(0, target.opacity, easedT), visible: true,
+    _layerFade: { alpha: easedT, opacity: target.opacity } } as SlideElement & LayerFadeHint;
 }
