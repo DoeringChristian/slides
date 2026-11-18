@@ -1,5 +1,5 @@
 import { snapViewport } from '../../utils/snapping/snapViewport';
-import { cropSnapTargets, groupCropBoundary, shownExtent } from '../../utils/model/groupCrop';
+import { cropSnapTargets, shownExtent } from '../../utils/model/groupCrop';
 import { unitSnapSources } from '../../utils/snapping/unitSnapSources';
 import type { ElementBounds } from '../../hooks/useAlignmentGuides';
 import { anchorTextSize, measureFreeTextResizeBaseline, resizeFreeText, scalesFreeText } from '../../utils/geometry/freeTextResize';
@@ -59,15 +59,6 @@ function aspectSnapDelta(start: { width: number; height: number }, anchor: strin
     x: hx ? hx * (start.width * scale - start.width) / m : candidate.delta.x,
     y: hy ? hy * (start.height * scale - start.height) / m : candidate.delta.y,
   };
-}
-
-/** One image, or one cropped image (its image and its crop shapes, nothing
- *  else): resized like a picture — aspect locked unless Shift. */
-function isMediaSelection(elements: SlideElement[]): boolean {
-  const images = elements.filter(el => el.type === 'image');
-  if (images.length !== 1) return false;
-  const [image] = images;
-  return elements.every(el => el === image || (groupCropBoundary(el) && !!image.objectGroupIds?.includes(el.cropGroupId!)));
 }
 
 export const SVGSelectionTransformer: React.FC<Props> = ({
@@ -214,13 +205,12 @@ export const SVGSelectionTransformer: React.FC<Props> = ({
         const delta = rotateDelta({ x: (e.clientX - pointer.clientX) / zoom, y: (e.clientY - pointer.clientY) / zoom }, -rot);
         const freeText = original.length === 1 && original[0].type === 'text' && !original[0].containerId ? original[0] : null;
         // Corner handles keep the aspect ratio of every object; Shift frees
-        // it. Edge handles stretch one axis (Shift keeps the ratio) — except
-        // pictures (an image or video, cropped or not), whose edges also
-        // keep it unless Shift. Free text and dots have their own rules.
+        // it. Edge handles stretch one axis, pictures included — a deliberate
+        // change of shape (Shift keeps the ratio). Free text and dots have
+        // their own rules.
         const corner = !anchor.includes('center') && !anchor.startsWith('middle');
-        const media = isMediaSelection(original);
         const dot = original.length === 1 && original[0].type === 'shape' && original[0].shapeType === 'dot';
-        const aspect = dot || (freeText ? scalesFreeText(anchor, e.shiftKey) : corner || media ? !e.shiftKey : e.shiftKey);
+        const aspect = dot || (freeText ? scalesFreeText(anchor, e.shiftKey) : corner ? !e.shiftKey : e.shiftKey);
         const constrainedBounds = (baseline: typeof start) => {
           let next = resizeBounds(baseline, anchor, delta, aspect, e.ctrlKey, rot);
           onGuidesChange?.([]);

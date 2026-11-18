@@ -1,5 +1,5 @@
 import { GroupCrop } from './GroupCrop';
-import React, { useRef, useCallback, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { usePresentationStore } from '../../store/presentationStore';
 import { RenderImage, RenderShape } from './ElementRenderer';
 import { segmentOf } from '../../utils/animation/mediaPlayback';
@@ -26,10 +26,7 @@ export const SVGImageNode: React.FC<Props> = React.memo(({
   onDoubleClick,
 }) => {
   const scope = useEditorStore(s => s.activeObjectGroupId);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  // Editor preview starts paused - user clicks play button to preview
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [isHovered, setIsHovered] = useState(false);
+  const zoom = useEditorStore(s => s.zoom);
 
   const resource = usePresentationStore((s) =>
     element.resourceId ? s.presentation.resources[element.resourceId] : undefined
@@ -41,41 +38,14 @@ export const SVGImageNode: React.FC<Props> = React.memo(({
   // The editor's video player is HTML; its tint is the shared shape fill.
   const tint = isVideo ? imageTintShape(element) : null;
 
-  // The editor preview opens on this keyframe's start frame (From) and
-  // plays to its end (To).
-  const segment = segmentOf(element, resource?.duration);
-  const startFrame = segment.from;
-  const trim = { end: segment.to };
-  const setVideoRef = useCallback((video: HTMLVideoElement | null) => {
-    if (video) {
-      videoRef.current = video;
-      if (startFrame > 0) video.currentTime = startFrame;
-      video.ontimeupdate = () => {
-        if (video.currentTime >= trim.end) { video.pause(); video.currentTime = trim.end; setIsPlaying(false); }
-      };
-      video.onended = () => setIsPlaying(false);
-    }
-  }, [startFrame, trim.end]);
-
-  // Toggle play/pause
-  const handlePlayPause = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-
+  // The editor shows a still: the frame this keyframe's playback starts on
+  // (From). Playing it is the presenter's job.
+  const startFrame = segmentOf(element, resource?.duration).from;
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  useEffect(() => {
     const video = videoRef.current;
-    if (!video) return;
-
-    if (isPlaying) {
-      video.pause();
-      setIsPlaying(false);
-    } else {
-      video.play().catch(() => {
-        video.muted = true;
-        video.play().catch(() => {});
-      });
-      setIsPlaying(true);
-    }
-  }, [isPlaying]);
+    if (video && Math.abs(video.currentTime - startFrame) > 1e-3) video.currentTime = startFrame;
+  }, [startFrame, videoUrl]);
 
   // Rotate around the center of the element
   const cx = element.x + element.width / 2;
@@ -88,22 +58,12 @@ export const SVGImageNode: React.FC<Props> = React.memo(({
     touchAction: 'none',
   };
 
-  // Video resource - keep editor-specific video with play/pause overlay
   if (isVideo && resource.src) {
-    // Play button size scales with element but has min/max bounds
-    const buttonSize = Math.max(24, Math.min(48, Math.min(element.width, element.height) * 0.15));
-    const iconSize = buttonSize * 0.5;
-
-    const handleVideoMouseEnter = () => {
-      setIsHovered(true);
-      onMouseEnter?.();
-    };
-
-    const handleVideoMouseLeave = () => {
-      setIsHovered(false);
-      onMouseLeave?.();
-    };
-
+    // A small badge marks it as a video; it takes no clicks, so it never
+    // gets in the way of moving the element.
+    const badge = Math.min(22 / zoom, element.width * 0.3, element.height * 0.3);
+    const pad = Math.min(6 / zoom, badge * 0.3);
+    const bx = element.x + pad, by = element.y + pad;
     return (
       <><GroupCrop element={element}><g
         transform={transform}
@@ -121,7 +81,8 @@ export const SVGImageNode: React.FC<Props> = React.memo(({
           style={{ pointerEvents: 'none' }}
         >
           <video
-            ref={setVideoRef}
+            ref={videoRef}
+            onLoadedMetadata={e => { if (startFrame > 0) e.currentTarget.currentTime = startFrame; }}
             src={videoUrl}
             style={{
               width: '100%',
@@ -135,54 +96,14 @@ export const SVGImageNode: React.FC<Props> = React.memo(({
           />
         </foreignObject>
       </g>{tint && <RenderShape element={tint} />}</GroupCrop>
-      {!disableInteraction && <GroupCrop element={element} scope={scope}><g transform={transform}
-        onMouseEnter={handleVideoMouseEnter} onMouseLeave={handleVideoMouseLeave}>
+      {!disableInteraction && <GroupCrop element={element} scope={scope}><g transform={transform}>
         <rect data-element-id={element.id} x={element.x} y={element.y} width={element.width} height={element.height}
           fill="transparent" style={interactionStyle}
-          onPointerDown={onPointerDown} onDoubleClick={onDoubleClick} />
-        {/* Play/Pause button overlay - only show on hover */}
-        {!disableInteraction && isHovered && (
-          <g
-            onClick={handlePlayPause}
-            style={{ cursor: 'pointer' }}
-          >
-            <circle
-              cx={element.x + element.width / 2}
-              cy={element.y + element.height / 2}
-              r={buttonSize}
-              fill="rgba(0, 0, 0, 0.5)"
-              stroke="white"
-              strokeWidth={2}
-            />
-            {isPlaying ? (
-              // Pause icon (two vertical bars)
-              <>
-                <rect
-                  x={element.x + element.width / 2 - iconSize * 0.5}
-                  y={element.y + element.height / 2 - iconSize * 0.6}
-                  width={iconSize * 0.3}
-                  height={iconSize * 1.2}
-                  fill="white"
-                />
-                <rect
-                  x={element.x + element.width / 2 + iconSize * 0.2}
-                  y={element.y + element.height / 2 - iconSize * 0.6}
-                  width={iconSize * 0.3}
-                  height={iconSize * 1.2}
-                  fill="white"
-                />
-              </>
-            ) : (
-              // Play icon (triangle)
-              <polygon
-                points={`
-                  ${element.x + element.width / 2 - iconSize * 0.4},${element.y + element.height / 2 - iconSize * 0.6}
-                  ${element.x + element.width / 2 - iconSize * 0.4},${element.y + element.height / 2 + iconSize * 0.6}
-                  ${element.x + element.width / 2 + iconSize * 0.6},${element.y + element.height / 2}
-                `}
-                fill="white"
-              />
-            )}
+          onPointerDown={onPointerDown} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave} onDoubleClick={onDoubleClick} />
+        {badge > 0 && (
+          <g data-video-badge pointerEvents="none">
+            <rect x={bx} y={by} width={badge} height={badge} rx={badge * 0.22} fill="rgba(0, 0, 0, 0.55)" />
+            <polygon points={`${bx + badge * 0.38},${by + badge * 0.28} ${bx + badge * 0.38},${by + badge * 0.72} ${bx + badge * 0.74},${by + badge * 0.5}`} fill="white" />
           </g>
         )}
       </g></GroupCrop>}

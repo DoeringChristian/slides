@@ -69,6 +69,20 @@ try {
     if (op === 'intersect') assert.deepEqual(r.hiddenByIntersect.sel, [], `${kind}: what an intersect crops away takes no clicks`);
     assert.equal(r.dbl.crop, 'img', `${kind}/${op}: a double-click opens crop mode, not the bare image under the crop`);
   }
+  // A video in the editor is a still with a badge: no play button to land on,
+  // so a press anywhere on it (badge and centre included) drags it.
+  await setup({ mode: 'production', targets: [{ id: 'v', type: 'image', x: 200, y: 150, width: 300, height: 200, resourceId: 'vid' }], empty: true });
+  await evaluate(VID); await evaluate("canvasTest.editor.setState({ snapToGrid: false })"); await wait(300);
+  const badge = await evaluate(`(()=>{const b=document.querySelector('[data-video-badge]');return b&&getComputedStyle(b).pointerEvents})()`);
+  assert.equal(badge, 'none', 'a video carries a badge that takes no clicks');
+  await drag(await screen(350, 250), await screen(350, 250)); await drag(await screen(350, 250), await screen(380, 270));
+  const pos = () => evaluate(`(({x,y})=>({x,y}))(canvasTest.store.getState().presentation.slides[canvasTest.editor.getState().activeSlideId].elements.v)`);
+  const centre = await pos();
+  assert.deepEqual(centre, { x: 230, y: 170 }, 'a press on the centre (where the play button was) moves the video');
+  await drag(await screen(232, 182), await screen(252, 192));
+  const moved = await evaluate(`(()=>{const s=canvasTest.store.getState();const el=s.presentation.slides[canvasTest.editor.getState().activeSlideId].elements.v;return {x:el.x,y:el.y,circles:document.querySelectorAll('[data-element-id="v"] ~ g circle').length}})()`);
+  assert.equal(moved.x, 250, `a press on the badge moves the video: ${JSON.stringify(moved)}`);
+  assert.equal(moved.circles, 0, 'no play button');
   // A plain group of two rects.
   await setup({ mode: 'production', targets: [{ id: 'a', x: 200, y: 150, width: 100, height: 100, fill: '#c33', objectGroupIds: ['p'] }, { id: 'b', x: 350, y: 150, width: 100, height: 100, fill: '#3c3', objectGroupIds: ['p'] }], empty: true });
   await evaluate("canvasTest.editor.getState().clearSelection()"); await clickAt(250, 200, 2);
