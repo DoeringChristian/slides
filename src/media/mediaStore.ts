@@ -163,6 +163,22 @@ export async function flushUploads(): Promise<void> {
   await Promise.all([...uploads.values()].map(u => u.done));
 }
 
+/**
+ * The bytes in memory. A blob read from IndexedDB (or a large download) is
+ * backed by a file on disk; several <video> elements playing one such blob
+ * at once stall (each read goes back to disk), and a freshly mounted player
+ * takes noticeably longer to show its first frame. Presenting must not
+ * depend on that, so the session keeps the bytes in memory, as it did when
+ * decks embedded them.
+ */
+async function intoMemory(blob: Blob): Promise<Blob> {
+  return new Blob([await blob.arrayBuffer()], { type: blob.type });
+}
+function keep(hash: string, blob: Blob): Blob {
+  memory.set(hash, blob);
+  return blob;
+}
+
 /** The bytes of a media file, from wherever they are; null if nowhere.
  *  A file not found recently is not asked for again until its retry time,
  *  unless `force` (an explicit request: presenting, exporting). */
@@ -175,13 +191,13 @@ export function getMediaBlob(hash: string, { force = false } = {}): Promise<Blob
   if (!job) {
     job = (async () => {
       const cached = await cache.get(hash);
-      if (cached) { memory.set(hash, cached); return cached; }
+      if (cached) return keep(hash, await intoMemory(cached));
       const source = backend;
       const fetched = source ? await source.download(hash).catch(() => null) : null;
       if (fetched) {
-        memory.set(hash, fetched);
-        await cache.put(hash, fetched);
-        return fetched;
+        const blob = await intoMemory(fetched);
+        await cache.put(hash, blob);
+        return keep(hash, blob);
       }
       return null;
     })();
