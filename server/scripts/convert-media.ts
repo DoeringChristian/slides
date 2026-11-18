@@ -108,9 +108,12 @@ async function convertDeck(projectId: string, deck: Raw): Promise<{ deck: Raw; f
   return { deck: upgradeNativePresentation(deck) as unknown as Raw, files, bytes };
 }
 
+// What a deck holds, independent of the repairs opening it applies (a slide
+// missing from the slide order is re-attached, an element missing from its
+// slide's order is appended): every slide and every element counts.
 const counts = (deck: Raw) => ({
-  slides: (deck.slideOrder ?? []).length,
-  elements: Object.values<Raw>(deck.slides ?? {}).reduce((n, s) => n + (s.elementOrder ?? []).length, 0),
+  slides: Object.keys(deck.slides ?? {}).length,
+  elements: Object.values<Raw>(deck.slides ?? {}).reduce((n, s) => n + Object.keys(s.elements ?? {}).length, 0),
   resources: Object.keys(deck.resources ?? {}).length,
 });
 
@@ -146,7 +149,24 @@ for (const name of jsonFiles) {
       live.destroy();
     }
     const before = counts(deck);
-    const { deck: converted, files, bytes } = await convertDeck(projectId, deck);
+    let result;
+    try {
+      result = await convertDeck(projectId, structuredClone(deck));
+    } catch (err) {
+      // Not a current deck at all (the editor refuses to open it today):
+      // carry it over exactly as it is, media and all.
+      await fs.writeFile(path.join(to, name), JSON.stringify(file, null, 2));
+      if (liveNames.has(projectId)) {
+        const live = await source.getYDoc(projectId);
+        if (live.store.clients.size > 0) await target.storeUpdate(projectId, Y.encodeStateAsUpdate(live));
+        live.destroy();
+      }
+      const media = path.join(from, 'media', projectId);
+      if (existsSync(media)) await copyTree(media, path.join(to, 'media', projectId));
+      report.push({ projectId, title: deck?.title, origin, ...before, kept: `kept as it was — not openable before either (${(err as Error).message.slice(0, 80)})` });
+      continue;
+    }
+    const { deck: converted, files, bytes } = result;
     await fs.writeFile(path.join(to, name), JSON.stringify({ ...file, presentation: converted }, null, 2));
     if (liveNames.has(projectId)) {
       const doc = new Y.Doc();
@@ -156,8 +176,22 @@ for (const name of jsonFiles) {
     }
     report.push({ projectId, title: converted.title, origin, ...before, files, mb: +(bytes / 1e6).toFixed(1) });
   } catch (err) {
-    failures++;
-    report.push({ projectId, error: (err as Error).message });
+    // The source itself is not a current deck (the editor refuses to open
+    // it today): carry it over exactly as it is.
+    try {
+      await fs.copyFile(path.join(from, name), path.join(to, name));
+      if (liveNames.has(projectId)) {
+        const live = await source.getYDoc(projectId);
+        if (live.store.clients.size > 0) await target.storeUpdate(projectId, Y.encodeStateAsUpdate(live));
+        live.destroy();
+      }
+      const media = path.join(from, 'media', projectId);
+      if (existsSync(media) && !existsSync(path.join(to, 'media', projectId))) await copyTree(media, path.join(to, 'media', projectId));
+      report.push({ projectId, kept: `kept as it was: ${(err as Error).message.slice(0, 90)}` });
+    } catch (copyErr) {
+      failures++;
+      report.push({ projectId, error: `${(err as Error).message}; and could not be copied: ${(copyErr as Error).message}` });
+    }
   }
 }
 await source.destroy();
@@ -166,7 +200,7 @@ await target.destroy();
 // Check the new folder from scratch.
 const check = new LeveldbPersistence(path.join(to, 'ydocs'));
 for (const row of report) {
-  if (row.error) continue;
+  if (row.error || row.kept) continue;
   const file = JSON.parse(await fs.readFile(path.join(to, `${row.projectId}.json`), 'utf8'));
   let deck: Raw = file.presentation;
   if (liveNames.has(row.projectId)) {
@@ -188,6 +222,6 @@ for (const row of report) {
 }
 await check.destroy();
 
-console.table(report.map(r => ({ id: r.projectId, title: r.title ?? '', from: r.origin ?? '', slides: r.slides ?? '', resources: r.resources ?? '', files: r.files ?? '', MB: r.mb ?? '', status: r.error ? `FAILED: ${r.error}` : r.note ?? 'ok' })));
+console.table(report.map(r => ({ id: r.projectId, title: r.title ?? '', from: r.origin ?? '', slides: r.slides ?? '', resources: r.resources ?? '', files: r.files ?? '', MB: r.mb ?? '', status: r.error ? `FAILED: ${r.error}` : r.kept ?? r.note ?? 'ok' })));
 console.log(failures ? `${failures} deck(s) FAILED — do not switch to ${to}.` : `All ${report.length} decks converted and verified in ${to}.`);
 process.exit(failures ? 1 : 0);

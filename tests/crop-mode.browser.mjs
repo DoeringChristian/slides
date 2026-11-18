@@ -40,12 +40,12 @@ async function mouse(type,p,count=1){await send('Input.dispatchMouseEvent',{type
 async function click(p,count=1){await mouse('mousePressed',p,count);await mouse('mouseReleased',p,count);}
 async function drag(a,b){await mouse('mousePressed',a);await mouse('mouseMoved',b);await mouse('mouseReleased',b);await wait(100);}
 async function button(label){const point=await evaluate(`(()=>{const b=[...document.querySelectorAll('#creation-properties button')].find(b=>b.textContent.trim()===${JSON.stringify(label)});if(!b)throw Error('missing '+${JSON.stringify(label)});b.scrollIntoView();const r=b.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);await click(point);await wait(100);}
-const RED = `canvasTest.store.getState().addResource({id:'red',name:'red',type:'image',src:'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><rect width="300" height="200" fill="red"/></svg>'),originalWidth:300,originalHeight:200})`;
+const RED = `canvasTest.store.getState().addResource(canvasTest.mediaResource({id:'red',name:'red',type:'image',src:'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><rect width="300" height="200" fill="red"/></svg>'),originalWidth:300,originalHeight:200}))`;
 const state = () => evaluate(`(() => { const st = canvasTest.editor.getState(); const s = canvasTest.snapshot().slide; return { cropping: st.croppingElementId, tool: st.tool, scope: st.activeObjectGroupId, selected: st.selectedElementIds.slice().sort(), elements: s.elements, order: s.elementOrder }; })()`);
 const undo = () => evaluate("if(canvasTest.getActiveUndoManager())canvasTest.getActiveUndoManager().undo();else canvasTest.store.temporal.getState().undo()");
 const redo = () => evaluate("if(canvasTest.getActiveUndoManager())canvasTest.getActiveUndoManager().redo();else canvasTest.store.temporal.getState().redo()");
 const key = async (k, code = k) => { for (const type of ['keyDown', 'keyUp']) await send('Input.dispatchKeyEvent', { type, key: k, code, windowsVirtualKeyCode: k === 'Escape' ? 27 : k === 'Enter' ? 13 : 0 }); await wait(120); };
-const pixel = (x, y) => evaluate(`(async()=>{const {renderSlideToSVG}=await import('/src/utils/io/svgRenderer.ts');const s=canvasTest.snapshot().slide;const svg=renderSlideToSVG(s,canvasTest.store.getState().presentation.resources);const image=new Image();image.src='data:image/svg+xml,'+encodeURIComponent(svg);await image.decode();const c=document.createElement('canvas');c.width=960;c.height=540;const ctx=c.getContext('2d');ctx.drawImage(image,0,0,960,540);return Array.from(ctx.getImageData(${x},${y},1,1).data)})()`);
+const pixel = (x, y) => evaluate(`(async()=>{const {renderSlideToSVG}=await import('/src/utils/io/svgRenderer.ts');const s=canvasTest.snapshot().slide;const svg=renderSlideToSVG(s,canvasTest.store.getState().presentation.resources,await canvasTest.mediaSources());const image=new Image();image.src='data:image/svg+xml,'+encodeURIComponent(svg);await image.decode();const c=document.createElement('canvas');c.width=960;c.height=540;const ctx=c.getContext('2d');ctx.drawImage(image,0,0,960,540);return Array.from(ctx.getImageData(${x},${y},1,1).data)})()`);
 const barButton = async (selector) => { const p = await evaluate(`(()=>{const b=document.querySelector(${JSON.stringify(selector)});if(!b)throw Error('missing '+${JSON.stringify(selector)});const r=b.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`); await click(p); await wait(150); };
 const RED_PX = [255, 0, 0, 255], WHITE_PX = [255, 255, 255, 255];
 try {
@@ -256,7 +256,7 @@ try {
       const s=canvasTest.snapshot().slide, res=canvasTest.store.getState().presentation.resources, t=s.elements[${JSON.stringify(text.id)}];
       const count=(ctx)=>{const d=ctx.getImageData(t.x,t.y,t.width,140).data;let red=0,green=0,n=d.length/4;for(let i=0;i<d.length;i+=4){if(d[i]>200&&d[i+1]<80)red++;if(d[i+1]>120&&d[i]<80)green++;}return {red:red/n,green:green/n};};
       const {renderSlideToSVG}=await import('/src/utils/io/svgRenderer.ts');
-      const img=new Image();img.src='data:image/svg+xml,'+encodeURIComponent(renderSlideToSVG(s,res));await img.decode();
+      const img=new Image();img.src='data:image/svg+xml,'+encodeURIComponent(renderSlideToSVG(s,res,await canvasTest.mediaSources()));await img.decode();
       const c=document.createElement('canvas');c.width=960;c.height=540;const ctx=c.getContext('2d');ctx.drawImage(img,0,0,960,540);
       const {preloadResources,renderSlide}=await import('/src/utils/io/exportPdf.ts');
       const pdf=renderSlide(s,res,await preloadResources([s],res),1).getContext('2d');

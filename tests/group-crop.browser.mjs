@@ -45,7 +45,7 @@ try {
   await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
   for(const collab of [false,true]){
     await setup({mode:'production',collab,creationProperties:true,objectList:true,subject:{type:'image',x:250,y:150,width:300,height:200,resourceId:'red'},targets:[{id:'boundary',shapeType:'ellipse',x:300,y:180,width:150,height:120,stroke:'#000000',strokeWidth:4,fill:'#00ff00'}]});
-    await evaluate(`canvasTest.store.getState().addResource({id:'red',name:'red',type:'image',src:'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><rect width="300" height="200" fill="red"/></svg>'),originalWidth:300,originalHeight:200});canvasTest.editor.getState().setSelectedElements(['subject','boundary']);canvasTest.getActiveUndoManager()?.clear();canvasTest.store.temporal.getState().clear()`);
+    await evaluate(`canvasTest.store.getState().addResource(canvasTest.mediaResource({id:'red',name:'red',type:'image',src:'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><rect width="300" height="200" fill="red"/></svg>'),originalWidth:300,originalHeight:200}));canvasTest.editor.getState().setSelectedElements(['subject','boundary']);canvasTest.getActiveUndoManager()?.clear();canvasTest.store.temporal.getState().clear()`);
     await wait(150);await button('Crop to shapes');await evaluate('canvasTest.editor.getState().exitCropMode()');await wait(80);
     let state=await evaluate('canvasTest.snapshot().slide');const group=state.elements.boundary.cropGroupId;
     assert(group);assert.deepEqual(state.elements.subject.objectGroupIds,[group]);
@@ -75,7 +75,7 @@ try {
     assert.equal(boundaryMoved.elements.subject.x,edited.elements.subject.x);
     assert.equal(boundaryMoved.elements.boundary.x,edited.elements.boundary.x+15);
     // The string export must clip pixels too, not just emit a clip attribute.
-    const pixels=await evaluate(`(async()=>{const {renderSlideToSVG}=await import('/src/utils/io/svgRenderer.ts');const s=canvasTest.snapshot().slide;const svg=renderSlideToSVG(s,canvasTest.store.getState().presentation.resources);const image=new Image();image.src='data:image/svg+xml,'+encodeURIComponent(svg);await image.decode();const c=document.createElement('canvas');c.width=1920;c.height=1080;const ctx=c.getContext('2d');ctx.drawImage(image,0,0);const e=s.elements.boundary;return {inside:Array.from(ctx.getImageData(e.x+e.width/2,e.y+e.height/2,1,1).data),outside:Array.from(ctx.getImageData(e.x-10,e.y+e.height/2,1,1).data)}})()`);
+    const pixels=await evaluate(`(async()=>{const {renderSlideToSVG}=await import('/src/utils/io/svgRenderer.ts');const s=canvasTest.snapshot().slide;const svg=renderSlideToSVG(s,canvasTest.store.getState().presentation.resources,await canvasTest.mediaSources());const image=new Image();image.src='data:image/svg+xml,'+encodeURIComponent(svg);await image.decode();const c=document.createElement('canvas');c.width=1920;c.height=1080;const ctx=c.getContext('2d');ctx.drawImage(image,0,0);const e=s.elements.boundary;return {inside:Array.from(ctx.getImageData(e.x+e.width/2,e.y+e.height/2,1,1).data),outside:Array.from(ctx.getImageData(e.x-10,e.y+e.height/2,1,1).data)}})()`);
     assert.deepEqual(pixels.inside,[255,0,0,255]);assert.deepEqual(pixels.outside,[255,255,255,255]);
     await evaluate("canvasTest.editor.getState().clearSelection();canvasTest.editor.getState().setSelectedElements(['subject'])");await wait(80);
     await button('Remove crop');

@@ -40,11 +40,11 @@ async function mouse(type,p,count=1){await send('Input.dispatchMouseEvent',{type
 async function click(p,count=1){await mouse('mousePressed',p,count);await mouse('mouseReleased',p,count);}
 async function drag(a,b){await mouse('mousePressed',a);await mouse('mouseMoved',b);await mouse('mouseReleased',b);await wait(100);}
 async function button(label){const point=await evaluate(`(()=>{const b=[...document.querySelectorAll('#creation-properties button')].find(b=>b.textContent.trim()===${JSON.stringify(label)});if(!b)throw Error('missing '+${JSON.stringify(label)});b.scrollIntoView();const r=b.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);await click(point);await wait(100);}
-const RED = `canvasTest.store.getState().addResource({id:'red',name:'red',type:'image',src:'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><rect width="300" height="200" fill="red"/></svg>'),originalWidth:300,originalHeight:200})`;
+const RED = `canvasTest.store.getState().addResource(canvasTest.mediaResource({id:'red',name:'red',type:'image',src:'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><rect width="300" height="200" fill="red"/></svg>'),originalWidth:300,originalHeight:200}))`;
 const sample = (points) => evaluate(`(async()=>{
   const s=canvasTest.snapshot().slide, res=canvasTest.store.getState().presentation.resources;
   const {renderSlideToSVG}=await import('/src/utils/io/svgRenderer.ts');
-  const img=new Image();img.src='data:image/svg+xml,'+encodeURIComponent(renderSlideToSVG(s,res));await img.decode();
+  const img=new Image();img.src='data:image/svg+xml,'+encodeURIComponent(renderSlideToSVG(s,res,await canvasTest.mediaSources()));await img.decode();
   const c=document.createElement('canvas');c.width=960;c.height=540;const ctx=c.getContext('2d');ctx.drawImage(img,0,0,960,540);
   const {preloadResources,renderSlide}=await import('/src/utils/io/exportPdf.ts');
   const pdf=renderSlide(s,res,await preloadResources([s],res),1).getContext('2d');

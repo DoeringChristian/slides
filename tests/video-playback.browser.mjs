@@ -52,7 +52,7 @@ try {
     await new Promise(r => { rec.onstop = r; rec.stop(); });
     const src = URL.createObjectURL(new Blob(chunks, { type: 'video/webm' }));
     // WebM from MediaRecorder lacks a duration until scanned; take a fixed one.
-    const resources = { v: { id: 'v', name: 'clip', type: 'video', src, originalWidth: 160, originalHeight: 90, duration: 3 } };
+    const resources = { v: { id: 'v', name: 'clip', type: 'video', hash: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', mime: 'video/webm', size: 1, originalWidth: 160, originalHeight: 90, duration: 3 } };
     const objects = { vid: { id: 'vid', name: 'clip', type: 'image' } };
     const el = over => ({ id: 'vid', type: 'image', resourceId: 'v', x: 0, y: 0, width: 160, height: 90, rotation: 0, opacity: 1, locked: false, visible: true, muted: true, ...over });
     const slide = (id, over) => ({ id, elements: { vid: el(over) }, elementOrder: ['vid'], background: { type: 'solid', color: '#fff' } });

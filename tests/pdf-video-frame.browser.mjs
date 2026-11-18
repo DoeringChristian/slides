@@ -36,9 +36,10 @@ try {
     // Red for the first half second, then blue.
     for (let i = 0; i < 30; i++) { ctx.fillStyle = i < 15 ? 'rgb(255,0,0)' : 'rgb(0,0,255)'; ctx.fillRect(0, 0, 320, 200); await new Promise(r => setTimeout(r, 33)); }
     await new Promise(r => { rec.onstop = r; rec.stop(); });
-    const src = URL.createObjectURL(new Blob(chunks, { type: 'video/webm' }));
+    const clip = new Blob(chunks, { type: 'video/webm' });
+    (await import('/src/media/mediaStore.ts')).registerMedia('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', clip);
     const { preloadResources, renderSlide } = await import('/src/utils/io/exportPdf.ts');
-    const resources = { v: { id: 'v', name: 'clip', type: 'video', src, originalWidth: 320, originalHeight: 200 } };
+    const resources = { v: { id: 'v', name: 'clip', type: 'video', hash: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', mime: 'video/webm', size: clip.size, originalWidth: 320, originalHeight: 200 } };
     const slide = { id: 's', elementOrder: ['vid'], background: { type: 'solid', color: '#ffffff' }, transition: { duration: 300 }, notes: '',
       elements: { vid: { id: 'vid', type: 'image', x: 100, y: 100, width: 320, height: 200, rotation: 0, opacity: 1, locked: false, visible: true, resourceId: 'v'} } };
     const images = await preloadResources([slide], resources);

@@ -50,7 +50,7 @@ try {
     const ServerMod = await import('/@id/react-dom/server'); const renderToStaticMarkup = ServerMod.renderToStaticMarkup ?? ServerMod.default.renderToStaticMarkup;
     const ReactMod = await import('/@id/react'); const React = ReactMod.default ?? ReactMod;
     const src = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100"><rect width="200" height="100" fill="red"/></svg>');
-    const resources = { red: { id: 'red', name: 'red', type: 'image', src, originalWidth: 200, originalHeight: 100 } };
+    const resources = { red: canvasTest.mediaResource({ id: 'red', name: 'red', type: 'image', src, originalWidth: 200, originalHeight: 100 }) };
     const base = { rotation: 0, opacity: 1, locked: false, visible: true };
     // The image cuts in (const) unless told otherwise, so the crop's effect shapes the frame.
     const image = { ...base, id: 'i', type: 'image', resourceId: 'red', x: 100, y: 100, width: 400, height: 200, objectGroupIds: ['g'], transitions: { visibility: ${JSON.stringify(imageEasing)} } };
@@ -128,7 +128,7 @@ try {
   // move, and different easings must look different.
   await setup({ mode: 'production', creationProperties: true, secondSlide: true,
     subject: { type: 'image', x: 250, y: 150, width: 300, height: 200, resourceId: 'red' } });
-  await evaluate(`canvasTest.store.getState().addResource({id:'red',name:'red',type:'image',src:'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><rect width="300" height="200" fill="red"/></svg>'),originalWidth:300,originalHeight:200})`);
+  await evaluate(`canvasTest.store.getState().addResource(canvasTest.mediaResource({id:'red',name:'red',type:'image',src:'data:image/svg+xml,'+encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="200"><rect width="300" height="200" fill="red"/></svg>'),originalWidth:300,originalHeight:200}))`);
   await evaluate(`(async()=>{const { createShapeElement } = await import('/src/utils/model/slideFactory.ts');
     canvasTest.editor.getState().setActiveSlide('other');
     canvasTest.store.getState().addCropShape('other','subject',createShapeElement('rect',{id:'crop',x:300,y:180,width:150,height:120,stroke:''}));

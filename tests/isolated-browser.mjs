@@ -62,7 +62,7 @@ export async function isolatedBrowser(evidence, options = {}) {
       fault('failed-probe'); owned.check();
       const allow = (url, method, upgrade = false) => {
         if (upgrade) return !!backend && url.origin === backendWs && /^\/yjs\/[A-Za-z0-9_-]+$/.test(url.pathname);
-        if (backend && url.origin === backend.origin) return /^(GET|POST|PUT|DELETE|OPTIONS)$/.test(method) && /^\/api\/(health|projects(?:\/[A-Za-z0-9_-]+(?:\/(duplicate|shares)(?:\/[A-Za-z0-9_-]+)?)?)?)$/.test(url.pathname);
+        if (backend && url.origin === backend.origin) return /^(GET|HEAD|POST|PUT|DELETE|OPTIONS)$/.test(method) && /^\/api\/(health|projects(?:\/[A-Za-z0-9_-]+(?:\/(duplicate|shares|collab-status|media\/[0-9a-f]{64})(?:\/[A-Za-z0-9_-]+)?)?)?)$/.test(url.pathname);
         return url.origin === origin && method === 'GET' && !/^\/(api|ws|collab|yjs)(\/|$)/.test(url.pathname);
       };
       const proxy = await browserNetworkProxy(allow, join(evidence, 'requests.jsonl'), owned.signal);

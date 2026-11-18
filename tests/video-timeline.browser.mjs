@@ -51,7 +51,7 @@ try {
       const chunks = []; rec.ondataavailable = e => chunks.push(e.data); rec.start();
       for (let i = 0; i < 60; i++) { ctx.fillStyle = 'hsl(' + i * 6 + ',80%,50%)'; ctx.fillRect(0, 0, 160, 90); await new Promise(r => setTimeout(r, 33)); }
       await new Promise(r => { rec.onstop = r; rec.stop(); });
-      canvasTest.store.getState().addResource({ id: 'vid', name: 'clip', type: 'video', src: URL.createObjectURL(new Blob(chunks, { type: 'video/webm' })), originalWidth: 160, originalHeight: 90, duration: 10 });
+      canvasTest.store.getState().addResource(canvasTest.mediaResource({ id: 'vid', name: 'clip', type: 'video', blob: new Blob(chunks, { type: 'video/webm' }), originalWidth: 160, originalHeight: 90, duration: 10 }));
       canvasTest.editor.getState().setSelectedElements(['subject']);
     })()`);
     await wait(800);

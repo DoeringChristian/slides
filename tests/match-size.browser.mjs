@@ -37,7 +37,7 @@ const btn = title => evaluate(`(()=>{const b=document.querySelector('button[titl
 const els = () => evaluate('canvasTest.snapshot().slide.elements');
 const shiftClick = async (x, y) => { const p = await screen(x, y); for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, ...p, button: 'left', buttons: type === 'mousePressed' ? 1 : 0, clickCount: 1, modifiers: 8 }); await wait(120); };
 const undo = () => evaluate('(()=>{const u=canvasTest.getActiveUndoManager();if(u)u.undo();else canvasTest.store.temporal.getState().undo()})()').then(() => wait(200));
-const RED = `(()=>{const c=document.createElement('canvas');c.width=40;c.height=20;const x=c.getContext('2d');x.fillStyle='red';x.fillRect(0,0,40,20);canvasTest.store.getState().addResource({id:'red',name:'r',type:'image',src:c.toDataURL(),originalWidth:40,originalHeight:20});})()`;
+const RED = `(()=>{const c=document.createElement('canvas');c.width=40;c.height=20;const x=c.getContext('2d');x.fillStyle='red';x.fillRect(0,0,40,20);canvasTest.store.getState().addResource(canvasTest.mediaResource({id:'red',name:'r',type:'image',src:c.toDataURL(),originalWidth:40,originalHeight:20}));})()`;
 try {
   await send('Runtime.enable');
   await send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });

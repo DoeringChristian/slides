@@ -139,7 +139,7 @@ try {
       else if(kind==='vector')Object.assign(subject,{shapeType:'vector',fill:'#37a679',fillStyle:'crosshatch',geometry:{kind:'vector',version:1,contours:[{id:'a',start:[0,0],segments:[{kind:'line',to:[1,0]},{kind:'line',to:[1,1]},{kind:'line',to:[0,1]}],closed:true}],fills:[{contourIds:['a'],rule:'nonzero'}],strokes:['a']}});
       else Object.assign(subject,{type:'image',resourceId:'media'});
       await setup({mode:'production',subject});
-      if(['image','video'].includes(kind))await evaluate(`canvasTest.store.getState().addResource({id:'media',name:'media',type:${JSON.stringify(kind)},src:${JSON.stringify(kind==='image'?'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="130"><rect width="200" height="130" fill="%23b739ce"/></svg>':'data:video/mp4;base64,')},originalWidth:200,originalHeight:130})`);
+      if(['image','video'].includes(kind))await evaluate(`canvasTest.store.getState().addResource(canvasTest.mediaResource({id:'media',name:'media',type:${JSON.stringify(kind)},src:${JSON.stringify(kind==='image'?'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="130"><rect width="200" height="130" fill="%23b739ce"/></svg>':'data:video/mp4;base64,')},originalWidth:200,originalHeight:130}))`);
       await wait(300);const raw=await authoritative(),p=await screen(435,285);
       await evaluate(`window.mediaNode=document.querySelector('${painted('subject')} ${kind==='video'?'video':kind==='image'?'img':kind==='text'?'path':'path'}');void 0`);
       assert(await evaluate('!!window.mediaNode'),kind+' actual content');

@@ -9,6 +9,8 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { drawShapeElement } from '/src/utils/io/exportPdf.ts';
 import { renderSlideToSVG } from '/src/utils/io/svgRenderer.ts';
+import { registerMedia, dataUrlToBlob } from '/src/media/mediaStore.ts';
+import { mediaDataUrls } from '/src/media/embed.ts';
 import { createRoot } from 'react-dom/client';
 import '/src/index.css';
 import { usePresentationStore as store } from '/src/store/presentationStore.ts';
@@ -123,7 +125,28 @@ function Fixture() {
     )));
 }
 
+// A test image or video given as a data URL (or its bytes): its bytes go into
+// the media store and the resource references them, as for an added file.
+// Synchronous, so a fixture can add it and render in the same step; the hash
+// only has to be unique, not verified.
+function testMediaHash(text) {
+  let h = 0x811c9dc5, out = '';
+  for (let round = 0; round < 8; round++) {
+    for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i) + round; h = Math.imul(h, 0x01000193) >>> 0; }
+    out += h.toString(16).padStart(8, '0');
+  }
+  return out;
+}
+
 window.canvasTest = {
+  mediaResource({ src, blob, ...resource }) {
+    const bytes = blob ?? dataUrlToBlob(src);
+    const hash = testMediaHash(`${resource.id}|${src ?? bytes.size}`);
+    registerMedia(hash, bytes);
+    return { ...resource, hash, mime: bytes.type || 'application/octet-stream', size: bytes.size };
+  },
+  /** Data URLs of the open deck's media, for rasterising an export SVG. */
+  mediaSources: () => mediaDataUrls(store.getState().presentation.resources),
   writePathsMarkup(paths, strokeWidth, t, width = 600) {
     return renderToStaticMarkup(h('svg', {xmlns:'http://www.w3.org/2000/svg',width,height:width*2/3,viewBox:'0 0 600 400'},
       h(RenderPaths,{paths,strokeWidth,writeFx:{mode:'write',t}})));
