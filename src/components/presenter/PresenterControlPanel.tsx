@@ -10,6 +10,7 @@ import { SlideRenderer } from './presenterUtils';
 import { useMediaController } from './mediaController';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 import type { Slide, Resource } from '../../types/presentation';
+import { useDeckReadiness, readinessLabel } from '../../media/useDeckReadiness';
 
 function formatTime(seconds: number): string {
   const hrs = Math.floor(seconds / 3600);
@@ -74,6 +75,8 @@ const SlidePreview: React.FC<SlidePreviewProps> = ({ slide, scale, label, resour
 };
 
 export const PresenterControlPanel: React.FC = () => {
+  const readiness = useDeckReadiness();
+  const mediaLabel = readinessLabel(readiness);
   const {
     isPresenterMode,
     exitPresenterMode,
@@ -245,6 +248,12 @@ export const PresenterControlPanel: React.FC = () => {
         <div className="flex items-center gap-3">
           <Monitor size={20} className="text-blue-400" />
           <span className="text-white font-medium">Presenter View</span>
+          {mediaLabel && (
+            <span data-media-readiness className={`text-sm ${readiness.checking ? 'text-gray-300' : 'text-red-400'}`}
+              title={readiness.missing.map(r => r.name).join(', ')}>
+              {mediaLabel}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-4">
           {/* Navigation buttons */}

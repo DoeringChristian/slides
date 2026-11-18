@@ -87,7 +87,7 @@ for (const storageMode of ['local', 'server', 'filesystem'] as const) {
   });
 }
 it('existing unused-resource cleanup is unchanged by import, not a new import transformation', async () => {
-  const source = deck(); source.resources.unused = { id: 'unused', name: 'Unused', type: 'image', src: 'data:image/png;base64,AA==', originalWidth: 1, originalHeight: 1 };
+  const source = deck(); source.resources.unused = { id: 'unused', name: 'Unused', type: 'image', hash: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', mime: 'image/png', size: 1, originalWidth: 1, originalHeight: 1 };
   usePresentationStore.getState().loadPresentation(source);
   const expected = usePresentationStore.getState().presentation;
   let saved: Presentation;

@@ -74,10 +74,10 @@ const DOMAINS = {
   // Everything that crosses the process boundary: files, exports, storage.
   io: [
     'exportImage', 'exportOdp', 'exportPdf', 'exportPptx',
-    'exportStandaloneHtml', 'svgRenderer', 'embedResources',
+    'exportStandaloneHtml', 'svgRenderer',
     'thumbnailGenerator', 'officeShape', 'importOdp', 'importPptx',
     'importPresentation', 'storageClient', 'vaultStorage', 'projectFiles',
-    'fileHash', 'standaloneBoot', 'editorLocation', 'importSvg', 'svgPathData',
+    'standaloneBoot', 'editorLocation', 'importSvg', 'svgPathData',
   ],
   // Interaction plumbing and property-panel metadata.
   editor: [

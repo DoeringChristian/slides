@@ -1,3 +1,4 @@
+import { addMedia } from '../../media/mediaStore';
 import { withPaintAlpha } from '../paint/paintColor';
 import JSZip from 'jszip';
 import type { Presentation, SlideBackground, SlideElement } from '../../types/presentation';
@@ -116,18 +117,18 @@ function parseDrawingPageBackground(styleEl: Element | null): SlideBackground {
   return { type: 'solid', color: '#ffffff' };
 }
 
-async function extractImageAsDataUrl(zip: JSZip, href: string): Promise<string | null> {
+async function extractImageMedia(zip: JSZip, href: string): Promise<{ blob: Blob; mime: string } | null> {
   const file = zip.file(href);
   if (!file) return null;
 
-  const data = await file.async('base64');
   const ext = href.split('.').pop()?.toLowerCase() || 'png';
   const mimeMap: Record<string, string> = {
     'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
     'gif': 'image/gif', 'svg': 'image/svg+xml', 'bmp': 'image/bmp',
   };
   const mime = mimeMap[ext] || 'image/png';
-  return `data:${mime};base64,${data}`;
+  // The bytes as they are: no base64.
+  return { blob: new Blob([await file.async('arraybuffer')], { type: mime }), mime };
 }
 
 export async function importOdp(file: File): Promise<Presentation> {
@@ -199,11 +200,11 @@ export async function importOdp(file: File): Promise<Presentation> {
           const imgEl = drawImages[0];
           const href = imgEl.getAttribute('xlink:href');
           if (href) {
-            const dataUrl = await extractImageAsDataUrl(zip, href);
-            if (dataUrl) {
+            const media = await extractImageMedia(zip, href);
+            if (media) {
               const resource = createResource(
                 href.split('/').pop() || 'image.png',
-                dataUrl,
+                await addMedia(media.blob, media.mime, { upload: false }),
                 Math.max(pos.width, 1),
                 Math.max(pos.height, 1),
               );

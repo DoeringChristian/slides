@@ -4,16 +4,24 @@ export interface ObjectMeta {
   type: 'text' | 'shape' | 'image';
 }
 
+/**
+ * An image or video the deck uses. Its bytes are not part of the deck: they
+ * live in the media store (src/media), addressed by `hash`, so a deck stays
+ * small however large its media is.
+ */
 export interface Resource {
   id: string;
   name: string;
   type: 'image' | 'video';
-  src: string;
+  /** SHA-256 (hex) of the media bytes: the media store's key, and dedup. */
+  hash: string;
+  /** MIME type of the bytes, e.g. `video/mp4`. */
+  mime: string;
+  /** Size of the bytes. */
+  size: number;
   originalWidth: number;
   originalHeight: number;
   duration?: number; // For videos, duration in seconds
-  hash?: string; // Content hash for deduplication
-
 }
 
 export interface SlideTemplate {
@@ -102,7 +110,8 @@ export type SlideBackground = {
   direction: number;
 } | {
   type: 'image';
-  src: string;
+  /** The resource drawn as the background (its bytes are in the media store). */
+  resourceId: string;
 };
 
 export interface SlideTransition {

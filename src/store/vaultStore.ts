@@ -31,6 +31,9 @@ import { useEditorStore } from './editorStore';
 import { getJoinedProject, updateJoinedProjectMeta } from './joinedStore';
 import { createPresentation } from '../utils/model/slideFactory';
 import { assertPresentation } from '../utils/model/currentPresentation';
+import { publishDeckMedia, setMediaBackend } from '../media/mediaStore';
+import { serverMediaBackend, vaultMediaBackend } from '../media/backends';
+import { getIdentity } from '../hooks/useIdentity';
 
 const supportsFileSystem = isFileSystemAccessSupported();
 
@@ -372,7 +375,16 @@ export const useVaultStore = create<VaultStore>()((set, get) => ({
       // The old room must not mirror queued updates over the newly loaded
       // project while React tears down/reconnects the collaboration effect.
       setActiveDoc(null);
+      // Where this deck keeps its media: the server, the vault's media
+      // folder, or (local decks) the browser's own media cache.
+      setMediaBackend(
+        storageMode === 'filesystem' && vaultHandle ? vaultMediaBackend(vaultHandle)
+          : storageMode === 'server' && get().serverUrl
+            ? serverMediaBackend(get().serverUrl!, id, { userId: getIdentity().userId, shareToken: joined?.token })
+            : null,
+      );
       usePresentationStore.getState().loadPresentation(presentation);
+      void publishDeckMedia(presentation);
       useEditorStore.getState().setActiveSlide(presentation.slideOrder[0] ?? '');
 
       set({

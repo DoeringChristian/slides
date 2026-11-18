@@ -1,155 +1,111 @@
 import fs from 'fs/promises';
+import { createReadStream, createWriteStream } from 'fs';
 import crypto from 'crypto';
 import path from 'path';
-import { writeFileAtomic } from './atomicWrite.js';
+import { pipeline } from 'stream/promises';
+import { Transform } from 'stream';
 
 /**
- * A deck's media kept beside its JSON instead of inside it.
- *
- * Decks embed images and videos as base64 data URLs, and a deck file used to
- * be one JSON.stringify of everything. V8 cannot build a string longer than
- * ~537 M characters, so a deck with ~500 MB of media could no longer be
- * saved — every snapshot failed. On disk each base64 data URL now lives as its
- * own binary file, `media/<projectId>/<sha256>`, and the JSON holds a
- * reference `slides-media:<header>|<sha256>` in its place. Reading restores
- * the data URL, so everything above storage sees the deck as before.
- *
- * Only canonical base64 is moved (decoding and re-encoding must give back
- * the exact string); anything else stays inline.
+ * A project's media files: `media/<projectId>/<sha256>` holds the bytes as
+ * uploaded (no base64, no JSON), `<sha256>.type` its MIME type. A deck
+ * references each file by that hash (`Resource.hash`), so the deck itself
+ * stays small however large its videos are, and the editor streams them
+ * with HTTP Range requests.
  */
 
-const REF_PREFIX = 'slides-media:';
-const DATA_URL = /^data:([^,]*;base64),/;
 const SHA = /^[0-9a-f]{64}$/;
+/** Unreferenced files are kept this long: undoing the deletion of a video,
+ *  or a collaborator's upload that lands before its resource, still works. */
+export const PRUNE_GRACE_MS = 7 * 24 * 3600 * 1000;
 
-export function isMediaRef(src) {
-  return typeof src === 'string' && src.startsWith(REF_PREFIX);
-}
+export class HashMismatchError extends Error {}
 
-function parseRef(src) {
-  const body = src.slice(REF_PREFIX.length);
-  const bar = body.lastIndexOf('|');
-  const header = body.slice(0, bar), sha = body.slice(bar + 1);
-  return bar > 0 && SHA.test(sha) ? { header, sha } : null;
-}
-
-/** Every src slot of a presentation: resources and image backgrounds. */
-function srcSlots(presentation) {
-  const slots = [];
-  for (const resource of Object.values(presentation?.resources ?? {})) {
-    if (resource && typeof resource.src === 'string') slots.push(resource);
-  }
-  for (const slide of Object.values(presentation?.slides ?? {})) {
-    const bg = slide?.background;
-    if (bg && bg.type === 'image' && typeof bg.src === 'string') slots.push(bg);
-  }
-  return slots;
-}
-
-export function createMediaFiles(dataDir, { hash = (buf) => crypto.createHash('sha256').update(buf).digest('hex') } = {}) {
+export function createMediaFiles(dataDir) {
   const root = path.join(dataDir, 'media');
   const dirOf = (projectId) => path.join(root, projectId);
-  // projectId → (data URL string → ref). Y.Map hands back the same string
-  // instance on every snapshot, so a lookup is a pointer compare: an
-  // unchanged 100 MB video is neither decoded nor hashed again.
-  const refCache = new Map();
 
-  async function exists(file) {
-    try { await fs.access(file); return true; } catch { return false; }
+  async function stat(file) {
+    try { return await fs.stat(file); } catch { return null; }
   }
 
   return {
     root,
 
+    /** The file of one hash, or null. */
+    async file(projectId, sha) {
+      if (!SHA.test(sha)) return null;
+      const file = path.join(dirOf(projectId), sha);
+      const st = await stat(file);
+      if (!st?.isFile()) return null;
+      const mime = (await fs.readFile(`${file}.type`, 'utf8').catch(() => '')).trim() || 'application/octet-stream';
+      return { path: file, mime, size: st.size };
+    },
+
     /**
-     * A copy of `presentation` with base64 media replaced by references, and
-     * its media files written. Returns the copy and the referenced hashes.
+     * Store an upload. The body streams to a temporary file while it is
+     * hashed; only bytes whose SHA-256 is `sha` are kept (renamed into place,
+     * so a reader never sees half a file). Idempotent.
      */
-    async externalize(projectId, presentation) {
-      const cache = refCache.get(projectId) ?? new Map();
-      const nextCache = new Map();
-      const referenced = new Set();
-      const copy = structuredCloneShallow(presentation);
-      for (const slot of srcSlots(copy)) {
-        const src = slot.src;
-        if (isMediaRef(src)) {
-          const ref = parseRef(src);
-          if (ref) referenced.add(ref.sha);
-          continue;
-        }
-        const m = DATA_URL.exec(src);
-        if (!m) continue;
-        let ref = cache.get(src);
-        if (!ref) {
-          const base64 = src.slice(m[0].length);
-          const buf = Buffer.from(base64, 'base64');
-          // Non-canonical base64 (whitespace, odd padding) would not come
-          // back byte-identical: keep it inline.
-          if (buf.length === 0 || buf.toString('base64') !== base64) continue;
-          const sha = hash(buf);
-          const file = path.join(dirOf(projectId), sha);
-          if (!(await exists(file))) {
-            await fs.mkdir(dirOf(projectId), { recursive: true });
-            await writeFileAtomic(file, buf);
-          }
-          ref = `${REF_PREFIX}${m[1]}|${sha}`;
-        } else {
-          // Cached, but the file may have been removed by hand.
-          const sha = parseRef(ref).sha;
-          const file = path.join(dirOf(projectId), sha);
-          if (!(await exists(file))) {
-            await fs.mkdir(dirOf(projectId), { recursive: true });
-            await writeFileAtomic(file, Buffer.from(src.slice(m[0].length), 'base64'));
-          }
-        }
-        nextCache.set(src, ref);
-        referenced.add(parseRef(ref).sha);
-        slot.src = ref;
+    async put(projectId, sha, mime, body) {
+      if (!SHA.test(sha)) throw new HashMismatchError('not a SHA-256 hash');
+      const dir = dirOf(projectId);
+      await fs.mkdir(dir, { recursive: true });
+      const target = path.join(dir, sha);
+      const tmp = `${target}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.part`;
+      const hash = crypto.createHash('sha256');
+      let size = 0;
+      try {
+        await pipeline(body, new Transform({
+          transform(chunk, _enc, done) { hash.update(chunk); size += chunk.length; done(null, chunk); },
+        }), createWriteStream(tmp));
+        const got = hash.digest('hex');
+        if (got !== sha) throw new HashMismatchError(`the uploaded bytes hash to ${got}, not ${sha}`);
+        await fs.writeFile(`${target}.type`, String(mime || 'application/octet-stream').slice(0, 200));
+        await fs.rename(tmp, target);
+        return { size };
+      } finally {
+        await fs.rm(tmp, { force: true }).catch(() => {});
       }
-      refCache.set(projectId, nextCache);
-      return { presentation: copy, referenced };
     },
 
-    /** Restore data URLs in place. A missing file keeps its reference (and
-     *  so stays referenced) rather than dropping the media for good. */
-    async internalize(projectId, presentation) {
-      for (const slot of srcSlots(presentation)) {
-        if (!isMediaRef(slot.src)) continue;
-        const ref = parseRef(slot.src);
-        if (!ref) continue;
-        try {
-          const buf = await fs.readFile(path.join(dirOf(projectId), ref.sha));
-          slot.src = `data:${ref.header},${buf.toString('base64')}`;
-        } catch (err) {
-          console.error(`[storage] media ${ref.sha} of ${projectId} is missing:`, err?.message ?? err);
-        }
-      }
-      return presentation;
-    },
-
-    /** Delete the project's media files nothing references any more. */
-    async prune(projectId, referenced) {
+    /** Delete files no deck references any more, once they are older than
+     *  the grace period. */
+    async prune(projectId, referenced, graceMs = PRUNE_GRACE_MS) {
       let names;
       try { names = await fs.readdir(dirOf(projectId)); } catch { return; }
-      await Promise.all(names.filter(n => SHA.test(n) && !referenced.has(n))
-        .map(n => fs.rm(path.join(dirOf(projectId), n), { force: true })));
+      const now = Date.now();
+      for (const name of names) {
+        if (!SHA.test(name) || referenced.has(name)) continue;
+        const file = path.join(dirOf(projectId), name);
+        const st = await stat(file);
+        if (st && now - st.mtimeMs >= graceMs) {
+          await fs.rm(file, { force: true });
+          await fs.rm(`${file}.type`, { force: true });
+        }
+      }
+    },
+
+    /** Give a copy of a project its own media (hard links where possible). */
+    async copy(fromId, toId) {
+      let names;
+      try { names = await fs.readdir(dirOf(fromId)); } catch { return; }
+      await fs.mkdir(dirOf(toId), { recursive: true });
+      for (const name of names) {
+        if (name.endsWith('.part')) continue;
+        const from = path.join(dirOf(fromId), name), to = path.join(dirOf(toId), name);
+        try { await fs.link(from, to); } catch { await pipeline(createReadStream(from), createWriteStream(to)); }
+      }
     },
 
     async remove(projectId) {
-      refCache.delete(projectId);
       await fs.rm(dirOf(projectId), { recursive: true, force: true });
     },
   };
 }
 
-/** Copy only what externalize rewrites: the resources and the slides'
- *  backgrounds. Everything else is shared with the caller's object. */
-function structuredCloneShallow(presentation) {
-  const resources = {};
-  for (const [id, r] of Object.entries(presentation?.resources ?? {})) resources[id] = r && typeof r === 'object' ? { ...r } : r;
-  const slides = {};
-  for (const [id, s] of Object.entries(presentation?.slides ?? {})) {
-    slides[id] = s && typeof s === 'object' && s.background && typeof s.background === 'object' ? { ...s, background: { ...s.background } } : s;
-  }
-  return { ...presentation, ...(presentation?.resources ? { resources } : {}), ...(presentation?.slides ? { slides } : {}) };
+/** The media hashes a deck references. */
+export function referencedMedia(presentation) {
+  const out = new Set();
+  for (const r of Object.values(presentation?.resources ?? {})) if (r && typeof r.hash === 'string') out.add(r.hash);
+  return out;
 }

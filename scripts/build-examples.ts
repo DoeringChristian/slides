@@ -18,6 +18,7 @@
  * demonstrates it.
  */
 import { deflateSync } from 'node:zlib';
+import { createHash } from 'node:crypto';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,6 +29,7 @@ import {
   createSlide,
   createTextElement,
 } from '../src/utils/model/slideFactory';
+import type { DeckFile, DeckFileMedia } from '../src/media/deckFile';
 import { SLIDE_HEIGHT, SLIDE_WIDTH } from '../src/utils/constants';
 import type {
   ArrowheadType, EasingType, FillStyle, ObjectMeta, PathCurve, Presentation,
@@ -158,9 +160,22 @@ const caption = (id: string, text: string, x: number, y: number, width = 150) =>
   style: { ...createTextElement().style, fontSize: 14, color: '#5f6368', align: 'center' },
 });
 
-const resource = (id: string, name: string, src: string): Resource => ({
-  id, name, type: 'image', src, originalWidth: TEX_W, originalHeight: TEX_H,
-});
+// The media of the decks, by hash: written into each deck file's `media`
+// (see src/media/deckFile.ts), referenced from its resources.
+const MEDIA: DeckFileMedia = {};
+const resource = (id: string, name: string, dataUrl: string): Resource => {
+  const data = dataUrl.slice(dataUrl.indexOf(',') + 1);
+  const bytes = Buffer.from(data, 'base64');
+  const hash = createHash('sha256').update(bytes).digest('hex');
+  MEDIA[hash] = { mime: 'image/png', data };
+  return { id, name, type: 'image', hash, mime: 'image/png', size: bytes.length, originalWidth: TEX_W, originalHeight: TEX_H };
+};
+
+/** The deck file: the deck and the media its resources reference. */
+function withMedia(deck: Presentation): DeckFile {
+  const media = Object.fromEntries(Object.values(deck.resources).map(r => [r.hash, MEDIA[r.hash]]));
+  return Object.keys(media).length ? { ...deck, media } : deck;
+}
 
 // ── 01 · shapes and paths ───────────────────────────────────────────────────
 
@@ -746,11 +761,11 @@ function structureDeck(): Presentation {
 
 // ── write them out ──────────────────────────────────────────────────────────
 
-export const EXAMPLES: Array<{ file: string; deck: Presentation }> = [
-  { file: '01-shapes-and-paths.json', deck: shapesDeck() },
-  { file: '02-animation-highlights.json', deck: animationDeck() },
-  { file: '03-text-and-math.json', deck: textDeck() },
-  { file: '04-groups-and-morphs.json', deck: structureDeck() },
+export const EXAMPLES: Array<{ file: string; deck: DeckFile }> = [
+  { file: '01-shapes-and-paths.json', deck: withMedia(shapesDeck()) },
+  { file: '02-animation-highlights.json', deck: withMedia(animationDeck()) },
+  { file: '03-text-and-math.json', deck: withMedia(textDeck()) },
+  { file: '04-groups-and-morphs.json', deck: withMedia(structureDeck()) },
 ];
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

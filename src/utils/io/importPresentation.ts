@@ -1,7 +1,10 @@
 import type { Presentation } from '../../types/presentation';
 import { upgradeNativePresentation } from '../model/legacyPresentation';
 export { assertPresentation } from '../model/currentPresentation';
-import { readSlidesPayload } from './standaloneBoot';
+import { readSlidesMedia, readSlidesPayload } from './standaloneBoot';
+import { addMedia } from '../../media/mediaStore';
+import { importEmbeddedMedia } from '../../media/importMedia';
+import { importDeckFileMedia } from '../../media/deckFile';
 
 export async function importPresentationFile(file: File): Promise<Presentation> {
   const ext = file.name.split('.').pop()?.toLowerCase();
@@ -10,9 +13,12 @@ export async function importPresentationFile(file: File): Promise<Presentation> 
   if (ext === 'odp') return (await import('./importOdp')).importOdp(file);
   const text = await file.text();
   if (ext === 'html' || ext === 'htm') {
-    const payload = readSlidesPayload(new DOMParser().parseFromString(text, 'text/html'));
+    const doc = new DOMParser().parseFromString(text, 'text/html');
+    const payload = readSlidesPayload(doc);
     if (payload === null) throw new Error('This HTML has no Slides presentation payload. Import an exported Slides HTML or JSON file.');
-    return upgradeNativePresentation(payload);
+    // Its media files come along as their own elements: keep each one.
+    for (const [, blob] of readSlidesMedia(doc)) await addMedia(blob, blob.type, { upload: false });
+    return upgradeNativePresentation(await importEmbeddedMedia(payload));
   }
-  return upgradeNativePresentation(JSON.parse(text));
+  return upgradeNativePresentation(await importEmbeddedMedia(await importDeckFileMedia(JSON.parse(text))));
 }

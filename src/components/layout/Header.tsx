@@ -9,6 +9,7 @@ import { ShareDialog } from '../dialogs/ShareDialog';
 import { usePwaInstall } from '../../hooks/usePwaInstall';
 import { useJoinedProjects } from '../../store/joinedStore';
 import { useActivePeers } from '../../collab/activeAwareness';
+import { useDeckReadiness, readinessLabel } from '../../media/useDeckReadiness';
 
 export const Header: React.FC = () => {
   const title = usePresentationStore((s) => s.presentation.title);
@@ -60,6 +61,9 @@ export const Header: React.FC = () => {
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, [showPresentMenu]);
+
+  const readiness = useDeckReadiness();
+  const mediaLabel = readinessLabel(readiness);
 
   const handlePresent = () => {
     const idx = slideOrder.indexOf(activeSlideId);
@@ -179,6 +183,12 @@ export const Header: React.FC = () => {
         </button>
       )}
 
+      {mediaLabel && (
+        <span data-media-readiness className={`text-xs whitespace-nowrap ${readiness.checking ? 'text-gray-500' : 'text-red-600'}`}
+          title={readiness.checking ? 'Copying every media file to this computer, so presenting never waits on the network.' : `Not found: ${readiness.missing.map(r => r.name).join(', ')}`}>
+          {mediaLabel}
+        </span>
+      )}
       <div className="relative" ref={menuRef}>
         <div className="flex">
           <button

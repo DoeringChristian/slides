@@ -98,8 +98,8 @@ function slideWith(elements: SlideElement[], background: Slide['background'] = {
 
 const noResources: Record<string, Resource> = {};
 
-function renderOne(el: SlideElement, resources: Record<string, Resource> = noResources): string {
-  return renderSlideToSVG(slideWith([el]), resources);
+function renderOne(el: SlideElement, resources: Record<string, Resource> = noResources, sources: Record<string, string> = {}): string {
+  return renderSlideToSVG(slideWith([el]), resources, sources);
 }
 
 // =============================================================================
@@ -368,7 +368,7 @@ describe('svgRenderer geometry (stable across renderer unification)', () => {
 
   test('image element renders SVG <image> (NOT foreignObject — must rasterize in PNG path)', () => {
     const resources: Record<string, Resource> = {
-      res1: { id: 'res1', name: 'pic', type: 'image', src: 'data:image/png;base64,AAAA', originalWidth: 800, originalHeight: 600 },
+      res1: { id: 'res1', name: 'pic', type: 'image', hash: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', mime: 'image/png', size: 3, originalWidth: 800, originalHeight: 600 },
     };
     const el: ImageElement = {
       ...baseEl,
@@ -376,7 +376,7 @@ describe('svgRenderer geometry (stable across renderer unification)', () => {
       x: 100, y: 120, width: 400, height: 300,
       opacity: 0.9,
     };
-    const svg = renderOne(el, resources);
+    const svg = renderOne(el, resources, { res1: 'data:image/png;base64,AAAA' });
     expect(tagsOf(svg, 'foreignObject').length).toBe(0);
     const img = firstTag(svg, 'image');
     expect(img.attrs.href).toBe('data:image/png;base64,AAAA');
@@ -389,7 +389,7 @@ describe('svgRenderer geometry (stable across renderer unification)', () => {
 
   test('crop group: one clipPath per crop group, its shapes unioned inside it', () => {
     const resources: Record<string, Resource> = {
-      res1: { id: 'res1', name: 'pic', type: 'image', src: 'data:image/png;base64,BBBB', originalWidth: 1000, originalHeight: 500 },
+      res1: { id: 'res1', name: 'pic', type: 'image', hash: 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd', mime: 'image/png', size: 3, originalWidth: 1000, originalHeight: 500 },
     };
     const image: ImageElement = { ...baseEl, id: 'img2', type: 'image', resourceId: 'res1', x: 50, y: 60, width: 200, height: 100, objectGroupIds: ['g'] };
     const crop = (id: string, x: number) => ({ ...baseEl, id, type: 'shape' as const, shapeType: 'rect' as const, x, y: 60, width: 40, height: 40,
@@ -402,7 +402,7 @@ describe('svgRenderer geometry (stable across renderer unification)', () => {
 
   test('video resource renders a dark placeholder rect (video cannot rasterize)', () => {
     const resources: Record<string, Resource> = {
-      vid1: { id: 'vid1', name: 'clip', type: 'video', src: 'blob:x', originalWidth: 1920, originalHeight: 1080 },
+      vid1: { id: 'vid1', name: 'clip', type: 'video', hash: '036a01f4c6a5cfa415bced89ac021bcd1ee73946ab488ad92525cc2c4d34152d', mime: 'video/mp4', size: 4, originalWidth: 1920, originalHeight: 1080 },
     };
     const el: ImageElement = {
       ...baseEl,

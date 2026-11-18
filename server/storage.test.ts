@@ -1,88 +1,85 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import crypto from 'crypto';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
+import { Readable } from 'stream';
 import { createStorage } from './storage.js';
+import { createMediaFiles, HashMismatchError } from './mediaFiles.js';
 
 const sha = (buf: Buffer) => crypto.createHash('sha256').update(buf).digest('hex');
 const bytes = (n: number, seed: number) => Buffer.from(Array.from({ length: n }, (_, i) => (i * 31 + seed) & 255));
-const dataUrl = (mime: string, buf: Buffer) => `data:${mime};base64,${buf.toString('base64')}`;
+const tempDir = () => fs.mkdtemp(path.join(os.tmpdir(), 'storage-'));
+/** A body arriving in chunks, as an HTTP upload does. */
+const body = (buf: Buffer) => Readable.from((function* () { for (let i = 0; i < buf.length; i += 65536) yield buf.subarray(i, i + 65536); })());
 
-function deck(id: string, resources: Record<string, string>, background?: string) {
+function deck(id: string, hashes: string[]) {
   return {
     id, title: 'Deck', createdAt: 1, updatedAt: 2,
-    resources: Object.fromEntries(Object.entries(resources).map(([rid, src]) => [rid, { id: rid, name: rid, type: 'image', src, originalWidth: 1, originalHeight: 1 }])),
-    slides: { s1: { id: 's1', elements: {}, elementOrder: [], background: background ? { type: 'image', src: background } : { type: 'solid', color: '#fff' } } },
-    slideOrder: ['s1'],
+    resources: Object.fromEntries(hashes.map((hash, i) => [`r${i}`, { id: `r${i}`, name: `r${i}`, type: 'video', hash, mime: 'video/mp4', size: 1, originalWidth: 1, originalHeight: 1 }])),
+    slides: {}, slideOrder: [],
   };
 }
 
-async function tempStorage(options = {}) {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'storage-'));
-  return { dir, storage: createStorage(dir, options) };
-}
-
-describe('storage keeps media beside the deck JSON', () => {
-  it('round-trips media byte for byte while the JSON holds only references', async () => {
-    const { dir, storage } = await tempStorage();
-    const video = bytes(3_000_000, 1), image = bytes(500_000, 2), bg = bytes(1000, 3);
-    const p = deck('deckA', { v: dataUrl('video/mp4', video), i: dataUrl('image/png', image), t: 'data:image/svg+xml,%3Csvg%2F%3E' }, dataUrl('image/jpeg', bg));
-    await storage.saveProject(p, undefined, 'u1');
-
-    const file = await fs.readFile(path.join(dir, 'deckA.json'), 'utf8');
-    expect(file.length).toBeLessThan(10_000);
-    expect(file).not.toContain('base64,');
-    expect(file).toContain(`slides-media:video/mp4;base64|${sha(video)}`);
-    expect(file).toContain('data:image/svg+xml,%3Csvg%2F%3E'); // not base64: stays inline
-    expect((await fs.readFile(path.join(dir, 'media', 'deckA', sha(video)))).equals(video)).toBe(true);
-
-    const back = await storage.getProject('deckA');
-    expect(back.presentation).toEqual(p);
+describe('media files', () => {
+  it('keeps an upload byte for byte, with its type, under its hash', async () => {
+    const media = createMediaFiles(await tempDir());
+    const video = bytes(3_000_000, 1);
+    expect(await media.put('p1', sha(video), 'video/mp4', body(video))).toEqual({ size: video.length });
+    const file = await media.file('p1', sha(video));
+    expect(file).toMatchObject({ mime: 'video/mp4', size: video.length });
+    expect((await fs.readFile(file!.path)).equals(video)).toBe(true);
   });
 
-  it('does not decode or hash unchanged media again on the next snapshot', async () => {
-    const hash = vi.fn((buf: Buffer) => sha(buf));
-    const { storage } = await tempStorage({ hash });
-    const p = deck('deckB', { v: dataUrl('video/mp4', bytes(200_000, 4)) });
-    await storage.saveProject(p, undefined, 'u1');
-    await storage.saveProject({ ...p, title: 'Renamed' }, undefined, 'u1');
-    expect(hash).toHaveBeenCalledTimes(1);
+  it('refuses bytes that do not match the hash, and leaves nothing behind', async () => {
+    const dir = await tempDir();
+    const media = createMediaFiles(dir);
+    const claimed = sha(bytes(10, 2));
+    await expect(media.put('p1', claimed, 'image/png', body(bytes(10, 3)))).rejects.toBeInstanceOf(HashMismatchError);
+    expect(await media.file('p1', claimed)).toBeNull();
+    expect(await fs.readdir(path.join(dir, 'media', 'p1'))).toEqual([]);
   });
 
-  it('deletes the file of media the deck no longer uses, keeps the rest', async () => {
-    const { dir, storage } = await tempStorage();
-    const a = bytes(1000, 5), b = bytes(1000, 6);
-    await storage.saveProject(deck('deckC', { a: dataUrl('image/png', a), b: dataUrl('image/png', b) }), undefined, 'u1');
-    await storage.saveProject(deck('deckC', { a: dataUrl('image/png', a) }), undefined, 'u1');
-    expect((await fs.readdir(path.join(dir, 'media', 'deckC'))).sort()).toEqual([sha(a)]);
+  it('never serves a path outside its folder', async () => {
+    const media = createMediaFiles(await tempDir());
+    expect(await media.file('p1', '../../_index.json')).toBeNull();
+    await expect(media.put('p1', '../x', 'a/b', body(Buffer.from('x')))).rejects.toBeInstanceOf(HashMismatchError);
   });
 
-  it('loads a deck file that still has its media inline', async () => {
-    const { dir, storage } = await tempStorage();
-    const p = deck('deckD', { a: dataUrl('image/png', bytes(100, 7)) });
-    await fs.writeFile(path.join(dir, 'deckD.json'), JSON.stringify({ id: 'deckD', presentation: p }));
-    expect((await storage.getProject('deckD')).presentation).toEqual(p);
+  it('prunes unreferenced files only after the grace period', async () => {
+    const media = createMediaFiles(await tempDir());
+    const kept = bytes(10, 4), dropped = bytes(10, 5);
+    await media.put('p1', sha(kept), 'image/png', body(kept));
+    await media.put('p1', sha(dropped), 'image/png', body(dropped));
+    await media.prune('p1', new Set([sha(kept)]));
+    expect(await media.file('p1', sha(dropped))).not.toBeNull(); // still within the grace period: undo works
+    await media.prune('p1', new Set([sha(kept)]), 0);
+    expect(await media.file('p1', sha(dropped))).toBeNull();
+    expect(await media.file('p1', sha(kept))).not.toBeNull();
   });
+});
 
-  it('keeps the reference of a missing media file so a later save cannot drop it', async () => {
-    const { dir, storage } = await tempStorage();
-    const a = bytes(100, 8);
-    await storage.saveProject(deck('deckE', { a: dataUrl('image/png', a) }), undefined, 'u1');
-    await fs.rm(path.join(dir, 'media', 'deckE', sha(a)));
-    const back = await storage.getProject('deckE');
-    expect(back.presentation.resources.a.src).toBe(`slides-media:image/png;base64|${sha(a)}`);
-    await storage.saveProject(back.presentation, undefined, 'u1');
-    expect(await fs.readFile(path.join(dir, 'deckE.json'), 'utf8')).toContain(sha(a));
+describe('storage', () => {
+  it('a deck file holds references only, however large its media', async () => {
+    const dir = await tempDir();
+    const storage = createStorage(dir);
+    const video = bytes(2_000_000, 6);
+    await storage.media.put('deckA', sha(video), 'video/mp4', body(video));
+    await storage.saveProject(deck('deckA', [sha(video)]), undefined, 'u1');
+    expect((await fs.stat(path.join(dir, 'deckA.json'))).size).toBeLessThan(5_000);
+    expect((await storage.getProject('deckA')).presentation.resources.r0.hash).toBe(sha(video));
   });
 
   it('a duplicate gets its own media; deleting a deck removes its media', async () => {
-    const { dir, storage } = await tempStorage();
-    const a = bytes(100, 9);
-    await storage.saveProject(deck('deckF', { a: dataUrl('image/png', a) }), undefined, 'u1');
-    const copy = await storage.duplicateProject('deckF', 'u1');
-    await storage.deleteProject('deckF');
-    await expect(fs.access(path.join(dir, 'media', 'deckF'))).rejects.toThrow();
-    expect((await storage.getProject(copy.id)).presentation.resources.a.src).toBe(dataUrl('image/png', a));
+    const dir = await tempDir();
+    const storage = createStorage(dir);
+    const a = bytes(100, 7);
+    await storage.media.put('deckB', sha(a), 'image/png', body(a));
+    await storage.saveProject(deck('deckB', [sha(a)]), undefined, 'u1');
+    const copy = await storage.duplicateProject('deckB', 'u1');
+    await storage.deleteProject('deckB');
+    await expect(fs.access(path.join(dir, 'media', 'deckB'))).rejects.toThrow();
+    const file = await storage.media.file(copy.id, sha(a));
+    expect((await fs.readFile(file!.path)).equals(a)).toBe(true);
   });
 });

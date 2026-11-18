@@ -87,7 +87,7 @@ const resource = (id: string): Resource => ({
   id,
   name: `${id}.png`,
   type: 'image',
-  src: `data:image/png;base64,${id}`,
+  hash: `${'0'.repeat(64 - String(id).length)}${id}`.replace(/[^0-9a-f]/g, '0'), mime: 'image/png', size: 4,
   originalWidth: 100,
   originalHeight: 100,
 });

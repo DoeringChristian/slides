@@ -2,6 +2,7 @@ import type { Presentation } from '../../types/presentation';
 import { useEditorStore, type StandaloneMode } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { installBakedLayouts } from '../text/bakedLayouts';
+import { dataUrlToBlob, registerMedia } from '../../media/mediaStore';
 
 export interface StandaloneBoot {
   presentation: Presentation;
@@ -18,6 +19,7 @@ export function applyStandaloneBoot(boot: StandaloneBoot, modeOverride?: Standal
   // Before anything renders: a primed layout cache means the first frame draws
   // baked glyph outlines synchronously, with no font fetch and no MathJax.
   installBakedLayouts(boot.presentation.bakedText);
+  for (const [hash, blob] of readSlidesMedia(document)) registerMedia(hash, blob);
   usePresentationStore.getState().loadPresentation(boot.presentation);
   useEditorStore.getState().setStandaloneMode(mode, boot.editorOrigin);
   if (boot.presentation.slideOrder.length > 0) {
@@ -30,6 +32,24 @@ export function applyStandaloneBoot(boot: StandaloneBoot, modeOverride?: Standal
 // embeds the presentation JSON under. This module owns the payload contract;
 // every consumer (boot, HTML import, export injection) must go through it.
 export const SLIDES_PAYLOAD_ID = 'slides-payload';
+
+// Each media file of a standalone export is its own
+// <script type="text/plain" data-slides-media="<hash>" data-mime="…">base64</script>:
+// a single-file HTML has nowhere else to keep bytes, and one element per file
+// keeps every string far below the browser's maximum string length (the
+// deck JSON stays small).
+export const SLIDES_MEDIA_ATTR = 'data-slides-media';
+
+/** The media a document carries, as blobs by hash. */
+export function readSlidesMedia(doc: Document): Map<string, Blob> {
+  const out = new Map<string, Blob>();
+  doc.querySelectorAll(`script[${SLIDES_MEDIA_ATTR}]`).forEach((node) => {
+    const hash = node.getAttribute(SLIDES_MEDIA_ATTR) ?? '';
+    const mime = node.getAttribute('data-mime') || 'application/octet-stream';
+    if (/^[0-9a-f]{64}$/.test(hash)) out.set(hash, dataUrlToBlob(`data:${mime};base64,${(node.textContent ?? '').trim()}`));
+  });
+  return out;
+}
 
 // Parse the embedded presentation payload out of a (possibly DOMParser-built)
 // document. Returns null when the document carries no payload; throws on

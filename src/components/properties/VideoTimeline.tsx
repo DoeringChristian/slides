@@ -4,7 +4,7 @@ import { IconSelect } from '../controls/IconSelect';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useMultiSlideUpdate } from '../../store/selectors';
 import { segmentOf } from '../../utils/animation/mediaPlayback';
-import { mediaUrl } from '../svg/mediaSources';
+import { mediaObjectUrl } from '../../media/mediaStore';
 import type { ImageElement, VideoPlayback } from '../../types/presentation';
 
 /** Thumbnails per filmstrip. */
@@ -14,13 +14,15 @@ const STEP = 0.1;
 
 const filmstrips = new Map<string, Promise<{ duration: number; frames: string[] }>>();
 
-/** A video's duration and evenly spaced thumbnails (cached per source). */
-function filmstrip(src: string): Promise<{ duration: number; frames: string[] }> {
-  let job = filmstrips.get(src);
+/** A video's duration and evenly spaced thumbnails (cached per file). */
+function filmstrip(hash: string): Promise<{ duration: number; frames: string[] }> {
+  let job = filmstrips.get(hash);
   if (!job) {
     job = (async () => {
       const video = document.createElement('video');
-      video.muted = true; video.preload = 'auto'; video.crossOrigin = 'anonymous'; video.src = await mediaUrl(src);
+      video.muted = true; video.preload = 'auto'; const url = await mediaObjectUrl(hash);
+      if (!url) throw new Error('missing media');
+      video.src = url;
       await new Promise<void>((resolve, reject) => { video.onloadedmetadata = () => resolve(); video.onerror = () => reject(new Error('video')); });
       // Some encodings (MediaRecorder WebM) report Infinity until scanned.
       if (!Number.isFinite(video.duration)) {
@@ -39,8 +41,8 @@ function filmstrip(src: string): Promise<{ duration: number; frames: string[] }>
         frames.push(canvas.toDataURL('image/jpeg', 0.6));
       }
       return { duration, frames };
-    })().catch(() => ({ duration: 0, frames: [] }));
-    filmstrips.set(src, job);
+    })().catch(() => { filmstrips.delete(hash); return { duration: 0, frames: [] }; });
+    filmstrips.set(hash, job);
   }
   return job;
 }
@@ -63,9 +65,9 @@ export const VideoTimeline: React.FC<{ element: ImageElement }> = ({ element }) 
 
   useEffect(() => {
     let live = true;
-    if (resource?.type === 'video') void filmstrip(resource.src).then(s => { if (live) setStrip(s); });
+    if (resource?.type === 'video') void filmstrip(resource.hash).then(s => { if (live) setStrip(s); }, () => {});
     return () => { live = false; };
-  }, [resource?.src, resource?.type]);
+  }, [resource?.hash, resource?.type]);
 
   if (resource?.type !== 'video') return null;
   const duration = resource.duration && resource.duration > 0 ? resource.duration : strip?.duration ?? 0;

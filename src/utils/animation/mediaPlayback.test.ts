@@ -43,7 +43,7 @@ describe('video playback across keyframes', () => {
   it('a keyframe sets the clocks of its visible videos; videos not on it are dropped', () => {
     const slide = (els: ImageElement[]): Slide => ({ id: 's', elements: Object.fromEntries(els.map(e => [e.id, e])), elementOrder: els.map(e => e.id),
       background: { type: 'solid', color: '#fff' } } as Slide);
-    const resources: Record<string, Resource> = { vid: { id: 'vid', name: 'v', type: 'video', src: 'x', originalWidth: 100, originalHeight: 100, duration: DURATION } };
+    const resources: Record<string, Resource> = { vid: { id: 'vid', name: 'v', type: 'video', hash: '2d711642b726b04401627ca9fbac32f5c8530fb1903cc4db02258717921a4881', mime: 'video/mp4', size: 4, originalWidth: 100, originalHeight: 100, duration: DURATION } };
     const a = arriveAtSlide(slide([video({ playFrom: 2 })]), resources, new Map(), 0);
     const b = arriveAtSlide(slide([video({ playFrom: 2 })]), resources, a, 3000);
     expect(b.get('v')!.anchor).toBeCloseTo(5);

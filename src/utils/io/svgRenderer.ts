@@ -1,3 +1,4 @@
+import type { MediaSources } from '../../media/embed';
 import { groupCropClips, groupCropPaint } from '../model/groupCrop';
 import { GroupCrop } from '../../components/svg/GroupCrop';
 import { imageTintShape } from '../paint/imageTint';
@@ -73,7 +74,7 @@ function renderShapeElement(element: ShapeElement): string {
 }
 
 // Render image element to SVG string
-function renderImageElement(element: ImageElement, resources: Record<string, Resource>): string {
+function renderImageElement(element: ImageElement, resources: Record<string, Resource>, sources: MediaSources): string {
   const { x, y, width, height, rotation, opacity, resourceId } = element;
   const resource = resourceId ? resources[resourceId] : undefined;
 
@@ -81,7 +82,8 @@ function renderImageElement(element: ImageElement, resources: Record<string, Res
   const cy = y + height / 2;
   const transform = rotation ? `rotate(${rotation}, ${cx}, ${cy})` : '';
 
-  if (!resource || resource.type === 'video') {
+  const href = resource ? sources[resource.id] : undefined;
+  if (!resource || resource.type === 'video' || !href) {
     // Placeholder for missing images or videos (still tinted).
     const fillColor = resource?.type === 'video' ? '#1f2937' : '#f3f4f6';
     const placeholderTint = imageTintShape(element);
@@ -96,19 +98,21 @@ function renderImageElement(element: ImageElement, resources: Record<string, Res
   const tint = imageTintShape(element);
   return `
     <g transform="${transform}">
-      <image href="${resource.src}" x="${x}" y="${y}" width="${width}" height="${height}" opacity="${opacity}" preserveAspectRatio="none" />
+      <image href="${href}" x="${x}" y="${y}" width="${width}" height="${height}" opacity="${opacity}" preserveAspectRatio="none" />
     </g>${tint ? renderShapeElement(tint) : ''}
   `;
 }
 
 // Render element to SVG string
-export function renderElement(element: SlideElement, resources: Record<string, Resource>): string {
+/** `sources` holds the data URLs of the images drawn (see media/embed):
+ *  an SVG rasterised into a canvas loads no external URLs. */
+export function renderElement(element: SlideElement, resources: Record<string, Resource>, sources: MediaSources = {}): string {
   if (!element.visible) return '';
   if (groupCropClips(element).length) {
     // The editor's own crop (clip path or mask), around this element's markup.
     const plain = { ...element, _groupClips: undefined };
     return renderToStaticMarkup(createElement(GroupCrop, { element,
-      children: createElement('g', { dangerouslySetInnerHTML: { __html: renderElement(plain, resources) } }) }));
+      children: createElement('g', { dangerouslySetInnerHTML: { __html: renderElement(plain, resources, sources) } }) }));
   }
 
   switch (element.type) {
@@ -117,14 +121,14 @@ export function renderElement(element: SlideElement, resources: Record<string, R
     case 'shape':
       return renderShapeElement(element as ShapeElement);
     case 'image':
-      return renderImageElement(element as ImageElement, resources);
+      return renderImageElement(element as ImageElement, resources, sources);
     default:
       return '';
   }
 }
 
 // Render background to SVG string
-function renderBackground(background: Slide['background']): string {
+function renderBackground(background: Slide['background'], sources: MediaSources): string {
   if (background.type === 'solid') {
     return `<rect x="0" y="0" width="${SLIDE_WIDTH}" height="${SLIDE_HEIGHT}" fill="${background.color}" />`;
   }
@@ -146,14 +150,14 @@ function renderBackground(background: Slide['background']): string {
       <rect x="0" y="0" width="${SLIDE_WIDTH}" height="${SLIDE_HEIGHT}" fill="url(#${gradientId})" />
     `;
   }
-  if (background.type === 'image' && background.src) {
-    return `<image href="${background.src}" x="0" y="0" width="${SLIDE_WIDTH}" height="${SLIDE_HEIGHT}" preserveAspectRatio="xMidYMid slice" />`;
+  if (background.type === 'image' && sources[background.resourceId]) {
+    return `<image href="${sources[background.resourceId]}" x="0" y="0" width="${SLIDE_WIDTH}" height="${SLIDE_HEIGHT}" preserveAspectRatio="xMidYMid slice" />`;
   }
   return `<rect x="0" y="0" width="${SLIDE_WIDTH}" height="${SLIDE_HEIGHT}" fill="#ffffff" />`;
 }
 
 // Render slide to SVG string
-export function renderSlideToSVG(slide: Slide, resources: Record<string, Resource>): string {
+export function renderSlideToSVG(slide: Slide, resources: Record<string, Resource>, sources: MediaSources = {}): string {
   // Bound-label masks: same synthetic-hint pass as the editor / presenter,
   // so exported arrows keep the label gap (white fallback for gradient /
   // image backgrounds — accepted limitation).
@@ -163,11 +167,11 @@ export function renderSlideToSVG(slide: Slide, resources: Record<string, Resourc
     bgColor,
   );
 
-  const elementsSVG = elements.map(el => renderElement(el, resources)).join('\n');
+  const elementsSVG = elements.map(el => renderElement(el, resources, sources)).join('\n');
 
   return `
     <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${SLIDE_WIDTH}" height="${SLIDE_HEIGHT}" viewBox="0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}">
-      ${renderBackground(slide.background)}
+      ${renderBackground(slide.background, sources)}
       ${elementsSVG}
     </svg>
   `;

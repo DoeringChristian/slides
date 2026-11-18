@@ -1,7 +1,7 @@
 import type { Presentation } from '../../types/presentation';
-import { embedResources } from './embedResources';
 import { bakeLayouts } from '../text/bakedLayouts';
-import { SLIDES_PAYLOAD_ID } from './standaloneBoot';
+import { SLIDES_MEDIA_ATTR, SLIDES_PAYLOAD_ID } from './standaloneBoot';
+import { deckMedia, getMediaBlob } from '../../media/mediaStore';
 
 const PAYLOAD_SENTINEL = '<!--SLIDES_PAYLOAD-->';
 
@@ -51,7 +51,7 @@ function reusePageAsTemplate(): string {
   // Do not regex serialized HTML: the compiled exporter itself contains
   // these script-tag strings, and a regex can eat part of the executable bundle.
   const root = document.documentElement.cloneNode(true) as HTMLElement;
-  root.querySelectorAll(`script#${SLIDES_PAYLOAD_ID}, script#slides-config`).forEach(node => node.remove());
+  root.querySelectorAll(`script#${SLIDES_PAYLOAD_ID}, script#slides-config, script[${SLIDES_MEDIA_ATTR}]`).forEach(node => node.remove());
   root.querySelector('body')!.appendChild(document.createComment('SLIDES_PAYLOAD'));
   return doctype + root.outerHTML;
 }
@@ -69,8 +69,31 @@ function buildPayloadBlock(presentation: Presentation, mode: StandaloneExportMod
   ].join('\n  ');
 }
 
-function downloadHtml(filename: string, html: string) {
-  const blob = new Blob([html], { type: 'text/html' });
+/** One script element per media file, as Blob parts: the page is never one
+ *  string (a deck's media can be longer than any string can be). */
+async function mediaBlocks(presentation: Presentation): Promise<BlobPart[]> {
+  const parts: BlobPart[] = [];
+  const seen = new Set<string>();
+  for (const resource of deckMedia(presentation)) {
+    if (seen.has(resource.hash)) continue;
+    seen.add(resource.hash);
+    const blob = await getMediaBlob(resource.hash);
+    if (!blob) throw new Error(`The media file of "${resource.name}" is not available, so it cannot be exported.`);
+    parts.push(`\n  <script type="text/plain" ${SLIDES_MEDIA_ATTR}="${resource.hash}" data-mime="${resource.mime.replace(/[^\w.+/-]/g, '')}">`,
+      await blobToBase64(blob), '</script>');
+  }
+  return parts;
+}
+
+async function blobToBase64(blob: Blob): Promise<string> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
+}
+
+function downloadHtml(filename: string, parts: BlobPart[]) {
+  const blob = new Blob(parts, { type: 'text/html' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -101,19 +124,18 @@ export function withoutComments(presentation: Presentation): Presentation {
 export async function exportStandaloneHtml(presentation: Presentation, opts: ExportOpts): Promise<void> {
   if (opts.mode === 'viewer') presentation = withoutComments(presentation);
   const editorOrigin = opts.editorOrigin ?? __SLIDES_EDITOR_ORIGIN__;
-  const [template, embedded, bakedText] = await Promise.all([
+  const [template, media, bakedText] = await Promise.all([
     loadTemplate(opts.mode),
-    embedResources(presentation),
+    mediaBlocks(presentation),
     // Lay the text out once, here, so the player never has to: it ships glyph
     // outlines for prose and math alike instead of fonts plus MathJax.
     bakeLayouts(presentation),
   ]);
   // A deck with no text bakes to nothing; omit the key rather than shipping
   // an empty object into every payload.
-  const withBake = Object.keys(bakedText).length ? { ...embedded, bakedText } : embedded;
+  const withBake = Object.keys(bakedText).length ? { ...presentation, bakedText } : presentation;
   const payload = buildPayloadBlock(withBake, opts.mode, editorOrigin);
-  const html = template.includes(PAYLOAD_SENTINEL)
-    ? template.replace(PAYLOAD_SENTINEL, () => payload)
-    : template.replace('</body>', () => `  ${payload}\n  </body>`);
-  downloadHtml(safeFilename(presentation.title), html);
+  const at = template.includes(PAYLOAD_SENTINEL) ? template.indexOf(PAYLOAD_SENTINEL) : template.lastIndexOf('</body>');
+  const after = template.includes(PAYLOAD_SENTINEL) ? at + PAYLOAD_SENTINEL.length : at;
+  downloadHtml(safeFilename(presentation.title), [template.slice(0, at), `  ${payload}`, ...media, '\n  ', template.slice(after)]);
 }

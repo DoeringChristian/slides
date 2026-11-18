@@ -19,8 +19,13 @@ export function objectSubtypeForElement(el: SlideElement): string {
   return el.type;
 }
 
+/** An image background uses a resource as much as an image element does. */
+const isBackgroundOf = (slide: Pick<Slide, 'background'>, resourceId: string) =>
+  slide.background?.type === 'image' && slide.background.resourceId === resourceId;
+
 export function isResourceReferencedInSlides(slides: Record<string, Slide>, resourceId: string): boolean {
   return Object.values(slides).some((slide) =>
+    isBackgroundOf(slide, resourceId) ||
     Object.values(slide.elements).some((element) =>
       element.type === 'image' && (element as ImageElement).resourceId === resourceId,
     ),
@@ -51,6 +56,7 @@ function isResourceReferencedInTemplates(
   resourceId: string,
 ): boolean {
   return Object.values(templates).some((template) =>
+    isBackgroundOf(template, resourceId) ||
     Object.values(template.elements).some(
       (element) => element.type === 'image' && (element as ImageElement).resourceId === resourceId,
     ),

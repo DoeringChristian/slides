@@ -5,6 +5,7 @@ import { usePresentationStore } from '../../store/presentationStore';
 import { getRotationCenter } from '../../utils/geometry/geometry';
 import { useElementVisualBounds, selectionControlMetrics } from '../../utils/geometry/shapeVisualBounds';
 import { RenderShape } from './ElementRenderer';
+import { useMediaSource } from '../../media/useMediaSource';
 import type { SlideElement, ShapeElement, ImageElement } from '../../types/presentation';
 
 interface Props {
@@ -21,13 +22,14 @@ const GhostImage: React.FC<{ element: ImageElement }> = ({ element }) => {
   const resource = usePresentationStore((s) =>
     element.resourceId ? s.presentation.resources[element.resourceId] : undefined
   );
+  const { url } = useMediaSource(resource?.type === 'image' ? resource : undefined);
 
   // Rotate around the center of the element
   const cx = element.x + element.width / 2;
   const cy = element.y + element.height / 2;
   const transform = element.rotation ? `rotate(${element.rotation}, ${cx}, ${cy})` : undefined;
 
-  if (!resource || resource.type === 'video') {
+  if (!resource || resource.type === 'video' || !url) {
     return (
       <g transform={transform}>
         <rect
@@ -45,7 +47,7 @@ const GhostImage: React.FC<{ element: ImageElement }> = ({ element }) => {
   return (
     <g transform={transform}>
       <image
-        href={resource.src}
+        href={url}
         x={element.x}
         y={element.y}
         width={element.width}

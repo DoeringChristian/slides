@@ -25,7 +25,7 @@ vi.mock('../utils/model/slideFactory', async importOriginal => {
   return {
     ...actual,
     loadImageFile: async (file: Blob) => {
-      const resource = actual.createResource('fig.png', 'data:image/png;base64,AA', 400, 200, 'image', undefined, `h${file.size}`);
+      const resource = actual.createResource('fig.png', { hash: String(file.size).padStart(64, '0'), mime: 'image/png', size: file.size }, 400, 200, 'image');
       return { resource, element: actual.createImageElement(resource.id, 400, 200), isExisting: false };
     },
   };

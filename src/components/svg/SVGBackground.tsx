@@ -1,13 +1,36 @@
 import React from 'react';
-import type { SlideBackground } from '../../types/presentation';
+import type { Resource, SlideBackground } from '../../types/presentation';
+import { usePresentationStore } from '../../store/presentationStore';
+import { useMediaSource } from '../../media/useMediaSource';
 
 interface Props {
   background: SlideBackground;
   width: number;
   height: number;
+  /** The deck's resources; the open deck's when omitted. */
+  resources?: Record<string, Resource>;
 }
 
-export const SVGBackground: React.FC<Props> = ({ background, width, height }) => {
+/** An image background, from the media store. */
+const ImageBackground: React.FC<{ resourceId: string; width: number; height: number; resources?: Record<string, Resource> }> = ({ resourceId, width, height, resources }) => {
+  const fromStore = usePresentationStore((s) => s.presentation.resources[resourceId]);
+  const { url } = useMediaSource(resources ? resources[resourceId] : fromStore);
+  return (
+    <>
+      <rect x={0} y={0} width={width} height={height} fill="#ffffff" />
+      {url && <image
+        href={url}
+        x={0}
+        y={0}
+        width={width}
+        height={height}
+        preserveAspectRatio="xMidYMid slice"
+      />}
+    </>
+  );
+};
+
+export const SVGBackground: React.FC<Props> = ({ background, width, height, resources }) => {
   if (background.type === 'solid') {
     return (
       <rect
@@ -55,20 +78,8 @@ export const SVGBackground: React.FC<Props> = ({ background, width, height }) =>
     );
   }
 
-  if (background.type === 'image' && background.src) {
-    return (
-      <>
-        <rect x={0} y={0} width={width} height={height} fill="#ffffff" />
-        <image
-          href={background.src}
-          x={0}
-          y={0}
-          width={width}
-          height={height}
-          preserveAspectRatio="xMidYMid slice"
-        />
-      </>
-    );
+  if (background.type === 'image' && background.resourceId) {
+    return <ImageBackground resourceId={background.resourceId} width={width} height={height} resources={resources} />;
   }
 
   // Default white background

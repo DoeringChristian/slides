@@ -172,12 +172,11 @@ function makeFixture(): Presentation {
     resources: {
       'res-1': {
         id: 'res-1', name: 'photo.png', type: 'image',
-        src: 'data:image/png;base64,AAAA', originalWidth: 640, originalHeight: 360,
-        hash: 'sha256:res1',
+        hash: 'bde6da8e9d3902a86a1452ec62648cd07cb1cfbae0ec8dd5142ad881c7aa2ba0', mime: 'image/png', size: 4, originalWidth: 640, originalHeight: 360,
       },
       'res-2': {
         id: 'res-2', name: 'clip.mp4', type: 'video',
-        src: 'https://example.com/clip.mp4',
+        hash: '30da8b0ac243da0c41a63a46ef94c88399ef7cf3dca94ba665fdd05353ad45ee', mime: 'video/mp4', size: 4,
         originalWidth: 1920, originalHeight: 1080, duration: 8,
       },
     },
@@ -536,7 +535,7 @@ const cases: Array<{ name: string; action: Action }> = [
     name: 'addResource',
     action: (s) => s.addResource({
       id: 'res-new', name: 'added.png', type: 'image',
-      src: 'data:image/png;base64,BBBB', originalWidth: 10, originalHeight: 10,
+      hash: '51d196572951df9802082ab2e3d24dfd20adc578d03d9453513ce57873728767', mime: 'image/png', size: 4, originalWidth: 10, originalHeight: 10,
     }),
   },
   // --- template actions ---

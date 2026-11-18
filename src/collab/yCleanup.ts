@@ -17,6 +17,10 @@ export function resourceReferencedInY(doc: Y.Doc, resourceId: string): boolean {
   const order = (getYRoot(doc).get('slideOrder') as Y.Array<string>).toArray();
   for (const slideId of order) {
     const slide = getYSlide(doc, slideId);
+    // An image background uses a resource as much as an image element does.
+    const bg = slide?.get('background') as Y.Map<unknown> | { type?: string; resourceId?: string } | undefined;
+    const bgResource = bg instanceof Y.Map ? (bg.get('type') === 'image' ? bg.get('resourceId') : undefined) : bg?.type === 'image' ? bg.resourceId : undefined;
+    if (bgResource === resourceId) return true;
     const elements = slide?.get('elements') as Y.Map<Y.Map<unknown>> | undefined;
     if (!elements) continue;
     for (const el of elements.values()) {

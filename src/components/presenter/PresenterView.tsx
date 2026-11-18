@@ -1,4 +1,5 @@
 import React, { useEffect, useCallback, useRef, useState, useMemo } from 'react';
+import { useDeckReadiness, readinessLabel } from '../../media/useDeckReadiness';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { useSlideAnimation } from '../../hooks/useSlideAnimation';
@@ -32,6 +33,30 @@ export const PresenterView: React.FC = () => {
   // without a user gesture. Until the user's first interaction, swallow advance
   // keys/clicks and use that gesture to enter fullscreen instead.
   const [hasBootstrapped, setHasBootstrapped] = useState(standaloneMode === 'off');
+  // Never start a talk on media that is not on this machine yet: until every
+  // file is copied here (or the presenter chooses to go ahead), a gate says
+  // what is still coming.
+  const readiness = useDeckReadiness();
+  const mediaLabel = readinessLabel(readiness);
+  const [mediaGatePassed, setMediaGatePassed] = useState(false);
+  const mediaGate = isPresenting && !mediaGatePassed && !!mediaLabel;
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the gate opens again for the next presentation; passes for good once the media is here
+    if (!isPresenting) setMediaGatePassed(false);
+    else if (!mediaLabel) setMediaGatePassed(true);
+  }, [isPresenting, mediaLabel]);
+  useEffect(() => {
+    if (!mediaGate) return;
+    // While the gate shows, Enter or Space goes ahead; nothing else advances.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') return;
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      if (e.key === 'Enter' || e.key === ' ') setMediaGatePassed(true);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [mediaGate]);
 
   const totalSlides = slideOrder.length;
 
@@ -288,6 +313,24 @@ export const PresenterView: React.FC = () => {
         {/* eslint-disable-next-line react-hooks/refs -- ref is stable for the whole animation; render is triggered by isAnimating state */}
         {(isAnimating ? targetIndexRef.current : currentIndex) + 1} / {totalSlides}
       </div>
+
+      {mediaGate && (
+        <div data-media-gate className="absolute inset-0 flex items-center justify-center bg-black/70 cursor-default" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
+          <div className="bg-gray-900 text-white rounded-lg px-6 py-5 max-w-md text-center space-y-3 shadow-xl">
+            <div className="text-base font-medium">
+              {readiness.checking ? `Copying media to this computer… ${readiness.ready}/${readiness.total}` : mediaLabel}
+            </div>
+            <div className="text-sm text-white/70">
+              {readiness.checking
+                ? 'The presentation plays from this computer’s copy, so it never waits on the network. It starts as soon as everything is here.'
+                : `Not found on this computer or the server: ${readiness.missing.slice(0, 4).map(r => r.name).join(', ')}${readiness.missing.length > 4 ? ', …' : ''}.`}
+            </div>
+            <button className="mt-1 px-4 py-1.5 rounded bg-white/15 hover:bg-white/25 text-sm" onClick={() => setMediaGatePassed(true)}>
+              Present anyway (Enter)
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Bootstrap overlay: only shown until the user's first interaction triggers
           fullscreen. Identical in viewer-only and editor-included flavors. */}

@@ -1,3 +1,4 @@
+import { getMediaBlob } from '../../media/mediaStore';
 import { textInsets } from '../text/boundTextLayout';
 import JSZip from 'jszip';
 import { officePaint, officeShapeNeedsSvg, officeShapeSvg } from './officeShape';
@@ -23,20 +24,15 @@ function escapeXml(str: string): string {
 
 interface ImageRef {
   path: string; // e.g. "Pictures/image1.png"
-  data: string; // base64 data (without prefix)
+  /** The bytes: a media file as is, or text (an SVG drawn here). */
+  data: Blob | string;
   mime: string;
 }
 
-function dataUrlToBase64(dataUrl: string): { data: string; mime: string; ext: string } {
-  const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-  if (!match) return { data: '', mime: 'image/png', ext: 'png' };
-  const mime = match[1];
-  const extMap: Record<string, string> = {
-    'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif',
-    'image/svg+xml': 'svg', 'image/bmp': 'bmp',
-  };
-  return { data: match[2], mime, ext: extMap[mime] || 'png' };
-}
+const EXTENSIONS: Record<string, string> = {
+  'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif',
+  'image/svg+xml': 'svg', 'image/bmp': 'bmp', 'image/webp': 'webp',
+};
 
 function buildBackgroundStyle(bg: SlideBackground, _images: ImageRef[]): string {
   if (bg.type === 'solid') {
@@ -259,11 +255,12 @@ export async function exportOdp(presentation: Presentation): Promise<void> {
         if (imgEl.resourceId && !resourceImageMap.has(imgEl.resourceId)) {
           const resource = presentation.resources[imgEl.resourceId];
           if (resource && resource.type === 'image') {
-            const { data, mime, ext } = dataUrlToBase64(resource.src);
+            // The media file's bytes go into the archive as they are.
+            const data = await getMediaBlob(resource.hash);
             if (data) {
               imageCounter++;
-              const path = `Pictures/image${imageCounter}.${ext}`;
-              images.push({ path, data, mime });
+              const path = `Pictures/image${imageCounter}.${EXTENSIONS[resource.mime] || 'png'}`;
+              images.push({ path, data, mime: resource.mime });
               resourceImageMap.set(imgEl.resourceId, path);
             }
           }
@@ -325,7 +322,7 @@ export async function exportOdp(presentation: Presentation): Promise<void> {
         const shapeEl = el as ShapeElement;
         if (officeShapeNeedsSvg(shapeEl)) {
           const path = `Pictures/shape${si}_${elIndex}.svg`;
-          images.push({ path, mime: 'image/svg+xml', data: btoa(officeShapeSvg(shapeEl)) });
+          images.push({ path, mime: 'image/svg+xml', data: officeShapeSvg(shapeEl) });
           bodyContent += `<draw:frame svg:x="0cm" svg:y="0cm" svg:width="${cm(SLIDE_WIDTH)}" svg:height="${cm(SLIDE_HEIGHT)}" draw:layer="layout"><draw:image xlink:href="${path}" xlink:type="simple" xlink:show="embed" xlink:actuate="onLoad"/></draw:frame>`;
         } else {
           autoStyles += buildShapeStyle(shapeEl, si, elIndex);
@@ -435,7 +432,7 @@ ${images.map(img => `  <manifest:file-entry manifest:full-path="${img.path}" man
 
   // Add images
   for (const img of images) {
-    zip.file(img.path, img.data, { base64: true });
+    zip.file(img.path, img.data);
   }
 
   // Generate and download

@@ -1,9 +1,11 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ImageOff, Upload, Film } from 'lucide-react';
 import { usePresentationStore } from '../../store/presentationStore';
 import { loadImageFile, loadVideoFile } from '../../utils/model/slideFactory';
 import type { Resource } from '../../types/presentation';
+import { useVideoPoster } from '../svg/mediaSources';
+import { useMediaSource } from '../../media/useMediaSource';
 
 const POPOVER_WIDTH = 320;
 
@@ -15,56 +17,17 @@ interface ResourcePickerProps {
   anchorRect: DOMRect | null;
 }
 
-// Cache for video first frames
-const videoFrameCache: Record<string, string> = {};
 
 const ResourceThumbnail: React.FC<{ resource: Resource; isSelected: boolean; onClick: () => void }> = ({
   resource,
   isSelected,
   onClick,
 }) => {
-  const [videoThumb, setVideoThumb] = useState<string | null>(null);
+  // The shared poster frame (cached per file) and image source.
+  const videoThumb = useVideoPoster(resource.type === 'video' ? resource.hash : undefined) ?? null;
+  const { url: imageUrl } = useMediaSource(resource.type === 'image' ? resource : undefined);
 
-  useEffect(() => {
-    if (resource.type !== 'video') return;
-
-    // Check cache first
-    if (videoFrameCache[resource.id]) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- serve the cached video frame synchronously instead of re-extracting it; intentional cache fast-path
-      setVideoThumb(videoFrameCache[resource.id]);
-      return;
-    }
-
-    // Extract first frame
-    const video = document.createElement('video');
-    video.src = resource.src;
-    video.muted = true;
-    video.preload = 'metadata';
-
-    video.onloadeddata = () => {
-      video.currentTime = 0;
-    };
-
-    video.onseeked = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(video, 0, 0);
-        const dataUrl = canvas.toDataURL('image/png');
-        videoFrameCache[resource.id] = dataUrl;
-        setVideoThumb(dataUrl);
-      }
-      video.src = '';
-    };
-
-    return () => {
-      video.src = '';
-    };
-  }, [resource]);
-
-  const thumbSrc = resource.type === 'video' ? videoThumb : resource.src;
+  const thumbSrc = resource.type === 'video' ? videoThumb : imageUrl;
   const isVideo = resource.type === 'video';
 
   return (

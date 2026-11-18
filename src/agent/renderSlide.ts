@@ -1,11 +1,12 @@
 import { createElement, Fragment } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { Presentation, Resource, SlideElement, TextElement } from '../types/presentation';
+import type { Presentation, Resource, Slide, SlideElement, TextElement } from '../types/presentation';
 import { composeSlideFrame, layerFadeFrame, renderPresenterElement } from '../components/presenter/presenterUtils';
 import { SVGBackground } from '../components/svg/SVGBackground';
 import { renderElement as renderExportElement, svgToPngDataURL } from '../utils/io/svgRenderer';
 import { layoutForElement } from '../utils/text/userTextSizing';
-import { urlToDataUrl } from '../utils/io/embedResources';
+import { mediaDataUrls, slideImageIds } from '../media/embed';
+import { MediaSourcesContext } from '../media/useMediaSource';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../utils/constants';
 
 /**
@@ -41,19 +42,10 @@ async function warmTextLayouts(elements: SlideElement[]): Promise<void> {
   ]);
 }
 
-async function inlineResources(elements: SlideElement[], resources: Record<string, Resource>): Promise<Record<string, Resource>> {
-  const out: Record<string, Resource> = {};
-  for (const el of elements) {
-    if (el.type !== 'image' || !el.resourceId) continue;
-    const resource = resources[el.resourceId];
-    if (!resource || out[resource.id]) continue;
-    try {
-      out[resource.id] = resource.src.startsWith('data:') ? resource : { ...resource, src: await urlToDataUrl(resource.src) };
-    } catch {
-      out[resource.id] = resource;
-    }
-  }
-  return out;
+/** Data URLs of the images a frame draws: the render becomes a PNG, and an
+ *  SVG drawn into a canvas loads no external media. */
+function frameImageIds(elements: SlideElement[], resources: Record<string, Resource>, background: Slide['background']): Set<string> {
+  return slideImageIds({ elements: Object.fromEntries(elements.map(el => [el.id, el])), background }, resources);
 }
 
 function hasEffect(el: SlideElement): boolean {
@@ -90,14 +82,16 @@ export async function renderSlideSvg(presentation: Presentation, slideId: string
     : composeSlideFrame({ slideA: slide, slideB: null, isForward: true, animProgress: 0, isAnimating: false });
 
   await warmTextLayouts(frame.renderedElements);
-  const resources = await inlineResources(frame.renderedElements, presentation.resources);
+  const resources = presentation.resources;
+  const sources = await mediaDataUrls(resources, frameImageIds(frame.renderedElements, resources, slide.background));
+  const still = (node: React.ReactNode) => renderToStaticMarkup(createElement(MediaSourcesContext.Provider, { value: sources }, node));
 
   const background = animating
     ? `<rect x="0" y="0" width="${SLIDE_WIDTH}" height="${SLIDE_HEIGHT}" fill="${frame.bgColor}"/>`
-    : renderToStaticMarkup(createElement(SVGBackground, { background: slide.background, width: SLIDE_WIDTH, height: SLIDE_HEIGHT }));
+    : still(createElement(SVGBackground, { background: slide.background, width: SLIDE_WIDTH, height: SLIDE_HEIGHT, resources }));
   const draw = (elements: SlideElement[]) => elements.map(el => (el.type === 'image' && !hasEffect(el)
-    ? renderExportElement(el, resources)
-    : renderToStaticMarkup(createElement(Fragment, null, renderPresenterElement(el, resources))))).join('');
+    ? renderExportElement(el, resources, sources)
+    : still(createElement(Fragment, null, renderPresenterElement(el, resources))))).join('');
   // Objects fading together fade as one layer, as in the presenter.
   const layered = layerFadeFrame(frame.renderedElements, resources);
   const overlay = layered.overlay;

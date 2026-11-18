@@ -5,7 +5,8 @@ import { resolveShapePaint, rectangleRadii } from '../../utils/paint/shapePaint'
 import { resolveShapeGeometry } from '../../utils/geometry/vectorGeometry';
 import { getRotationCenter } from '../../utils/geometry/geometry';
 import React, { memo, useId } from 'react';
-import { useMediaStill, useMediaUrl, useVideoPoster } from './mediaSources';
+import { useMediaStill, useVideoPoster } from './mediaSources';
+import { useMediaSource } from '../../media/useMediaSource';
 import { ShapeFillPaint } from './ShapeFillPaint';
 import { SVGStrokeClip } from './SVGStrokeClip';
 import { SVGTextPaths } from './SVGTextPaths';
@@ -278,12 +279,19 @@ interface ImageProps {
 // `pointer-events: none` on the foreignObject lets clicks pass through to
 // elements behind/in front in the same SVG document; the editor adds its own
 // transparent hit <rect> at the element layer.
+/** An image's media, from the media store; a quiet box until it is here. */
+function ImageMedia({ resource, style }: { resource: Resource; style: React.CSSProperties }) {
+  const { url, status } = useMediaSource(resource);
+  if (!url) return <div data-media-status={status} style={{ ...style, background: status === 'missing' ? '#fee2e2' : '#f3f4f6' }} />;
+  return <img src={url} alt="" style={style} draggable={false} />;
+}
+
 /** A video's media: the live player (one shared blob URL per source — see
  *  mediaSources), or in a still render its poster frame at the segment start. */
-function VideoMedia({ src, element, style, autoPlay }: { src: string; element: ImageElement; style: React.CSSProperties; autoPlay: boolean }) {
+function VideoMedia({ resource, element, style, autoPlay }: { resource: Resource; element: ImageElement; style: React.CSSProperties; autoPlay: boolean }) {
   const still = useMediaStill();
-  const url = useMediaUrl(still ? undefined : src);
-  const poster = useVideoPoster(still ? src : undefined, element.playFrom ?? 0);
+  const { url } = useMediaSource(still ? undefined : resource);
+  const poster = useVideoPoster(still ? resource.hash : undefined, element.playFrom ?? 0);
   if (still) return poster ? <img src={poster} alt="" style={style} draggable={false} /> : null;
   if (!url) return null;
   return <video
@@ -373,9 +381,9 @@ export const RenderImage: React.FC<ImageProps> = memo(({ element, resource, vide
     >
       <div style={containerStyle}>
         {resource.type === 'video' ? (
-          <VideoMedia src={resource.src} element={element} style={mediaStyle} autoPlay={videoAutoplay ?? false} />
+          <VideoMedia resource={resource} element={element} style={mediaStyle} autoPlay={videoAutoplay ?? false} />
         ) : (
-          <img src={resource.src} alt="" style={mediaStyle} draggable={false} />
+          <ImageMedia resource={resource} style={mediaStyle} />
         )}
       </div>
     </foreignObject>

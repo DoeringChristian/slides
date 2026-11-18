@@ -1,8 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Type, Square, Image, Film } from 'lucide-react';
 import { usePresentationStore } from '../../store/presentationStore';
 import { SVGTextPaths } from '../svg/SVGTextPaths';
 import { RenderShape } from '../svg/ElementRenderer';
+import { useVideoPoster } from '../svg/mediaSources';
+import { useMediaSource } from '../../media/useMediaSource';
 import type { SlideElement, ObjectMeta, TextElement, ShapeElement } from '../../types/presentation';
 
 interface Props {
@@ -16,60 +18,16 @@ const FALLBACK_ICONS: Record<string, React.FC<{ size: number; className?: string
   image: Image,
 };
 
-// Cache for video first frames
-const videoFrameCache: Record<string, string> = {};
-
 export const ObjectPreview: React.FC<Props> = ({ element, objectType }) => {
   const resources = usePresentationStore((s) => s.presentation.resources);
-  const [videoThumb, setVideoThumb] = useState<string | null>(null);
 
-  // Handle video thumbnail extraction
   const resource = element?.type === 'image' && element.resourceId
     ? resources[element.resourceId]
     : undefined;
   const isVideo = resource?.type === 'video';
-
-  useEffect(() => {
-    if (!isVideo || !resource) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear the stale thumbnail when the element stops being a video; intentional reset
-      setVideoThumb(null);
-      return;
-    }
-
-    // Check cache first
-    if (videoFrameCache[resource.id]) {
-      setVideoThumb(videoFrameCache[resource.id]);
-      return;
-    }
-
-    // Extract first frame
-    const video = document.createElement('video');
-    video.src = resource.src;
-    video.muted = true;
-    video.preload = 'metadata';
-
-    video.onloadeddata = () => {
-      video.currentTime = 0;
-    };
-
-    video.onseeked = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.drawImage(video, 0, 0);
-        const dataUrl = canvas.toDataURL('image/png');
-        videoFrameCache[resource.id] = dataUrl;
-        setVideoThumb(dataUrl);
-      }
-      video.src = '';
-    };
-
-    return () => {
-      video.src = '';
-    };
-  }, [isVideo, resource?.id, resource?.src]);
+  // The shared poster frame (cached per file) and image source.
+  const videoThumb = useVideoPoster(isVideo ? resource?.hash : undefined) ?? null;
+  const { url: imageUrl } = useMediaSource(!isVideo ? resource : undefined);
 
   if (!element) {
     const Icon = FALLBACK_ICONS[objectType] || Square;
@@ -164,7 +122,7 @@ export const ObjectPreview: React.FC<Props> = ({ element, objectType }) => {
     return (
       <div className="w-full h-full bg-gray-50">
         <img
-          src={resource.src}
+          src={imageUrl}
           className="w-full h-full object-cover"
           draggable={false}
         />

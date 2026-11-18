@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { EXAMPLES } from '../scripts/build-examples';
 import { assertPresentation } from '../src/utils/model/currentPresentation';
 import { interpolateWithVisibility } from '../src/utils/animation/interpolation';
@@ -75,7 +76,20 @@ const everySlide = () => decks.flatMap(({ deck }) => deck.slideOrder.map((id) =>
 
 describe('example decks', () => {
   it.each(decks)('$file is valid under the current schema', ({ deck }) => {
-    expect(() => assertPresentation(structuredClone(deck) as unknown)).not.toThrow();
+    const { media: _media, ...presentation } = deck;
+    expect(() => assertPresentation(structuredClone(presentation) as unknown)).not.toThrow();
+  });
+
+  it.each(decks)('$file carries exactly the media its resources reference', ({ deck }) => {
+    const media = deck.media ?? {};
+    for (const r of Object.values(deck.resources)) {
+      const entry = media[r.hash];
+      expect(entry, `media of ${r.id}`).toBeDefined();
+      const bytes = Buffer.from(entry.data, 'base64');
+      expect(createHash('sha256').update(bytes).digest('hex')).toBe(r.hash);
+      expect(bytes.length).toBe(r.size);
+    }
+    expect(Object.keys(media).sort()).toEqual([...new Set(Object.values(deck.resources).map(r => r.hash))].sort());
   });
 
   it.each(decks)('$file matches the committed file', ({ file, deck }) => {

@@ -62,6 +62,15 @@ export function assertPresentation(value: unknown): Presentation {
     }
   }
   record(p.objects, 'objects'); const resources = record(p.resources, 'resources');
+  for (const [rid, raw] of Object.entries(resources)) {
+    const r = record(raw, `resource ${rid}`);
+    if (r.id !== rid || (r.type !== 'image' && r.type !== 'video')) throw new Error(`Invalid presentation: resource ${rid} must have its id and a type image or video.`);
+    // Media lives in the media store, referenced by hash; a deck that still
+    // embeds it (`src`) has to be imported or converted first.
+    if (typeof r.hash !== 'string' || !/^[0-9a-f]{64}$/.test(r.hash) || typeof r.mime !== 'string' || typeof r.size !== 'number') {
+      throw new Error(`Invalid presentation: resource ${rid} has no media reference (hash, mime, size)${'src' in r ? ' — it still embeds its media; import the deck to convert it' : ''}.`);
+    }
+  }
   const templates = record(p.templates, 'templates'); const theme = record(p.theme, 'theme');
   record(theme.colors, 'theme.colors'); record(theme.fonts, 'theme.fonts');
   const slides = orderedMap(p.slides, p.slideOrder, 'slides');
@@ -72,7 +81,10 @@ export function assertPresentation(value: unknown): Presentation {
   for (const { id, entry, isSlide } of entries) {
     const slide = record(entry, `slide/template ${id}`);
     const elements = orderedMap(slide.elements, slide.elementOrder, `elements of ${id}`);
-    record(slide.background, `background of ${id}`);
+    const background = record(slide.background, `background of ${id}`);
+    if (background.type === 'image' && (typeof background.resourceId !== 'string' || !Object.hasOwn(resources, background.resourceId))) {
+      throw new Error(`Invalid presentation: the background of ${id} references a missing resource.`);
+    }
     if (isSlide) record(slide.transition, `transition of ${id}`);
     if (isSlide && slide.comments !== undefined) {
       for (const [cid, raw] of Object.entries(record(slide.comments, `comments of ${id}`))) {

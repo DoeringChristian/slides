@@ -6,7 +6,7 @@ import { segmentOf } from '../../utils/animation/mediaPlayback';
 import { imageTintShape } from '../../utils/paint/imageTint';
 import { useEditorStore } from '../../store/editorStore';
 import type { ImageElement } from '../../types/presentation';
-import { useMediaUrl } from './mediaSources';
+import { useMediaSource, type MediaSourceState } from '../../media/useMediaSource';
 
 interface Props {
   element: ImageElement;
@@ -33,8 +33,9 @@ export const SVGImageNode: React.FC<Props> = React.memo(({
   );
 
   const isVideo = resource?.type === 'video';
-  // One shared blob URL per source, not a parse of the inline data per player.
-  const videoUrl = useMediaUrl(isVideo ? resource?.src : undefined);
+  // One shared blob URL per file (or the server's stream until it is here).
+  const media = useMediaSource(resource);
+  const videoUrl = isVideo ? media.url : undefined;
   // The editor's video player is HTML; its tint is the shared shape fill.
   const tint = isVideo ? imageTintShape(element) : null;
 
@@ -58,7 +59,7 @@ export const SVGImageNode: React.FC<Props> = React.memo(({
     touchAction: 'none',
   };
 
-  if (isVideo && resource.src) {
+  if (isVideo) {
     // A small badge marks it as a video; it takes no clicks, so it never
     // gets in the way of moving the element.
     const badge = Math.min(22 / zoom, element.width * 0.3, element.height * 0.3);
@@ -107,6 +108,7 @@ export const SVGImageNode: React.FC<Props> = React.memo(({
           </g>
         )}
       </g></GroupCrop>}
+      <MediaProgress element={element} media={media} zoom={zoom} />
       </>
     );
   }
@@ -133,6 +135,28 @@ export const SVGImageNode: React.FC<Props> = React.memo(({
           })}
         />
       </g></GroupCrop>
+      <MediaProgress element={element} media={media} zoom={zoom} />
     </g>
   );
 });
+
+/** Editor only: an upload's progress, or that the file is still on its way
+ *  or could not be found. Takes no clicks. */
+function MediaProgress({ element, media, zoom }: { element: ImageElement; media: MediaSourceState; zoom: number }) {
+  if (!element.resourceId) return null;
+  const h = Math.min(6 / zoom, element.height * 0.1);
+  const x = element.x, y = element.y + element.height - h, w = element.width;
+  if (media.upload !== null) {
+    return <g data-media-upload={Math.round(media.upload * 100)} pointerEvents="none">
+      <rect x={x} y={y} width={w} height={h} fill="rgba(0,0,0,0.35)" />
+      <rect x={x} y={y} width={w * media.upload} height={h} fill="#3b82f6" />
+    </g>;
+  }
+  if (media.status === 'missing' || (media.status === 'loading' && !media.url)) {
+    const font = Math.min(13 / zoom, element.height * 0.2);
+    return <text data-media-status={media.status} pointerEvents="none" x={element.x + element.width / 2} y={element.y + element.height / 2}
+      textAnchor="middle" dominantBaseline="middle" fontSize={font} fill={media.status === 'missing' ? '#b91c1c' : '#6b7280'}
+      fontFamily="system-ui, sans-serif">{media.status === 'missing' ? 'Media file not found' : 'Loading…'}</text>;
+  }
+  return null;
+}

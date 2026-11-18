@@ -1,6 +1,7 @@
 import type { Slide, Resource } from '../../types/presentation';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../constants';
 import { renderSlideToSVG, svgToPngDataURL } from './svgRenderer';
+import { mediaDataUrls, slideImageIds } from '../../media/embed';
 
 const THUMBNAIL_WIDTH = 320;
 const THUMBNAIL_HEIGHT = (SLIDE_HEIGHT / SLIDE_WIDTH) * THUMBNAIL_WIDTH;
@@ -21,7 +22,7 @@ export async function generateThumbnail(
   const pixelRatio = options.pixelRatio || 1;
 
   // Render slide to SVG
-  const svgString = renderSlideToSVG(slide, resources);
+  const svgString = renderSlideToSVG(slide, resources, await mediaDataUrls(resources, slideImageIds(slide, resources)));
 
   return svgToPngDataURL(svgString, { width, height, pixelRatio });
 }

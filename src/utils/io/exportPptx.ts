@@ -1,3 +1,4 @@
+import { mediaDataUrls, type MediaSources } from '../../media/embed';
 import { attachGroupCrops, groupCropPaint, type GroupCropElement } from '../model/groupCrop';
 import { ensureCropLayouts } from '../model/cropRegions';
 import { renderElement, svgToPngDataURL } from './svgRenderer';
@@ -51,17 +52,15 @@ function toImageData(dataUrl: string): string {
   return dataUrl.replace(/^data:/, '');
 }
 
-function setSlideBackground(slide: PptxGenJS.Slide, bg: SlideBackground, _resources: Presentation['resources']) {
+function setSlideBackground(slide: PptxGenJS.Slide, bg: SlideBackground, sources: MediaSources) {
   if (bg.type === 'solid') {
     slide.background = { color: hexWithoutHash(bg.color) };
   } else if (bg.type === 'gradient') {
     // pptxgenjs doesn't have native gradient background support, use fill color of first stop
     slide.background = { color: hexWithoutHash(bg.from) };
   } else if (bg.type === 'image') {
-    // bg.src is a data URL
-    if (bg.src) {
-      slide.background = { data: toImageData(bg.src) };
-    }
+    const src = sources[bg.resourceId];
+    if (src) slide.background = { data: toImageData(src) };
   }
 }
 
@@ -232,12 +231,12 @@ function addShapeElement(slide: PptxGenJS.Slide, el: ShapeElement) {
   }
 }
 
-function addImageElement(slide: PptxGenJS.Slide, el: ImageElement, resources: Presentation['resources']) {
+function addImageElement(slide: PptxGenJS.Slide, el: ImageElement, resources: Presentation['resources'], sources: MediaSources) {
   const resource = el.resourceId ? resources[el.resourceId] : undefined;
-  if (!resource || resource.type === 'video') return;
+  if (!resource || resource.type === 'video' || !sources[resource.id]) return;
 
   slide.addImage({
-    data: toImageData(resource.src),
+    data: toImageData(sources[resource.id]),
     x: el.x * PX_TO_INCH,
     y: el.y * PX_TO_INCH,
     w: el.width * PX_TO_INCH,
@@ -247,6 +246,8 @@ function addImageElement(slide: PptxGenJS.Slide, el: ImageElement, resources: Pr
 }
 
 export async function exportPptx(presentation: Presentation): Promise<void> {
+  // pptxgenjs takes images as base64. Videos are not exported.
+  const sources = await mediaDataUrls(presentation.resources, Object.values(presentation.resources).filter(r => r.type === 'image').map(r => r.id));
   const pptx = new PptxGenJS();
   pptx.layout = 'LAYOUT_16x9';
   pptx.title = presentation.title;
@@ -260,7 +261,7 @@ export async function exportPptx(presentation: Presentation): Promise<void> {
     const slide = pptx.addSlide();
 
     // Background
-    setSlideBackground(slide, slideData.background, presentation.resources);
+    setSlideBackground(slide, slideData.background, sources);
 
     // Elements in order
     for (const source of attachGroupCrops(slideData.elementOrder.map(id => slideData.elements[id]).filter(Boolean))) {
@@ -269,7 +270,7 @@ export async function exportPptx(presentation: Presentation): Promise<void> {
       // Office has no editable arbitrary group clip. Flatten only clipped
       // members, keeping the boundary and unrelated objects editable.
       if ((source as GroupCropElement)._groupClips?.length) {
-        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${SLIDE_WIDTH}" height="${SLIDE_HEIGHT}" viewBox="0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}">${renderElement(el, presentation.resources)}</svg>`;
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${SLIDE_WIDTH}" height="${SLIDE_HEIGHT}" viewBox="0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}">${renderElement(el, presentation.resources, sources)}</svg>`;
         slide.addImage({ data: await svgToPngDataURL(svg), x: 0, y: 0, w: SLIDE_WIDTH * PX_TO_INCH, h: SLIDE_HEIGHT * PX_TO_INCH });
         continue;
       }
@@ -282,7 +283,7 @@ export async function exportPptx(presentation: Presentation): Promise<void> {
           addShapeElement(slide, el);
           break;
         case 'image':
-          addImageElement(slide, el, presentation.resources);
+          addImageElement(slide, el, presentation.resources, sources);
           break;
       }
     }

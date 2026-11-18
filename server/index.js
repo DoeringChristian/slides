@@ -5,6 +5,7 @@ import { createStorage } from './storage.js';
 import { createShareStore } from './shares.js';
 import { attachYWS } from './yws.js';
 import { sendJson } from './streamJson.js';
+import { HashMismatchError } from './mediaFiles.js';
 import { createChatGPT, attachChatGPTRoutes } from './chatgpt.js';
 
 // One failing request or socket must not take every open deck down with it.
@@ -24,7 +25,9 @@ const shares = createShareStore('./data');
 
 // Middleware
 app.use(cors({ exposedHeaders: ['X-Slides-User'] }));
-app.use(express.json({ limit: '512mb' })); // Decks embed their images (one figure can carry tens of MB)
+// Decks reference their media files by hash (see mediaFiles.js), so a deck
+// body is small; the media itself goes through /api/projects/:id/media.
+app.use(express.json({ limit: '64mb', type: (req) => !/\/media\//.test(req.url) && !!req.headers['content-type']?.includes('json') }));
 
 // Sign in with ChatGPT: plan usage for the editor's assistant. Loopback-only;
 // see chatgpt.js for why the server, not the browser, holds these tokens.
@@ -78,6 +81,53 @@ app.get('/api/projects/:id', async (req, res) => {
     console.error('Error getting project:', error);
     if (res.headersSent) res.destroy();
     else res.status(500).json({ error: `Failed to get project: ${error?.message ?? error}` });
+  }
+});
+
+// ----- Media files -------------------------------------------------------------
+// The bytes of a deck's images and videos, by SHA-256. A <video> or <img>
+// cannot send headers, so the identity / share token may also come as ?u= / ?t=.
+
+const mediaUser = (req) => userIdOf(req) ?? (typeof req.query.u === 'string' && /^[A-Za-z0-9_-]{4,32}$/.test(req.query.u) ? req.query.u : null);
+const mediaToken = (req) => req.get('x-share-token') || (typeof req.query.t === 'string' ? req.query.t : null);
+async function mayReadProject(req) {
+  const userId = mediaUser(req), token = mediaToken(req);
+  return !!((userId && (await storage.userOwnsProject(req.params.id, userId))) || (token && (await shares.isValid(token, req.params.id))));
+}
+// Uploading: the owner, a collaborator with a share link, or anyone creating
+// a project that does not exist yet (its first save claims it, as with PUT).
+async function mayWriteMedia(req) {
+  if (await mayReadProject(req)) return true;
+  return !(await storage.getProjectMeta(req.params.id)) && !!mediaUser(req);
+}
+
+app.get('/api/projects/:id/media/:sha', async (req, res) => {
+  try {
+    if (!(await mayReadProject(req))) return res.status(403).json({ error: 'Not your project' });
+    const file = await storage.media.file(req.params.id, req.params.sha);
+    if (!file) return res.status(404).json({ error: 'Media file not found' });
+    // Range requests (seeking, streaming) are handled by sendFile. The bytes
+    // behind a hash never change: cache them for good.
+    res.sendFile(file.path, { headers: { 'Content-Type': file.mime, 'Cache-Control': 'private, max-age=31536000, immutable' } });
+  } catch (error) {
+    console.error('Error sending media:', error);
+    if (!res.headersSent) res.status(500).json({ error: `Failed to send media: ${error?.message ?? error}` });
+  }
+});
+
+app.put('/api/projects/:id/media/:sha', async (req, res) => {
+  try {
+    if (!(await mayWriteMedia(req))) return res.status(403).json({ error: 'Not your project' });
+    if (await storage.media.file(req.params.id, req.params.sha)) {
+      req.resume();
+      return res.status(200).json({ ok: true, existed: true });
+    }
+    const { size } = await storage.media.put(req.params.id, req.params.sha, req.get('content-type'), req);
+    res.status(201).json({ ok: true, size });
+  } catch (error) {
+    if (error instanceof HashMismatchError) return res.status(400).json({ error: error.message });
+    console.error('Error storing media:', error);
+    if (!res.headersSent) res.status(500).json({ error: `Failed to store media: ${error?.message ?? error}` });
   }
 });
 

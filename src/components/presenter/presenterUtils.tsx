@@ -6,7 +6,7 @@ import { followGroups } from '../../utils/model/groupFollow';
 import React, { useRef, useState, useCallback, useEffect, useId } from 'react';
 import { planLayerFade, type LayerFadePlan } from '../../utils/animation/layerFade';
 import { Play, Pause } from 'lucide-react';
-import { useMediaUrl } from '../svg/mediaSources';
+import { useMediaSource } from '../../media/useMediaSource';
 import { RenderShape, RenderImage } from '../svg/ElementRenderer';
 import { RenderMorph } from '../svg/RenderMorph';
 import { SVGTextPaths } from '../svg/SVGTextPaths';
@@ -410,7 +410,7 @@ const TipDrawArrow: React.FC<{ element: ShapeElement; fx: WriteEffect }> = ({ el
 // ============================================================================
 
 interface VideoWithControlsProps {
-  src: string;
+  resource: Resource;
   /** The video object's id: the media controller drives this player. */
   mediaId: string;
   muted: boolean;
@@ -421,14 +421,14 @@ interface VideoWithControlsProps {
 }
 
 const VideoWithControls: React.FC<VideoWithControlsProps> = ({
-  src,
+  resource,
   mediaId,
   muted,
   videoStyle,
   containerStyle,
   onVideoCommand,
 }) => {
-  const url = useMediaUrl(src);
+  const { url } = useMediaSource(resource);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -630,7 +630,7 @@ export const SlideRenderer: React.FC<SlideRendererProps> = ({
               <React.Fragment key={element.id}>
               <VideoWithControls
                 key={element.id}
-                src={resource.src}
+                resource={resource}
                 mediaId={element.id}
                 muted={imgEl.muted ?? true}
                 onVideoCommand={onVideoCommand}

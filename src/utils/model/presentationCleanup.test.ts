@@ -163,7 +163,7 @@ describe('repairPresentation (load-time ghost repair)', () => {
 
   const res = (id: string) => ({
     id, name: `${id}.png`, type: 'image' as const,
-    src: `data:image/png;base64,${id}`, originalWidth: 10, originalHeight: 10,
+    hash: `${'0'.repeat(64 - String(id).length)}${id}`.replace(/[^0-9a-f]/g, '0'), mime: 'image/png', size: 4, originalWidth: 10, originalHeight: 10,
   });
 
   test('drops ghost registry entries and unreferenced resources', () => {
@@ -185,6 +185,13 @@ describe('repairPresentation (load-time ghost repair)', () => {
     expect(repaired.resources['res-a']).toBeDefined();
     // Slides are untouched — the repair only prunes registry + resources.
     expect(repaired.slides).toBe(corrupted.slides);
+  });
+
+  test('keeps a resource that only a slide background uses', () => {
+    const backdrop: Slide = { ...slide('s1', { text }), background: { type: 'image', resourceId: 'res-bg' } };
+    const deck = makePresentation({ s1: backdrop }, { text: { id: 'text', name: 'Text', type: 'text' } }, { 'res-bg': res('res-bg') });
+    expect(isResourceReferencedInSlides(deck.slides, 'res-bg')).toBe(true);
+    expect(repairPresentation(deck).resources['res-bg']).toBeDefined();
   });
 
   test('keeps a registry entry whose element is merely hidden everywhere', () => {

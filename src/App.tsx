@@ -8,6 +8,7 @@ import { AudienceView } from './components/presenter/AudienceView';
 import { ProjectPickerDialog } from './components/dialogs/ProjectPickerDialog';
 import { useEditorStore } from './store/editorStore';
 import { usePresentationStore } from './store/presentationStore';
+import { trackDeckMedia } from './media/mediaStore';
 import { useVaultStore } from './store/vaultStore';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useIsMobile } from './hooks/useIsMobile';
@@ -64,6 +65,10 @@ function App() {
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
   const standaloneMode = useEditorStore((s) => s.standaloneMode);
   const slideOrder = usePresentationStore((s) => s.presentation.slideOrder);
+  // Copy every media file of the open deck to this machine in the
+  // background, so presenting never depends on the network.
+  const resources = usePresentationStore((s) => s.presentation.resources);
+  useEffect(() => { trackDeckMedia({ resources }); }, [resources]);
   const loadPresentation = usePresentationStore((s) => s.loadPresentation);
 
   const activeProjectId = useVaultStore((s) => s.activeProjectId);

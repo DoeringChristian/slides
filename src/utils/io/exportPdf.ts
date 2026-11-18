@@ -1,3 +1,4 @@
+import { mediaObjectUrl } from '../../media/mediaStore';
 import { attachGroupCrops, cropSteps, groupCropClips, groupCropPaint } from '../model/groupCrop';
 import { ensureCropLayouts, groupCropRegions } from '../model/cropRegions';
 import { drawCanvasStrokeCoverage } from '../paint/canvasStrokeCoverage';
@@ -95,16 +96,18 @@ export async function preloadResources(
       const resource = resources[(slide.elements[id] as ImageElement).resourceId!];
       const time = clock.anchor;
       const key = `${resource.id}@${time}`;
-      if (!frames.has(key)) frames.set(key, loadVideoFrame(resource.src, time));
+      if (!frames.has(key)) frames.set(key, mediaObjectUrl(resource.hash).then(url => (url ? loadVideoFrame(url, time) : null)));
       promises.push(frames.get(key)!.then(frame => { if (frame) map.set(videoFrameKey(slide.id, id), frame); }));
     }
   }
 
   for (const slide of slides) {
     // Background images
-    if (slide.background.type === 'image' && slide.background.src) {
+    const bg = slide.background.type === 'image' ? resources[slide.background.resourceId] : undefined;
+    if (bg) {
       promises.push(
-        loadImage(slide.background.src).then(img => { map.set('bg:' + slide.id, img); }).catch(() => {}),
+        mediaObjectUrl(bg.hash).then(url => (url ? loadImage(url) : Promise.reject(new Error('missing'))))
+          .then(img => { map.set('bg:' + slide.id, img); }).catch(() => {}),
       );
     }
     for (const id of slide.elementOrder) {
@@ -119,7 +122,10 @@ export async function preloadResources(
     const r = resources[rid];
     if (r && r.type === 'image') {
       promises.push(
-        loadImage(r.src).then(img => { map.set(rid, img); }).catch(() => {}),
+        // The media file's own (same-origin) blob URL: drawing it never
+        // taints the canvas.
+        mediaObjectUrl(r.hash).then(url => (url ? loadImage(url) : Promise.reject(new Error('missing'))))
+          .then(img => { map.set(rid, img); }).catch(() => {}),
       );
     }
     // Videos: per-slide frames, above.

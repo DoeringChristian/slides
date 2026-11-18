@@ -5,6 +5,7 @@ import type { FillStyle, Presentation, PropertyTransitions, SlideElement } from 
 import { assertPresentation } from './importPresentation';
 import { exportStandaloneHtml } from './exportStandaloneHtml';
 import { createPresentation, createShapeElement, createTextElement } from '../model/slideFactory';
+import { registerMedia, resetMediaStoreForTests } from '../../media/mediaStore';
 
 function authoredSettings(fillStyle: FillStyle | undefined): Presentation {
   const p = createPresentation(), slide = p.slides[p.slideOrder[0]];
@@ -37,8 +38,8 @@ function authoredSettings(fillStyle: FillStyle | undefined): Presentation {
     fills: [{ contourIds: ['outline'], rule: 'evenodd' }], strokes: ['outline'],
     provenance: { library: 'fixture', version: '1', icon: 'outline', license: 'MIT', licenseNotice: 'Fixture only' },
   } });
-  p.resources.video = { id: 'video', name: 'Embedded video', type: 'video', src: 'data:video/mp4;base64,AAAA',
-    originalWidth: 640, originalHeight: 480, duration: 12, hash: 'fixture-hash' };
+  p.resources.video = { id: 'video', name: 'Embedded video', type: 'video', hash: '054f0d4d0960135a3a6054839a66ade1516dc6590c4f3fe4c35b2356c13cfe3c', mime: 'video/mp4', size: 4,
+    originalWidth: 640, originalHeight: 480, duration: 12 };
   const video: SlideElement = { id: 'video', type: 'image', resourceId: 'video', x: 50, y: 400,
     width: 500, height: 300, rotation: 23, opacity: .6, locked: false, visible: true,
 playback: 'range', playFrom: 2.3, playTo: 9, atEnd: 'hold', muted: true, transitions };
@@ -52,7 +53,8 @@ playback: 'range', playFrom: 2.3, playTo: 9, atEnd: 'hold', muted: true, transit
   slide.groupId = 'chain'; slide.autoAdvanceDelay = 3.2;
   slide.background = { type: 'gradient', from: '#010203', to: '#987654', direction: 73 };
   const next = structuredClone(slide); next.id = 'next'; next.hidden = true;
-  next.background = { type: 'image', src: 'data:image/svg+xml,%3Csvg/%3E' };
+  p.resources.backdrop = { id: 'backdrop', name: 'Backdrop', type: 'image', hash: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', mime: 'image/svg+xml', size: 12, originalWidth: 10, originalHeight: 10 };
+  next.background = { type: 'image', resourceId: 'backdrop' };
   p.slides.next = next; p.slideOrder.push('next');
   p.templates.native = { id: 'native', name: 'Authored template', elements: structuredClone(slide.elements),
     elementOrder: [...slide.elementOrder], background: { type: 'solid', color: '#135790' } };
@@ -68,6 +70,9 @@ for (const style of [undefined, 'solid', 'hachure', 'crosshatch'] as const) {
   it(`preserves all authored settings through both HTML payloads, loader and cold-start Y schema: ${style ?? 'legacy absent'}`, async () => {
     const source = authoredSettings(style);
     const payloads: Presentation[] = [];
+    // The deck's media files, which the export carries beside the deck.
+    resetMediaStoreForTests();
+    for (const r of Object.values(source.resources)) registerMedia(r.hash, new Blob([`bytes of ${r.id}`], { type: r.mime }));
     vi.stubGlobal('fetch', async () => ({ ok: true, text: async () => '<html><body><!--SLIDES_PAYLOAD--></body></html>' }));
     vi.stubGlobal('document', { createElement: () => ({ click: vi.fn() }), body: { appendChild: vi.fn(), removeChild: vi.fn() } });
     for (const mode of ['viewer', 'editor'] as const) {
@@ -78,6 +83,11 @@ for (const style of [undefined, 'solid', 'hachure', 'crosshatch'] as const) {
       // Native DOMParser and the real templates are covered by html-style-roundtrip.browser.mjs.
       const json = html.match(/id="slides-payload" type="application\/json">([\s\S]*?)<\/script>/)![1];
       expect(json).not.toContain('<');
+      // Each media file is its own element, base64 of its bytes, never inside the deck JSON.
+      for (const r of Object.values(source.resources)) {
+        expect(html).toContain(`data-slides-media="${r.hash}" data-mime="${r.mime}">${btoa(`bytes of ${r.id}`)}</script>`);
+      }
+      expect(json).not.toContain('base64');
       const parsed = assertPresentation(JSON.parse(json));
       // The exporter attaches baked text layouts (derived data the importer
       // strips). Everything else must match the source exactly.

@@ -1,3 +1,4 @@
+import { addMedia } from '../../media/mediaStore';
 import { withPaintAlpha } from '../paint/paintColor';
 import JSZip from 'jszip';
 import type { Presentation, ShapeType, SlideBackground, SlideElement } from '../../types/presentation';
@@ -277,11 +278,10 @@ function parseRels(relsXml: string): ParsedRelationship[] {
   return rels;
 }
 
-async function extractMediaAsDataUrl(zip: JSZip, mediaPath: string): Promise<string | null> {
+async function extractMedia(zip: JSZip, mediaPath: string): Promise<{ blob: Blob; mime: string } | null> {
   const file = zip.file(mediaPath);
   if (!file) return null;
 
-  const data = await file.async('base64');
   const ext = mediaPath.split('.').pop()?.toLowerCase() || 'png';
   const mimeMap: Record<string, string> = {
     'png': 'image/png', 'jpg': 'image/jpeg', 'jpeg': 'image/jpeg',
@@ -290,17 +290,19 @@ async function extractMediaAsDataUrl(zip: JSZip, mediaPath: string): Promise<str
     'emf': 'image/emf',
   };
   const mime = mimeMap[ext] || 'image/png';
-  return `data:${mime};base64,${data}`;
+  // The bytes as they are: no base64.
+  return { blob: new Blob([await file.async('arraybuffer')], { type: mime }), mime };
 }
 
-// Get actual image dimensions from a data URL
-function getImageDimensions(dataUrl: string): Promise<{ width: number; height: number }> {
-  return new Promise((resolve) => {
+// Actual image dimensions of a media file
+function getImageDimensions(blob: Blob): Promise<{ width: number; height: number }> {
+  const url = URL.createObjectURL(blob);
+  return new Promise<{ width: number; height: number }>((resolve) => {
     const img = new Image();
     img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
     img.onerror = () => resolve({ width: 100, height: 100 });
-    img.src = dataUrl;
-  });
+    img.src = url;
+  }).finally(() => URL.revokeObjectURL(url));
 }
 
 // Read the actual slide size from presentation.xml (if present)
@@ -641,15 +643,15 @@ export async function importPptx(file: File): Promise<Presentation> {
       const mediaPath = 'ppt/slides/' + imgRel.target.replace(/^\.\//, '');
       const normalizedPath = normalizePath(mediaPath);
 
-      const dataUrl = await extractMediaAsDataUrl(zip, normalizedPath);
-      if (!dataUrl) continue;
+      const media = await extractMedia(zip, normalizedPath);
+      if (!media) continue;
 
       // Actual image dimensions, for the resource
-      const imgDims = await getImageDimensions(dataUrl);
+      const imgDims = await getImageDimensions(media.blob);
 
       const resource = createResource(
         imgRel.target.split('/').pop() || 'image.png',
-        dataUrl,
+        await addMedia(media.blob, media.mime, { upload: false }),
         imgDims.width,
         imgDims.height,
       );
