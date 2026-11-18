@@ -204,6 +204,81 @@ describe.each([false, true])('agent tools collab=%s', collab => {
     }
   });
 
+  it('crops an image to a shape on every keyframe, as one crop group, and removes the crop', async () => {
+    const { s1, s2, read } = setup(collab);
+    // A tilted plane: the image, and a polygon to crop it to, on both slides.
+    const plane = await runTool('add_elements', { slideId: s1, elements: [
+      { type: 'image', id: 'pic', x: 40, y: 190, width: 580, height: 235 },
+    ] });
+    expect(plane.isError, JSON.stringify(plane.content)).toBeFalsy();
+    for (const sid of [s1, s2]) {
+      store.getState().addElement(sid, createShapeElement('path', { id: 'quad', x: 40, y: 190, width: 580, height: 235,
+        points: [0, 90, 180, 235, 580, 145, 400, 0], closed: true }));
+      if (sid === s2 && !read().slides[s2].elements.pic) store.getState().addElement(s2, { ...read().slides[s1].elements.pic });
+    }
+    const out = await runTool('crop_image', { slideId: s1, imageId: 'pic', shapeIds: ['quad'] });
+    expect(out.isError, JSON.stringify(out.content)).toBeFalsy();
+    expect(JSON.parse((out.content[0] as { text: string }).text).slides).toBe(2);
+    const groups = [s1, s2].map(sid => read().slides[sid].elements.quad as ShapeElement);
+    expect(groups[0].cropGroupId).toBeTruthy();
+    expect(groups[1].cropGroupId).toBe(groups[0].cropGroupId);
+    for (const sid of [s1, s2]) expect(read().slides[sid].elements.pic.objectGroupIds).toContain(groups[0].cropGroupId);
+    // Not an image: refused.
+    expect((await runTool('crop_image', { slideId: s1, imageId: 'box', shapeIds: ['quad'] })).isError).toBe(true);
+    await runTool('crop_image', { slideId: s1, imageId: 'pic', shapeIds: [] });
+    for (const sid of [s1, s2]) expect((read().slides[sid].elements.quad as ShapeElement).cropGroupId ?? null).toBeNull();
+  });
+
+  it('restacks elements: to the back, and right above another (with its label)', async () => {
+    const { s1, s2, read } = setup(collab);
+    await runTool('add_elements', { slideId: s1, elements: [
+      { type: 'shape', id: 'bg', shapeType: 'rect', x: 0, y: 0, width: 50, height: 50 },
+      { type: 'shape', id: 'chip', shapeType: 'rect', x: 0, y: 0, width: 20, height: 20 },
+    ] });
+    let out = await runTool('reorder_elements', { slideId: s1, elementIds: ['bg'], to: 'back' });
+    expect(out.isError, JSON.stringify(out.content)).toBeFalsy();
+    expect(read().slides[s1].elementOrder).toEqual(['bg', 'box', 'title', 'chip']);
+    out = await runTool('reorder_elements', { slideId: s1, elementIds: ['chip'], to: 'above', relativeTo: 'box' });
+    expect(read().slides[s1].elementOrder).toEqual(['bg', 'box', 'chip', 'title']);
+    // Only this slide by default; across slides on request.
+    expect(read().slides[s2].elementOrder).toEqual(['box', 'title']);
+    await runTool('reorder_elements', { slideId: s1, elementIds: ['title'], to: 'back', acrossSlides: true });
+    expect(read().slides[s2].elementOrder).toEqual(['title', 'box']);
+    expect((await runTool('reorder_elements', { slideId: s1, elementIds: ['chip'], to: 'above' })).isError).toBe(true);
+  });
+
+  it('attaches an arrow to two boxes; it follows a box that moves', async () => {
+    const { s1, read } = setup(collab);
+    const out = await runTool('add_elements', { slideId: s1, elements: [
+      { type: 'shape', id: 'b2', shapeType: 'rect', x: 500, y: 100, width: 100, height: 80 },
+      { type: 'shape', id: 'link', shapeType: 'path', x: 200, y: 140, points: [0, 0, 300, 0], endHead: 'arrow', startAttach: 'box', endAttach: 'b2' },
+    ] });
+    expect(out.isError, JSON.stringify(out.content)).toBeFalsy();
+    const link = () => read().slides[s1].elements.link as ShapeElement;
+    expect(link().startBinding?.elementId).toBe('box');
+    expect(link().endBinding?.elementId).toBe('b2');
+    const end = () => { const l = link(); const pts = l.points!; return { x: l.x + pts[pts.length - 2], y: l.y + pts[pts.length - 1] }; };
+    const before = end();
+    await runTool('update_elements', { slideId: s1, patches: [{ id: 'b2', y: 300 }] });
+    expect(end().y).toBeGreaterThan(before.y + 100);
+    await runTool('update_elements', { slideId: s1, patches: [{ id: 'link', endAttach: '' }] });
+    expect(link().endBinding ?? null).toBeNull();
+    expect((await runTool('update_elements', { slideId: s1, patches: [{ id: 'box', startAttach: 'b2' }] })).isError).toBe(true);
+  });
+
+  it('merges two objects into one so it animates across slides', async () => {
+    const { s1, s2, read } = setup(collab);
+    await runTool('add_elements', { slideId: s1, elements: [{ type: 'shape', id: 'early', shapeType: 'ellipse', x: 10, y: 10, width: 40, height: 40 }] });
+    await runTool('add_elements', { slideId: s2, elements: [{ type: 'shape', id: 'late', shapeType: 'ellipse', x: 400, y: 10, width: 80, height: 80 }] });
+    const out = await runTool('merge_objects', { targetId: 'early', sourceId: 'late' });
+    expect(out.isError, JSON.stringify(out.content)).toBeFalsy();
+    const s2els = read().slides[s2].elements;
+    expect(s2els.late).toBeUndefined();
+    expect(s2els.early).toMatchObject({ x: 400, width: 80 });
+    expect(read().slides[s1].elements.early).toMatchObject({ x: 10 });
+    expect((await runTool('merge_objects', { targetId: 'early', sourceId: 'early' })).isError).toBe(true);
+  });
+
   it('makes a whole turn one undo step', async () => {
     const { s1, s2, read, doc } = setup(collab);
     const finish = beginTurnHistory();

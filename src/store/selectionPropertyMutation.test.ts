@@ -14,6 +14,10 @@ it('layer moves preserve selected order even with gaps', () => {
   expect(reorderSelection(['a','b','c','d'], ['b','d'], 'back')).toEqual(['b','d','a','c']);
   expect(reorderSelection(['a','b','c','d'], ['a','b'], 1)).toEqual(['c','a','b','d']);
   expect(reorderSelection(['a','b','c','d'], ['c','d'], -1)).toEqual(['a','c','d','b']);
+  // Right above / below another element, keeping the moved ones' own order.
+  expect(reorderSelection(['a','b','c','d'], ['d','a'], { above: 'b' })).toEqual(['b','a','d','c']);
+  expect(reorderSelection(['a','b','c','d'], ['d'], { below: 'b' })).toEqual(['a','d','b','c']);
+  expect(reorderSelection(['a','b','c','d'], ['a'], { above: 'missing' })).toEqual(['a','b','c','d']);
 });
 it.each([false, true])('batch transforms/styles/reset/order preserve individual parameters and undo (Yjs=%s)', collab => {
   const p = createPresentation(), current = p.slides[p.slideOrder[0]];

@@ -2,7 +2,7 @@ import type {
   EasingType,
   ImageElement,
   Presentation,
-  ShapeElement,
+  ShapeElement, ConnectorBinding,
   SlideElement,
   TextElement,
   TransitionGroup,
@@ -17,6 +17,8 @@ import { asAgent } from '../utils/editor/scrubMutation';
 import { createImageElement, createShapeElement, createTextElement } from '../utils/model/slideFactory';
 import { deckTextStyle } from '../store/textDefaults';
 import { planObjectGrouping } from '../utils/model/objectGroups';
+import { planCrop } from '../utils/model/groupCrop';
+import type { LayerMove } from '../utils/editor/selectionProperties';
 import { generateId } from '../utils/idGenerator';
 import { hasContentSizing, measureUserText } from '../utils/text/userTextSizing';
 import { FONT_FAMILIES, MATH_FONTS } from '../utils/text/fontRegistry';
@@ -155,6 +157,8 @@ const elementFields: Record<string, JsonSchema> = {
   curve: oneOf(['linear', 'smooth', 'bspline2', 'bspline3', 'bezier'], 'path only'),
   startHead: oneOf(HEADS, 'path only'),
   endHead: oneOf(HEADS, 'path only'),
+  startAttach: str('path only: attach the first point to this object (id on the same slide): the end then points at its centre, stops at its edge, and follows it when it moves or changes between keyframes. "" detaches.'),
+  endAttach: str('path only: attach the last point to this object, like startAttach. Use attached arrows for diagrams whose boxes move.'),
   strokeStyle: oneOf(['solid', 'dashed', 'dotted']),
   resourceId: str('image only: an existing resource id from get_deck'),
 };
@@ -209,6 +213,10 @@ function applyFields(element: SlideElement, spec: Spec): SlideElement {
   for (const [key, value] of Object.entries(spec)) {
     if (key === 'id' || key === 'type' || key === 'name' || value === undefined) continue;
     if (key === 'style') out.style = { ...(element as TextElement).style, ...(value as object) };
+    // An attached end aims at the object's centre and stops at its outline
+    // (the editor's aim binding), so it follows the object as it moves.
+    else if (key === 'startAttach' || key === 'endAttach') out[key === 'startAttach' ? 'startBinding' : 'endBinding'] = value
+      ? { elementId: value as string, mode: 'aim', fixedPoint: [0.5, 0.5], gap: 0 } satisfies ConnectorBinding : null;
     else out[key] = value;
   }
   return out as unknown as SlideElement;
@@ -228,6 +236,12 @@ function checkElement(p: Presentation, slideId: string, el: SlideElement) {
   if (el.type === 'text' && el.containerId) {
     const container = p.slides[slideId]?.elements[el.containerId];
     if (!container || container.type !== 'shape') throw new ToolError(`${el.id}: containerId must name a shape on this slide`);
+  }
+  if (el.type === 'shape') for (const binding of [el.startBinding, el.endBinding]) {
+    if (!binding) continue;
+    if (el.shapeType !== 'path') throw new ToolError(`${el.id}: only paths (lines, arrows) can be attached`);
+    const target = p.slides[slideId]?.elements[binding.elementId];
+    if (!target || binding.elementId === el.id || (target.type === 'text' && target.containerId)) throw new ToolError(`${el.id}: attach to a shape, image or text on this slide (not ${binding.elementId})`);
   }
   if (el.type === 'image' && el.resourceId && !p.resources[el.resourceId]) {
     throw new ToolError(`${el.id}: no resource ${el.resourceId}`);
@@ -723,6 +737,100 @@ const ungroupElements: DeckTool = {
   },
 };
 
+const reorderElements: DeckTool = {
+  name: 'reorder_elements',
+  description: 'Change the stacking order (what is drawn over what) on a slide: bring elements to the front, send them to the back, one step forward/backward, or place them right above/below another element (relativeTo). Labels stay with their shapes. Use it instead of deleting and re-adding (which breaks animations). By default only this slide changes; acrossSlides applies the same move on every keyframe where the elements appear.',
+  inputSchema: {
+    type: 'object', additionalProperties: false, required: ['slideId', 'elementIds', 'to'],
+    properties: {
+      slideId: str(), elementIds: { type: 'array', items: str() },
+      to: oneOf(['front', 'back', 'forward', 'backward', 'above', 'below']),
+      relativeTo: str('above / below: the element to place them next to'),
+      acrossSlides: { type: 'boolean', description: 'Default false' },
+    },
+  },
+  async run(input, ctx) {
+    const p = readPresentation();
+    const slideId = input.slideId as string;
+    requireSlide(p, slideId);
+    const ids = input.elementIds as string[];
+    const to = input.to as string, relativeTo = input.relativeTo as string | undefined;
+    if ((to === 'above' || to === 'below') && !relativeTo) throw new ToolError('above / below need relativeTo');
+    if (relativeTo && ids.includes(relativeTo)) throw new ToolError('relativeTo must not be one of the moved elements');
+    const slides = input.acrossSlides ? p.slideOrder.filter(id => ids.some(e => p.slides[id].elements[e]) && (!relativeTo || p.slides[id].elements[relativeTo])) : [slideId];
+    for (const sid of slides) {
+      const missing = ids.filter(id => !p.slides[sid].elements[id]);
+      if (sid === slideId && missing.length) throw new ToolError(`Not on this slide: ${missing.join(', ')}`);
+      if (relativeTo && !p.slides[sid].elements[relativeTo]) throw new ToolError(`No element ${relativeTo} on this slide`);
+    }
+    const modeFor = (sid: string): LayerMove => {
+      if (to === 'front' || to === 'back') return to;
+      if (to === 'forward') return 1;
+      if (to === 'backward') return -1;
+      // Above a shape means above its label too.
+      const slide = p.slides[sid];
+      const label = to === 'above' ? [...slide.elementOrder].reverse().find(id => (slide.elements[id] as TextElement | undefined)?.containerId === relativeTo) : undefined;
+      return to === 'above' ? { above: label ?? relativeTo! } : { below: relativeTo! };
+    };
+    ctx.onSlide?.(slideId);
+    agentWrite(() => { for (const sid of slides) store().moveElements(sid, ids.filter(id => p.slides[sid].elements[id]), modeFor(sid)); });
+    const after = readPresentation().slides[slideId].elementOrder;
+    return { content: [json({ order: after })], summary: `Restacked ${ids.length} element${ids.length === 1 ? '' : 's'} on ${slides.length} slide${slides.length === 1 ? '' : 's'}` };
+  },
+};
+
+const mergeObjects: DeckTool = {
+  name: 'merge_objects',
+  description: 'Make two objects one: every keyframe of sourceId becomes a keyframe of targetId, so the presenter animates (morphs, moves, recolours) from one into the other instead of fading one out and the other in. Use it when the same thing was built as two objects on different slides. Where both exist on the same slide, the source\u2019s copy there is dropped (those slides are returned). Arrows and labels attached to the source follow. Text\u2194shape morphs need a morph easing (set_transitions).',
+  inputSchema: {
+    type: 'object', additionalProperties: false, required: ['targetId', 'sourceId'],
+    properties: { targetId: str('The object that stays'), sourceId: str('The object merged into it (its id disappears)') },
+  },
+  async run(input, ctx) {
+    const targetId = input.targetId as string, sourceId = input.sourceId as string;
+    const p = readPresentation();
+    const on = p.slideOrder.find(id => p.slides[id].elements[sourceId]);
+    let result = { merged: false, droppedOnSlides: [] as string[] };
+    if (on) ctx.onSlide?.(on);
+    agentWrite(() => { result = store().mergeObjects(targetId, sourceId); });
+    if (!result.merged) throw new ToolError('Nothing merged: give two different objects that exist in the deck (not groups)');
+    return { content: [json(result)], summary: `Merged two objects${result.droppedOnSlides.length ? ` (dropped a duplicate on ${result.droppedOnSlides.length} slide${result.droppedOnSlides.length === 1 ? '' : 's'})` : ''}` };
+  },
+};
+
+const cropImage: DeckTool = {
+  name: 'crop_image',
+  description: 'Crop an image or video to the area of one or more shapes on the same slide: only what the shapes cover stays visible (several shapes show their union). The shapes become the crop: they are no longer drawn themselves, and image and crop then move, scale and fade as one object. To crop to an outline (a tilted plane, a circle, a polygon), first add that shape with add_elements, then crop with it. ALWAYS crop this way; never fake a crop by covering parts of an image with background-coloured shapes (they show up during transitions and on other backgrounds). By default the crop is made on every keyframe where the image and all the shapes appear, as one crop group, so moving or reshaping a crop shape between keyframes animates the crop. An empty shapeIds removes the image\u2019s crop (the shapes are drawn again).',
+  inputSchema: {
+    type: 'object', additionalProperties: false, required: ['slideId', 'imageId', 'shapeIds'],
+    properties: {
+      slideId: str(), imageId: str(),
+      shapeIds: { type: 'array', items: str(), description: 'Ids of the crop shapes; [] removes the image\u2019s crop' },
+      acrossSlides: { type: 'boolean', description: 'Default true' },
+    },
+  },
+  async run(input, ctx) {
+    const p = readPresentation();
+    const slideId = input.slideId as string;
+    const slide = requireSlide(p, slideId);
+    const imageId = input.imageId as string;
+    const ids = input.shapeIds as string[];
+    const shapeIds = ids.length ? ids : null;
+    if (slide.elements[imageId]?.type !== 'image') throw new ToolError(`${imageId} is not an image or video on this slide`);
+    // One crop group id for every keyframe, so the crop is one object over time.
+    const group = generateId();
+    const slides = input.acrossSlides === false ? [slideId]
+      : p.slideOrder.filter(id => p.slides[id].elements[imageId] && (shapeIds ?? []).every(s => p.slides[id].elements[s]));
+    const updates = slides.flatMap(id => planCrop(p.slides[id].elements, imageId, shapeIds, () => group).map(u => ({ ...u, slideId: id })));
+    if (!updates.length) throw new ToolError(shapeIds ? 'Cannot crop: the shapes must be unlocked rectangles, ellipses, polygons, paths or text on this slide, and the image unlocked' : 'That image has no crop');
+    ctx.onSlide?.(slideId);
+    agentWrite(() => store().updateAcrossSlides(updates));
+    const count = new Set(updates.map(u => u.slideId)).size;
+    return { content: [json({ imageId, cropShapes: shapeIds, slides: count })],
+      summary: shapeIds ? `Cropped an image on ${count} slide${count === 1 ? '' : 's'}` : `Removed a crop on ${count} slide${count === 1 ? '' : 's'}` };
+  },
+};
+
 const replyToComment: DeckTool = {
   name: 'reply_to_comment',
   description: 'Answer a review comment on a slide (shown to everyone in the comment thread), and resolve it when the request is done. Reply briefly: what you changed, or what you need from the author.',
@@ -794,7 +902,7 @@ export const DECK_TOOLS: DeckTool[] = [
   getDeck, getSlide, renderSlide, explainTransitionTool,
   addSlide, deleteSlide, moveSlide,
   addElements, updateElements, updateAcrossSlides, deleteElements,
-  groupElements, ungroupElements,
+  groupElements, ungroupElements, cropImage, reorderElements, mergeObjects,
   setTransitions, setSlide, setTitle,
   replyToComment, insertAttachment,
 ];
