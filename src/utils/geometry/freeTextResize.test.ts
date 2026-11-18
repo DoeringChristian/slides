@@ -15,7 +15,8 @@ describe('freeTextResize shared measured geometry', () => {
       const changes = (await resizeFreeText(el, el, next, anchor, shift, centered)).changes;
       const out = { ...el, ...changes } as typeof el;
       expect(out.text).toBe(el.text);
-      expect(out.style.fontSize).toBe(scalesFreeText(anchor, shift) ? el.style.fontSize * next.width / el.width : el.style.fontSize);
+      // Scaled with the box, down to the 1pt floor (a shrink to near nothing).
+      expect(out.style.fontSize).toBe(scalesFreeText(anchor, shift) ? Math.max(1, el.style.fontSize * next.width / el.width) : el.style.fontSize);
       expect(out.textSizing).toBe(scalesFreeText(anchor, shift) ? 'auto-content' : 'user-width');
       const hx = centered ? 0 : anchor.includes('left') ? 1 : anchor.includes('right') ? -1 : 0;
       const hy = centered ? 0 : anchor.includes('top') ? 1 : anchor.includes('bottom') ? -1 : 0;

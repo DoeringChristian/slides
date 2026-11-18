@@ -77,3 +77,17 @@ describe('resizeSelection geometry', () => {
     expect(resizeKeepsBinding(path,{...after,tangents:Array(8).fill(1)},target,target,'startBinding')).toBe(false);
   });
 });
+
+describe('thin objects resize freely', () => {
+  // A colour bar: 6 wide, 300 tall.
+  const bar = { x: 100, y: 50, width: 6, height: 300 };
+  it('a corner (aspect-locked) shrinks a bar already thinner than 10px', () => {
+    const next = resizeBounds(bar, 'bottom-right', { x: 0, y: -150 }, true, false);
+    expect(next.height).toBeCloseTo(150);
+    expect(next.width).toBeCloseTo(3);
+  });
+  it('an edge makes it as thin as half a pixel, never collapsing it', () => {
+    expect(resizeBounds(bar, 'middle-right', { x: -4, y: 0 }, false, false).width).toBeCloseTo(2);
+    expect(resizeBounds(bar, 'middle-right', { x: -50, y: 0 }, false, false).width).toBe(0.5);
+  });
+});

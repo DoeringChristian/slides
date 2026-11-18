@@ -4,6 +4,9 @@ import { pathPointsInSlide } from '../paths/pathEditing';
 import { pathBoundsFor } from '../paths/pathShapes';
 import { shownExtent } from '../model/groupCrop';
 
+/** Smallest extent a resize leaves on an axis, in slide pixels. */
+const MIN_RESIZE = 0.5;
+
 export type ResizeUpdate<T extends SlideElement = SlideElement> = { elementId: string; changes: Partial<T> };
 export const rotateDelta = (p: Point, degrees: number): Point => {
   const r = degrees * Math.PI / 180;
@@ -57,7 +60,10 @@ export function resizeBounds(start: BoundingBox, anchor: string, delta: Point, a
   const multiplier = centered ? 2 : 1;
   let width = start.width + hx * delta.x * multiplier;
   let height = start.height + hy * delta.y * multiplier;
-  const minW = Math.min(10, start.width), minH = Math.min(10, start.height);
+  // A resize stops short of collapsing an axis (half a slide pixel), and
+  // never forces growth: a 10px floor used to block corner (aspect-locked)
+  // shrinking of thin objects such as a colour bar on their narrow side.
+  const minW = Math.min(MIN_RESIZE, start.width), minH = Math.min(MIN_RESIZE, start.height);
   if (aspect && start.width > 0 && start.height > 0) {
     const wx = width / start.width, hyScale = height / start.height;
     let scale = !hx ? hyScale : !hy ? wx : Math.abs(wx - 1) >= Math.abs(hyScale - 1) ? wx : hyScale;
