@@ -2,15 +2,19 @@ import fs from 'fs/promises';
 import { writeFileAtomic } from './atomicWrite.js';
 import path from 'path';
 import { nanoid } from 'nanoid';
+import { createMediaFiles } from './mediaFiles.js';
 
 /**
  * File-based NoSQL storage for presentations
  * Each presentation is stored as a separate JSON file
  * Metadata index is stored in _index.json for fast listing
  */
-export function createStorage(dataDir) {
+export function createStorage(dataDir, options = {}) {
   const resolvedDir = path.resolve(dataDir);
   const indexPath = path.join(resolvedDir, '_index.json');
+  // Media lives beside the JSON (see mediaFiles.js): a deck's file holds
+  // references, so its size no longer grows with its videos.
+  const media = createMediaFiles(resolvedDir, options);
 
   // Ensure data directory exists
   async function ensureDir() {
@@ -97,7 +101,9 @@ export function createStorage(dataDir) {
 
       try {
         const data = await fs.readFile(projectPath, 'utf-8');
-        return JSON.parse(data);
+        const project = JSON.parse(data);
+        await media.internalize(id, project.presentation);
+        return project;
       } catch (error) {
         if (error.code === 'ENOENT') {
           return null;
@@ -123,12 +129,16 @@ export function createStorage(dataDir) {
         const resolvedThumb =
           thumbnailDataUrl !== undefined ? thumbnailDataUrl : existing?.thumbnailDataUrl;
 
+        const { presentation: stored, referenced } = await media.externalize(id, presentation);
         const projectData = {
           id,
-          presentation,
+          presentation: stored,
           thumbnailDataUrl: resolvedThumb,
         };
         await writeFileAtomic(projectPath, JSON.stringify(projectData, null, 2));
+        // Only once the new file is in place: until then the old one may
+        // still reference media this save dropped.
+        await media.prune(id, referenced);
 
         index.projects[id] = {
           id,
@@ -156,6 +166,8 @@ export function createStorage(dataDir) {
         } catch (error) {
           if (error.code !== 'ENOENT') throw error;
         }
+
+        await media.remove(id);
 
         // Update index
         const index = await loadIndex();

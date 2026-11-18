@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import { createPresentation, createShapeElement, createTextElement } from './slideFactory';
 import { upgradeNativePresentation } from './legacyPresentation';
@@ -65,4 +65,28 @@ it('still rejects broken references instead of dropping content', () => {
   const p = legacy();
   Object.assign(p.slides[p.slideOrder[0]].elements.arrow, { startBinding: { elementId: 'missing', anchor: 'top' } });
   expect(() => upgradeNativePresentation(p)).toThrow('references missing element');
+});
+
+describe('jsonEqual', () => {
+  it('agrees with comparing JSON text, ignoring key order', async () => {
+    const { jsonEqual } = await import('./legacyPresentation');
+    expect(jsonEqual({ a: 1, b: [1, { c: 'x' }] }, { b: [1, { c: 'x' }], a: 1 })).toBe(true);
+    expect(jsonEqual({ a: 1, u: undefined }, { a: 1 })).toBe(true);
+    expect(jsonEqual([undefined, NaN], [null, null])).toBe(true);
+    expect(jsonEqual({ a: 1 }, { a: '1' })).toBe(false);
+    expect(jsonEqual({ a: [1, 2] }, { a: [1, 2, 3] })).toBe(false);
+    expect(jsonEqual({ a: {} }, { a: [] })).toBe(false);
+    expect(jsonEqual({ a: null }, { a: {} })).toBe(false);
+  });
+
+  it('upgrading a deck never stringifies the whole deck (large media would not fit one string)', async () => {
+    const { upgradeNativePresentation } = await import('./legacyPresentation');
+    const { createPresentation } = await import('./slideFactory');
+    const deck = createPresentation();
+    const spy = vi.spyOn(JSON, 'stringify');
+    try {
+      expect(upgradeNativePresentation(deck)).toBe(deck);
+      expect(spy.mock.calls.some(([v]) => v === deck || (v as { slides?: unknown })?.slides === deck.slides)).toBe(false);
+    } finally { spy.mockRestore(); }
+  });
 });

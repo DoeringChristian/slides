@@ -4,7 +4,16 @@ import http from 'http';
 import { createStorage } from './storage.js';
 import { createShareStore } from './shares.js';
 import { attachYWS } from './yws.js';
+import { sendJson } from './streamJson.js';
 import { createChatGPT, attachChatGPTRoutes } from './chatgpt.js';
+
+// One failing request or socket must not take every open deck down with it.
+process.on('unhandledRejection', (reason) => {
+  console.error('[server] unhandled rejection (kept running):', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[server] uncaught exception (kept running):', err);
+});
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -63,10 +72,30 @@ app.get('/api/projects/:id', async (req, res) => {
     if (!project) {
       return res.status(404).json({ error: 'Project not found' });
     }
-    res.json(project);
+    // Streamed: a deck with large media is longer than any one JS string.
+    await sendJson(res, project);
   } catch (error) {
     console.error('Error getting project:', error);
-    res.status(500).json({ error: 'Failed to get project' });
+    if (res.headersSent) res.destroy();
+    else res.status(500).json({ error: `Failed to get project: ${error?.message ?? error}` });
+  }
+});
+
+// Why a collab connection fails. A browser WebSocket reports only "error",
+// never the server's answer, so the editor asks here.
+app.get('/api/projects/:id/collab-status', async (req, res) => {
+  try {
+    const userId = userIdOf(req);
+    const token = req.get('x-share-token') || null;
+    const allowed =
+      (userId && (await storage.userOwnsProject(req.params.id, userId))) ||
+      (token && (await shares.isValid(token, req.params.id)));
+    if (!allowed) {
+      return res.status(403).json({ ok: false, error: 'You do not have access to this deck on this server.' });
+    }
+    res.json(collab.status(req.params.id));
+  } catch (error) {
+    res.status(500).json({ ok: false, error: `Status check failed: ${error?.message ?? error}` });
   }
 });
 
@@ -190,8 +219,22 @@ app.post('/api/projects/:id/duplicate', async (req, res) => {
 
 // Wrap Express in a bare http.Server so the WebSocket upgrade handler can hook
 // it. attachYWS adds the /yjs/:projectId route + LevelDB persistence.
+// Body-parser failures (an upload over the limit, malformed JSON) answer in
+// JSON the editor can show, not Express's HTML error page.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  if (err?.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'This deck is too large to upload in one request.' });
+  }
+  if (err?.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'The uploaded deck is not valid JSON.' });
+  }
+  console.error('[server] request failed:', err);
+  res.status(500).json({ error: `Request failed: ${err?.message ?? err}` });
+});
+
 const server = http.createServer(app);
-attachYWS(server, storage, shares);
+const collab = attachYWS(server, storage, shares);
 
 server.listen(PORT, () => {
   console.log(`Slides server running on http://localhost:${PORT}`);

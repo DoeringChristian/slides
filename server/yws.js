@@ -29,7 +29,6 @@ import { jsonToYDoc, yDocToJson, restoreStoredYProject } from '../src/collab/ySc
 // Tunables
 // =============================================================================
 
-const LEVELDB_DIR = path.resolve('./data/ydocs');
 const SNAPSHOT_DEBOUNCE_MS = 5000;
 const VALID_PROJECT_ID = /^[A-Za-z0-9_-]{4,64}$/;
 
@@ -37,7 +36,17 @@ const VALID_PROJECT_ID = /^[A-Za-z0-9_-]{4,64}$/;
 // Module state
 // =============================================================================
 
-const persistence = new LeveldbPersistence(LEVELDB_DIR);
+// Opened by attachYWS, in the storage's data directory.
+let persistence = null;
+
+// projectId → what went wrong last, for /api/projects/:id/collab-status.
+// { error, at } for a connection that could not be opened; lastSnapshotAt /
+// lastSnapshotError for the JSON backup copy.
+const health = new Map();
+function noteHealth(projectId, patch) {
+  health.set(projectId, { ...health.get(projectId), ...patch });
+}
+const messageOf = (err) => err?.message ?? String(err);
 
 // Preloaded leveldb state per project. We fetch state inside the upgrade
 // handler (async, before letting the WS connection through) and then apply it
@@ -55,8 +64,19 @@ async function flushSnapshot(doc) {
   if (!state) return Promise.resolve();
   clearTimeout(state.timer);
   state.timer = null;
-  const presentation = yDocToJson(doc);
-  state.pending = state.pending.catch(() => {}).then(() => state.storage.saveProject(presentation));
+  // Read the doc now (it is destroyed once the room closes), but inside the
+  // chain, so a failure to read it is recorded like a failed save.
+  let presentation, readError;
+  try { presentation = yDocToJson(doc); } catch (err) { readError = err; }
+  state.pending = state.pending.catch(() => {}).then(() => {
+    if (readError) throw readError;
+    return state.storage.saveProject(presentation);
+  }).then(
+    () => noteHealth(state.projectId, { lastSnapshotAt: Date.now(), lastSnapshotError: null }),
+    (err) => {
+      noteHealth(state.projectId, { lastSnapshotError: messageOf(err), lastSnapshotErrorAt: Date.now() });
+      throw err;
+    });
   return state.pending;
 }
 
@@ -78,10 +98,16 @@ const wsPersistence = {
   writeState: (docName, doc) => {
     // The transport removes the room immediately after this call. A fresh
     // connection must await its writes before loading a replacement Y.Doc.
-    const closing = Promise.all([pendingWrites.get(docName), flushSnapshot(doc)]).then(() => {});
+    // It must never reject: a failed flush is logged and recorded, and the
+    // next connection opens anyway (LevelDB already holds every update — the
+    // flush only refreshes the JSON backup copy). A rejected promise kept
+    // here once locked a deck out until the server restarted.
+    const closing = Promise.all([pendingWrites.get(docName), flushSnapshot(doc)]).then(
+      () => {},
+      (err) => console.error(`[yws] close flush failed for ${docName}:`, err));
     closingRooms.set(docName, closing);
-    closing.catch(err => console.error(`[yws] close flush failed for ${docName}:`, err));
-    return closing.catch(() => {});
+    closing.then(() => { if (closingRooms.get(docName) === closing) closingRooms.delete(docName); });
+    return closing;
   },
 };
 setPersistence(wsPersistence);
@@ -121,7 +147,11 @@ async function ensureLeveldbBootstrapped(projectId, storage) {
     }
     if (restoreStoredYProject(liveDoc)) {
       await persistence.storeUpdate(projectId, Y.encodeStateAsUpdate(liveDoc));
-      await storage.saveProject(yDocToJson(liveDoc));
+      // Only the JSON backup copy: a failure here must not keep the deck shut.
+      await storage.saveProject(yDocToJson(liveDoc)).catch((err) => {
+        console.error(`[yws] backup copy failed for ${projectId}:`, err);
+        noteHealth(projectId, { lastSnapshotError: messageOf(err), lastSnapshotErrorAt: Date.now() });
+      });
     }
     // Cache the current state so the (synchronous) bindState can apply it
     // before y-websocket runs sync-step-1.
@@ -139,7 +169,7 @@ async function ensureLeveldbBootstrapped(projectId, storage) {
 function subscribeSnapshot(projectId, storage) {
   const doc = docs.get(projectId);
   if (!doc || snapshotStates.has(doc)) return;
-  const state = { storage, timer: null, pending: Promise.resolve() };
+  const state = { storage, projectId, timer: null, pending: Promise.resolve() };
   snapshotStates.set(doc, state);
   doc.on('update', () => {
     clearTimeout(state.timer);
@@ -157,6 +187,8 @@ function subscribeSnapshot(projectId, storage) {
 const MAX_PAYLOAD_BYTES = 512 * 1024 * 1024;
 
 export function attachYWS(httpServer, storage, shares) {
+  const leveldbDir = path.join(storage.dataDir, 'ydocs');
+  persistence = new LeveldbPersistence(leveldbDir);
   // Decks embed their images, so one sync message can be large (a figure
   // with tens of MB of photos); ws's 100 MiB default dropped such decks.
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_PAYLOAD_BYTES });
@@ -173,49 +205,70 @@ export function attachYWS(httpServer, storage, shares) {
     subscribeSnapshot(projectId, storage);
   });
 
-  httpServer.on('upgrade', async (req, socket, head) => {
-    const url = new URL(req.url, 'http://localhost');
-    const match = url.pathname.match(/^\/yjs\/(.+)$/);
-    if (!match) {
-      socket.destroy();
-      return;
-    }
-    const projectId = match[1];
-    if (!VALID_PROJECT_ID.test(projectId)) {
-      socket.destroy();
-      return;
-    }
-
-    // Auth: owner OR holder of a valid share token. Identity arrives via
-    // ?userId=…, share token via ?token=…. Either credential must be valid;
-    // an anonymous (no userId, no token) connection is rejected. Legacy
-    // ownerless projects are still reachable, because userOwnsProject treats
-    // missing ownerId as "any identified user owns it" — but a userId is
-    // still required.
-    const userId = url.searchParams.get('userId');
-    const shareToken = url.searchParams.get('token');
-    const isOwner = userId && (await storage.userOwnsProject(projectId, userId));
-    const tokenOk = shareToken && shares && (await shares.isValid(shareToken, projectId));
-    if (!isOwner && !tokenOk) {
-      console.warn(`[yws] denied: userId=${userId ?? '<none>'} on ${projectId}`);
-      socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
-      socket.destroy();
-      return;
-    }
-
+  // Refuse with a status line the client can log, never a bare hang-up.
+  const refuse = (socket, status, text) => {
     try {
-      await ensureLeveldbBootstrapped(projectId, storage);
-    } catch (err) {
-      console.error(`[yws] cold-start failed for ${projectId}:`, err);
-      socket.destroy();
-      return;
-    }
+      socket.write(`HTTP/1.1 ${status} ${text}\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\n${text}\n`);
+    } catch { /* already gone */ }
+    socket.destroy();
+  };
 
-    req.projectId = projectId;
-    wss.handleUpgrade(req, socket, head, (conn) => {
-      wss.emit('connection', conn, req);
-    });
+  httpServer.on('upgrade', async (req, socket, head) => {
+    socket.on('error', (err) => console.error('[yws] upgrade socket error:', messageOf(err)));
+    let projectId = null;
+    try {
+      const url = new URL(req.url, 'http://localhost');
+      const match = url.pathname.match(/^\/yjs\/(.+)$/);
+      if (!match) return refuse(socket, 404, 'Not Found');
+      projectId = match[1];
+      if (!VALID_PROJECT_ID.test(projectId)) return refuse(socket, 400, 'Bad Request');
+
+      // Auth: owner OR holder of a valid share token. Identity arrives via
+      // ?userId=…, share token via ?token=…. Either credential must be valid;
+      // an anonymous (no userId, no token) connection is rejected. Legacy
+      // ownerless projects are still reachable, because userOwnsProject treats
+      // missing ownerId as "any identified user owns it" — but a userId is
+      // still required.
+      const userId = url.searchParams.get('userId');
+      const shareToken = url.searchParams.get('token');
+      const isOwner = userId && (await storage.userOwnsProject(projectId, userId));
+      const tokenOk = shareToken && shares && (await shares.isValid(shareToken, projectId));
+      if (!isOwner && !tokenOk) {
+        console.warn(`[yws] denied: userId=${userId ?? '<none>'} on ${projectId}`);
+        return refuse(socket, 403, 'Forbidden');
+      }
+
+      await ensureLeveldbBootstrapped(projectId, storage);
+      noteHealth(projectId, { error: null });
+
+      req.projectId = projectId;
+      wss.handleUpgrade(req, socket, head, (conn) => {
+        wss.emit('connection', conn, req);
+      });
+    } catch (err) {
+      console.error(`[yws] could not open ${projectId ?? req.url}:`, err);
+      if (projectId) noteHealth(projectId, { error: `The server could not open this deck: ${messageOf(err)}`, at: Date.now() });
+      refuse(socket, 500, 'Internal Server Error');
+    }
   });
 
-  console.log(`[yws] leveldb at ${LEVELDB_DIR}; snapshot every ${SNAPSHOT_DEBOUNCE_MS}ms`);
+  console.log(`[yws] leveldb at ${leveldbDir}; snapshot every ${SNAPSHOT_DEBOUNCE_MS}ms`);
+
+  return {
+    /** What the editor shows when it cannot connect. */
+    status(projectId) {
+      const h = health.get(projectId) ?? {};
+      return {
+        ok: !h.error,
+        ...(h.error ? { error: h.error } : {}),
+        ...(h.lastSnapshotAt ? { lastSnapshotAt: h.lastSnapshotAt } : {}),
+        ...(h.lastSnapshotError ? { lastSnapshotError: h.lastSnapshotError } : {}),
+      };
+    },
+    /** Close LevelDB (tests). */
+    async close() {
+      wss.close();
+      await persistence?.destroy?.();
+    },
+  };
 }

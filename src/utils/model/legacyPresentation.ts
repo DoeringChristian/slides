@@ -97,5 +97,28 @@ export function upgradeNativePresentation(value: unknown): Presentation {
   }
   for (const slide of [...Object.values(slides), ...Object.values(p.templates)]) delete (slide as LegacySlide).autoAdvance;
   const upgraded = assertPresentation(p);
-  return JSON.stringify(upgraded) === JSON.stringify(original) ? original : upgraded;
+  return jsonEqual(upgraded, original) ? original : upgraded;
+}
+
+/** Whether two values serialize to the same JSON, without serializing them:
+ *  a deck with large embedded media is longer than any one JS string can be
+ *  (~537 M characters), so stringifying it to compare threw and kept the
+ *  server from opening the deck. Key order is ignored. */
+export function jsonEqual(a: unknown, b: unknown): boolean {
+  const norm = (v: unknown) => (typeof v === 'number' && !Number.isFinite(v) ? null : v);
+  a = norm(a); b = norm(b);
+  if (a === b) return true;
+  if (a === null || b === null || typeof a !== 'object' || typeof b !== 'object') return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  if (Array.isArray(a)) {
+    const bb = b as unknown[];
+    if (a.length !== bb.length) return false;
+    // JSON writes null for undefined entries.
+    return a.every((v, i) => jsonEqual(v === undefined ? null : v, bb[i] === undefined ? null : bb[i]));
+  }
+  const ao = a as Record<string, unknown>, bo = b as Record<string, unknown>;
+  const present = (o: Record<string, unknown>) => Object.keys(o).filter(k => o[k] !== undefined && typeof o[k] !== 'function');
+  const ak = present(ao), bk = present(bo);
+  if (ak.length !== bk.length) return false;
+  return ak.every(k => Object.prototype.hasOwnProperty.call(bo, k) && jsonEqual(ao[k], bo[k]));
 }

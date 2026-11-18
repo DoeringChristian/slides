@@ -3,6 +3,7 @@ import type { Awareness } from 'y-protocols/awareness';
 import type { WebsocketProvider } from 'y-websocket';
 import type { Doc as YDoc } from 'yjs';
 import type { Identity } from '../hooks/useIdentity';
+import { explainConnectionFailure } from './collabStatus';
 
 // Real-time collab connection to the server. The whole module is dynamically
 // imported by the consumer (App) so non-server-mode users never pay the
@@ -87,7 +88,7 @@ export function useCollabConnection({ projectId, serverUrl, identity, shareToken
 
       const onSync = (isSynced: boolean) => {
         if (cancelled) return;
-        setState((s) => ({ ...s, ready: isSynced, doc, awareness: provider.awareness, provider }));
+        setState((s) => ({ ...s, ready: isSynced, doc, awareness: provider.awareness, provider, error: isSynced ? null : s.error }));
       };
       const onStatus = (e: { status: string }) => {
         if (cancelled) return;
@@ -101,9 +102,19 @@ export function useCollabConnection({ projectId, serverUrl, identity, shareToken
         const peerCount = Math.max(0, provider.awareness.getStates().size - 1);
         setState((s) => ({ ...s, peerCount }));
       };
+      // y-websocket retries in a loop and reports each failure as a bare
+      // Event: ask the server why once per burst, not on every retry.
+      let explaining = false;
       const onError = (err: unknown) => {
-        if (cancelled) return;
-        setState((s) => ({ ...s, error: (err as Error)?.message ?? String(err) }));
+        if (cancelled || explaining) return;
+        if (err instanceof Error) {
+          setState((s) => ({ ...s, error: err.message }));
+          return;
+        }
+        explaining = true;
+        void explainConnectionFailure(serverUrl, projectId, identity.userId, shareToken).then((message) => {
+          if (!cancelled) setState((s) => ({ ...s, error: message }));
+        }).finally(() => { setTimeout(() => { explaining = false; }, 5000); });
       };
 
       provider.on('sync', onSync);
