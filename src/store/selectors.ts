@@ -1,9 +1,10 @@
+import { findBoundText } from '../utils/model/syncDependents';
 import { useMemo, useCallback } from 'react';
 import { usePresentationStore } from './presentationStore';
 import { useEditorStore } from './editorStore';
 import { groupRuns } from '../utils/animation/presenterAdvance';
 import type { GroupRun } from '../utils/animation/presenterAdvance';
-import type { Slide, SlideElement, ObjectMeta } from '../types/presentation';
+import type { Slide, SlideElement, ObjectMeta, TextElement } from '../types/presentation';
 
 // Slide-group runs: the pure computation lives in utils/presenterAdvance
 // (shared with the presenter chain + store post-pass); re-exported here so
@@ -35,6 +36,18 @@ export function useSelectedElements(): SlideElement[] {
   const slide = usePresentationStore((s) => s.presentation.slides[activeSlideId]);
   if (!slide) return [];
   return selectedIds.map((id) => slide.elements[id]).filter(Boolean);
+}
+
+/** The text a single selection edits: a selected text element, or a
+ *  selected shape's label (bound text) — so a shape with text offers the
+ *  same text controls (font, size, …) as text does. */
+export function useSelectedTextTarget(): TextElement | null {
+  const selected = useSelectedElements();
+  const slide = useActiveSlide();
+  if (selected.length !== 1 || !slide) return null;
+  const [el] = selected;
+  if (el.type === 'text') return el;
+  return el.type === 'shape' ? findBoundText(slide, el.id) : null;
 }
 
 export function usePreviousSlideElement(elementId: string): SlideElement | undefined {

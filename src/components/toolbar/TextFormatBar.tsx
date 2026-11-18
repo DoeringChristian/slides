@@ -1,7 +1,7 @@
 import React from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { updateElementFromCurrent, type CurrentChange } from '../../store/currentMutation';
-import { useSelectedElements } from '../../store/selectors';
+import { useSelectedTextTarget } from '../../store/selectors';
 import { ColorPicker } from './ColorPicker';
 import { ScrubInput } from '../controls/ScrubInput';
 import { useScrubCommit } from '../controls/useScrubCommit';
@@ -44,10 +44,9 @@ const FontSizeInput: React.FC<{
 
 export const TextFormatBar: React.FC = () => {
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
-  const selectedElements = useSelectedElements();
-
-  const textEl = selectedElements[0] as TextElement | undefined;
-  if (!textEl || textEl.type !== 'text') return null;
+  // A selected text, or a selected shape's label.
+  const textEl = useSelectedTextTarget();
+  if (!textEl) return null;
 
   const style = textEl.style;
 

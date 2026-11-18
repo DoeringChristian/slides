@@ -3,7 +3,7 @@ import { CreationProperties } from './CreationProperties';
 import { creationKeyForTool, useCreationPreferences } from '../../store/creationPreferences';
 import React from 'react';
 import { ArrowLeft, ArrowRight } from 'lucide-react';
-import { useSelectedElements, useActiveSlide, usePreviousSlideElement, useNextSlideElement } from '../../store/selectors';
+import { useSelectedElements, useActiveSlide, usePreviousSlideElement, useNextSlideElement, useSelectedTextTarget } from '../../store/selectors';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
 import { TextProperties } from './TextProperties';
@@ -26,6 +26,8 @@ export const PropertiesPanel: React.FC = () => {
   const selected = useSelectedElements();
   const slide = useActiveSlide();
   const element = selected.length === 1 ? selected[0] : null;
+  const textTarget = useSelectedTextTarget();
+  const label = element?.type === 'shape' ? textTarget : null;
   const prevElement = usePreviousSlideElement(element?.id || '');
   const nextElement = useNextSlideElement(element?.id || '');
   const activeSlideId = useEditorStore((s) => s.activeSlideId);
@@ -96,6 +98,12 @@ export const PropertiesPanel: React.FC = () => {
           <>
             {element.type === 'text' && <TextProperties element={element} />}
             {element.type === 'shape' && <ShapeProperties element={element} />}
+            {/* A shape with text: its label's text settings too. */}
+            {element.type === 'shape' && label && (
+              <div className="pt-3 border-t border-gray-200" data-shape-label-properties="">
+                <TextProperties element={label} />
+              </div>
+            )}
             {element.type === 'image' && <ImageProperties element={element} />}
             {showMorphRow && (
               <div>

@@ -4,7 +4,7 @@ import { IconsMenu } from './IconsMenu';
 import React from 'react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
-import { useSelectedElements } from '../../store/selectors';
+import { useSelectedElements, useSelectedTextTarget } from '../../store/selectors';
 import { TextFormatBar } from './TextFormatBar';
 import { AlignmentTools } from './AlignmentTools';
 import { ShapeMenu as _ShapeMenu } from './ShapeMenu';
@@ -125,7 +125,7 @@ export const Toolbar: React.FC = () => {
     }
   };
 
-  const showTextFormat = selectedElements.length === 1 && selectedElements[0].type === 'text';
+  const showTextFormat = !!useSelectedTextTarget();
 
   return (
     <div className="min-h-10 bg-white border-b border-gray-200 flex items-center flex-wrap overflow-x-auto px-2 gap-1 shrink-0">
