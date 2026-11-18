@@ -68,6 +68,32 @@ try {
     const a=createTextElement({text:'Hello',height:200});const doc=await layoutUserText(a);const flow=textFlowSnapBounds(a);
     return {flow,docHeight:doc.height,rotated:textFlowSnapBounds({...a,rotation:30}),bound:textFlowSnapBounds({...a,containerId:'shape'})};
   })()`);
+  // A rotated object snaps by what it draws: a 90°-turned text box (180×40,
+  // drawn 40×180 about its centre) brings its drawn left edge to a rect's
+  // right edge, and a rect snaps to its drawn bottom.
+  for(const collab of [false,true]){
+    await setup({mode:'production',collab,snap:true,empty:true,targets:[
+      {id:'wall',x:100,y:100,width:100,height:300,fill:'#3366cc'},
+      {id:'turned',type:'text',x:200,y:500,width:180,height:40,rotation:90,text:'Turned'},
+      {id:'box',x:600,y:120,width:80,height:80,fill:'#cc3333'}]});
+    await evaluate("canvasTest.store.getState().updateElement(canvasTest.editor.getState().activeSlideId,'turned',{width:180,height:40,rotation:90})");await wait(150);
+    const t=await evaluate('canvasTest.snapshot().slide.elements.turned');
+    const drawn=()=>evaluate(`(async()=>{const {textFlowSnapBounds}=await import('/src/utils/snapping/textFlowSnap.ts');return textFlowSnapBounds(canvasTest.snapshot().slide.elements.turned)})()`);
+    const before=await drawn();
+    assert(Math.abs(before.width-t.height)<.01&&Math.abs(before.height-t.width)<.01,'snap box is the drawn (rotated) extent '+JSON.stringify(before));
+    // Drag so the drawn left edge lands 3px right of the wall (x=200).
+    const grab={x:t.x+t.width/2,y:t.y+t.height/2};
+    await drag(await screen(grab.x,grab.y),await screen(grab.x+(203-before.x),grab.y-150));
+    const after=await drawn();
+    assert(Math.abs(after.x-200)<.01,'rotated text snaps its drawn left edge to the wall '+JSON.stringify(after));
+    // A rect dragged under it snaps its top to the text's drawn bottom.
+    const box=await evaluate('canvasTest.snapshot().slide.elements.box');
+    const bottom=after.y+after.height;
+    await drag(await screen(box.x+40,box.y+40),await screen(box.x+40,box.y+40+(bottom+3-box.y)));
+    const moved=await evaluate('canvasTest.snapshot().slide.elements.box');
+    assert(Math.abs(moved.y-bottom)<.01,'a rect snaps to the rotated text’s drawn bottom '+JSON.stringify({moved,bottom}));
+    console.log('PASS rotated objects snap by their drawn extent collab='+collab);
+  }
   assert.equal(layout.flow.textFlow.bottom-layout.flow.textFlow.top,layout.docHeight);
   assert(layout.flow.textFlow.bottom<200);assert(!layout.rotated.textFlow);assert(!layout.bound.textFlow);
   assert.deepEqual(runtimeErrors,[]);

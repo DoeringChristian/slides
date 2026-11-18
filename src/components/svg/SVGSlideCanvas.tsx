@@ -375,10 +375,13 @@ export const SVGSlideCanvas: React.FC = () => {
     // dragged set shows — a group as a whole, a cropped image by its visible
     // area — moved along with the grabbed element.
     const start = dragStartPositions.current.get(id) ?? { x: el.x, y: el.y };
-    const extent = draggedIds.size > 1 && !cropping ? draggedExtent(draggedIds, source!.elements, e => dragStartPositions.current.get(e.id) ?? e) : null;
+    // A rotated element snaps by its drawn extent, offset from its own x/y.
+    const startEl = { ...el, ...start } as SlideElement;
+    const extent = draggedIds.size > 1 && !cropping ? draggedExtent(draggedIds, source!.elements, e => dragStartPositions.current.get(e.id) ?? e)
+      : textFlowSnapBounds(startEl);
     const offset = extent ? { x: extent.x - start.x, y: extent.y - start.y } : { x: 0, y: 0 };
-    const dragged = extent ? { width: extent.width, height: extent.height, centerOnly: false, x: x + offset.x, y: y + offset.y }
-      : { ...(draggedIds.size === 1 ? textFlowSnapBounds(el) : { width: el.width, height: el.height, centerOnly: false }), x, y };
+    const dragged = extent ? { ...extent, centerOnly: draggedIds.size === 1 && !!extent.centerOnly, x: x + offset.x, y: y + offset.y }
+      : { width: el.width, height: el.height, centerOnly: false, x, y };
     const raw = computeGuides(dragged, others, screenPixelsToSlide(SNAP_DISTANCE_PX, zoom), marginBounds, snapViewport(svgRef.current));
     const result = { ...raw, snapX: raw.snapX === null ? null : raw.snapX - offset.x, snapY: raw.snapY === null ? null : raw.snapY - offset.y };
 
