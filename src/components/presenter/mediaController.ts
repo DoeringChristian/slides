@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { Resource, Slide } from '../../types/presentation';
 import { arriveAtSlide, clockTime, type MediaClock } from '../../utils/animation/mediaPlayback';
-import { startDiag } from './diag';
 
 // The presenter's media controller: drives the mounted <video> elements by
 // the playback clocks of utils/animation/mediaPlayback (see there).
@@ -79,7 +78,6 @@ export function useMediaController(
   }, [command]);
 
   useEffect(() => {
-    startDiag();
     let frame = 0;
     const correcting = new WeakSet<HTMLVideoElement>();
     const running = new WeakSet<HTMLVideoElement>();
