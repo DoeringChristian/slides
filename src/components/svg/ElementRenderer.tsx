@@ -4,7 +4,7 @@ import { SVGStrokeCoverage } from './SVGStrokeCoverage';
 import { resolveShapePaint, rectangleRadii } from '../../utils/paint/shapePaint';
 import { resolveShapeGeometry } from '../../utils/geometry/vectorGeometry';
 import { getRotationCenter } from '../../utils/geometry/geometry';
-import React, { memo, useId } from 'react';
+import React, { memo, useEffect, useId, useRef } from 'react';
 import { useMediaStill, useVideoPoster } from './mediaSources';
 import { useMediaSource } from '../../media/useMediaSource';
 import { ShapeFillPaint } from './ShapeFillPaint';
@@ -286,25 +286,83 @@ function ImageMedia({ resource, style }: { resource: Resource; style: React.CSSP
   return <img src={url} alt="" style={style} draggable={false} />;
 }
 
-/** A video's media: the live player (one shared blob URL per source — see
- *  mediaSources), or in a still render its poster frame at the segment start. */
+/** A video's media: the live player, drawn into a canvas the size it is on
+ *  screen (see useVideoCanvas), or in a still render its poster frame at the
+ *  segment start. */
 function VideoMedia({ resource, element, style, autoPlay }: { resource: Resource; element: ImageElement; style: React.CSSProperties; autoPlay: boolean }) {
   const still = useMediaStill();
   const { url } = useMediaSource(still ? undefined : resource);
   const poster = useVideoPoster(still ? resource.hash : undefined, element.playFrom ?? 0);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useVideoCanvas(videoRef, canvasRef, url);
   if (still) return poster ? <img src={poster} alt="" style={style} draggable={false} /> : null;
   if (!url) return null;
-  return <video
-    src={url}
-    style={style}
-    // Playback (seek, play, pause, loop) is driven by the media
-    // controller by this id; it plays on its own only when asked.
-    data-media-id={element.id}
-    autoPlay={autoPlay}
-    muted={element.muted ?? true}
-    playsInline
-    preload="metadata"
-  />;
+  return <>
+    <video
+      ref={videoRef}
+      src={url}
+      // Hidden, not removed: it decodes, plays the audio, and is what the
+      // media controller drives (seek, play, pause, loop) by this id.
+      style={{ ...style, position: 'absolute', left: 0, top: 0, visibility: 'hidden' }}
+      data-media-id={element.id}
+      autoPlay={autoPlay}
+      muted={element.muted ?? true}
+      playsInline
+      preload="metadata"
+    />
+    <canvas ref={canvasRef} data-video-canvas={element.id} style={style} />
+  </>;
+}
+
+/**
+ * Draw each new frame of `video` into `canvas`, at the canvas's size on
+ * screen. A <video> inside the slide's SVG makes Chrome repaint the slide for
+ * every new frame of any video, scaling each full-size frame as it goes: with
+ * six 2592-px videos the page fell from 120 to 30 redraws a second, and frames
+ * showed unevenly (stutter). Drawn here, each frame is scaled once, on the
+ * GPU, into a canvas no larger than it appears — the slide's repaint then only
+ * handles that small image. The file itself plays untouched.
+ */
+function useVideoCanvas(videoRef: React.RefObject<HTMLVideoElement | null>, canvasRef: React.RefObject<HTMLCanvasElement | null>, url: string | undefined) {
+  useEffect(() => {
+    const video = videoRef.current, canvas = canvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (!video || !canvas || !ctx) return;
+    let live = true, handle = 0;
+    // Pixels as shown (the slide's scale and the screen's density), never
+    // more than the video has.
+    const fit = () => {
+      const box = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const w = Math.max(1, Math.round(Math.min(box.width * dpr, video.videoWidth || Infinity)));
+      const h = Math.max(1, Math.round(Math.min(box.height * dpr, video.videoHeight || Infinity)));
+      if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+    };
+    const draw = () => {
+      if (video.readyState < 2) return;
+      fit();
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    };
+    const supportsFrames = 'requestVideoFrameCallback' in video;
+    const next = () => {
+      if (!live) return;
+      draw();
+      handle = supportsFrames ? video.requestVideoFrameCallback(next) : requestAnimationFrame(next);
+    };
+    handle = supportsFrames ? video.requestVideoFrameCallback(next) : requestAnimationFrame(next);
+    // A paused video presents no frames: draw what a seek or load shows.
+    const events = ['loadeddata', 'seeked'] as const;
+    for (const e of events) video.addEventListener(e, draw);
+    window.addEventListener('resize', draw);
+    draw();
+    return () => {
+      live = false;
+      if (supportsFrames) video.cancelVideoFrameCallback(handle); else cancelAnimationFrame(handle);
+      for (const e of events) video.removeEventListener(e, draw);
+      window.removeEventListener('resize', draw);
+    };
+  }, [videoRef, canvasRef, url]);
 }
 
 export const RenderImage: React.FC<ImageProps> = memo(({ element, resource, videoAutoplay }) => {
