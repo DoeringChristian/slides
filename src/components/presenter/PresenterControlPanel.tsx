@@ -151,11 +151,12 @@ export const PresenterControlPanel: React.FC = () => {
     const pos = visibleIndices.indexOf(presentingSlideIndex);
     const prevPos = pos === -1 ? [...visibleIndices].reverse().find((i) => i < presentingSlideIndex) : visibleIndices[pos - 1];
     if (prevPos !== undefined) {
-      // Going back suppresses the timed chain
+      // Going back suppresses the timed chain, and never plays a transition
+      // backwards: it cuts straight to the previous slide (on both screens).
       setChainEnabled(false);
-      startAnimation(prevPos);
+      goToSlide(prevPos);
     }
-  }, [presentingSlideIndex, visibleIndices, isAnimating, startAnimation]);
+  }, [presentingSlideIndex, visibleIndices, isAnimating, goToSlide]);
 
   // Slide-group timed chain (single shared implementation with PresenterView).
   // startAnimation drives the audience over BroadcastChannel exactly like a

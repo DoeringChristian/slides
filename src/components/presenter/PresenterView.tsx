@@ -119,11 +119,12 @@ export const PresenterView: React.FC = () => {
     const pos = visibleIndices.indexOf(currentIndex);
     const prevPos = pos === -1 ? [...visibleIndices].reverse().find((i) => i < currentIndex) : visibleIndices[pos - 1];
     if (prevPos !== undefined) {
-      // Going back suppresses the timed chain
+      // Going back suppresses the timed chain, and never plays a transition
+      // backwards: it cuts straight to the previous slide.
       setChainEnabled(false);
-      startAnimation(prevPos);
+      setPresentingSlideIndex(prevPos);
     }
-  }, [currentIndex, visibleIndices, isAnimating, startAnimation]);
+  }, [currentIndex, visibleIndices, isAnimating, setPresentingSlideIndex]);
 
   const exitPresentation = useCallback(() => {
     cancelAnimation();

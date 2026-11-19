@@ -5,8 +5,15 @@ import { arriveAtSlide, clockTime, type MediaClock } from '../../utils/animation
 // The presenter's media controller: drives the mounted <video> elements by
 // the playback clocks of utils/animation/mediaPlayback (see there).
 
-/** Seconds a mounted video may drift from its clock before it is re-seeked. */
-const DRIFT = 0.3;
+/** Seconds between a video and its clock beyond which the clock moved on
+ *  its own (a new keyframe, a manual seek): the video jumps there. Closer than
+ *  that, a playing video sets the time — it is never rushed or jumped while it
+ *  plays, which shows as stutter. */
+const JUMP = 1;
+/** Seconds a still (paused) video may be off its frame before it jumps. */
+const STILL_DRIFT = 1 / 60;
+/** Within this, a playing video and its clock count as in step. */
+const IN_STEP = 0.05;
 
 /**
  * Drive the videos mounted under `container` by keyframe: when `slide`
@@ -49,7 +56,25 @@ export function useMediaController(
         const clock = clocks.current.get(video.dataset.mediaId!);
         if (!clock) { if (!video.paused) video.pause(); return; }
         const { time, moving } = clockTime(clock, now);
-        if (Number.isFinite(time) && Math.abs(video.currentTime - time) > DRIFT && video.readyState >= 1) video.currentTime = time;
+        if (Number.isFinite(time) && video.readyState >= 1) {
+          const id = video.dataset.mediaId!;
+          const off = Math.abs(time - video.currentTime);
+          // Past the end of its stretch while the clock looped back: jump too.
+          const wrapped = moving && video.currentTime >= clock.to - 1e-3 && off > IN_STEP;
+          if (!video.seeking && (off > (moving ? JUMP : STILL_DRIFT) || wrapped)) {
+            // The clock moved on by itself (a new keyframe, a loop, a manual
+            // seek): the video jumps there, once.
+            video.currentTime = time;
+          } else if (moving && (video.seeking || video.readyState < 3)) {
+            // Still getting there (decoding from the keyframe before it) or
+            // buffering: the clock waits, so the video then plays at its own
+            // speed instead of rushing to catch up.
+            clocks.current.set(id, { ...clock, anchor: video.currentTime, at: now });
+          } else if (moving && off > IN_STEP) {
+            // Playing, a little off: the video is the time.
+            clocks.current.set(id, { ...clock, anchor: video.currentTime, at: now });
+          }
+        }
         if (moving && video.paused) video.play().catch(() => { video.muted = true; video.play().catch(() => {}); });
         else if (!moving && !video.paused) video.pause();
       });

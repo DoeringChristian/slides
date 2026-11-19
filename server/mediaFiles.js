@@ -78,7 +78,9 @@ export function createMediaFiles(dataDir) {
         if (!SHA.test(name) || referenced.has(name)) continue;
         const file = path.join(dirOf(projectId), name);
         const st = await stat(file);
-        if (st && now - st.mtimeMs >= graceMs) {
+        // (A zero grace prunes at once: a file's timestamp can be a fraction
+        // of a millisecond ahead of the clock.)
+        if (st && (graceMs <= 0 || now - st.mtimeMs >= graceMs)) {
           await fs.rm(file, { force: true });
           await fs.rm(`${file}.type`, { force: true });
         }
