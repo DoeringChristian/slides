@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { Resource, Slide } from '../../types/presentation';
 import { arriveAtSlide, clockTime, type MediaClock } from '../../utils/animation/mediaPlayback';
+import { startDiag } from './diag';
 
 // The presenter's media controller: drives the mounted <video> elements by
 // the playback clocks of utils/animation/mediaPlayback (see there).
@@ -50,7 +51,7 @@ export function useMediaController(
   useEffect(() => { live.current = resources; }, [resources]);
 
   // Videos that start on this keyframe, until they have all got there.
-  const starting = useRef<{ ids: Set<string>; since: number; allMounted: number; primed: number }>({ ids: new Set(), since: 0, allMounted: 0, primed: 0 });
+  const starting = useRef<{ ids: Set<string>; since: number; allMounted: number; primed: number; seeked: WeakSet<HTMLVideoElement> }>({ ids: new Set(), since: 0, allMounted: 0, primed: 0, seeked: new WeakSet() });
 
   // A new keyframe: each video's clock moves on by that keyframe's playback.
   useEffect(() => {
@@ -63,7 +64,7 @@ export function useMediaController(
       const prev = before.get(id) && clockTime(before.get(id)!, now);
       if (clock.playing && (!prev || !prev.moving || Math.abs(prev.time - clock.anchor) > IN_STEP)) ids.add(id);
     }
-    starting.current = { ids, since: now, allMounted: 0, primed: 0 };
+    starting.current = { ids, since: now, allMounted: 0, primed: 0, seeked: new WeakSet() };
   }, [slide]);
 
   // Manual controls apply to every video on screen.
@@ -78,9 +79,12 @@ export function useMediaController(
   }, [command]);
 
   useEffect(() => {
+    startDiag();
     let frame = 0;
     const correcting = new WeakSet<HTMLVideoElement>();
     const running = new WeakSet<HTMLVideoElement>();
+    // Videos just started together, until they have all visibly moved.
+    let settling: { ids: Set<string>; until: number; startAt: Map<string, number> } | null = null;
     const tick = () => {
       const now = performance.now();
       const mounted = [...(container.current?.querySelectorAll<HTMLVideoElement>('video[data-media-id]') ?? [])];
@@ -94,13 +98,15 @@ export function useMediaController(
           const clock = clocks.current.get(id);
           if (!clock) return true;
           const videos = mounted.filter(v => v.dataset.mediaId === id);
-          return videos.length > 0 && videos.every(v => !v.seeking && v.readyState >= 3 &&
+          return videos.length > 0 && videos.every(v => start.seeked.has(v) && !v.seeking && v.readyState >= 3 &&
             Math.abs(v.currentTime - clock.anchor) <= EXACT);
         };
         const onScreen = [...start.ids].every(id => !clocks.current.has(id) || mounted.some(v => v.dataset.mediaId === id && v.readyState >= 1));
         if (onScreen && !start.allMounted) start.allMounted = now;
         const members = mounted.filter(v => start.ids.has(v.dataset.mediaId!));
         const release = () => {
+          settling = { ids: new Set(start.ids), until: now + 1000,
+            startAt: new Map([...start.ids].flatMap(id => { const c = clocks.current.get(id); return c ? [[id, c.anchor] as [string, number]] : []; })) };
           for (const v of members) v.playbackRate = 1;
           for (const id of start.ids) { const c = clocks.current.get(id); if (c) clocks.current.set(id, { ...c, at: now }); }
           start.ids = new Set();
@@ -130,9 +136,34 @@ export function useMediaController(
             for (const v of mounted) {
               if (v.dataset.mediaId !== id) continue;
               if (!v.paused) v.pause();
-              if (v.readyState >= 1 && !v.seeking && Math.abs(v.currentTime - clock.anchor) > EXACT) v.currentTime = clock.anchor;
+              // Each one is seeked to its first frame, even when it already
+              // shows it: a video paused a while (at the end of its last
+              // stretch) reports itself ready and playing at once, yet starts
+              // moving a few hundred ms later. After a seek, "ready" is true.
+              if (v.seeking) start.seeked.add(v);
+              else if (v.readyState >= 1 && (!start.seeked.has(v) || Math.abs(v.currentTime - clock.anchor) > EXACT)) {
+                start.seeked.add(v);
+                v.currentTime = clock.anchor;
+              }
             }
           }
+        }
+      }
+      // Once all of a group started together are moving, their clocks take
+      // the group's actual position: a delay they share (the decoder taking a
+      // moment to get going) moves the clock, not the videos, so they are
+      // never rushed to catch up with it.
+      if (settling) {
+        const group = mounted.filter(v => settling!.ids.has(v.dataset.mediaId!) && clocks.current.has(v.dataset.mediaId!));
+        const leads = group.map(v => v.currentTime - clockTime(clocks.current.get(v.dataset.mediaId!)!, now).time);
+        if (now > settling.until || !group.length) settling = null;
+        else if (group.every(v => !v.paused && v.currentTime > (settling!.startAt.get(v.dataset.mediaId!) ?? 0) + EXACT)) {
+          const lead = leads.reduce((a, b) => a + b, 0) / leads.length;
+          for (const id of settling.ids) {
+            const c = clocks.current.get(id);
+            if (c) clocks.current.set(id, { ...c, anchor: clockTime(c, now).time + lead, at: now });
+          }
+          settling = null;
         }
       }
       mounted.forEach(video => {
