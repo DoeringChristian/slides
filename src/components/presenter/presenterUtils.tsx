@@ -3,10 +3,11 @@ import { isWrapperMode, wrapVisualFx } from '../svg/visualFx';
 import { GroupCrop } from '../svg/GroupCrop';
 import { followCropMedia, groupCropPaint, type GroupCropElement } from '../../utils/model/groupCrop';
 import { followGroups } from '../../utils/model/groupFollow';
-import React, { useRef, useState, useCallback, useEffect, useId } from 'react';
+import React, { useContext, useRef, useState, useCallback, useEffect, useId } from 'react';
 import { planLayerFade, type LayerFadePlan } from '../../utils/animation/layerFade';
 import { Play, Pause } from 'lucide-react';
 import { useMediaSource } from '../../media/useMediaSource';
+import { useMediaStill, useVideoPoster, VideoMirrorContext, type VideoMirror } from '../svg/mediaSources';
 import { RenderShape, RenderImage } from '../svg/ElementRenderer';
 import { RenderMorph } from '../svg/RenderMorph';
 import { SVGTextPaths } from '../svg/SVGTextPaths';
@@ -420,7 +421,76 @@ interface VideoWithControlsProps {
   onVideoCommand?: (action: 'play' | 'pause' | 'seek', currentTime?: number) => void;
 }
 
-const VideoWithControls: React.FC<VideoWithControlsProps> = ({
+
+/** Draw `source` into `canvas` like object-fit: cover. */
+function drawCover(canvas: HTMLCanvasElement, source: HTMLVideoElement) {
+  const box = canvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.max(1, Math.round(box.width * dpr)), h = Math.max(1, Math.round(box.height * dpr));
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  const vw = source.videoWidth, vh = source.videoHeight;
+  if (!vw || !vh) return;
+  const k = Math.max(w / vw, h / vh);
+  const sw = w / k, sh = h / k;
+  canvas.getContext('2d')?.drawImage(source, (vw - sw) / 2, (vh - sh) / 2, sw, sh, 0, 0, w, h);
+}
+
+const VideoWithControls: React.FC<VideoWithControlsProps> = (props) => {
+  const mirror = useContext(VideoMirrorContext);
+  const still = useMediaStill();
+  if (still) return <VideoStill {...props} />;
+  return mirror ? <MirroredVideo {...props} mirror={mirror} /> : <OwnVideo {...props} />;
+};
+
+/** A still render (thumbnails, the next-slide preview): the poster frame. */
+const VideoStill: React.FC<VideoWithControlsProps> = ({ resource, videoStyle, containerStyle }) => {
+  const poster = useVideoPoster(resource.hash);
+  const outer = containerStyle || videoStyle;
+  return <div style={{ ...outer, position: outer.position || 'absolute' }}>
+    {poster && <img src={poster} alt="" draggable={false} style={{ width: '100%', height: '100%', objectFit: (videoStyle.objectFit as React.CSSProperties['objectFit']) || 'cover' }} />}
+  </div>;
+};
+
+/** The audience's frames, with the same controls (sent to the audience). */
+const MirroredVideo: React.FC<VideoWithControlsProps & { mirror: VideoMirror }> = ({ mediaId, videoStyle, containerStyle, onVideoCommand, mirror }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [isHovered, setIsHovered] = useState(false);
+  useEffect(() => {
+    let frame = 0;
+    const update = () => {
+      const v = mirror(mediaId);
+      const canvas = canvasRef.current;
+      if (v && canvas && v.readyState >= 2) {
+        drawCover(canvas, v);
+        if (v.duration) setProgress(v.currentTime / v.duration);
+        setIsPlaying(!v.paused && !v.ended);
+      }
+      frame = requestAnimationFrame(update);
+    };
+    frame = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(frame);
+  }, [mirror, mediaId]);
+  const outer = containerStyle || videoStyle;
+  return (
+    <div style={{ ...outer, position: outer.position || 'absolute' }}
+      onMouseEnter={() => setIsHovered(true)} onMouseLeave={() => setIsHovered(false)}>
+      <canvas ref={canvasRef} data-video-mirror={mediaId} style={{ width: '100%', height: '100%', display: 'block' }} />
+      {isHovered && <VideoControlsOverlay isPlaying={isPlaying} progress={progress}
+        onToggle={(e) => { e.stopPropagation(); const v = mirror(mediaId); onVideoCommand?.(isPlaying ? 'pause' : 'play', v?.currentTime); }}
+        onSeek={(e) => {
+          e.stopPropagation();
+          const v = mirror(mediaId);
+          if (!v?.duration) return;
+          const rect = e.currentTarget.getBoundingClientRect();
+          onVideoCommand?.('seek', Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) * v.duration);
+        }} />}
+    </div>
+  );
+};
+
+const OwnVideo: React.FC<VideoWithControlsProps> = ({
   resource,
   mediaId,
   muted,
@@ -518,12 +588,22 @@ const VideoWithControls: React.FC<VideoWithControlsProps> = ({
         }}
       />
 
-      {/* Controls overlay */}
-      {isHovered && (
+      {isHovered && <VideoControlsOverlay isPlaying={isPlaying} progress={progress} onToggle={togglePlayPause} onSeek={handleSeek} />}
+    </div>
+  );
+};
+
+/** Play / pause and a progress bar, over a preview's video. */
+const VideoControlsOverlay: React.FC<{
+  isPlaying: boolean;
+  progress: number;
+  onToggle: (e: React.MouseEvent) => void;
+  onSeek: (e: React.MouseEvent<HTMLDivElement>) => void;
+}> = ({ isPlaying, progress, onToggle, onSeek }) => (
         <>
           {/* Play/Pause button */}
           <button
-            onClick={togglePlayPause}
+            onClick={onToggle}
             style={{
               position: 'absolute',
               top: '50%',
@@ -547,7 +627,7 @@ const VideoWithControls: React.FC<VideoWithControlsProps> = ({
 
           {/* Progress bar */}
           <div
-            onClick={handleSeek}
+            onClick={onSeek}
             style={{
               position: 'absolute',
               bottom: 0,
@@ -568,10 +648,7 @@ const VideoWithControls: React.FC<VideoWithControlsProps> = ({
             />
           </div>
         </>
-      )}
-    </div>
-  );
-};
+);
 
 // ============================================================================
 // SlideRenderer - Reusable component for rendering slides with video support

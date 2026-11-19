@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { X, ChevronLeft, ChevronRight, RotateCcw, Monitor, Hash } from 'lucide-react';
 import { useEditorStore } from '../../store/editorStore';
 import { usePresentationStore } from '../../store/presentationStore';
@@ -7,6 +7,8 @@ import { useSlideAnimation } from '../../hooks/useSlideAnimation';
 import { useAutoAdvanceChain } from '../../hooks/useAutoAdvanceChain';
 import { manualNextTarget } from '../../utils/animation/presenterAdvance';
 import { SlideRenderer } from './presenterUtils';
+import { MediaStillContext, VideoMirrorContext, type VideoMirror } from '../svg/mediaSources';
+import { getAudienceWindow } from '../../hooks/usePresenterMode';
 import { useMediaController } from './mediaController';
 import { SLIDE_WIDTH, SLIDE_HEIGHT } from '../../utils/constants';
 import type { Slide, Resource } from '../../types/presentation';
@@ -33,13 +35,30 @@ interface SlidePreviewProps {
   onClick?: () => void;
 }
 
+/** The audience window's video for a media id, while that window is open. */
+function useAudienceMirror(enabled: boolean | undefined): VideoMirror | null {
+  const [open, setOpen] = useState(() => !!getAudienceWindow());
+  useEffect(() => {
+    if (!enabled) return;
+    const id = window.setInterval(() => setOpen(!!getAudienceWindow()), 500);
+    return () => clearInterval(id);
+  }, [enabled]);
+  return useMemo<VideoMirror | null>(() => (enabled && open)
+    ? (mediaId) => getAudienceWindow()?.document.querySelector<HTMLVideoElement>(`video[data-media-id="${CSS.escape(mediaId)}"]`) ?? null
+    : null, [enabled, open]);
+}
+
 const SlidePreview: React.FC<SlidePreviewProps> = ({ slide, scale, label, resources, autoPlayVideos, onVideoCommand, onClick }) => {
   // The current slide's videos play as the audience's do (the same media
   // controller); the next-slide preview stays still. Manual play / pause /
   // seek on a player go to the controller too, so it does not undo them.
   const frameRef = useRef<HTMLDivElement>(null);
   const [command, setCommand] = useState<{ action: 'play' | 'pause' | 'seek'; currentTime?: number } | null>(null);
-  useMediaController(frameRef, autoPlayVideos ? slide : null, resources, command);
+  // With the audience window open, the current slide shows its frames
+  // (VideoMirrorContext) and plays nothing itself; without it, it plays its
+  // own videos.
+  const mirror = useAudienceMirror(autoPlayVideos);
+  useMediaController(frameRef, autoPlayVideos && !mirror ? slide : null, resources, command);
   if (!slide) {
     return (
       <div className="flex flex-col">
@@ -62,13 +81,17 @@ const SlidePreview: React.FC<SlidePreviewProps> = ({ slide, scale, label, resour
         className={`rounded overflow-hidden border-2 border-gray-700 ${onClick ? 'cursor-pointer hover:border-gray-500' : ''}`}
         onClick={onClick}
       >
-        <SlideRenderer
-          slide={slide}
-          width={SLIDE_WIDTH * scale}
-          height={SLIDE_HEIGHT * scale}
-          resources={resources}
-          onVideoCommand={(action, currentTime) => { setCommand({ action, currentTime }); onVideoCommand?.(action, currentTime); }}
-        />
+        <MediaStillContext.Provider value={!autoPlayVideos}>
+          <VideoMirrorContext.Provider value={mirror}>
+            <SlideRenderer
+              slide={slide}
+              width={SLIDE_WIDTH * scale}
+              height={SLIDE_HEIGHT * scale}
+              resources={resources}
+              onVideoCommand={(action, currentTime) => { if (!mirror) setCommand({ action, currentTime }); onVideoCommand?.(action, currentTime); }}
+            />
+          </VideoMirrorContext.Provider>
+        </MediaStillContext.Provider>
       </div>
     </div>
   );
@@ -125,7 +148,7 @@ export const PresenterControlPanel: React.FC = () => {
 
   const { isAnimating, start: startWithIndices } = useSlideAnimation({
     getDuration: (target) => slides[slideOrder[target]]?.transition.duration || 300,
-    onFrame: (t, target) => sendAnimationState(true, t, target),
+    onFrame: (t, target) => sendAnimationState(true, t, target, slides[slideOrder[target]]?.transition.duration || 300),
     onComplete: (target) => {
       goToSlide(target);
       sendAnimationState(false, 1, target);
@@ -374,12 +397,14 @@ export const PresenterControlPanel: React.FC = () => {
                 isActive ? 'border-blue-500' : 'border-gray-600 hover:border-gray-400'
               }`}
             >
-              <SlideRenderer
-                slide={slide}
-                width={SLIDE_WIDTH * thumbScale}
-                height={SLIDE_HEIGHT * thumbScale}
-                resources={resources}
-              />
+              <MediaStillContext.Provider value={true}>
+                <SlideRenderer
+                  slide={slide}
+                  width={SLIDE_WIDTH * thumbScale}
+                  height={SLIDE_HEIGHT * thumbScale}
+                  resources={resources}
+                />
+              </MediaStillContext.Provider>
             </div>
           );
         })}

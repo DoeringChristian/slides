@@ -7,6 +7,8 @@ export interface PresenterMessage {
   slideIndex?: number;
   isAnimating?: boolean;
   animProgress?: number;
+  /** The transition's length (ms): the audience times it itself. */
+  animDuration?: number;
   targetIndex?: number;
   videoCommand?: { action: 'play' | 'pause' | 'seek'; currentTime?: number };
   showSlideNumbers?: boolean;
@@ -19,6 +21,11 @@ const DATA_CHANNEL_NAME = 'slides-presenter-data';
 let channel: BroadcastChannel | null = null;
 let dataChannel: BroadcastChannel | null = null;
 let audienceWindow: Window | null = null;
+
+/** The open audience window (same origin, so its document is reachable). */
+export function getAudienceWindow(): Window | null {
+  return audienceWindow && !audienceWindow.closed ? audienceWindow : null;
+}
 
 function getChannel(): BroadcastChannel {
   if (!channel) {
@@ -108,11 +115,12 @@ export function usePresenterMode() {
   }, [setPresentingSlideIndex]);
 
   // Send animation state to audience
-  const sendAnimationState = useCallback((isAnimating: boolean, progress: number, targetIndex: number) => {
+  const sendAnimationState = useCallback((isAnimating: boolean, progress: number, targetIndex: number, duration?: number) => {
     getChannel().postMessage({
       type: 'animation-state',
       isAnimating,
       animProgress: progress,
+      animDuration: duration,
       targetIndex,
     } as PresenterMessage);
   }, []);
@@ -204,6 +212,9 @@ export function useAudienceReceiver() {
 
   useEffect(() => {
     const ch = new BroadcastChannel(CHANNEL_NAME);
+    let local: { target: number; frame: number } | null = null;
+    let landed: number | null = null;
+    const stopLocal = () => { if (local) cancelAnimationFrame(local.frame); local = null; };
 
     // Request sync on load
     ch.postMessage({ type: 'sync-request' } as PresenterMessage);
@@ -213,18 +224,50 @@ export function useAudienceReceiver() {
       switch (msg.type) {
         case 'slide-change':
           if (msg.slideIndex !== undefined) {
+            stopLocal();
+            landed = null;
             setState(s => ({ ...s, slideIndex: msg.slideIndex!, isAnimating: false }));
           }
           break;
-        case 'animation-state':
+        case 'animation-state': {
+          const target = msg.targetIndex ?? 0;
+          if (msg.isAnimating && msg.animDuration) {
+            // The audience plays the transition on its own clock from the
+            // moment it started: the presenter's window may get few or no
+            // frames (hidden behind this one), and its per-frame progress
+            // would arrive late and uneven.
+            // (Already playing it, or already landed: later progress
+            // messages of the same transition change nothing.)
+            if (local?.target === target || landed === target) break;
+            stopLocal();
+            const duration = msg.animDuration;
+            const t0 = performance.now() - (msg.animProgress ?? 0) * duration;
+            local = { target, frame: 0 };
+            const step = () => {
+              if (!local || local.target !== target) return;
+              const p = Math.min(1, (performance.now() - t0) / duration);
+              if (p < 1) {
+                setState(s => ({ ...s, isAnimating: true, animProgress: p, targetIndex: target }));
+                local.frame = requestAnimationFrame(step);
+              } else {
+                local = null;
+                landed = target;
+                setState(s => ({ ...s, isAnimating: false, animProgress: 1, targetIndex: target, slideIndex: target }));
+              }
+            };
+            step();
+            break;
+          }
+          if (!msg.isAnimating) { if (local?.target === target) stopLocal(); landed = null; }
           setState(s => ({
             ...s,
             isAnimating: msg.isAnimating ?? false,
             animProgress: msg.animProgress ?? 0,
-            targetIndex: msg.targetIndex ?? 0,
+            targetIndex: target,
             slideIndex: !msg.isAnimating && msg.targetIndex !== undefined ? msg.targetIndex : s.slideIndex,
           }));
           break;
+        }
         case 'sync-response':
           if (msg.slideIndex !== undefined) {
             setState(s => ({
@@ -252,6 +295,7 @@ export function useAudienceReceiver() {
     };
 
     return () => {
+      stopLocal();
       ch.close();
     };
   }, []);

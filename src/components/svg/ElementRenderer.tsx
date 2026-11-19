@@ -344,21 +344,23 @@ function useVideoCanvas(videoRef: React.RefObject<HTMLVideoElement | null>, canv
       fit();
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     };
-    const supportsFrames = 'requestVideoFrameCallback' in video;
+    // While it plays, the canvas copies the video's current frame on every
+    // screen refresh. (Drawing from requestVideoFrameCallback instead lands a
+    // frame one refresh late now and then: 42 ms, then 25 ms — a stutter.)
     const next = () => {
       if (!live) return;
-      draw();
-      handle = supportsFrames ? video.requestVideoFrameCallback(next) : requestAnimationFrame(next);
+      if (!video.paused && !video.ended) draw();
+      handle = requestAnimationFrame(next);
     };
-    handle = supportsFrames ? video.requestVideoFrameCallback(next) : requestAnimationFrame(next);
+    handle = requestAnimationFrame(next);
     // A paused video presents no frames: draw what a seek or load shows.
-    const events = ['loadeddata', 'seeked'] as const;
+    const events = ['loadeddata', 'seeked', 'pause'] as const;
     for (const e of events) video.addEventListener(e, draw);
     window.addEventListener('resize', draw);
     draw();
     return () => {
       live = false;
-      if (supportsFrames) video.cancelVideoFrameCallback(handle); else cancelAnimationFrame(handle);
+      cancelAnimationFrame(handle);
       for (const e of events) video.removeEventListener(e, draw);
       window.removeEventListener('resize', draw);
     };

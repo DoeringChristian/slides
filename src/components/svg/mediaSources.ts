@@ -52,3 +52,13 @@ export function useVideoPoster(hash: string | undefined, time = 0): string | und
  *  their poster frame, not a live player. */
 export const MediaStillContext = createContext(false);
 export const useMediaStill = () => useContext(MediaStillContext);
+
+/**
+ * Where a preview's videos come from instead of playing themselves: the
+ * presenter's "current slide" shows the frames the audience window is
+ * showing (looked up by media id), drawn into a canvas. It then decodes
+ * nothing of its own — six large videos decoded twice made both windows
+ * stutter — and can never drift from what the audience sees.
+ */
+export type VideoMirror = (mediaId: string) => HTMLVideoElement | null;
+export const VideoMirrorContext = createContext<VideoMirror | null>(null);
