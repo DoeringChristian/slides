@@ -262,18 +262,89 @@ export function samplePathD(d: string, n: number): number[] {
 // them (an `h` typed in Libertinus came out as Inter's `C`).
 const glyphCache = new WeakMap<Font, Map<string, { d: string; length: number }>>();
 
+type PathCommand = ReturnType<Font['getPath']>['commands'][number];
+
+/** A coordinate to 1/1000 unit, without trailing zeros or `-0`. */
+function num(v: number): string {
+  const r = Math.round(v * 1000) / 1000;
+  return (r === 0 ? 0 : r).toString();
+}
+
+/**
+ * SVG path data for opentype.js commands — written here rather than by
+ * `Path.toPathData`, which is unsafe on two counts:
+ *
+ *  - its default optimiser drops a contour's closing segment whenever it ends
+ *    within ONE OUTPUT UNIT of its start, a whole pixel at render size, so it
+ *    reshapes glyphs;
+ *  - its rounding concatenates `"1.06e-14" + "e+3"` and gets `NaN` whenever a
+ *    coordinate lands within float noise of an integer (32.00000000000001),
+ *    which drops the rest of the glyph.
+ *
+ * 1/1000 unit keeps a 40px glyph within 1/1000 px of its outline.
+ */
+export function pathCommandsToD(commands: readonly PathCommand[]): string {
+  let d = '';
+  for (const c of commands) {
+    if (c.type === 'M' || c.type === 'L') d += `${c.type}${num(c.x)} ${num(c.y)}`;
+    else if (c.type === 'C') d += `C${num(c.x1)} ${num(c.y1)} ${num(c.x2)} ${num(c.y2)} ${num(c.x)} ${num(c.y)}`;
+    else if (c.type === 'Q') d += `Q${num(c.x1)} ${num(c.y1)} ${num(c.x)} ${num(c.y)}`;
+    else if (c.type === 'Z') d += 'Z';
+  }
+  return d;
+}
+
+type Ligature = { sub: number[]; by: number };
+const ligatureCache = new WeakMap<Font, Map<number, Ligature[]>>();
+
+/**
+ * The font's standard ligatures (`liga`), indexed by first glyph, longest
+ * first. Read through opentype.js's GSUB parser but applied here: its own
+ * shaper (`stringToGlyphs`) throws on lookup formats Inter uses, so a font
+ * whose ligatures cannot be read simply has none.
+ */
+function ligaturesOf(font: Font): Map<number, Ligature[]> {
+  let byFirst = ligatureCache.get(font);
+  if (byFirst) return byFirst;
+  byFirst = new Map();
+  const seen = new Set<string>();
+  for (const script of ['latn', 'DFLT']) {
+    let list: Ligature[] = [];
+    try {
+      // Present at runtime, absent from opentype.js's type declarations.
+      const sub = font.substitution as unknown as {
+        getLigatures(feature: string, script: string, language: string): Ligature[] | undefined;
+      };
+      list = sub.getLigatures('liga', script, 'dflt') ?? [];
+    } catch {
+      list = [];
+    }
+    for (const lig of list) {
+      const key = lig.sub.join(',');
+      if (lig.sub.length < 2 || seen.has(key)) continue;
+      seen.add(key);
+      const at = byFirst.get(lig.sub[0]) ?? [];
+      at.push(lig);
+      byFirst.set(lig.sub[0], at);
+    }
+  }
+  for (const list of byFirst.values()) list.sort((a, b) => b.sub.length - a.sub.length);
+  ligatureCache.set(font, byFirst);
+  return byFirst;
+}
+
 /**
  * Convert a plain-text run into per-glyph SVG paths starting at (startX, y).
  * Returns the array of glyphs plus the advance after the last one.
  *
- * Bypasses `font.stringToGlyphs` deliberately. That helper applies OpenType
- * Bidi + feature substitutions (ccmp, liga, kern, …) and Inter uses lookup
- * formats opentype.js doesn't implement, so it throws on every call. We do
- * raw char-by-char `charToGlyphIndex` lookup instead. Trade-off: ligatures
- * don't fire (so "fi" renders as two glyphs rather than one fused), but
- * every Unicode codepoint resolves and the function never throws. Acceptable
- * for the Write animation; ligatures matter only in the steady frame, which
- * uses SVG <text> via the system font anyway.
+ * Shaping is done here rather than by `font.stringToGlyphs`, which applies
+ * OpenType features through lookup formats opentype.js does not all implement
+ * (it throws on every call for Inter). What is applied is exactly what a
+ * typesetter applies to Latin text — what the browser does in the edit
+ * overlay, and TeX does on paper:
+ *
+ *  - standard ligatures (`liga`): "fi" is one glyph where the font has one;
+ *  - pair kerning, placed BEFORE the second glyph of the pair.
  *
  * `font` is an already-loaded Font (from `loadFont`). The y argument is the
  * *baseline* in text-layout coordinates.
@@ -294,30 +365,36 @@ export function textToGlyphPaths(
     glyphCache.set(font, fontGlyphs);
   }
 
-  const codepoints = Array.from(text); // handles surrogate pairs
-  let prevGlyph: ReturnType<typeof font.glyphs.get> | null = null;
+  // Glyph indices per codepoint (surrogate pairs handled), 0 for missing,
+  // then the ligature pass over them.
+  const indices = Array.from(text, (ch) => font.charToGlyphIndex(ch) ?? 0);
+  const ligatures = ligaturesOf(font);
+  const run: number[] = [];
+  for (let i = 0; i < indices.length;) {
+    const lig = ligatures.get(indices[i])?.find((l) => l.sub.every((g, k) => indices[i + k] === g));
+    if (lig) { run.push(lig.by); i += lig.sub.length; } else { run.push(indices[i]); i++; }
+  }
 
-  for (const ch of codepoints) {
-    const idx = font.charToGlyphIndex(ch);
-    if (idx === undefined || idx === 0) {
+  let prevGlyph: ReturnType<typeof font.glyphs.get> | null = null;
+  for (const idx of run) {
+    const g = idx ? font.glyphs.get(idx) : null;
+    if (!g) {
       // .notdef or missing: skip the path but advance by ~half em so layout
       // doesn't collapse around unsupported chars.
       x += fontSize * 0.5;
       prevGlyph = null;
       continue;
     }
-    const g = font.glyphs.get(idx);
-    if (!g) {
-      x += fontSize * 0.5;
-      prevGlyph = null;
-      continue;
+
+    if (prevGlyph) {
+      const kerning = font.getKerningValue(prevGlyph, g);
+      if (kerning) x += kerning * scale;
     }
 
     const cacheKey = `${idx}|${fontSize}`;
     let entry = fontGlyphs.get(cacheKey);
     if (!entry) {
-      const path = g.getPath(0, 0, fontSize);
-      const d = path.toPathData(2);
+      const d = pathCommandsToD(g.getPath(0, 0, fontSize).commands);
       entry = { d, length: pathLengthFor(d) };
       fontGlyphs.set(cacheKey, entry);
     }
@@ -331,11 +408,6 @@ export function textToGlyphPaths(
       length: entry.length,
     });
     x += advance;
-
-    if (prevGlyph) {
-      const kerning = font.getKerningValue(prevGlyph, g);
-      if (kerning) x += kerning * scale;
-    }
     prevGlyph = g;
   }
 

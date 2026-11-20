@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { parse } from 'opentype.js';
-import { samplePathD, setPathSamplerForTests, textToGlyphPaths, xHeightEm } from './glyphPaths';
+import { pathCommandsToD, samplePathD, setPathSamplerForTests, textToGlyphPaths, xHeightEm } from './glyphPaths';
 
 // samplePathD normally measures via a hidden SVG <path> probe
 // (getTotalLength / getPointAtLength), which node has no implementation
@@ -117,6 +117,59 @@ describe('textToGlyphPaths glyph cache', () => {
     const interC = textToGlyphPaths('C', inter, 24, 0, 0).glyphs[0].d;
     const libertinusH = textToGlyphPaths('h', libertinus, 24, 0, 0).glyphs[0].d;
     expect(libertinusH).not.toBe(interC);
-    expect(libertinusH).toBe(libertinus.charToGlyph('h').getPath(0, 0, 24).toPathData(2));
+    expect(libertinusH).toBe(pathCommandsToD(libertinus.charToGlyph('h').getPath(0, 0, 24).commands));
+  });
+});
+
+describe('textToGlyphPaths shaping', () => {
+  const load = (file: string) => {
+    const b = readFileSync(new URL(`../../assets/fonts/${file}`, import.meta.url));
+    return parse(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
+  };
+  const libertine = load('LinuxLibertineT-Regular.otf');
+
+  test('kerns a pair by moving its SECOND glyph', () => {
+    // It used to add the (A, V) kern after placing V, so V sat unkerned and
+    // the glyph after it moved instead.
+    const a = libertine.charToGlyph('A'), v = libertine.charToGlyph('V');
+    const kern = libertine.getKerningValue(a, v);
+    expect(kern).toBeLessThan(0); // TeX's TFM kerns A–V; the font carries it
+    const scale = 40 / libertine.unitsPerEm;
+    const [, second] = textToGlyphPaths('AV', libertine, 40, 0, 0).glyphs;
+    expect(second.x).toBeCloseTo((a.advanceWidth! + kern) * scale, 9);
+  });
+
+  test('sets the f-ligatures as one glyph each, as TeX does', () => {
+    for (const word of ['ff', 'fi', 'fl', 'ffi', 'ffl']) {
+      expect(textToGlyphPaths(word, libertine, 40, 0, 0).glyphs, word).toHaveLength(1);
+    }
+    expect(textToGlyphPaths('office', libertine, 40, 0, 0).glyphs).toHaveLength(4); // o ffi c e
+  });
+
+  test('leaves a font whose ligatures cannot be read unshaped, without throwing', () => {
+    const inter = load('Inter-Regular.ttf');
+    expect(() => textToGlyphPaths('office', inter, 40, 0, 0)).not.toThrow();
+  });
+});
+
+describe('pathCommandsToD', () => {
+  test('writes a coordinate within float noise of an integer as that integer', () => {
+    // opentype.js's own toPathData rounds 32.00000000000001 by building the
+    // string "1.06e-14e+3" and emits NaN, which drops the rest of the glyph.
+    const d = pathCommandsToD([
+      { type: 'M', x: 0, y: 0 },
+      { type: 'C', x1: 32.00000000000001, y1: -0.1594, x2: 31.99999999999999, y2: -0.9963, x: 31.7609, y: -1.2354 },
+      { type: 'Z' },
+    ] as never);
+    expect(d).toBe('M0 0C32 -0.159 32 -0.996 31.761 -1.235Z');
+  });
+
+  test('keeps a closing segment, however short', () => {
+    // toPathData's optimiser drops a final lineto within one output unit of
+    // the contour's start — a pixel at render size.
+    const d = pathCommandsToD([
+      { type: 'M', x: 0, y: 0 }, { type: 'L', x: 10, y: 0 }, { type: 'L', x: 0.5, y: 0.5 }, { type: 'Z' },
+    ] as never);
+    expect(d).toBe('M0 0L10 0L0.5 0.5Z');
   });
 });

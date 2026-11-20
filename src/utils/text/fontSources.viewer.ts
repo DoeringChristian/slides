@@ -24,6 +24,8 @@
 export const TEXT_FONT_FILES = {
   'Inter': { regular: '', bold: '', italic: '', boldItalic: '' },
   'Libertinus Serif': { regular: '', bold: '', italic: '', boldItalic: '' },
+  'Linux Libertine T': { regular: '', bold: '', italic: '', boldItalic: '' },
+  'Linux Biolinum T': { regular: '', bold: '', italic: '', boldItalic: '' },
 };
 
 const unavailable = (what: string) => () => Promise.reject(

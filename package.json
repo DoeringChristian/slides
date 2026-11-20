@@ -24,7 +24,8 @@
     "preview": "vite preview",
     "postinstall": "git config core.hooksPath .githooks 2>/dev/null || true",
     "build:examples": "tsx scripts/build-examples.ts",
-    "build:mathfont": "node scripts/mathfont/build.mjs"
+    "build:mathfont": "node scripts/mathfont/build.mjs",
+    "build:texfont": "node scripts/texfont/build.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",

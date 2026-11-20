@@ -27,6 +27,16 @@ import libertinusRegularUrl from '../../assets/fonts/LibertinusSerif-Regular.otf
 import libertinusBoldUrl from '../../assets/fonts/LibertinusSerif-Bold.otf';
 import libertinusItalicUrl from '../../assets/fonts/LibertinusSerif-Italic.otf';
 import libertinusBoldItalicUrl from '../../assets/fonts/LibertinusSerif-BoldItalic.otf';
+// Generated from acmart's own Type 1 fonts and TeX metrics by
+// `npm run build:texfont` — see scripts/texfont/build.mjs.
+import libertineRegularUrl from '../../assets/fonts/LinuxLibertineT-Regular.otf';
+import libertineBoldUrl from '../../assets/fonts/LinuxLibertineT-Bold.otf';
+import libertineItalicUrl from '../../assets/fonts/LinuxLibertineT-Italic.otf';
+import libertineBoldItalicUrl from '../../assets/fonts/LinuxLibertineT-BoldItalic.otf';
+import biolinumRegularUrl from '../../assets/fonts/LinuxBiolinumT-Regular.otf';
+import biolinumBoldUrl from '../../assets/fonts/LinuxBiolinumT-Bold.otf';
+import biolinumItalicUrl from '../../assets/fonts/LinuxBiolinumT-Italic.otf';
+import biolinumBoldItalicUrl from '../../assets/fonts/LinuxBiolinumT-BoldItalic.otf';
 
 /** Font files per text-font id, in the four variants every face must provide. */
 export const TEXT_FONT_FILES = {
@@ -41,6 +51,18 @@ export const TEXT_FONT_FILES = {
     bold: libertinusBoldUrl,
     italic: libertinusItalicUrl,
     boldItalic: libertinusBoldItalicUrl,
+  },
+  'Linux Libertine T': {
+    regular: libertineRegularUrl,
+    bold: libertineBoldUrl,
+    italic: libertineItalicUrl,
+    boldItalic: libertineBoldItalicUrl,
+  },
+  'Linux Biolinum T': {
+    regular: biolinumRegularUrl,
+    bold: biolinumBoldUrl,
+    italic: biolinumItalicUrl,
+    boldItalic: biolinumBoldItalicUrl,
   },
 };
 

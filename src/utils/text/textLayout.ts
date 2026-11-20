@@ -409,7 +409,7 @@ async function parseMathSegment(
   const fontId = font.id;
   // A face drawn against this very text font is already the right size; the
   // x-height correction below is for pairings that were never drawn together.
-  const nativePairing = font.designedFor === textFont(style.fontFamily).id;
+  const nativePairing = !!font.designedFor?.includes(textFont(style.fontFamily).id);
   try {
     // Convert first: the x-height comes from the loaded font data, so it is
     // only knowable once the font behind `fontId` has actually arrived.

@@ -107,6 +107,8 @@ describe('font registry', () => {
     // face. Before this it was Termes — the closest published stand-in, which
     // still shared only about a third of its ink with a real acmart render.
     expect(textFont('Libertinus Serif').defaultMathFont).toBe('mathjax-newtx');
+    expect(textFont('Linux Libertine T').defaultMathFont).toBe('mathjax-newtx');
+    expect(textFont('Linux Biolinum T').defaultMathFont).toBe('mathjax-newtx');
   });
 });
 
@@ -158,6 +160,10 @@ describe('text font line metrics', () => {
     'Inter': ['Inter-Regular.ttf', 'Inter-Bold.ttf', 'Inter-Italic.ttf', 'Inter-BoldItalic.ttf'],
     'Libertinus Serif': ['LibertinusSerif-Regular.otf', 'LibertinusSerif-Bold.otf',
       'LibertinusSerif-Italic.otf', 'LibertinusSerif-BoldItalic.otf'],
+    'Linux Libertine T': ['LinuxLibertineT-Regular.otf', 'LinuxLibertineT-Bold.otf',
+      'LinuxLibertineT-Italic.otf', 'LinuxLibertineT-BoldItalic.otf'],
+    'Linux Biolinum T': ['LinuxBiolinumT-Regular.otf', 'LinuxBiolinumT-Bold.otf',
+      'LinuxBiolinumT-Italic.otf', 'LinuxBiolinumT-BoldItalic.otf'],
   };
   it('match every variant file, in hhea, typo and win alike', () => {
     expect(Object.keys(FILES).sort()).toEqual(TEXT_FONTS.map(f => f.id).sort());

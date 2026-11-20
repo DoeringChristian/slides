@@ -72,7 +72,19 @@ export function parseTfm(buffer) {
   const param = [];
   for (let i = 0; i < np; i++) param.push(fix(params + i * 4));
 
-  return { designSize, bc, ec, chars, extensible, param, ligKernCount: nl, kernCount: nk };
+  // The lig/kern program, raw: TeX walks it per character (see `ligKern`).
+  const ligKernSteps = [];
+  for (let i = 0; i < nl; i++) {
+    const p = ligKern + i * 4;
+    ligKernSteps.push({ skip: b[p], next: b[p + 1], op: b[p + 2], rem: b[p + 3] });
+  }
+  const kernValues = [];
+  for (let i = 0; i < nk; i++) kernValues.push(fix(kerns + i * 4));
+
+  return {
+    designSize, bc, ec, chars, extensible, param,
+    ligKernSteps, kernValues, ligKernCount: nl, kernCount: nk,
+  };
 }
 
 /**
@@ -92,6 +104,35 @@ export function charList(tfm, code) {
     if (info.tag !== TAG.LIST) break;
     c = info.remainder;
     out.push(c);
+  }
+  return out;
+}
+
+/**
+ * A character's lig/kern instructions, in program order: what TeX does when
+ * `code` is followed by `next`. A kern is in design-size units (em); a
+ * ligature names its operation (0 is plain `=:`, the only kind a text face's
+ * f-ligatures use) and the character it produces. The first instruction for a
+ * given `next` wins, as in TeX. *The TFM format*, Knuth, §§ 545–549.
+ */
+export function ligKern(tfm, code) {
+  const info = tfm.chars.get(code);
+  if (!info || info.tag !== TAG.LIGKERN) return [];
+  const steps = tfm.ligKernSteps;
+  let i = info.remainder;
+  const first = steps[i];
+  if (first && first.skip > 128) i = 256 * first.op + first.rem;
+  const out = [];
+  const seen = new Set();
+  while (i < steps.length) {
+    const s = steps[i];
+    if (s.skip <= 128 && !seen.has(s.next)) {
+      seen.add(s.next);
+      if (s.op >= 128) out.push({ next: s.next, kern: tfm.kernValues[256 * (s.op - 128) + s.rem] });
+      else out.push({ next: s.next, lig: { op: s.op, char: s.rem } });
+    }
+    if (s.skip >= 128) break;
+    i += s.skip + 1;
   }
   return out;
 }

@@ -34,6 +34,8 @@ const STUB = `
 export const TEXT_FONT_FILES = {
   'Inter': { regular: '', bold: '', italic: '', boldItalic: '' },
   'Libertinus Serif': { regular: '', bold: '', italic: '', boldItalic: '' },
+  'Linux Libertine T': { regular: '', bold: '', italic: '', boldItalic: '' },
+  'Linux Biolinum T': { regular: '', bold: '', italic: '', boldItalic: '' },
 };
 export const MATH_FONT_MODULES = {
   'mathjax-newtx': () => import(${JSON.stringify(NEWTX)}),
@@ -47,6 +49,14 @@ export function loadMathFontRange(specifier) {
 `;
 
 registerHooks({
+  // opentype.js's package entry is CommonJS under Node, which has no named
+  // `parse` export; the app imports it by name, as Vite's ESM build allows.
+  resolve(specifier, context, nextResolve) {
+    if (specifier === 'opentype.js') {
+      return nextResolve(resolve(HERE, '../../node_modules/opentype.js/dist/opentype.mjs'), context);
+    }
+    return nextResolve(specifier, context);
+  },
   load(url, context, nextLoad) {
     let pathname;
     try { pathname = new URL(url).pathname; } catch { pathname = url; }

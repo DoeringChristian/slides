@@ -124,6 +124,44 @@ export const TEXT_FONTS = [
       'Libertinus Serif 7.051 — Copyright (c) 2012-2024 The Libertinus Project Authors. '
       + 'SIL Open Font License 1.1. Designed by Philipp H. Poll and Khaled Hosny.',
   },
+  {
+    // What acmart (SIGGRAPH, TOG) actually prints, not a relative of it.
+    // pdfLaTeX's acmart loads `[T1]{fontenc}` and `[type1=true]{libertine}`:
+    // the Linux Libertine Type 1 fonts through the `*-tlf-t1` virtual fonts.
+    // These files are generated from exactly those (`npm run build:texfont`):
+    // the .pfb outlines unchanged, the TFM's advances, kerning, f-ligatures
+    // and interword space — so a line set here lands glyph for glyph where
+    // TeX puts it (`scripts/texfont/compare-text.mjs` checks that against
+    // pdfLaTeX). Libertinus Serif is a later fork whose outlines and metrics
+    // have moved on; the OpenType Linux Libertine in TeX Live is a different
+    // release than the Type 1 fonts acmart uses.
+    id: 'Linux Libertine T',
+    label: 'Linux Libertine (ACM / SIGGRAPH)',
+    cssStack: "'Linux Libertine T', 'Linux Libertine O', Georgia, serif",
+    variants: TEXT_FONT_FILES['Linux Libertine T'],
+    ascent: 0.894,
+    descent: 0.246,
+    defaultMathFont: 'mathjax-newtx',
+    notice:
+      'Linux Libertine 5.3.0 — Copyright (c) 2003-2012 Philipp H. Poll; Type 1 conversion for TeX by '
+      + 'Bob Tennent. GPL with font exception, or SIL Open Font License. Generated from the TeX Live '
+      + 'libertine package (LinLibertineT*.pfb and *-tlf-t1 metrics).',
+  },
+  {
+    // acmart's sans (`\sffamily`: titles, headings, captions in some
+    // formats), from the same package by the same route.
+    id: 'Linux Biolinum T',
+    label: 'Linux Biolinum (ACM / SIGGRAPH sans)',
+    cssStack: "'Linux Biolinum T', 'Linux Biolinum O', sans-serif",
+    variants: TEXT_FONT_FILES['Linux Biolinum T'],
+    ascent: 0.894,
+    descent: 0.246,
+    defaultMathFont: 'mathjax-newtx',
+    notice:
+      'Linux Biolinum 1.1.8 — Copyright (c) 2003-2012 Philipp H. Poll; Type 1 conversion for TeX by '
+      + 'Bob Tennent. GPL with font exception, or SIL Open Font License. Generated from the TeX Live '
+      + 'libertine package (LinBiolinumT*.pfb and *-tlf-t1 metrics).',
+  },
 ] as const satisfies readonly TextFontDef[];
 
 export type TextFontId = (typeof TEXT_FONTS)[number]['id'];
@@ -150,7 +188,7 @@ export interface MathFontDef {
    */
   load: () => Promise<Record<string, unknown>>;
   /**
-   * The text font this face was designed to sit beside, if any.
+   * The text fonts this face was designed to sit beside, if any.
    *
    * Math is normally scaled so its x-height matches the text font's, because
    * a MathJax package and a text face that were never drawn together agree on
@@ -159,7 +197,7 @@ export interface MathFontDef {
    * is 0.441 against Libertinus Serif's 0.429, and "correcting" that 2.7%
    * would shrink every formula below the size the paper sets it at.
    */
-  designedFor?: string;
+  designedFor?: readonly string[];
 }
 
 /**
@@ -180,9 +218,9 @@ export const MATH_FONTS = [
     label: 'newtxmath (ACM / SIGGRAPH)',
     blurb: "acmart's own math face, generated from newtxmath's outlines and metrics.",
     load: MATH_FONT_MODULES['mathjax-newtx'],
-    // newtxmath in its libertine mode is drawn against Libertine, and
-    // Libertinus Serif is Libertine's maintained fork.
-    designedFor: 'Libertinus Serif',
+    // newtxmath in its libertine mode is drawn against Libertine — the T
+    // faces are acmart's own, Libertinus Serif is Libertine's maintained fork.
+    designedFor: ['Linux Libertine T', 'Linux Biolinum T', 'Libertinus Serif'],
   },
   {
     id: 'mathjax-newcm',

@@ -42,7 +42,7 @@ Transitions are set per element, per property group, on the slide being animated
 Coordinates: the slide is 960×540 units, origin top-left. Elements have x, y, width, height (box), rotation in degrees, opacity 0..1. Z-order is the element order: later is on top.
 
 Element types:
-- text: markdown-lite — **bold**, *italic*, lines starting "- " are bullets, $…$ is LaTeX math (rendered with MathJax), $$…$$ display math. Fonts: "Inter" (sans, default) and "Libertinus Serif". Free text is measured for you: omit width for a single line that sizes itself, give width to wrap. Text can be bound as a label to a shape or arrow with containerId.
+- text: markdown-lite — **bold**, *italic*, lines starting "- " are bullets, $…$ is LaTeX math (rendered with MathJax), $$…$$ display math. Fonts: "Inter" (sans, default), "Libertinus Serif", and the exact ACM/SIGGRAPH paper faces "Linux Libertine T" (serif) and "Linux Biolinum T" (sans). Free text is measured for you: omit width for a single line that sizes itself, give width to wrap. Text can be bound as a label to a shape or arrow with containerId.
 - shape: rect, ellipse, triangle, star, dot, or path. A path has points [x0,y0,x1,y1,…] relative to its (x,y); open paths are lines (endHead "arrow" makes an arrow), closed paths are polygons; curve smooths it. fill "" means no fill.
 - image: refers to an existing resource by id.
 
