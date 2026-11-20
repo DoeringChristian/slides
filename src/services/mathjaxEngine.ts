@@ -14,6 +14,8 @@
  */
 
 import { loadMathFontData, loadMathFontRange } from '../utils/text/fontRegistry';
+import { installScriptSizes } from './mathjaxScriptSizes';
+import { fontTexPackage, type FontTexConfig } from './mathjaxFontTex';
 
 // MathJax's types are not exported in a usable form for our subset of imports;
 // the document type is treated as opaque here.
@@ -76,6 +78,7 @@ export async function buildMathJaxDocument(fontId: string): Promise<MathJaxInsta
     { SVG },
     { liteAdaptor },
     { RegisterHTMLHandler },
+    { CommonWrapper },
     fontData,
   ] = await Promise.all([
     import('@mathjax/src/mjs/mathjax.js'),
@@ -83,6 +86,7 @@ export async function buildMathJaxDocument(fontId: string): Promise<MathJaxInsta
     import('@mathjax/src/mjs/output/svg.js'),
     import('@mathjax/src/mjs/adaptors/liteAdaptor.js'),
     import('@mathjax/src/mjs/handlers/html.js'),
+    import('@mathjax/src/mjs/output/common/Wrapper.js'),
     loadMathFontData(fontId),
     // Side-effect imports: register TeX packages
     import('@mathjax/src/mjs/input/tex/base/BaseConfiguration.js'),
@@ -105,11 +109,15 @@ export async function buildMathJaxDocument(fontId: string): Promise<MathJaxInsta
   // expression that needs one. It is global state on the mathjax singleton,
   // so it must be in place before the first conversion of the first font.
   (mathjax as unknown as { asyncLoad: (name: string) => Promise<unknown> }).asyncLoad = loadMathFontRange;
+  // TeX's script sizes and script designs, for the fonts that declare them.
+  installScriptSizes(CommonWrapper);
   // Registering the handler twice is harmless — MathJax keeps one per adaptor —
   // but the adaptor itself must be per-document to keep glyph ids distinct.
   const adaptor = liteAdaptor();
   RegisterHTMLHandler(adaptor);
-  const tex = new TeX({ packages: TEX_PACKAGES });
+  // The font's own TeX behaviour (\big sizes, \mathbf), when it declares any.
+  const fontPackage = await fontTexPackage(fontId, (fontData as { TEX_CONFIG?: FontTexConfig }).TEX_CONFIG);
+  const tex = new TeX({ packages: fontPackage ? [...TEX_PACKAGES, fontPackage] : TEX_PACKAGES });
   const svg = new SVG({
     fontCache: 'local',
     fontData: fontData as never,

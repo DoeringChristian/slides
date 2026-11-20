@@ -12,6 +12,7 @@ import type { GesturePatch } from '../../utils/editor/gestureProjection';
 import { maxLabelWidthFor } from '../../utils/model/syncDependents';
 import { SVGTextPaths } from '../svg/SVGTextPaths';
 import { editFontFamily, injectFontFaces, nativeTextBaseline } from '../../utils/text/glyphPaths';
+import { kerningCss } from '../../utils/text/fontRegistry';
 import { beginTextEditSession, getTextEditInitialText } from '../../store/textEditSession';
 import { createTextEditHistory, type TextEditHistory } from '../../utils/text/textEditHistory';
 import { hasContentSizing, layoutUserText, measureUserText, textSizingWidth } from '../../utils/text/userTextSizing';
@@ -703,11 +704,9 @@ export const TextEditOverlay: React.FC<Props> = ({ stageRef, zoom, onPreview }) 
           cursor: 'text',
           caretColor: style.color,
           pointerEvents: 'auto',
-          // Match the SVG renderer's text shaping: opentype.js emits glyph
-          // advances without kerning, so disable browser kerning to keep the
-          // caret X aligned with the SVG glyph positions.
-          fontKerning: 'none',
-          fontFeatureSettings: '"kern" 0',
+          // Match the SVG renderer's text shaping, so the caret X stays on
+          // the SVG glyphs: kerned exactly for the faces the renderer kerns.
+          ...kerningCss(style.fontFamily),
           letterSpacing: 0,
         }}
       >

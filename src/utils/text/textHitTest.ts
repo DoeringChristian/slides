@@ -1,6 +1,12 @@
 import type { TextElement } from '../../types/presentation';
 import { parseBlocks, blockForLine, getBlockFontMultiplier, parseInlineSegments } from '../../components/canvas/CustomMarkdownRenderer';
 import { editFontFamily, nativeTextBaseline } from './glyphPaths';
+import { textFont } from './fontRegistry';
+
+/** `font-kerning` as the outline renderer kerns this face. */
+const kerningRule = (family: string | undefined) => (textFont(family).kerning
+  ? 'font-kerning: normal;'
+  : 'font-kerning: none;\n    font-feature-settings: "kern" 0;');
 import { textInsets } from './boundTextLayout';
 import { textRowMetrics, type SvgTextDoc } from './textLayout';
 import { getUserTextLayoutSync, layoutUserText } from './userTextSizing';
@@ -76,8 +82,7 @@ export function measureBlockHeight(
     word-break: break-word;
     margin: 0;
     padding: 0;
-    font-kerning: none;
-    font-feature-settings: "kern" 0;
+    ${kerningRule(fontFamily)}
   `;
   container.textContent = text || ' ';
   document.body.appendChild(container);
@@ -98,9 +103,9 @@ export function measureBlockHeight(
  *
  * X mapping uses the DOM Range API against the displayContent of the
  * clicked block, in the bundled face at the same font-size + line-height + kerning
- * settings as the renderer. Browser shaping isn't bit-identical to
- * opentype.js, but with kerning off the per-char advance widths line up
- * within a sub-pixel.
+ * settings as the renderer. The browser kerns exactly the faces the
+ * renderer kerns (`TextFontDef.kerning`), so the per-char advances line up
+ * within a sub-pixel either way.
  */
 export async function calculateCursorFromClick(
   element: TextElement,
@@ -200,8 +205,7 @@ function findCharIndexAt(opts: CharLookup): number {
     text-align: ${opts.align};
     margin: 0;
     padding: 0;
-    font-kerning: none;
-    font-feature-settings: "kern" 0;
+    ${kerningRule(opts.fontFamily)}
   `;
   document.body.appendChild(container);
   const textNode = document.createTextNode(opts.text || ' ');

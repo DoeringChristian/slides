@@ -17,7 +17,7 @@
  *   outlines   the `.pfb` charstrings, unchanged (cubic Béziers in the same
  *              1000-unit em the OpenType CFF table uses)
  *   advances   the T1 TFM's widths, which is what TeX lays out with
- *   kerning    the T1 TFM's lig/kern program, as a `kern` table
+ *   kerning    the T1 TFM's lig/kern program, as GPOS pair kerning
  *   ligatures  the same program's f-ligatures (ff fi fl ffi ffl), as `liga`
  *   space      the TFM's interword space (FONTDIMEN 2)
  *
@@ -47,7 +47,7 @@ const opentype = opentypeModule.default ?? opentypeModule;
 import { parseTfm, ligKern } from '../mathfont/tfm.mjs';
 import { parseVf, soleGlyph } from '../mathfont/vf.mjs';
 import { parseType1 } from '../mathfont/type1.mjs';
-import { addSfntTable, kernTable } from './sfnt.mjs';
+import { addSfntTable, gposKernTable } from './sfnt.mjs';
 
 /** Units per original (1000-unit) em unit; see the header. */
 export const GRID = 16;
@@ -233,7 +233,12 @@ function buildFont(face, styleName, style, glyphList) {
   const codepointOf = (name) => nameToCodepoint(name, glyphList);
   const fits = (name) => type1.glyphs.get(name).path.every((c) => c.args.every((v) => Math.abs(v * GRID) <= CFF_LIMIT));
   const tooLarge = [...type1.glyphs.keys()].filter((n) => !fits(n));
-  const names = ['.notdef', ...[...type1.glyphs.keys()].filter((n) => n !== '.notdef' && n !== 'space' && fits(n))];
+  // The spaces are synthesised below with TeX's interword width; the font's
+  // own `space` and `uni00A0` must not ALSO be kept, or two glyphs share a
+  // name and a codepoint — a duplicate cmap entry, which Chrome's font
+  // sanitiser rejects by refusing the whole font.
+  const SYNTHESISED = new Set(['.notdef', 'space', 'uni00A0']);
+  const names = ['.notdef', ...[...type1.glyphs.keys()].filter((n) => !SYNTHESISED.has(n) && fits(n))];
   const claimed = new Map(); // codepoint → glyph name
   // T1 glyphs first: they are what TeX sets for these characters.
   for (const name of style.slotName.values()) {
@@ -306,7 +311,7 @@ function buildFont(face, styleName, style, glyphList) {
     .filter(([a, b]) => index.has(a) && index.has(b))
     .map(([a, b, v]) => [index.get(a), index.get(b), GRID * v]);
   const bytes = new Uint8Array(font.toArrayBuffer());
-  return { bytes: addSfntTable(bytes, 'kern', kernTable(pairs)), glyphs: glyphs.length, kerns: pairs.length, tooLarge };
+  return { bytes: addSfntTable(bytes, 'GPOS', gposKernTable(pairs)), glyphs: glyphs.length, kerns: pairs.length, tooLarge };
 }
 
 function main() {

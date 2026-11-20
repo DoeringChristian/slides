@@ -45,6 +45,8 @@ function resolveFontUrl(family: string, weight: Weight, style: Style): string {
 }
 
 const fontCache = new Map<string, Promise<Font>>();
+/** Fonts loaded for a face that is not kerned (see `TextFontDef.kerning`). */
+const unkerned = new WeakSet<Font>();
 
 export function loadFont(family: string, weight: Weight, style: Style): Promise<Font> {
   // Keyed on the RESOLVED id, so every alias of an unshipped family shares one
@@ -58,7 +60,11 @@ export function loadFont(family: string, weight: Weight, style: Style): Promise<
       if (!res.ok) throw new Error(`Font ${url} returned HTTP ${res.status}`);
       return res.arrayBuffer();
     })
-    .then((buf) => parseFont(buf));
+    .then((buf) => {
+      const font = parseFont(buf);
+      if (!textFont(family).kerning) unkerned.add(font);
+      return font;
+    });
   fontCache.set(key, p);
   // Drop the cache entry on failure so retries are possible.
   p.catch(() => fontCache.delete(key));
@@ -344,7 +350,8 @@ function ligaturesOf(font: Font): Map<number, Ligature[]> {
  * overlay, and TeX does on paper:
  *
  *  - standard ligatures (`liga`): "fi" is one glyph where the font has one;
- *  - pair kerning, placed BEFORE the second glyph of the pair.
+ *  - pair kerning, placed BEFORE the second glyph of the pair — for the
+ *    faces the registry marks as kerned, so the edit overlay can match.
  *
  * `font` is an already-loaded Font (from `loadFont`). The y argument is the
  * *baseline* in text-layout coordinates.
@@ -386,7 +393,7 @@ export function textToGlyphPaths(
       continue;
     }
 
-    if (prevGlyph) {
+    if (prevGlyph && !unkerned.has(font)) {
       const kerning = font.getKerningValue(prevGlyph, g);
       if (kerning) x += kerning * scale;
     }

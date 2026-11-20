@@ -63,6 +63,14 @@ export interface TextFontDef {
   descent: number;
   /** Math font to use when the element does not name one. */
   defaultMathFont: MathFontId;
+  /**
+   * Whether text in this face is kerned — by the outline renderer
+   * (`textToGlyphPaths`) and, so the two agree, by the browser in the edit
+   * overlay and caret hit-testing (`font-kerning`). True only where both
+   * read the font's kerning identically, which `tests/tex-fonts.browser.mjs`
+   * measures: a face kerned on one side only puts the caret off the glyphs.
+   */
+  kerning: boolean;
   /** Attribution — these are redistributed in a public repo. */
   notice: string;
 }
@@ -75,6 +83,9 @@ export const TEXT_FONTS = [
     variants: TEXT_FONT_FILES['Inter'],
     ascent: 0.96875,
     descent: 0.2412109375,
+    // Inter's kerning is in GPOS lookups opentype.js does not read, so the
+    // renderer cannot kern it; the overlay must not either.
+    kerning: false,
     // Inter is a UI sans; New Computer Modern is MathJax 4's default and the
     // least surprising partner until a sans math font is registered.
     defaultMathFont: 'mathjax-newcm',
@@ -87,6 +98,10 @@ export const TEXT_FONTS = [
     variants: TEXT_FONT_FILES['Libertinus Serif'],
     ascent: 0.894,
     descent: 0.246,
+    // opentype.js reads only part of Libertinus' GPOS kerning (0.6 px of the
+    // 19 px Chrome applies on a 40 px line), so neither side kerns: then the
+    // overlay and the outlines agree exactly.
+    kerning: false,
     // The SIGGRAPH pairing: acmart sets Libertine text against newtxmath in
     // its libertine mode. This was briefly STIX Two, chosen because its
     // ADVANCE WIDTHS came closest to an acmart render. That was the wrong
@@ -141,6 +156,8 @@ export const TEXT_FONTS = [
     variants: TEXT_FONT_FILES['Linux Libertine T'],
     ascent: 0.894,
     descent: 0.246,
+    // TeX's own kerning, in a GPOS table both sides read identically.
+    kerning: true,
     defaultMathFont: 'mathjax-newtx',
     notice:
       'Linux Libertine 5.3.0 — Copyright (c) 2003-2012 Philipp H. Poll; Type 1 conversion for TeX by '
@@ -156,6 +173,7 @@ export const TEXT_FONTS = [
     variants: TEXT_FONT_FILES['Linux Biolinum T'],
     ascent: 0.894,
     descent: 0.246,
+    kerning: true,
     defaultMathFont: 'mathjax-newtx',
     notice:
       'Linux Biolinum 1.1.8 — Copyright (c) 2003-2012 Philipp H. Poll; Type 1 conversion for TeX by '
@@ -316,6 +334,14 @@ export function textFont(id: string | undefined): TextFontDef {
 
 export function mathFont(id: string | undefined): MathFontDef {
   return (id && MATH_BY_ID.get(id)) || MATH_BY_ID.get(DEFAULT_MATH_FONT)!;
+}
+
+/** CSS for the edit overlay and hit-testing, so the browser kerns exactly
+ *  when the outline renderer does. */
+export function kerningCss(id: string | undefined): { fontKerning: 'normal' | 'none'; fontFeatureSettings: string } {
+  return textFont(id).kerning
+    ? { fontKerning: 'normal', fontFeatureSettings: 'normal' }
+    : { fontKerning: 'none', fontFeatureSettings: '"kern" 0' };
 }
 
 /** True when this family is one we ship outline data for. */

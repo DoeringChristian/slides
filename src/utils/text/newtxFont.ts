@@ -33,6 +33,9 @@ import { boldItalic } from './generated/newtx/bold-italic';
 import { script } from './generated/newtx/script';
 import { calligraphic } from './generated/newtx/calligraphic';
 import { boldCalligraphic } from './generated/newtx/bold-calligraphic';
+import { doubleStruck } from './generated/newtx/double-struck';
+import { texVariant } from './generated/newtx/tex-variant';
+import { mathbf } from './generated/newtx/mathbf';
 import { smallop } from './generated/newtx/smallop';
 import { largeop } from './generated/newtx/largeop';
 import { size3 } from './generated/newtx/size3';
@@ -41,6 +44,7 @@ import { size5 } from './generated/newtx/size5';
 import { size6 } from './generated/newtx/size6';
 import { delimiters } from './generated/newtx/delimiters';
 import { params } from './generated/newtx/params';
+import { scriptScales, scriptVariants } from './generated/newtx/script-sizes';
 
 type CharTable = Record<number, unknown>;
 
@@ -66,6 +70,9 @@ const GENERATED: Record<string, CharTable> = {
   'script': script,
   '-tex-calligraphic': calligraphic,
   '-tex-bold-calligraphic': boldCalligraphic,
+  'double-struck': doubleStruck,
+  '-tex-variant': texVariant,
+  '-ntx-mathbf': mathbf,
   '-smallop': smallop,
   '-largeop': largeop,
   '-size3': size3,
@@ -75,6 +82,7 @@ const GENERATED: Record<string, CharTable> = {
 };
 
 const Termes = MathJaxTermesFont as unknown as {
+  defaultVariants: unknown[][];
   defaultChars: Record<string, CharTable>;
   defaultParams: Record<string, number>;
   defaultDelimiters: Record<number, unknown>;
@@ -90,6 +98,48 @@ export class MathJaxNewtxFont extends TermesClass {
   // Keep Termes' options: its `dynamicPrefix` is what serves the lazily
   // loaded ranges newtxmath has no glyphs for.
   static OPTIONS = { ...Termes.OPTIONS };
+
+  /**
+   * TeX's script sizes and script designs — read by `installScriptSizes`
+   * (`services/mathjaxScriptSizes.ts`), which leaves every font without them
+   * to MathJax's defaults.
+   *
+   * acmart sets first-level scripts at 6.6 pt and second-level at 5.5 pt of
+   * its 9 pt body (73.3% and 61.1%, where MathJax's geometric multiplier gives
+   * 70.7% and 50%), and draws their letters from newtxmath's 7 pt and 5 pt
+   * designs (`nxlmi7`, `nxlmi5`), which are drawn wider and sturdier than the
+   * text letters scaled down. A script variant inherits its base variant, so
+   * a character the script design does not have is the text one.
+   */
+  static SCRIPT_SCALES: readonly number[] = scriptScales;
+  static SCRIPT_VARIANTS: Record<string, readonly string[]> = Object.fromEntries(
+    [...new Set(Object.keys(scriptVariants).map((v) => v.replace(/-s[12]$/, '')))]
+      .map((base) => [base, [`${base}-s1`, `${base}-s2`]]),
+  );
+
+  /**
+   * What acmart's TeX macros decide, for `services/mathjaxFontTex.ts`.
+   *
+   * `\big`…`\Bigg`: amsmath sizes them from 1.2 × the height of `(` — 9.763 pt
+   * in acmart's 9 pt body, 1.08479 em — times 1, 1.5, 2 and 2.5, and TeX
+   * accepts the first delimiter covering max(0.901 h, h − 5 pt).
+   * `\mathbf`: only the family-variable characters, see `-ntx-mathbf`.
+   */
+  static TEX_CONFIG = {
+    bigSizes: [1, 1.5, 2, 2.5].map((k) => {
+      const h = k * 9.76314 / 9;
+      return Math.max(0.901 * h, h - 5 / 9);
+    }) as unknown as readonly [number, number, number, number],
+    mathbf: '-ntx-mathbf',
+  };
+
+  static defaultVariants = [
+    ...Termes.defaultVariants,
+    // `\mathbf`: bold letters, digits and Greek capitals; anything else is
+    // the normal glyph, as in TeX.
+    ['-ntx-mathbf', 'normal'],
+    ...Object.keys(scriptVariants).map((name) => [name, name.replace(/-s[12]$/, '')]),
+  ];
 
   static defaultChars: Record<string, CharTable> = Object.fromEntries(
     Object.entries({ ...Termes.defaultChars }).map(([variant, table]) => [
@@ -166,10 +216,16 @@ export class MathJaxNewtxFont extends TermesClass {
     for (const [variant, table] of Object.entries(GENERATED)) {
       if (self.variant[variant]) self.defineChars(variant, table);
     }
+    for (const [variant, table] of Object.entries(scriptVariants)) self.defineChars(variant, table);
     self.defineDelimiters(delimiters);
 
+    // A script variant needs its own glyph-id prefix: a subscript x and the x
+    // it hangs from are different outlines, and one <defs> holds both.
+    const OWN_IDS: Record<string, string> = { '-ntx-mathbf': 'BF' };
     for (const variant of Object.keys(self.variant)) {
-      self.variant[variant].cacheID = `NTX-${Termes.variantCacheIds[variant] || 'N'}`;
+      const level = /-s([12])$/.exec(variant)?.[1] ?? '';
+      const base = variant.replace(/-s[12]$/, '');
+      self.variant[variant].cacheID = `NTX-${OWN_IDS[base] ?? Termes.variantCacheIds[base] ?? 'N'}${level}`;
     }
   }
 }

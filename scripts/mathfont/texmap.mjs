@@ -11,7 +11,7 @@
  *   - `newtxmath.sty` declares which symbol font and slot each command comes
  *     from, e.g. `\DeclareMathSymbol{\alpha}{\mathalpha}{letters}{11}`.
  *
- * Composing them gives U+03B1 → (letters, slot 11) → nxlmi03's slot 11 → an
+ * Composing them gives U+03B1 → (letters, slot 11) → nxlmi's slot 11 → an
  * outline and its metrics. The declarations name symbol fonts by role
  * (`letters`, `symbols`, `largesymbols`, `operators`), and those roles are the
  * same whichever text face newtxmath is configured for, so reading them all

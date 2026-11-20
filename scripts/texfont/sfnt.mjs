@@ -1,30 +1,77 @@
 /**
- * The two pieces of OpenType writing opentype.js does not do: a `kern` table,
+ * The two pieces of OpenType writing opentype.js does not do: pair kerning,
  * and adding a table to an already-encoded font.
  *
- * opentype.js writes GSUB but no GPOS and no `kern`, so the kerning TeX lays
- * out with would be lost on save. The legacy `kern` table (format 0, one
- * horizontal subtable) is the simplest container for plain pair kerning, and
- * every consumer here reads it: opentype.js loads it into `kerningPairs` when
- * a font has no GPOS, and browsers' shapers fall back to it likewise.
+ * opentype.js writes GSUB but no GPOS, so the kerning TeX lays out with would
+ * be lost on save. It goes in a `GPOS` table — one `kern` feature, one
+ * pair-adjustment lookup — because that is the container both consumers
+ * read: opentype.js's `getKerningValue`, and Chrome's shaper. Chrome ignores
+ * a legacy `kern` table in these fonts entirely (measured: the edit overlay
+ * set text 19 px wider than the renderer on a 40 px line).
  */
 
-/** A format-0 `kern` table: `[left glyph, right glyph, value]` pairs. */
-export function kernTable(pairs) {
-  const sorted = [...pairs].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-  const n = sorted.length;
-  const subLength = 14 + 6 * n;
-  if (subLength > 0xffff) throw new Error(`too many kerning pairs for one kern subtable: ${n}`);
-  let pow = 1, log = 0;
-  while (pow * 2 <= n) { pow *= 2; log++; }
-  const buf = Buffer.alloc(4 + subLength);
-  let o = 0;
-  const u16 = (v) => { buf.writeUInt16BE(v, o); o += 2; };
-  u16(0); u16(1); // table version, one subtable
-  u16(0); u16(subLength); u16(0x0001); // subtable version, length, horizontal
-  u16(n); u16(pow * 6); u16(log); u16((n - pow) * 6);
-  for (const [l, r, v] of sorted) { u16(l); u16(r); buf.writeInt16BE(v, o); o += 2; }
-  return new Uint8Array(buf);
+/**
+ * A `GPOS` table with one `kern` feature (under the DFLT and latn scripts)
+ * whose one lookup is a PairPosFormat1 subtable: for each first glyph, its
+ * second glyphs and the x-advance adjustment of the first.
+ */
+export function gposKernTable(pairs) {
+  const byFirst = new Map();
+  for (const [l, r, v] of [...pairs].sort((a, b) => a[0] - b[0] || a[1] - b[1])) {
+    if (!byFirst.has(l)) byFirst.set(l, []);
+    byFirst.get(l).push([r, v]);
+  }
+  const firsts = [...byFirst.keys()];
+
+  // PairPosFormat1: format, coverage offset, valueFormat1 (XAdvance),
+  // valueFormat2 (none), pairSetCount, pairSet offsets; then the coverage,
+  // then the pair sets. Every offset is from the subtable's start.
+  const headerLen = 10 + 2 * firsts.length;
+  const coverageLen = 4 + 2 * firsts.length;
+  const pairSetsLen = firsts.reduce((n, f) => n + 2 + 4 * byFirst.get(f).length, 0);
+  const sub = Buffer.alloc(headerLen + coverageLen + pairSetsLen);
+  if (sub.length > 0xffff) throw new Error(`kerning subtable too large for 16-bit offsets: ${sub.length} bytes`);
+  sub.writeUInt16BE(1, 0);
+  sub.writeUInt16BE(headerLen, 2);
+  sub.writeUInt16BE(0x0004, 4);
+  sub.writeUInt16BE(0, 6);
+  sub.writeUInt16BE(firsts.length, 8);
+  let cov = headerLen;
+  sub.writeUInt16BE(1, cov); sub.writeUInt16BE(firsts.length, cov + 2);
+  firsts.forEach((g, i) => sub.writeUInt16BE(g, cov + 4 + 2 * i));
+  let at = headerLen + coverageLen;
+  firsts.forEach((g, i) => {
+    sub.writeUInt16BE(at, 10 + 2 * i);
+    const seconds = byFirst.get(g);
+    sub.writeUInt16BE(seconds.length, at);
+    seconds.forEach(([r, v], k) => { sub.writeUInt16BE(r, at + 2 + 4 * k); sub.writeInt16BE(v, at + 4 + 4 * k); });
+    at += 2 + 4 * seconds.length;
+  });
+
+  // Lookup: type 2, flag 0, one subtable at offset 8.
+  const lookup = Buffer.concat([Buffer.from([0, 2, 0, 0, 0, 1, 0, 8]), sub]);
+  // LookupList: one lookup at offset 4.
+  const lookupList = Buffer.concat([Buffer.from([0, 1, 0, 4]), lookup]);
+  // FeatureList: one 'kern' feature (record at 2, table at 8) → lookup 0.
+  const featureList = Buffer.concat([
+    Buffer.from([0, 1]), Buffer.from('kern', 'latin1'), Buffer.from([0, 8]),
+    Buffer.from([0, 0, 0, 1, 0, 0]), // featureParams 0, lookupCount 1, index 0
+  ]);
+  // ScriptList: DFLT and latn, each a Script table with a default LangSys
+  // (offset 4 from the Script table) requiring no feature and using feature 0.
+  const script = Buffer.from([0, 4, 0, 0, /* LangSys: */ 0, 0, 0xff, 0xff, 0, 1, 0, 0]);
+  const scriptList = Buffer.concat([
+    Buffer.from([0, 2]),
+    Buffer.from('DFLT', 'latin1'), Buffer.from([0, 14]),
+    Buffer.from('latn', 'latin1'), Buffer.from([0, 14 + script.length]),
+    script, script,
+  ]);
+  const header = Buffer.alloc(10);
+  header.writeUInt16BE(1, 0); header.writeUInt16BE(0, 2);
+  header.writeUInt16BE(10, 4);
+  header.writeUInt16BE(10 + scriptList.length, 6);
+  header.writeUInt16BE(10 + scriptList.length + featureList.length, 8);
+  return new Uint8Array(Buffer.concat([header, scriptList, featureList, lookupList]));
 }
 
 function checksum(bytes) {

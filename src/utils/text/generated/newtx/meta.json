@@ -1,9 +1,9 @@
 {
-  "generated": "2026-11-10",
+  "generated": "2026-11-20",
   "variants": {
-    "normal": 270,
+    "normal": 280,
     "bold": 248,
-    "italic": 147,
+    "italic": 149,
     "boldItalic": 127,
     "script": 52,
     "calligraphic": 26,
@@ -13,10 +13,19 @@
     "size3": 17,
     "size4": 17,
     "size5": 0,
-    "size6": 0
+    "size6": 0,
+    "doubleStruck": 26,
+    "texVariant": 4,
+    "mathbf": 73,
+    "italic-s1": 149,
+    "normal-s1": 28,
+    "boldItalic-s1": 127,
+    "italic-s2": 149,
+    "normal-s2": 28,
+    "boldItalic-s2": 127
   },
   "delimiters": 35,
-  "unplacedSlots": 322,
+  "unplacedSlots": 332,
   "params": {
     "x_height": 0.441,
     "quad": 1,

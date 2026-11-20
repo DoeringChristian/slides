@@ -22,6 +22,7 @@ export const VARIANT_SMP = {
   italic: [0x1d434, 0x1d44e, 0x1d6e2, 0x1d6fc],
   'bold-italic': [0x1d468, 0x1d482, 0x1d71c, 0x1d736],
   script: [0x1d49c, 0x1d4b6],
+  'double-struck': [0x1d538, 0x1d552, undefined, undefined, 0x1d7d8], // no Greek, like MathJax's
   'bold-script': [0x1d4d0, 0x1d4ea],
 };
 

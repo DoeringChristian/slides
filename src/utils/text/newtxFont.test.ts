@@ -238,3 +238,50 @@ describe('the generated newtxmath font', () => {
     }
   });
 });
+
+/**
+ * Glyph accuracy against acmart, end to end through MathJax. The full check is
+ * `scripts/mathfont/compare-glyphs.mjs` (it needs TeX); these pin the
+ * mechanisms it depends on, so a regeneration or a MathJax upgrade that
+ * quietly undid one fails here.
+ */
+describe('newtx math as acmart draws it', () => {
+  const glyphs = (svg: string) => [...svg.matchAll(/<path id="([^"]+)"/g)].map((m) => m[1].replace(/^MJX-\d+-/, ''));
+  const scales = (svg: string) => [...svg.matchAll(/scale\((0\.\d+)\)/g)].map((m) => Number(m[1]));
+
+  it('sets scripts at acmart’s 6.6 pt and 5.5 pt of 9 pt, from the script designs', async () => {
+    const { texFragmentToSvg } = await import('../../services/latexToSvg');
+    const svg = await texFragmentToSvg('x^{x^{x}}', false, 'mathjax-newtx');
+    // Relative scales: 0.7333 for the first level, 0.6111 / 0.7333 for the second.
+    expect(scales(svg)).toEqual([0.733, 0.833]);
+    // Three different outlines: nxlmi's x, nxlmi7's x, nxlmi5's x.
+    expect(glyphs(svg)).toEqual(['NTX-I-78', 'NTX-I1-78', 'NTX-I2-78']);
+  });
+
+  it('leaves every other math font to MathJax’s own script sizes', async () => {
+    const { texFragmentToSvg } = await import('../../services/latexToSvg');
+    const svg = await texFragmentToSvg('x^{x^{x}}', false, 'mathjax-newcm');
+    expect(scales(svg)).toEqual([0.707, 0.707]);
+  });
+
+  it('makes \\mathbf switch only letters and digits, as TeX does', async () => {
+    const { texFragmentToSvg } = await import('../../services/latexToSvg');
+    const outline = (svg: string, id: string) => new RegExp(`id="MJX-\\d+-${id}" d="([^"]*)"`).exec(svg)?.[1];
+    const bf = await texFragmentToSvg('\\mathbf{x-1}', false, 'mathjax-newtx');
+    const plain = await texFragmentToSvg('x-1', false, 'mathjax-newtx');
+    // Letter and digit: the semibold ones, not the plain ones.
+    expect(outline(bf, 'NTX-BF-78')).toBeDefined();
+    expect(outline(bf, 'NTX-BF-31')).not.toBe(outline(plain, 'NTX-N-31'));
+    // The minus: filed under \mathbf's prefix, but the normal outline.
+    expect(outline(bf, 'NTX-BF-2212')).toBe(outline(plain, 'NTX-N-2212'));
+  });
+
+  it('carries TeX’s script-size letters for every italic and bold-italic letter', async () => {
+    const { scriptVariants, scriptScales } = await import('./generated/newtx/script-sizes');
+    expect(scriptScales).toEqual([1, 0.73333, 0.61111]);
+    for (const v of ['italic-s1', 'italic-s2']) expect(Object.keys(scriptVariants[v]).length).toBe(Object.keys(italic).length);
+    for (const v of ['bold-italic-s1', 'bold-italic-s2']) expect(Object.keys(scriptVariants[v]).length).toBe(Object.keys(boldItalic).length);
+    // The 7 pt design is not the text design scaled: same letter, other outline.
+    expect(scriptVariants['italic-s1'][0x1D465][3].p).not.toBe(italic[0x1D465][3].p);
+  });
+});

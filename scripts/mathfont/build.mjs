@@ -27,7 +27,7 @@
  * the LaTeX math declarations give slot → command → codepoint.
  */
 
-import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -35,15 +35,23 @@ import { makeResolver, resolveLogicalFont, resolvePlainFont } from './resolve.mj
 import { parseMathDeclarations, parseUnicodeMathTable, buildCodepointMap } from './texmap.mjs';
 import { parseTfm, mathParams, charList, extensibleFor, TAG } from './tfm.mjs';
 import { smpCodepoint } from './smp.mjs';
-import { pathToSvg } from './type1.mjs';
+import { pathToSvg, parseType1, pathBounds } from './type1.mjs';
 import { GREEK_LOWER, GREEK_UPPER, LATIN_ITALIC, DIGIT_CODES } from './aliases.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, '../..');
 const OUT = resolve(REPO, 'src/utils/text/generated/newtx');
 
-/** newtxmath's symbol-font roles, and the logical font bound to each. */
-const ROLE_FONT = { letters: 'nxlmi03', symbols: 'ntxsy', largesymbols: 'ntxexx' };
+/**
+ * newtxmath's symbol-font roles, and the logical font bound to each.
+ *
+ * `nxlmi`, not `nxlmi03`: `omlnxlmi.fd` picks the `03` font only under the
+ * `liby`, `libaltvw` and `altnu` options (Libertine's own y, alternate v and
+ * w, new nu), which acmart does not pass. Its default is `nxlmi` — math
+ * italic y from txfonts, the original v and w, the old nu — confirmed by
+ * pdfLaTeX's file recorder on an acmart document.
+ */
+const ROLE_FONT = { letters: 'nxlmi', lettersA: 'nxlmia', symbols: 'ntxsy', largesymbols: 'ntxexx' };
 
 /**
  * The same roles in the bold math series.
@@ -51,7 +59,31 @@ const ROLE_FONT = { letters: 'nxlmi03', symbols: 'ntxsy', largesymbols: 'ntxexx'
  * `\SetSymbolFont{letters}{bold}{OML}{nxlmi}{b}{it}` and its siblings, which
  * `omlnxlmi.fd` resolves to these files. This is what `\boldsymbol` sets.
  */
-const BOLD_ROLE_FONT = { letters: 'nxlbmi03', symbols: 'ntxbsy', largesymbols: 'ntxbexx' };
+const BOLD_ROLE_FONT = { letters: 'nxlbmi', lettersA: 'nxlbmia', symbols: 'ntxbsy', largesymbols: 'ntxbexx' };
+
+/**
+ * The optical sizes TeX sets scripts in.
+ *
+ * `omlnxlmi.fd` gives the letters three designs — `nxlmi` from 8.6 pt up,
+ * `nxlmi7` from 6.3 pt, `nxlmi5` below — and acmart's 9 pt body puts its
+ * scripts at 6.6 pt and its second-level scripts at 5.5 pt, so a subscript
+ * `i` is LibertineMathMI7's `i`, wider and sturdier than the text `i` scaled
+ * down. These are the fonts for MathJax's script levels 1 and 2. Only the
+ * letters have optical sizes; the symbol, extension and operator faces are
+ * one design at every size.
+ */
+const SCRIPT_LETTERS = [
+  { suffix: '-s1', medium: 'nxlmi7', bold: 'nxlbmi7' },
+  { suffix: '-s2', medium: 'nxlmi5', bold: 'nxlbmi5' },
+];
+
+/**
+ * acmart's script sizes as fractions of its 9 pt body (6.6 pt and 5.5 pt,
+ * read from pdfLaTeX's output), which MathJax's single geometric
+ * `scriptsizemultiplier` cannot express: 0.7333 and 0.6111, not 0.71 and
+ * 0.5041.
+ */
+const SCRIPT_SCALES = [1, 6.6 / 9, 5.5 / 9];
 
 /**
  * MathJax's size chain for a stretchy character, in order.
@@ -136,7 +168,7 @@ function slotCodepoints(texRoots, find) {
   const sources = ['fontmath.ltx', 'newtxmath.sty'].map(find).filter(Boolean);
   if (!sources.length) throw new Error('found neither fontmath.ltx nor newtxmath.sty');
 
-  const bySlot = { letters: new Map(), symbols: new Map(), largesymbols: new Map(), operators: new Map() };
+  const bySlot = { letters: new Map(), lettersA: new Map(), symbols: new Map(), largesymbols: new Map(), operators: new Map() };
   const commands = new Map();
   const fenceDecls = new Map();
   const noCodepoint = [];
@@ -239,12 +271,12 @@ const hex = (v) => `0x${v.toString(16).toUpperCase()}`;
  * the three spellings are kept apart deliberately rather than by accident.
  */
 const MATHJAX_VARIANT = {
-  boldItalic: 'bold-italic',
+  boldItalic: 'bold-italic', doubleStruck: 'double-struck', texVariant: '-tex-variant', mathbf: '-ntx-mathbf',
   calligraphic: '-tex-calligraphic', boldCalligraphic: '-tex-bold-calligraphic',
   smallop: '-smallop', largeop: '-largeop',
   size3: '-size3', size4: '-size4', size5: '-size5', size6: '-size6',
 };
-const FILE_NAME = { boldItalic: 'bold-italic', boldCalligraphic: 'bold-calligraphic' };
+const FILE_NAME = { boldItalic: 'bold-italic', boldCalligraphic: 'bold-calligraphic', doubleStruck: 'double-struck', texVariant: 'tex-variant' };
 
 const DELIMITER_TYPE = `/** MathJax's stretchy-character entry.\n`
   + ` *\n`
@@ -310,6 +342,15 @@ function main() {
     smallop: new Map(), largeop: new Map(),
     size3: new Map(), size4: new Map(), size5: new Map(), size6: new Map(),
   };
+  chars.doubleStruck = new Map();
+  chars.texVariant = new Map();
+  chars.mathbf = new Map();
+  for (const { suffix } of SCRIPT_LETTERS) {
+    for (const v of ['italic', 'normal', 'boldItalic']) chars[v + suffix] = new Map();
+  }
+  /** Text-size letters slot → the (variant, codepoint) pairs it was filed
+   *  under, so a script-size font's same slot can be filed alike. */
+  const letterSlotTargets = { medium: new Map(), bold: new Map() };
   const placed = [];
   const unplaced = [];
   const delimiters = new Map();
@@ -366,12 +407,29 @@ function main() {
   for (const [slotNum, slot] of fonts.letters.slots) {
     // `.alt`/`.oldstyle` glyphs have no codepoint and are alternates MathJax
     // has no variant for; they are listed, not guessed at.
-    const targets = targetsFor('letters', slotNum, slot);
+    // OML's digit slots are old-style figures, reached only by
+    // `\oldstylenums`; a formula's digits are the operators font's.
+    const targets = targetsFor('letters', slotNum, slot).filter((t) => !DIGIT_CODES.has(t.code));
     if (!targets.length) { unplaced.push({ font: 'letters', slot: slotNum, name: slot.glyphName }); continue; }
     for (const { code, evidence } of targets) {
       const variant = slot.baseFont === 'stxscr' ? 'script'
         : (LATIN_ITALIC.has(code) || GREEK_LOWER.has(code)) ? 'italic' : 'normal';
       place(variant, code, slot, 'letters', evidence);
+      if (!letterSlotTargets.medium.has(slotNum)) letterSlotTargets.medium.set(slotNum, []);
+      letterSlotTargets.medium.get(slotNum).push({ variant, code, evidence });
+    }
+  }
+
+  // lettersA: newtxmath's second letters font, `nxlmia` under the libertine
+  // option. Only what acmart actually draws from it is taken, as pdfLaTeX's
+  // output shows: `=` and `\neq`. Its other declarations sit inside option
+  // branches acmart does not take (upright Greek capitals among them, which
+  // acmart draws from LibertineMathRM), and the declaration reader does not
+  // evaluate `\if`s.
+  const LETTERS_A = new Set([0x3D, 0x2260]);
+  for (const [slotNum, slot] of fonts.lettersA.slots) {
+    for (const { code, evidence } of targetsFor('lettersA', slotNum, slot)) {
+      if (LETTERS_A.has(code)) place('normal', code, slot, 'lettersA', Math.max(evidence, NAMED));
     }
   }
   /**
@@ -550,10 +608,19 @@ function main() {
   const wantedUpright = (code) =>
     (code >= 0x21 && code <= 0x7E) || MATH_PUNCTUATION.has(code)
     || (code >= 0x0391 && code <= 0x03A9);
-  for (const file of ['LibertineMathRM.pfb', 'LinLibertineT.pfb']) {
+  // Which file draws what, as pdfLaTeX's output shows: upright Greek capitals
+  // from newtx's math roman, everything else (digits, `+`, parentheses) from
+  // Libertine itself — the two have near-identical digits that differ by a
+  // unit, so the split matters.
+  const isGreekCapital = (code) => code >= 0x0391 && code <= 0x03A9;
+  const OPERATOR_FILES = {
+    'LibertineMathRM.pfb': (code) => wantedUpright(code) && isGreekCapital(code),
+    'LinLibertineT.pfb': (code) => wantedUpright(code) && !isGreekCapital(code),
+  };
+  for (const [file, accept] of Object.entries(OPERATOR_FILES)) {
     let upright;
     try {
-      upright = resolvePlainFont(file, find, wantedUpright);
+      upright = resolvePlainFont(file, find, accept);
     } catch (error) {
       log(`  (skipped ${file}: ${error.message})`);
       continue;
@@ -578,7 +645,7 @@ function main() {
   // rewrite, and it also carries Unicode's holes: italic `h` belongs at U+210E
   // PLANCK CONSTANT, because U+1D455 was never assigned.
   //
-  // The bold-italic letters need none of it — `nxlbmi03`'s own glyph names are
+  // The bold-italic letters need none of it — `nxlbmi`'s own glyph names are
   // already the bold-italic codepoints (`u1D468` for bold italic A), so the
   // font states where each glyph goes.
   if (boldFonts.letters) {
@@ -594,7 +661,42 @@ function main() {
       if (!targets.length) { unplaced.push({ font: 'letters(bold)', slot: code, name: slot.glyphName }); continue; }
       for (const { code: target, evidence } of targets) {
         place('boldItalic', target, slot, 'letters(bold)', evidence);
+        if (!letterSlotTargets.bold.has(code)) letterSlotTargets.bold.set(code, []);
+        letterSlotTargets.bold.get(code).push({ variant: 'boldItalic', code: target, evidence });
       }
+    }
+  }
+
+  // ── script sizes: the same letters slots, in their optical sizes ─────────
+  //
+  // A slot of an OML font is a character, whatever size the font is drawn
+  // for, so each script-size slot is filed exactly where the text-size slot
+  // was. That is also what makes the glyph NAMES irrelevant here: the 7 pt
+  // font calls its y `u1D466.alt`, which names no codepoint, and is still
+  // the y.
+  for (const { suffix, medium, bold } of SCRIPT_LETTERS) {
+    for (const [series, name] of [['medium', medium], ['bold', bold]]) {
+      let font;
+      try {
+        font = resolveLogicalFont(name, find, baseCache);
+      } catch (error) {
+        log(`  (no ${name}: ${error.message})`);
+        continue;
+      }
+      let filed = 0;
+      const textSize = series === 'medium' ? fonts.letters : boldFonts.letters;
+      for (const [slotNum, slot] of font.slots) {
+        if (slot.baseFont === 'stxscr') continue; // the script face is one design
+        for (const { variant, code, evidence } of letterSlotTargets[series].get(slotNum) ?? []) {
+          // Only where the text-size slot WON its codepoint: one that lost to
+          // a stronger source (upright \Gamma is the operators font's, not
+          // the letters' italic one) must keep losing at script size.
+          if (variant === 'script' || chars[variant].get(code) !== textSize?.slots.get(slotNum)) continue;
+          place(variant + suffix, code, slot, `letters${suffix}`, evidence);
+          filed++;
+        }
+      }
+      log(`  ${('letters' + suffix).padEnd(13)} ${name}: ${font.slots.size} slots, ${filed} filed`);
     }
   }
   if (boldFonts.symbols) {
@@ -621,12 +723,21 @@ function main() {
   // names them plainly and needs the mapping. Filtering both on plain
   // codepoints found nothing in the math roman, which is where every bold
   // Greek letter lives.
+  //
+  // The text face's bold here is its SEMIBOLD, `LinLibertineTZ`: newtxmath
+  // asks for series `b` in the T1/OT1 Libertine family, which libertine.sty's
+  // font definitions map to the Z (semibold) fonts — pdfLaTeX's output draws
+  // `\mathbf{x}` from LinLibertineTZ, not from the TB that `\textbf` uses.
   const SMP_BLOCK = (code) => code >= 0x1D400 && code <= 0x1D7FF;
-  const wantedBold = (code) => wantedUpright(code) || SMP_BLOCK(code);
-  for (const file of ['LibertineMathBRM.pfb', 'LinLibertineTB.pfb']) {
+  const isBoldGreek = (code) => (code >= 0x1D6A8 && code <= 0x1D6E1) || (code >= 0x1D7CA && code <= 0x1D7CB);
+  const BOLD_FILES = {
+    'LibertineMathBRM.pfb': (code) => (wantedUpright(code) || SMP_BLOCK(code)) && (isGreekCapital(code) || isBoldGreek(code)),
+    'LinLibertineTZ.pfb': (code) => wantedUpright(code) && !isGreekCapital(code),
+  };
+  for (const [file, accept] of Object.entries(BOLD_FILES)) {
     let upright;
     try {
-      upright = resolvePlainFont(file, find, wantedBold);
+      upright = resolvePlainFont(file, find, accept);
     } catch (error) {
       log(`  (skipped ${file}: ${error.message})`);
       continue;
@@ -637,9 +748,116 @@ function main() {
       const before = chars.bold.size;
       place('bold', target, slot, `mathbf/${upright.name}`, UPRIGHT);
       if (chars.bold.size > before) taken++;
+      // `\mathbf` proper: TeX switches only the family-variable characters —
+      // Latin letters, digits and (newtxmath's \mathalpha) Greek capitals —
+      // so its table holds exactly those, under their plain codepoints, and
+      // everything else falls through to normal (\mathbf{-1} keeps its minus).
+      const plain = isBoldGreek(code) ? 0x0391 + (code - 0x1D6A8) : code;
+      if (/[A-Za-z0-9]/.test(String.fromCharCode(plain)) || isGreekCapital(plain)) {
+        place('mathbf', plain, slot, `mathbf/${upright.name}`, UPRIGHT);
+      }
     }
     log(`  ${'mathbf'.padEnd(13)} ${file}: ${upright.slots.size} candidates, ${taken} filled a gap`);
   }
+
+  // `\mathbb`: newtxmath's AMSm font `ntxsym`, a plain Type 1 face (`txsym`)
+  // with the double-struck capitals at their ASCII slots and names.
+  try {
+    const bb = resolvePlainFont('txsym.pfb', find, (code) => code >= 0x41 && code <= 0x5A);
+    for (const [code, slot] of bb.slots) place('doubleStruck', smpCodepoint('double-struck', code), slot, 'mathbb/txsym', NAMED);
+    log(`  ${'mathbb'.padEnd(13)} txsym.pfb: ${bb.slots.size} capitals`);
+  } catch (error) {
+    log(`  (no mathbb: ${error.message})`);
+  }
+
+  // ── what acmart draws for MathJax's accent and prime codepoints ──────────
+  //
+  // MathJax draws `\hat` with U+02C6, `\tilde` U+02DC, `\bar` U+00AF,
+  // `\vec` U+20D7, `\dot` U+02D9 and a prime with `-tex-variant` U+2032.
+  // The declarations put TeX's own glyphs for these at slots in fonts whose
+  // names the reader cannot connect to those codepoints, so they are filed by
+  // glyph, as pdfLaTeX's output shows acmart drawing them: the first three
+  // from Libertine (the operators font), the rest from newtx's symbols.
+  const glyphIn = (font, name) => [...(font?.slots.values() ?? [])].find((sl) => sl.glyphName === name);
+  // A glyph of a plain Type 1 face, by name — including names that spell no
+  // codepoint (`angle`, `simequal`), which `resolvePlainFont` passes over.
+  const plainGlyph = (file, name) => {
+    const path = find(file);
+    const glyph = path && parseType1(readFileSync(path)).glyphs.get(name);
+    const box = glyph && pathBounds(glyph.path);
+    if (!box) return undefined;
+    return {
+      unicode: null, glyphName: name, baseFont: file.replace(/\.pfb$/, ''),
+      path: glyph.path, shift: 0, vshift: 0, width: glyph.width / 1000,
+      height: Math.max(0, box[3]) / 1000, depth: Math.max(0, -box[1]) / 1000,
+      italic: 0, tag: 0, remainder: 0,
+    };
+  };
+  const SPECIALS = [
+    ['normal', 0x02C6, () => plainGlyph('LinLibertineT.pfb', 'circumflex')],
+    ['normal', 0x02DC, () => plainGlyph('LinLibertineT.pfb', 'tilde')],
+    ['normal', 0x00AF, () => plainGlyph('LinLibertineT.pfb', 'macron')],
+    ['normal', 0x20D7, () => glyphIn(fonts.symbols, 'vec')],
+    ['normal', 0x02D9, () => glyphIn(fonts.symbols, 'dotacc')],
+    ['texVariant', 0x2032, () => glyphIn(fonts.symbols, 'prime')],
+    ['normal', 0x2218, () => glyphIn(fonts.symbols, 'openbullet')],
+    ['normal', 0x2219, () => glyphIn(fonts.symbols, 'bullet')],
+    ['normal', 0x2205, () => glyphIn(fonts.symbols, 'emptyset')],
+    ['normal', 0x2220, () => plainGlyph('txsym.pfb', 'angle')],
+    ['normal', 0x2243, () => glyphIn(fonts.symbols, 'similarequal')], // \simeq
+    ['normal', 0x2245, () => plainGlyph('txsyc.pfb', 'simequal')], // \cong, from symbolsC
+    ['normal', 0x210F, () => glyphIn(fonts.lettersA, 'uni210F.var')],
+    ['texVariant', 0x210F, () => glyphIn(fonts.lettersA, 'uni210F.var')],
+  ];
+  for (const [variant, code, get] of SPECIALS) {
+    const slot = get();
+    if (slot) place(variant, code, slot, 'acmart/traced', NAMED + 1);
+    else log(`  (no glyph for ${variant} U+${code.toString(16)})`);
+  }
+  // `\mapsto` is not a glyph in TeX: it is `\mapstochar` (the bar, zero
+  // width) laid over `\rightarrow`. MathJax draws U+21A6 as one glyph, so
+  // the one glyph is the two outlines at one origin, as TeX paints them.
+  const bar = glyphIn(fonts.symbols, 'uni21A6.endl');
+  const arrow = glyphIn(fonts.symbols, 'arrowright');
+  if (bar && arrow) {
+    place('normal', 0x21A6, {
+      ...arrow,
+      glyphName: 'uni21A6.endl+arrowright',
+      path: [...bar.path, ...arrow.path],
+      height: Math.max(bar.height, arrow.height),
+      depth: Math.max(bar.depth, arrow.depth),
+    }, 'acmart/mapsto', NAMED + 1);
+  } else log('  (no mapsto pieces)');
+
+  // Marks TeX builds from several glyphs, which MathJax draws as one: the
+  // pieces at TeX's offsets, in TeX's order, as one outline.
+  //  - `''`, `'''` are primes side by side, each advanced by the prime's width
+  //    in the script-size symbol font it is set in (`ntxsy7`) plus its italic
+  //    correction, which TeX adds after every character of a symbol font;
+  //  - `\ldots`, `\cdots` are three `\mathpunct` dots, which TeX separates by
+  //    a thin space (3 mu, 3/18 of the symbol font's quad) after each dot's
+  //    width and italic correction.
+  const shifted = (path, dx) => path.map((c) => ({ op: c.op, args: c.args.map((v, i) => (i % 2 === 0 ? v + dx : v)) }));
+  const composite = (piece, count, advance, name) => ({
+    ...piece,
+    glyphName: name,
+    path: Array.from({ length: count }, (_, i) => shifted(piece.path, i * advance * 1000)).flat(),
+    width: piece.width + (count - 1) * advance,
+    shift: piece.shift,
+  });
+  let scriptSymbols = null;
+  try { scriptSymbols = resolveLogicalFont('ntxsy7', find, baseCache); } catch (error) { log(`  (no ntxsy7: ${error.message})`); }
+  const scriptPrime = glyphIn(scriptSymbols, 'prime');
+  if (scriptPrime) {
+    const prime = glyphIn(fonts.symbols, 'prime');
+    place('texVariant', 0x2033, composite(prime, 2, scriptPrime.width + scriptPrime.italic, 'prime×2'), 'acmart/primes', NAMED + 1);
+    place('texVariant', 0x2034, composite(prime, 3, scriptPrime.width + scriptPrime.italic, 'prime×3'), 'acmart/primes', NAMED + 1);
+  }
+  const thin = 3 / 18 * mathParams(fonts.symbols.tfm).quad;
+  const ldot = glyphIn(fonts.letters, 'period');
+  const cdot = glyphIn(fonts.symbols, 'periodcentered');
+  if (ldot) place('normal', 0x2026, composite(ldot, 3, ldot.width + ldot.italic + thin, 'period×3'), 'acmart/ldots', NAMED + 1);
+  if (cdot) place('normal', 0x22EF, composite(cdot, 3, cdot.width + cdot.italic + thin, 'periodcentered×3'), 'acmart/cdots', NAMED + 1);
 
   log('\nPlaced', placed.length, 'entries;', unplaced.length, 'slots had no codepoint');
   const counts = Object.fromEntries(Object.entries(chars).map(([k, v]) => [k, v.size]));
@@ -686,7 +904,9 @@ function main() {
     + ` *  in 1000-unit em space and the italic correction. */\n`
     + `type MathJaxChar = [number, number, number, { p: string; ic?: number }];\n\n`;
 
+  const scriptTables = [];
   for (const [variant, table] of Object.entries(chars)) {
+    const isScript = SCRIPT_LETTERS.some(({ suffix }) => variant.endsWith(suffix));
     const body = [...table.entries()]
       .sort((a, b) => a[0] - b[0])
       .map(([code, slot]) => {
@@ -694,10 +914,21 @@ function main() {
         const extra = Object.entries(e[3]).map(([k, v]) => `${k}: ${k === 'p' ? JSON.stringify(v) : v}`).join(', ');
         return `  0x${code.toString(16).toUpperCase()}: [${e[0]}, ${e[1]}, ${e[2]}, { ${extra} }],`;
       }).join('\n');
+    if (isScript) {
+      const [base, suffix] = [variant.slice(0, -3), variant.slice(-3)];
+      scriptTables.push(`  '${MATHJAX_VARIANT[base] ?? base}${suffix}': {\n${body.replace(/^ {2}/gm, '    ')}\n  },`);
+      continue;
+    }
     writeFileSync(`${OUT}/${FILE_NAME[variant] ?? variant}.ts`,
       `${header(`MathJax '${MATHJAX_VARIANT[variant] ?? variant}' variant, ${table.size} characters`)}${CHAR_TYPE}`
       + `export const ${variant}: Record<number, MathJaxChar> = {\n${body}\n};\n`);
   }
+  writeFileSync(`${OUT}/script-sizes.ts`,
+    `${header('The letters in their script optical sizes (nxlmi7/nxlmi5 and bold), as MathJax variants named <variant>-s1 / -s2, and the sizes TeX sets scripts at')}`
+    + CHAR_TYPE
+    + `/** Script-level scales relative to the body: level 0, 1, 2. */\n`
+    + `export const scriptScales = [${SCRIPT_SCALES.map(round).join(', ')}] as const;\n\n`
+    + `export const scriptVariants: Record<string, Record<number, MathJaxChar>> = {\n${scriptTables.join('\n')}\n};\n`);
   writeFileSync(`${OUT}/delimiters.ts`,
     `${header(`${delimiters.size} stretchy characters: TeX's size chains and extensible recipes`)}`
     + DELIMITER_TYPE
